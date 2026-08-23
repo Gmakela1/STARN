@@ -12,6 +12,7 @@ export interface AgentLoopOptions {
   allowedTools: string[];
   context: ToolExecutionContext;
   maxTurns?: number;
+  priorMessages?: ChatMessage[];
   onToolCall?: (tool: string, args: any) => void;
 }
 
@@ -21,11 +22,22 @@ export interface AgentLoopResult {
 }
 
 export async function runAgentToolLoop(options: AgentLoopOptions): Promise<AgentLoopResult> {
-  const { client, model, systemPrompt, userMessage, toolRegistry, allowedTools, context, maxTurns = 8 } = options;
+  const {
+    client,
+    model,
+    systemPrompt,
+    userMessage,
+    toolRegistry,
+    allowedTools,
+    context,
+    maxTurns = 8,
+    priorMessages = []
+  } = options;
   const toolDefs = toolRegistry.getDefinitions(allowedTools);
 
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
+    ...priorMessages.filter(m => m.role !== 'system'),
     { role: 'user', content: userMessage }
   ];
 

@@ -35,6 +35,12 @@ export async function runDiscovery(projectPath: string, stateManager: ProjectSta
   let discoveryText = `PROJECT DISCOVERY BRIEFING:\n`;
   discoveryText += `- Project Name: ${state.name}\n`;
   discoveryText += `- Current Phase: ${state.currentPhase}\n`;
+  if (state.intake?.answers && Object.keys(state.intake.answers).length > 0) {
+    discoveryText += `- User Intake Knowledge Baseline:\n`;
+    for (const [k, v] of Object.entries(state.intake.answers)) {
+      discoveryText += `  * ${k}: ${v}\n`;
+    }
+  }
   discoveryText += `- Existing Files in Workspace:\n  ${foundFiles.length > 0 ? foundFiles.map(f => `* ${f}`).join('\n  ') : '(None)'}\n`;
   discoveryText += `- Approved/Existing Artifacts:\n  ${existingArtifacts.length > 0 ? existingArtifacts.map(a => `* ${a}`).join('\n  ') : '(None)'}\n`;
   if (state.openRisks.length > 0) {

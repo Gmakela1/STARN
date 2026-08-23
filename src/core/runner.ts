@@ -4,6 +4,7 @@ import { OpenRouterClient } from '../openrouter/client.js';
 import { ProjectStateManager } from '../workspace/state.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { SpecialistRegistry } from '../specialists/registry.js';
+import { ChatMessage } from '../openrouter/types.js';
 import { runDiscovery } from './discovery.js';
 import { classifyRequest } from './classifier.js';
 import { runAgentToolLoop } from './agent-loop.js';
@@ -17,6 +18,7 @@ export interface TurnOptions {
   model: string;
   toolRegistry: ToolRegistry;
   specialistRegistry: SpecialistRegistry;
+  sessionMessages?: ChatMessage[];
   onStatusUpdate?: (status: string) => void;
   onToolCall?: (tool: string, args: any) => void;
 }
@@ -28,6 +30,7 @@ export interface TurnResult {
   criticResult?: CriticResult;
   autoRevisionsRun: number;
   requiresReview: boolean;
+  sessionMessages: ChatMessage[];
 }
 
 export class CoreRunner {
@@ -40,20 +43,147 @@ export class CoreRunner {
       model,
       toolRegistry,
       specialistRegistry,
+      sessionMessages = [],
       onStatusUpdate,
       onToolCall
     } = options;
 
+    const state = stateManager.getState();
+
     // 1. Classification
     onStatusUpdate?.('Classifying request...');
-    const specialistId = await classifyRequest(userPrompt, client, model);
-    const specialist = specialistRegistry.get(specialistId) || specialistRegistry.get('general')!;
+    let specialistId = await classifyRequest(userPrompt, client, model);
+    let specialist = specialistRegistry.get(specialistId) || specialistRegistry.get('general')!;
 
-    // 2. Mandatory Discovery
+    // 2. Prerequisite Check Gate
+    if (specialist.prerequisiteArtifactId) {
+      const isMet = stateManager.isArtifactApproved(specialist.prerequisiteArtifactId);
+      if (!isMet) {
+        const prereqName = specialistRegistry.get(specialist.prerequisiteArtifactId.toLowerCase())?.name || specialist.prerequisiteArtifactId;
+        const explanation = `Prerequisite Required: The ${prereqName} (${specialist.prerequisiteArtifactId}.md) deliverable has not yet been approved for this project.\n\nPlease complete and approve ${specialist.prerequisiteArtifactId}.md before proceeding to ${specialist.name}.`;
+        
+        return {
+          specialistId: 'general',
+          specialistName: 'General / Project Lead',
+          output: explanation,
+          autoRevisionsRun: 0,
+          requiresReview: false,
+          sessionMessages: [
+            ...sessionMessages,
+            { role: 'user', content: userPrompt },
+            { role: 'assistant', content: explanation }
+          ]
+        };
+      }
+    }
+
+    // 3. Mandatory Discovery
     onStatusUpdate?.('Running mandatory project discovery...');
     const discovery = await runDiscovery(projectPath, stateManager);
 
-    // 3. Specialist Execution Loop
+    // 4. Special Intake Interview for CONOPS if not yet completed
+    const hasApprovedConops = stateManager.isArtifactApproved('CONOPS');
+    if (specialist.id === 'conops' && !hasApprovedConops && !state.intake.completed) {
+      const intake = state.intake;
+      const qIndex = intake.currentQuestionIndex;
+
+      // First question
+      if (qIndex === 0 && !intake.answers.projectName) {
+        stateManager.incrementIntakeQuestion();
+        const msg = `Welcome! Let's establish the foundation for this project before drafting the CONOPS.\n\n1. What is the project? (e.g. "Converting a 19HP diesel lawn tractor to an electric battery powertrain", or "Building a 120 sq ft solar shed")`;
+        return {
+          specialistId: 'conops',
+          specialistName: 'CONOPS Intake',
+          output: msg,
+          autoRevisionsRun: 0,
+          requiresReview: false,
+          sessionMessages: [
+            ...sessionMessages,
+            { role: 'user', content: userPrompt },
+            { role: 'assistant', content: msg }
+          ]
+        };
+      }
+
+      // Record answer and ask next question
+      if (qIndex === 1 && !intake.answers.projectIntent) {
+        stateManager.recordIntakeAnswer('projectName', userPrompt);
+        stateManager.incrementIntakeQuestion();
+        const msg = `Got it: "${userPrompt}".\n\n2. What is the primary intent and operational goal of this project? (What problem does it solve, and how will it be used?)`;
+        return {
+          specialistId: 'conops',
+          specialistName: 'CONOPS Intake',
+          output: msg,
+          autoRevisionsRun: 0,
+          requiresReview: false,
+          sessionMessages: [
+            ...sessionMessages,
+            { role: 'user', content: userPrompt },
+            { role: 'assistant', content: msg }
+          ]
+        };
+      }
+
+      if (qIndex === 2 && !intake.answers.domainSpecs) {
+        stateManager.recordIntakeAnswer('projectIntent', userPrompt);
+        stateManager.incrementIntakeQuestion();
+        const msg = `Thank you. Next guided question:\n\n3. What are the key mechanical/physical boundaries or donor vehicle/structure parameters? (e.g., dimensions, chassis type, transmission interface, or mounting footprint)`;
+        return {
+          specialistId: 'conops',
+          specialistName: 'CONOPS Intake',
+          output: msg,
+          autoRevisionsRun: 0,
+          requiresReview: false,
+          sessionMessages: [
+            ...sessionMessages,
+            { role: 'user', content: userPrompt },
+            { role: 'assistant', content: msg }
+          ]
+        };
+      }
+
+      if (qIndex === 3 && !intake.answers.powerSpecs) {
+        stateManager.recordIntakeAnswer('domainSpecs', userPrompt);
+        stateManager.incrementIntakeQuestion();
+        const msg = `Great. Next question:\n\n4. What are your electrical, power, or runtime targets? (e.g., target battery voltage [48V, 72V, 96V], capacity, motor power, or duty cycle duration)`;
+        return {
+          specialistId: 'conops',
+          specialistName: 'CONOPS Intake',
+          output: msg,
+          autoRevisionsRun: 0,
+          requiresReview: false,
+          sessionMessages: [
+            ...sessionMessages,
+            { role: 'user', content: userPrompt },
+            { role: 'assistant', content: msg }
+          ]
+        };
+      }
+
+      if (qIndex === 4 && !intake.answers.environmentalSafety) {
+        stateManager.recordIntakeAnswer('powerSpecs', userPrompt);
+        stateManager.incrementIntakeQuestion();
+        const msg = `Understood. Final intake question:\n\n5. What environmental conditions and critical safety features are required? (e.g., operating temperature range, weatherproofing, emergency stop, operator presence switch)`;
+        return {
+          specialistId: 'conops',
+          specialistName: 'CONOPS Intake',
+          output: msg,
+          autoRevisionsRun: 0,
+          requiresReview: false,
+          sessionMessages: [
+            ...sessionMessages,
+            { role: 'user', content: userPrompt },
+            { role: 'assistant', content: msg }
+          ]
+        };
+      }
+
+      // If at question 5, record final answer and mark intake complete so we synthesize draft
+      stateManager.recordIntakeAnswer('environmentalSafety', userPrompt);
+      stateManager.completeIntake();
+    }
+
+    // 5. Specialist Execution Loop
     onStatusUpdate?.(`Executing specialist: ${specialist.name}...`);
     const enhancedSystemPrompt = `${specialist.systemPrompt}\n\n${discovery.discoveryText}`;
 
@@ -66,6 +196,7 @@ export class CoreRunner {
       toolRegistry,
       allowedTools: specialist.allowedTools,
       context,
+      priorMessages: sessionMessages,
       onToolCall
     });
 
@@ -73,7 +204,7 @@ export class CoreRunner {
     let criticResult: CriticResult | undefined;
     let autoRevisionsRun = 0;
 
-    // 4. Critic While-Loop
+    // 6. Critic While-Loop
     if (specialist.requiresCritic) {
       onStatusUpdate?.('Running harsh critic evaluation...');
       const critic = new CriticEvaluator(client);
@@ -111,7 +242,7 @@ export class CoreRunner {
           autoRevisionsRun++;
           onStatusUpdate?.(`Critic requested improvements (Score: ${criticResult.score}/10). Revising draft (Attempt ${attempts}/${maxAttempts})...`);
 
-          const revisionPrompt = `The Critic evaluated your draft and found the following weaknesses:\n${criticResult.weaknesses.map(w => `- ${w}`).join('\n')}\n\nActionable Guidance:\n${criticResult.actionableGuidance}\n\nPlease revise the deliverable to resolve all weaknesses while maintaining rigorous physical engineering standards.`;
+          const revisionPrompt = `The Critic evaluated your draft and found the following weaknesses:\n${(criticResult.weaknesses || []).map(w => `- ${w}`).join('\n')}\n\nActionable Guidance:\n${criticResult.actionableGuidance || 'Fix weaknesses'}\n\nPlease revise the deliverable to resolve all weaknesses while maintaining rigorous physical engineering standards.`;
 
           const revisionResult = await runAgentToolLoop({
             client,
@@ -121,6 +252,7 @@ export class CoreRunner {
             toolRegistry,
             allowedTools: specialist.allowedTools,
             context,
+            priorMessages: sessionMessages,
             onToolCall
           });
           finalOutput = revisionResult.finalResponse;
@@ -130,13 +262,20 @@ export class CoreRunner {
       }
     }
 
+    const updatedSessionMessages: ChatMessage[] = [
+      ...sessionMessages,
+      { role: 'user', content: userPrompt },
+      { role: 'assistant', content: finalOutput }
+    ];
+
     return {
       specialistId: specialist.id,
       specialistName: specialist.name,
       output: finalOutput,
       criticResult,
       autoRevisionsRun,
-      requiresReview: specialist.requiresCritic
+      requiresReview: specialist.requiresCritic,
+      sessionMessages: updatedSessionMessages
     };
   }
 }
