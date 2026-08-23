@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { formatCriticScorecard, formatBanner, formatModelChoice } from '../src/cli/ui.js';
+import {
+  formatCriticScorecard,
+  formatBanner,
+  formatModelChoice,
+  extractCleanMarkdownDocument,
+  formatDocumentPreview
+} from '../src/cli/ui.js';
 import { CriticResult } from '../src/core/critic.js';
 import { ModelOption } from '../src/openrouter/models.js';
 
@@ -41,5 +47,21 @@ describe('CLI UI formatting', () => {
     expect(label).toContain('200k ctx');
     expect(label).toContain('$3.00/$15.00');
     expect(label).toContain('★');
+  });
+
+  it('strips conversational preamble and extracts pure markdown deliverable', () => {
+    const raw = `Here is your requested deliverable:\n\n# Concept of Operations (CONOPS)\n## 1.0 Executive Summary\nTractor conversion.\n\nLet me know if you want revisions!`;
+    const cleaned = extractCleanMarkdownDocument(raw);
+    expect(cleaned.startsWith('# Concept of Operations (CONOPS)')).toBe(true);
+    expect(cleaned).not.toContain('Here is your requested deliverable');
+    expect(cleaned).not.toContain('Let me know if you want revisions');
+  });
+
+  it('formats clean preview box for large documents', () => {
+    const content = `# Concept of Operations\n## 1.0 Executive Summary\nLine 1\nLine 2\n## 2.0 Operational Environment\nLine 3\n## 3.0 System Modes\nLine 4`;
+    const preview = formatDocumentPreview(content, 'CONOPS Document');
+    expect(preview).toContain('CONOPS Document');
+    expect(preview).toContain('Executive Summary');
+    expect(preview).toContain('Operational Environment');
   });
 });

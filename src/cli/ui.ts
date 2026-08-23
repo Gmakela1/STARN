@@ -26,14 +26,14 @@ export function formatCriticScorecard(verdict: CriticResult): string {
   let out = `\n${statusBadge} ${scoreText}\n\n`;
   out += `${chalk.bold('Summary:')} ${verdict.summary}\n\n`;
 
-  if (verdict.strengths.length > 0) {
+  if (verdict.strengths && verdict.strengths.length > 0) {
     out += `${chalk.green('✔ Strengths:')}\n`;
     for (const s of verdict.strengths) {
       out += `  ${chalk.green('•')} ${s}\n`;
     }
   }
 
-  if (verdict.weaknesses.length > 0) {
+  if (verdict.weaknesses && verdict.weaknesses.length > 0) {
     out += `\n${chalk.yellow('▲ Weaknesses / Findings:')}\n`;
     for (const w of verdict.weaknesses) {
       out += `  ${chalk.yellow('•')} ${w}\n`;
@@ -67,6 +67,57 @@ export function formatModelChoice(model: ModelOption): string {
   const meta = metaParts.length > 0 ? ` [${metaParts.join(' | ')}]` : '';
   const desc = model.description ? ` - ${chalk.dim(model.description.slice(0, 60))}` : '';
   return `${star}${nameId}${meta}${desc}`;
+}
+
+export function extractCleanMarkdownDocument(rawText: string): string {
+  if (!rawText) return '';
+
+  // If wrapped in markdown code fence (```markdown ... ```)
+  const codeBlockMatch = rawText.match(/```(?:markdown|md)?\s*\n([\s\S]*?)\n```/i);
+  if (codeBlockMatch && codeBlockMatch[1].trim().startsWith('#')) {
+    return codeBlockMatch[1].trim();
+  }
+
+  // Find the first top-level header '# '
+  const firstHeaderIndex = rawText.indexOf('# ');
+  if (firstHeaderIndex !== -1) {
+    let doc = rawText.slice(firstHeaderIndex).trim();
+    // Strip trailing assistant signoffs if present
+    const signoffPatterns = [
+      /\n\s*Let me know if you (?:want|need|have)[\s\S]*$/i,
+      /\n\s*Please review the above[\s\S]*$/i,
+      /\n\s*The deliverable is updated and saved[\s\S]*$/i
+    ];
+    for (const pattern of signoffPatterns) {
+      doc = doc.replace(pattern, '').trim();
+    }
+    return doc;
+  }
+
+  return rawText.trim();
+}
+
+export function formatDocumentPreview(content: string, title: string): string {
+  const lines = content.split('\n');
+  const headings = lines.filter(l => l.startsWith('#')).slice(0, 8);
+  const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
+
+  let previewText = `${chalk.bold.cyan(title)}\n`;
+  previewText += `${chalk.dim(`Length: ${lines.length} lines (~${wordCount} words)`)}\n\n`;
+  previewText += `${chalk.bold('Sections Included:')}\n`;
+  for (const h of headings) {
+    const indent = h.startsWith('###') ? '    ' : h.startsWith('##') ? '  ' : '';
+    previewText += `${indent}${chalk.cyan('•')} ${h.replace(/^#+\s*/, '')}\n`;
+  }
+
+  return boxen(previewText, {
+    padding: 1,
+    margin: { top: 1, bottom: 0, left: 0, right: 0 },
+    borderStyle: 'round',
+    borderColor: 'cyan',
+    title: 'Deliverable Summary',
+    titleAlignment: 'left'
+  });
 }
 
 export function printSectionHeader(title: string): void {

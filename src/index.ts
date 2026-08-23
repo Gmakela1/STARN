@@ -9,6 +9,7 @@ import { ProjectRegistry } from './workspace/registry.js';
 import { ProjectStateManager } from './workspace/state.js';
 import { ToolRegistry } from './tools/registry.js';
 import { SpecialistRegistry } from './specialists/registry.js';
+import { ChatMessage } from './openrouter/types.js';
 import { CoreRunner } from './core/runner.js';
 import { formatBanner, formatCriticScorecard, printSectionHeader } from './cli/ui.js';
 import {
@@ -90,6 +91,7 @@ async function main() {
   const specialistRegistry = new SpecialistRegistry();
 
   let sessionActive = true;
+  let sessionMessages: ChatMessage[] = [];
 
   while (sessionActive) {
     printSectionHeader('Active Session');
@@ -110,6 +112,7 @@ async function main() {
           model: selectedModel,
           toolRegistry,
           specialistRegistry,
+          sessionMessages,
           onStatusUpdate: status => {
             spinner.text = status;
           },
@@ -119,6 +122,7 @@ async function main() {
         });
 
         spinner.stop();
+        sessionMessages = result.sessionMessages;
 
         if (result.criticResult) {
           console.log(formatCriticScorecard(result.criticResult));
