@@ -1,0 +1,10 @@
+{
+  "id": "solar_shed_wbs",
+  "name": "Off-Grid Solar Shed WBS Generation",
+  "description": "Tests generating a full Work Breakdown Structure for a 120 sq ft timber shed with 3.2kW solar microgrid.",
+  "expectedSpecialist": "wbs",
+  "userPrompt": "Generate a detailed hierarchical Work Breakdown Structure (WBS) for building an off-grid solar generator shed, including foundation piers, framing, 48V solar electrical wiring, ventilation, and commissioning.",
+  "projectContextFiles": {
+    "docs/CONTEXT.md": "# Project Context\nTarget footprint 12ft x 10ft shed. 6 sonotube concrete piers. 8x 400W solar modules, 15kWh LiFePO4 battery."
+  }
+}

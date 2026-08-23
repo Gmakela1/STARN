@@ -1,0 +1,10 @@
+{
+  "id": "deployable_shelter_conops",
+  "name": "Rapid Deployable Shelter CONOPS",
+  "description": "Tests generating Concept of Operations and User Intent for a rapid expeditionary shelter.",
+  "expectedSpecialist": "conops",
+  "userPrompt": "Author the Concept of Operations (CONOPS) and User Intent for a rapid deployable expeditionary shelter operating in -20C to +45C environments.",
+  "projectContextFiles": {
+    "docs/REQUIREMENTS_NOTE.md": "# Notes\nMust be deployable in under 4 hours by a 2-person crew without heavy machinery."
+  }
+}
