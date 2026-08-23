@@ -17,13 +17,14 @@ During initial testing of STARN on an electric tractor conversion project, four 
 ### Objectives for this Release:
 - **Dynamic 1-by-1 Intake Interview:** Automatically initiates on empty/new projects. Starts with *1. What is the project?* and *2. What is the intent?*, followed by 3–5 adaptive one-by-one guiding questions before drafting the CONOPS.
 - **Strict Grounding & Anti-Hallucination Guardrails:** Requirements must ground strictly to user statements. Hardware recommendations must be presented conversationally or kept vendor-agnostic unless confirmed by the user.
-- **Standardized Numbering (`1.a` / `Requirement 1.a`):**
-  - **Capabilities:** Functional traits formatted as `1.a`, `1.b`, `2.a`.
-  - **Requirements:** Quantifiable constraints formatted as `Requirement 1.a`, `Requirement 1.b`.
+- **Standardized Numbering & Document Formats:**
+  - **Capabilities (`1.a`, `1.b`):** Structured bullet format with bold functional character traits.
+  - **Requirements (`Requirement 1.a`, `Requirement 1.b`):** Detailed numbered bullets with engineering precision, accompanied by a scannable summary table.
+  - **RTM (`docs/RTM.md`):** 100% Markdown Tabular format mapping each requirement to verification method, available tooling, and quantitative thresholds.
   - Clean plain-text units (`72V`, `-20°C to +45°C`, `12 kW`, `120 Nm/s`), clean ASCII block diagrams, and zero raw LaTeX math strings (`$\text{...}$`).
 - **Dedicated Gated `RTM` Specialist Package:**
   - Cannot be invoked until `CAPABILITIES.md` and `REQUIREMENTS.md` exist and are approved.
-  - Interviews the user regarding available test equipment (dyno, multimeter, thermal camera, pressure gauges, test track) and constructs a complete Requirements Traceability Matrix.
+  - Interviews the user regarding available test equipment (dyno, multimeter, thermal camera, pressure gauges, test track) and constructs a complete Requirements Traceability Matrix table.
 - **Multi-Turn Session Memory & Discovery Clean-Up:** Full conversational transcript persists across turns during a session.
 - **Streamlined Terminal UI:** Clean markdown rendering for conversations, and collapsible preview / scorecard / view-full-draft prompts for large deliverables.
 
@@ -77,33 +78,60 @@ Agent generates grounded CONOPS draft -> Harsh Critic evaluates -> Checkpoint re
 
 ---
 
-## 3. Standardized Formatting & Numbering Schema
+## 3. Standardized Formatting & Document Schemas
 
-### A. Capabilities Schema (`1.a`, `1.b`, `2.a`)
-Capabilities represent **functional character traits** describing what the system does, organized by functional domain:
+### A. Capabilities Schema (`docs/CAPABILITIES.md`)
+Formatted as **structured numbered bullets** detailing behavioral and functional character traits:
 
 ```markdown
-## 1.0 Powertrain & Speed Regulation
-- **1.a [Variable Speed Throttle Control]:** The system provides smooth, continuous forward and reverse vector motor control from 0 to 3,000 RPM via electronic foot pedal.
-- **1.b [Low-End Starting Torque]:** The motor delivers high starting torque for heavy ground-engagement and towing without stalling.
+# Product Capabilities: Electric Tractor Powertrain Conversion
+
+## 1.0 Powertrain & Drive Control
+- **1.a [Variable Speed Throttle Control]:** The motor controller provides proportional, smooth speed regulation from 0 to 3,000 RPM via electronic foot pedal in forward and reverse.
+- **1.b [Low-End Starting Torque]:** The system delivers high starting torque from 0 RPM to pull ground-engagement implements without stalling.
 
 ## 2.0 Energy Storage & Power Management
-- **2.a [Modular Battery Enclosure]:** The battery system provides sealed, removable energy storage with active cell monitoring.
-- **2.b [Regenerative Braking Deceleration]:** Deceleration energy is captured and returned to the battery during pedal lift-off.
+- **2.a [Modular Battery Enclosure]:** The battery system provides sealed, vibration-isolated energy storage with cell balancing and thermal monitoring.
+- **2.b [Regenerative Deceleration]:** Kinetic energy is captured during accelerator lift-off, smoothly decelerating the vehicle while returning charge to the battery.
 ```
 
-### B. Requirements Schema (`Requirement 1.a`, `Requirement 1.b`)
-Requirements represent **quantifiable constraints, physical tolerances, and operating thresholds**:
+### B. Requirements Schema (`docs/REQUIREMENTS.md`)
+Formatted as **detailed numbered bullets** for engineering specifics, followed by a **scannable summary table**:
 
 ```markdown
-## 1.0 Environmental & Operational Limits
+# System Requirements Specification: Electric Tractor Powertrain Conversion
+
+## 1.0 Physical & Environmental Constraints
 - **Requirement 1.a [Thermal Operating Range]:** The powertrain shall operate continuously across ambient temperatures of -20°C to +45°C without thermal shutdown.
-- **Requirement 1.b [Ingress Protection]:** All electronics and high-voltage enclosures shall meet IP66 dust-tight and water-jet ingress standards.
+- **Requirement 1.b [Ingress Protection]:** All electronics, motor housings, and battery enclosures shall meet IP66 dust-tight and water-jet ingress standards.
 
 ## 2.0 Electrical & Mechanical Constraints
-- **Requirement 2.a [DC Bus Operating Voltage]:** The high-voltage traction bus shall operate between 60.0V DC (cut-off) and 84.0V DC (maximum charge).
-- **Requirement 2.b [Powertrain Mass Budget]:** Total weight of installed motor, inverter, and battery pack shall not exceed 130 kg to preserve vehicle stability.
-- **Requirement 2.c [CAN Telemetry Rate]:** Motor controller and BMS telemetry shall broadcast over CAN bus at 500 kbps with a 10 Hz minimum update rate.
+- **Requirement 2.a [DC Bus Operating Voltage]:** The high-voltage traction bus shall operate between 60.0V DC (0% SOC cut-off) and 84.0V DC (100% SOC float).
+- **Requirement 2.b [Powertrain Mass Budget]:** Total weight of installed motor, inverter, and battery pack shall not exceed 130.0 kg to maintain OEM axle weight distribution.
+
+---
+
+### Requirements Summary Matrix
+| Req ID | Parameter | Nominal Metric | Operating Envelope / Tolerance |
+| :--- | :--- | :--- | :--- |
+| **Req 1.a** | Ambient Temperature | 20°C | -20°C to +45°C |
+| **Req 1.b** | Enclosure Ingress | IP66 | Washdown & dust-tight |
+| **Req 2.a** | DC Bus Voltage | 72.0V DC | 60.0V to 84.0V DC |
+| **Req 2.b** | Total Conversion Mass | 125.0 kg | Maximum 130.0 kg (±2.0 kg) |
+```
+
+### C. Requirements Traceability Matrix Schema (`docs/RTM.md`)
+Formatted as a **100% Markdown Tabular Matrix** tailored to available user tooling:
+
+```markdown
+# Requirements Traceability & Verification Matrix (RTM)
+
+| Req ID | Requirement Summary | Method | Required Tooling / Setup | Quantitative Pass/Fail Threshold |
+| :--- | :--- | :--- | :--- | :--- |
+| **Req 1.a** | Thermal Operating Range | Test | Climatic walk-in chamber / Thermal logger | Continuous operation at -20°C & +45°C for 60 min |
+| **Req 1.b** | Ingress Protection | Test | Water spray nozzle / Dust box | IP66 certified, 0 liquid penetration observed |
+| **Req 2.a** | Traction DC Voltage | Inspection | Fluke Multimeter & CAN logger | Bus voltage between 60.0V and 84.0V DC |
+| **Req 2.b** | Powertrain Mass Budget | Inspection | Crane scale / Platform balance | Total installed weight <= 130.0 kg (+/- 2.0 kg) |
 ```
 
 ---
@@ -111,19 +139,13 @@ Requirements represent **quantifiable constraints, physical tolerances, and oper
 ## 4. Dedicated `RTM` Specialist Package
 
 - **Package ID:** `rtm`
-- **Name:** Requirements Traceability & Verification Matrix
-- **Prerequisites:** `docs/CAPABILITIES.md` or `docs/REQUIREMENTS.md` must exist and be marked `approved` in `.starn/state.json`.
-- **Gating Rule:** If the user requests RTM before requirements are approved, STARN responds:
-  *"Requirements have not yet been approved. Please complete and approve the Capabilities & Requirements phase before building the Requirements Traceability Matrix."*
+- **Name:** Requirements Traceability Matrix (RTM)
+- **Prerequisites:** `docs/CAPABILITIES.md` and `docs/REQUIREMENTS.md` must exist and be approved in `.starn/state.json`.
+- **Gating Rule:** If invoked before requirements are approved, STARN responds:
+  *"Requirements have not yet been approved. Please complete and approve Capabilities and Requirements before building the Requirements Traceability Matrix."*
 - **User Tooling Intake:** The RTM specialist asks the user:
   *"What test equipment and facility resources do you have access to? (e.g., Multimeter, Oscilloscope, Dynamometer, Thermal Camera, Torque Wrench, Field Test Track, Load Bank)"*
-- **Deliverable (`docs/RTM.md`):**
-  A complete matrix mapping each numbered requirement to:
-  1. Requirement ID (`Requirement 1.a`)
-  2. Requirement Statement
-  3. Verification Method (`Test`, `Inspection`, `Analysis`, `Demonstration`)
-  4. Specific Test Procedure & Available Equipment
-  5. Quantitative Pass/Fail Threshold
+- **Deliverable:** `docs/RTM.md`
 
 ---
 
@@ -138,7 +160,7 @@ Requirements represent **quantifiable constraints, physical tolerances, and oper
 
 3. **Terminal UI Streamlining:**
    - Small turns (intake questions, status updates): Displayed directly in clear, colored text.
-   - Large deliverables (>50 lines): Render a clean document summary box and critic scorecard, with a choice to view the full text or accept/revise directly.
+   - Large deliverables (>50 lines): Render a clean document summary box and critic scorecard, with an interactive choice to view the full text or accept/revise directly.
 
 ---
 
