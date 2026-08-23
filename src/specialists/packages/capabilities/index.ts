@@ -1,45 +1,41 @@
 import { SpecialistPackage } from '../../types.js';
 
-const capabilitiesSecretSauce = `# Product Capabilities & System Requirements: Solar Frame & Enclosure
+const capabilitiesSecretSauce = `# Product Capabilities: Off-Grid Solar Power & Work Enclosure
 
-## 1. Functional Capabilities
-- **CAP-01 [Power Generation]:** The system shall capture solar radiation via an 8-panel monocrystalline array producing nominal 3.2 kW DC peak under 1000 W/m² irradiance.
-- **CAP-02 [Energy Storage]:** The battery subsystem shall store 15.3 kWh nominal (48V 300Ah LiFePO4) with active BMS cell balancing (100A continuous discharge rate).
-- **CAP-03 [Environmental Enclosure]:** The structure shall maintain internal ambient temperature between 5°C and 35°C under external extremes (-20°C to +40°C) using active thermostatic intake/exhaust (minimum 250 CFM).
+## 1.0 Power Generation & Storage Subsystem
+- **1.a [Photovoltaic Generation]:** The system captures solar radiation via a roof array producing nominal 3.2 kW DC peak under 1000 W/m² irradiance.
+- **1.b [Energy Storage & Balancing]:** The battery subsystem stores 15.3 kWh nominal (48V 300Ah LiFePO4) with active BMS cell balancing (100A continuous discharge rate).
+- **1.c [Power Inversion & Split-Phase AC]:** The inverter supplies continuous 120V/240V AC split-phase power up to 5.0 kW continuous for heavy workshop power tools.
 
-## 2. Structural & Mechanical Specifications
-- **SPEC-01 [Framing]:** 2x6 Douglas Fir structural lumber spaced 16-inch on-center; hurricane ties (Simpson Strong-Tie H2.5A) on every rafter-to-wall junction.
-- **SPEC-02 [Roof Pitch & Dead Load]:** Single-pitch shed roof at 4:12 slope, rated for 30 psf live load + 15 psf panel dead load.
-- **SPEC-03 [Foundation Tie-Down]:** Anchored to 6x concrete sonotubes using 5/8-inch galvanized J-bolts embedded 8 inches in 3000 PSI concrete.
+## 2.0 Enclosure & Thermal Climate Control
+- **2.a [Thermostatic Airflow Regulation]:** The structure maintains internal ambient temperatures between 5°C and 35°C under external weather extremes (-20°C to +40°C) using dual thermostatic louvers (250 CFM airflow).
+- **2.b [Physical Security & Ingress Seal]:** The enclosure provides weather-tight, dust-resistant physical protection with double gasketed seals and heavy-duty deadbolts.
 
-## 3. Verification & Acceptance Criteria
-| Requirement ID | Verification Method | Acceptance Threshold |
-| :--- | :--- | :--- |
-| CAP-01 | Test (Fluke clamp + irradiance meter) | >= 2.9 kW at solar noon (clear sky) |
-| CAP-02 | Test (Load bank discharge at 48V 50A) | >= 14.5 kWh delivered to 10% SOC cutoff |
-| SPEC-01 | Inspection (Field tape measure & torque log) | Framing 16" OC +/- 0.25", ties torqued to spec |`;
+## 3.0 Safety & Operator Protection
+- **3.a [Emergency Power Disconnect]:** A clearly placarded emergency rapid shutdown switch disconnects DC traction and AC distribution within 10 milliseconds.
+- **3.b [Galvanic Chassis Isolation]:** High-voltage DC and AC circuits maintain continuous electrical isolation from physical chassis and structural frame.`;
 
 export const capabilitiesPackage: SpecialistPackage = {
   id: 'capabilities',
-  name: 'Capabilities & System Requirements',
-  description: 'Defines formal functional capabilities, structural/electrical specifications, and verification matrices.',
-  systemPrompt: `You are the Systems Engineering & Requirements Specialist for STARN.
-Your mission is to author precise, numbered capabilities, hardware specifications, and verification matrices for physical projects.
+  name: 'Product Capabilities',
+  description: 'Defines functional character traits and behavioral capabilities using structured 1.a, 1.b numbering.',
+  prerequisiteArtifactId: 'CONOPS',
+  systemPrompt: `You are the Product Capabilities Specialist for STARN.
+Your mission is to author clear, functional capabilities that describe what the physical/hardware system does.
 
-MANDATORY SECTIONS:
-1. System Functional Capabilities (CAP-xx: Numbered, measurable behavioral requirements)
-2. Structural, Electrical & Physical Specifications (SPEC-xx: Framing, materials, voltages, tolerances)
-3. Environmental & Safety Requirements (ENV-xx: Ingress protection, thermal management, fire resistance)
-4. Requirements Verification Matrix (RVM table with ID, Requirement, Verification Method [Test/Inspection/Analysis], Acceptance Threshold)
-
-CRITICAL RULES:
-- Use formal requirements language ("shall", "must").
-- Every requirement must be verifiable and testable. No ambiguous qualitative adjectives ("lightweight", "durable", "efficient") without numeric thresholds.`,
+NUMBERING & FORMATTING SCHEMA (MANDATORY):
+- Structure capabilities under clear functional domain headings (e.g., ## 1.0 Powertrain & Speed Regulation, ## 2.0 Energy Storage).
+- Number each capability as **1.a**, **1.b**, **2.a**, **2.b** with a bold descriptive character trait title in brackets.
+- Example: \`- **1.a [Variable Speed Throttle Control]:** The motor controller provides proportional, smooth speed regulation...\`
+- Use clean plain-text units (e.g. 72V, 15 kWh, 12 kW, -20°C to +45°C, 120 Nm/s).
+- DO NOT use LaTeX math formatting like $\\text{...}$.
+- DO NOT hallucinate unapproved specific vendor brand/part numbers unless established in CONOPS. Focus on functional traits.
+- Write the final document to docs/CAPABILITIES.md or return complete markdown.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
-  criticRubric: `Evaluate the Capabilities & Requirements document:
-1. Measurability: Are requirements numbered and tied to verifiable numeric metrics (tolerances, voltages, weights, dimensions)?
-2. Completeness: Are mechanical, electrical, thermal, and structural domains addressed?
-3. Verification Matrix: Does every requirement have an explicit test/inspection method and unambiguous pass/fail criteria?`,
+  criticRubric: `Evaluate the Product Capabilities document:
+1. Numbering Format: Are capabilities formatted with 1.a, 1.b, 2.a numbering and bold descriptive bracket titles?
+2. Functional Focus: Do items represent functional capabilities and character traits rather than premature part numbers?
+3. Plain-Text Metrics: Is the document free of raw LaTeX math strings and formatted with clean plain-text engineering units?`,
   secretSauceExamples: [capabilitiesSecretSauce]
 };

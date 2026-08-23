@@ -1,34 +1,46 @@
 import { describe, it, expect } from 'vitest';
 import { SpecialistRegistry } from '../src/specialists/registry.js';
 
-describe('Specialist Packages', () => {
+describe('Specialist Packages & RTM', () => {
   const registry = new SpecialistRegistry();
 
-  it('loads all 6 primary specialists including general, conops, capabilities, milestones, wbs, sow', () => {
+  it('loads all 8 specialists including general, conops, capabilities, requirements, rtm, milestones, wbs, sow', () => {
     const packages = registry.listSpecialists();
     expect(packages.map(p => p.id)).toEqual(
-      expect.arrayContaining(['general', 'conops', 'capabilities', 'milestones', 'wbs', 'sow'])
+      expect.arrayContaining([
+        'general',
+        'conops',
+        'capabilities',
+        'requirements',
+        'rtm',
+        'milestones',
+        'wbs',
+        'sow'
+      ])
     );
   });
 
-  it('general specialist has critic disabled and read-only tools', () => {
-    const general = registry.get('general');
-    expect(general).toBeDefined();
-    expect(general!.requiresCritic).toBe(false);
-    expect(general!.allowedTools).not.toContain('fs_write');
+  it('rtm specialist has prerequisite REQUIREMENTS, tabular rubric, and secret sauce example', () => {
+    const rtm = registry.get('rtm');
+    expect(rtm).toBeDefined();
+    expect(rtm!.name).toContain('Traceability Matrix');
+    expect(rtm!.prerequisiteArtifactId).toBe('REQUIREMENTS');
+    expect(rtm!.secretSauceExamples[0]).toContain('| Req ID | Requirement Summary | Method |');
+    expect(rtm!.criticRubric).toContain('Tabular Matrix Structure');
   });
 
-  it('engineering deliverable specialists have secret sauce examples and critic rubric', () => {
-    const conops = registry.get('conops');
-    expect(conops).toBeDefined();
-    expect(conops!.requiresCritic).toBe(true);
-    expect(conops!.secretSauceExamples.length).toBeGreaterThan(0);
-    expect(conops!.criticRubric).toContain('Physical Environment');
+  it('requirements specialist has prerequisite CAPABILITIES and Requirement 1.a numbering', () => {
+    const reqs = registry.get('requirements');
+    expect(reqs).toBeDefined();
+    expect(reqs!.prerequisiteArtifactId).toBe('CAPABILITIES');
+    expect(reqs!.systemPrompt).toContain('Requirement 1.a');
+    expect(reqs!.systemPrompt).toContain('plain-text');
+  });
 
-    const wbs = registry.get('wbs');
-    expect(wbs).toBeDefined();
-    expect(wbs!.requiresCritic).toBe(true);
-    expect(wbs!.secretSauceExamples.length).toBeGreaterThan(0);
-    expect(wbs!.criticRubric).toContain('Work Breakdown Structure');
+  it('capabilities package enforces 1.a numbering and plain text units', () => {
+    const cap = registry.get('capabilities');
+    expect(cap).toBeDefined();
+    expect(cap!.systemPrompt).toContain('1.a');
+    expect(cap!.systemPrompt).toContain('plain-text');
   });
 });

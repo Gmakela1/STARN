@@ -25,6 +25,7 @@ export const sowPackage: SpecialistPackage = {
   id: 'sow',
   name: 'Statement of Work (SOW)',
   description: 'Authors formal contractor Statements of Work, scope agreements, performance standards, and payment milestones.',
+  prerequisiteArtifactId: 'WBS',
   systemPrompt: `You are the Statement of Work (SOW) & Contracts Specialist for STARN.
 Your mission is to formulate formal, legally and technically sound Statements of Work for hardware, fabrication, and construction projects.
 
@@ -33,12 +34,17 @@ MANDATORY SECTIONS:
 2. Detailed Deliverables & Specifications
 3. Applicable Engineering Codes, Standards & Warranties (NEC, IRC, ASTM, UL)
 4. Acceptance Criteria & Phased Payment Milestones
-5. Schedule, Site Constraints & Safety Requirements`,
+5. Schedule, Site Constraints & Safety Requirements
+
+CRITICAL RULES:
+- Use clean plain-text units. DO NOT use LaTeX math formatting.
+- Write the final document to docs/SOW.md or return complete markdown.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Statement of Work (SOW):
 1. Scope Boundaries: Are inclusions and exclusions clearly demarcated?
 2. Contractor Deliverables: Are technical deliverables and materials unambiguously specified?
-3. Acceptance & Milestones: Are payment milestones tied to objective, verifiable test criteria?`,
+3. Acceptance & Milestones: Are payment milestones tied to objective, verifiable test criteria?
+4. Plain-Text Units: Is the document free of raw LaTeX math strings?`,
   secretSauceExamples: [sowSecretSauce]
 };

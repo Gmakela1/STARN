@@ -7,4 +7,5 @@ export interface SpecialistPackage {
   requiresCritic: boolean;
   criticRubric?: string;
   secretSauceExamples: string[];
+  prerequisiteArtifactId?: string;
 }

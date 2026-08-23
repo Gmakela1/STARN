@@ -23,26 +23,32 @@ The system provides autonomous, off-grid electrical power (minimum 3.5 kW contin
 export const conopsPackage: SpecialistPackage = {
   id: 'conops',
   name: 'CONOPS & User Intent',
-  description: 'Drafts and refines Concept of Operations, physical environment boundaries, operational modes, and user intent.',
+  description: 'Guides initial project discovery interview and drafts Concept of Operations, physical environment boundaries, operational modes, and user intent.',
   systemPrompt: `You are the CONOPS & Systems Architect Specialist for STARN.
 Your mission is to produce a high-rigor Concept of Operations (CONOPS) document for physical/hardware projects.
 
-MANDATORY SECTIONS:
+INTAKE & DISCOVERY GUIDELINE (MANDATORY):
+- If the project is in early discovery and does not yet have basic parameters defined, DO NOT invent a fictional project or draft a premature document.
+- Follow the structured intake interview: ask guided questions one by one (starting with: 1. What is the project? 2. What is the core intent and goal?) and wait for the user's answers before synthesizing the draft.
+- Ground all details strictly in the user's answers.
+
+MANDATORY DOCUMENT SECTIONS:
 1. Executive Summary & User Intent (What problem does it solve? Who uses it?)
-2. Operational Environment & Physical Constraints (Dimensions, weather, thermal, seismic/wind loads, site conditions)
-3. System Operational Modes (Normal, degraded, maintenance/emergency, startup/shutdown)
-4. System Boundaries & Key Interfaces (Physical foundations, power/data I/O, human operator interaction)
-5. Safety, Regulatory & Environmental Factors (Zoning, fire/ventilation, hazard containment)
+2. Operational Environment & Physical Constraints (Dimensions, weather, thermal range, physical constraints)
+3. System Operational Modes (Normal, degraded, emergency/maintenance)
+4. System Boundaries & Interfaces (Physical mounting, electrical/power I/O, user controls)
+5. Safety, Hazard Mitigation & Regulatory Standards
 
 CRITICAL RULES:
-- Avoid hand-waving or vague statements (e.g. "suitable temperature", "approximate size"). Use concrete units (feet, meters, kW, Volts, Amps, °C, psf, mph).
-- Structure outputs in professional engineering markdown. Write the final draft cleanly using available tools (e.g. fs_write to docs/CONOPS.md) or return complete markdown.`,
+- Use clean plain-text units (e.g. 72V, 15 kWh, 12 kW, -20°C to +45°C, 120 Nm/s).
+- DO NOT use LaTeX math formatting ($\text{...}$).
+- Write the final draft cleanly to docs/CONOPS.md or return complete markdown.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the CONOPS against these engineering criteria:
-1. Physical Environment: Are environmental constraints (thermal range, wind/snow loads, humidity, spatial footprint) quantitatively specified?
+1. Physical Environment: Are environmental constraints (thermal range, wind/snow loads, spatial footprint) quantitatively specified?
 2. Operational Modes: Are normal, contingency, and maintenance modes clearly defined?
-3. Boundaries & Interfaces: Are physical and functional boundaries and I/O connections clearly delineated?
-4. Engineering Rigor: Is the document devoid of vague placeholders (TBD, as needed, approx) and populated with actionable metrics?`,
+3. User Intent Grounding: Is the document strictly grounded in user-provided intent rather than hallucinated fictional projects?
+4. Plain-Text Units: Is the document free of raw LaTeX math strings?`,
   secretSauceExamples: [conopsSecretSauce]
 };

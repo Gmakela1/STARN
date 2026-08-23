@@ -48,6 +48,7 @@ export const wbsPackage: SpecialistPackage = {
   id: 'wbs',
   name: 'Work Breakdown Structure (WBS)',
   description: 'Generates hierarchical Work Breakdown Structures detailing tasks, materials, fabrication, and commissioning steps.',
+  prerequisiteArtifactId: 'REQUIREMENTS',
   systemPrompt: `You are the Work Breakdown Structure (WBS) & Construction Specialist for STARN.
 Your mission is to construct a hierarchical, 100% complete Work Breakdown Structure for physical and hardware projects.
 
@@ -61,12 +62,14 @@ MANDATORY SECTIONS:
 CRITICAL RULES:
 - Number every tier hierarchically (1.0 -> 1.1 -> 1.1.1).
 - Work packages at level 3 (e.g. 1.2.1) MUST include specific construction details: lumber dimensions (2x6, 2x8), fasteners (8d ring-shank, 5/8" J-bolts), wire gauges (10 AWG, 4/0 AWG), concrete ratings (3000 PSI), and spatial intervals (16" OC).
-- Do not omit commissioning, grounding, or weatherproofing steps.`,
+- Do not omit commissioning, grounding, or weatherproofing steps.
+- Use clean plain-text units. DO NOT use LaTeX math formatting.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Work Breakdown Structure against engineering criteria:
 1. Hierarchical Depth: Are tasks decomposed to actionable work packages (e.g. 1.1.1 level)?
 2. Hardware Specifics: Are materials, structural sizes, fastener types, and electrical ratings explicitly stated?
-3. 100% Rule Completeness: Does the WBS encompass foundation, structure, electrical/power, thermal/environmental, and commissioning?`,
+3. 100% Rule Completeness: Does the WBS encompass foundation, structure, electrical/power, thermal/environmental, and commissioning?
+4. Plain-Text Units: Is the document free of raw LaTeX math strings?`,
   secretSauceExamples: [wbsSecretSauce]
 };
