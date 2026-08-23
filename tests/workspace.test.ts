@@ -61,4 +61,46 @@ describe('Project Registry & State', () => {
     expect(reloaded.artifacts).toHaveLength(1);
     expect(reloaded.artifacts[0].id).toBe('CONOPS');
   });
+
+  it('manages intake state across one-by-one interview turns', () => {
+    const projPath = path.join(tempBaseDir, 'tractor-project');
+    fs.mkdirSync(projPath, { recursive: true });
+    const stateMgr = new ProjectStateManager(projPath);
+    const initial = stateMgr.getOrCreateState('p1', 'Tractor EV');
+    expect(initial.intake.completed).toBe(false);
+    expect(initial.intake.currentQuestionIndex).toBe(0);
+
+    stateMgr.recordIntakeAnswer('projectName', 'Electric Tractor Conversion');
+    stateMgr.recordIntakeAnswer('projectIntent', 'Mow 2 acres and tow small yard trailers');
+    stateMgr.incrementIntakeQuestion();
+
+    const updated = stateMgr.getState();
+    expect(updated.intake.answers.projectName).toBe('Electric Tractor Conversion');
+    expect(updated.intake.answers.projectIntent).toContain('Mow 2 acres');
+    expect(updated.intake.currentQuestionIndex).toBe(1);
+
+    stateMgr.completeIntake();
+    expect(stateMgr.getState().intake.completed).toBe(true);
+  });
+
+  it('checks if prerequisite artifacts are approved', () => {
+    const projPath = path.join(tempBaseDir, 'prereq-project');
+    fs.mkdirSync(projPath, { recursive: true });
+    const stateMgr = new ProjectStateManager(projPath);
+    stateMgr.getOrCreateState('p1', 'Tractor EV');
+
+    expect(stateMgr.isArtifactApproved('CAPABILITIES')).toBe(false);
+    expect(stateMgr.isArtifactApproved('REQUIREMENTS')).toBe(false);
+
+    stateMgr.recordArtifact({
+      id: 'REQUIREMENTS',
+      title: 'System Requirements',
+      path: 'docs/REQUIREMENTS.md',
+      status: 'approved',
+      criticScore: 9.0
+    });
+
+    expect(stateMgr.isArtifactApproved('REQUIREMENTS')).toBe(true);
+    expect(stateMgr.isArtifactApproved('CAPABILITIES')).toBe(false);
+  });
 });

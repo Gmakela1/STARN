@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ProjectState, ArtifactRecord } from './types.js';
+import { ProjectState, ArtifactRecord, IntakeState } from './types.js';
 
 export class ProjectStateManager {
   private projectPath: string;
@@ -18,7 +18,16 @@ export class ProjectStateManager {
     }
 
     if (fs.existsSync(this.stateFilePath)) {
-      return this.getState();
+      const state = this.getState();
+      if (!state.intake) {
+        state.intake = {
+          completed: state.artifacts.some(a => a.id === 'CONOPS' && a.status === 'approved'),
+          currentQuestionIndex: 0,
+          answers: {}
+        };
+        this.saveState(state);
+      }
+      return state;
     }
 
     const initialState: ProjectState = {
@@ -29,6 +38,11 @@ export class ProjectStateManager {
         lastScanned: null,
         summary: '',
         keyConstraints: []
+      },
+      intake: {
+        completed: false,
+        currentQuestionIndex: 0,
+        answers: {}
       },
       artifacts: [],
       openRisks: [],
@@ -44,7 +58,15 @@ export class ProjectStateManager {
       throw new Error(`Project state not found at ${this.stateFilePath}`);
     }
     const raw = fs.readFileSync(this.stateFilePath, 'utf-8');
-    return JSON.parse(raw) as ProjectState;
+    const parsed = JSON.parse(raw) as ProjectState;
+    if (!parsed.intake) {
+      parsed.intake = {
+        completed: parsed.artifacts?.some(a => a.id === 'CONOPS' && a.status === 'approved') || false,
+        currentQuestionIndex: 0,
+        answers: {}
+      };
+    }
+    return parsed;
   }
 
   public saveState(state: ProjectState): void {
@@ -53,6 +75,29 @@ export class ProjectStateManager {
       fs.mkdirSync(dir, { recursive: true });
     }
     fs.writeFileSync(this.stateFilePath, JSON.stringify(state, null, 2), 'utf-8');
+  }
+
+  public recordIntakeAnswer(key: string, answer: string): void {
+    const state = this.getState();
+    state.intake.answers[key] = answer;
+    this.saveState(state);
+  }
+
+  public incrementIntakeQuestion(): void {
+    const state = this.getState();
+    state.intake.currentQuestionIndex += 1;
+    this.saveState(state);
+  }
+
+  public completeIntake(): void {
+    const state = this.getState();
+    state.intake.completed = true;
+    this.saveState(state);
+  }
+
+  public isArtifactApproved(id: string): boolean {
+    const state = this.getState();
+    return state.artifacts.some(a => a.id.toUpperCase() === id.toUpperCase() && a.status === 'approved');
   }
 
   public updateDiscoverySummary(summary: string, keyConstraints: string[] = []): void {

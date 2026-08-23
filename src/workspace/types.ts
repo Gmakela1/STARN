@@ -27,11 +27,18 @@ export interface DiscoveryState {
   keyConstraints: string[];
 }
 
+export interface IntakeState {
+  completed: boolean;
+  currentQuestionIndex: number;
+  answers: Record<string, string>;
+}
+
 export interface ProjectState {
   projectId: string;
   name: string;
   currentPhase: string;
   discovery: DiscoveryState;
+  intake: IntakeState;
   artifacts: ArtifactRecord[];
   openRisks: string[];
   recentActions: string[];
