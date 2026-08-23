@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import boxen from 'boxen';
 import { CriticResult } from '../core/critic.js';
+import { ModelOption } from '../openrouter/models.js';
 
 export function formatBanner(): string {
   const content = `${chalk.bold.cyan('★ STARN ★')}
@@ -51,6 +52,21 @@ export function formatCriticScorecard(verdict: CriticResult): string {
     title: 'Harsh Critic Review',
     titleAlignment: 'left'
   });
+}
+
+export function formatModelChoice(model: ModelOption): string {
+  const star = model.recommended ? chalk.yellow('★ ') : '  ';
+  const nameId = chalk.bold(model.id);
+  const metaParts: string[] = [];
+  if (model.contextLengthFormatted) {
+    metaParts.push(chalk.cyan(model.contextLengthFormatted));
+  }
+  if (model.pricingFormatted) {
+    metaParts.push(chalk.green(model.pricingFormatted));
+  }
+  const meta = metaParts.length > 0 ? ` [${metaParts.join(' | ')}]` : '';
+  const desc = model.description ? ` - ${chalk.dim(model.description.slice(0, 60))}` : '';
+  return `${star}${nameId}${meta}${desc}`;
 }
 
 export function printSectionHeader(title: string): void {

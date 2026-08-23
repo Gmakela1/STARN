@@ -1,18 +1,59 @@
-import { select, input, confirm } from '@inquirer/prompts';
-import { AVAILABLE_MODELS } from '../openrouter/models.js';
+import { select, input, confirm, password, search } from '@inquirer/prompts';
+import { ModelOption } from '../openrouter/models.js';
 import { ProjectRecord } from '../workspace/types.js';
+import { formatModelChoice } from './ui.js';
 
-export async function promptSelectModel(currentDefault: string): Promise<string> {
-  const choices = AVAILABLE_MODELS.map(m => ({
-    name: `${m.name} ${m.recommended ? '(Recommended)' : ''} - ${m.description}`,
+export async function promptApiKey(): Promise<string> {
+  const key = await password({
+    message: 'Enter your OpenRouter API Key (input masked):',
+    mask: '*',
+    validate: val => {
+      const trimmed = val.trim();
+      if (!trimmed) return 'API key cannot be empty.';
+      if (!trimmed.startsWith('sk-or-') && trimmed.length < 20) {
+        return 'Warning: OpenRouter keys typically start with "sk-or-v1-...". Please enter a valid key.';
+      }
+      return true;
+    }
+  });
+  return key.trim();
+}
+
+export async function promptSelectLiveModel(
+  models: ModelOption[],
+  currentDefault: string
+): Promise<string> {
+  // If search is available, use searchable dropdown with live filter
+  const choices = models.map(m => ({
+    name: formatModelChoice(m),
     value: m.id
   }));
 
-  return await select({
-    message: 'Select OpenRouter Model to use:',
-    choices,
-    default: currentDefault
-  });
+  try {
+    return await search({
+      message: 'Select OpenRouter Model (type to filter live list):',
+      source: async (term?: string) => {
+        if (!term) return choices;
+        const lower = term.toLowerCase();
+        return choices.filter(c => {
+          const rawModel = models.find(m => m.id === c.value);
+          if (!rawModel) return c.value.toLowerCase().includes(lower);
+          return (
+            rawModel.id.toLowerCase().includes(lower) ||
+            rawModel.name.toLowerCase().includes(lower) ||
+            rawModel.description.toLowerCase().includes(lower)
+          );
+        });
+      }
+    });
+  } catch (_e) {
+    // Fallback to standard select if search prompt is interrupted or unsupported
+    return await select({
+      message: 'Select OpenRouter Model to use:',
+      choices: choices.slice(0, 30),
+      default: currentDefault
+    });
+  }
 }
 
 export async function promptProjectSelection(

@@ -1,11 +1,52 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OpenRouterClient } from '../src/openrouter/client.js';
-import { AVAILABLE_MODELS } from '../src/openrouter/models.js';
+import { AVAILABLE_MODELS, fetchLiveOpenRouterModels } from '../src/openrouter/models.js';
 
 describe('OpenRouter Models', () => {
   it('defines standard physical engineering compatible models', () => {
     expect(AVAILABLE_MODELS.length).toBeGreaterThan(0);
     expect(AVAILABLE_MODELS.some(m => m.id.includes('claude-3.5-sonnet'))).toBe(true);
+  });
+
+  it('fetches and formats live models from OpenRouter API', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'anthropic/claude-3.5-sonnet',
+            name: 'Anthropic: Claude 3.5 Sonnet',
+            context_length: 200000,
+            pricing: { prompt: '0.000003', completion: '0.000015' },
+            description: 'Top tier model'
+          },
+          {
+            id: 'meta-llama/llama-3.3-70b-instruct',
+            name: 'Meta: Llama 3.3 70B',
+            context_length: 131072,
+            pricing: { prompt: '0.00000013', completion: '0.0000004' },
+            description: 'Open weight model'
+          }
+        ]
+      })
+    });
+    global.fetch = mockFetch;
+
+    const models = await fetchLiveOpenRouterModels('sk-or-test-key');
+    expect(models.length).toBe(2);
+    expect(models[0].id).toBe('anthropic/claude-3.5-sonnet');
+    expect(models[0].recommended).toBe(true);
+    expect(models[0].contextLengthFormatted).toBe('200k ctx');
+    expect(models[0].pricingFormatted).toContain('$3.00/$15.00');
+  });
+
+  it('falls back to AVAILABLE_MODELS when fetch fails', async () => {
+    const mockFetch = vi.fn().mockRejectedValue(new Error('Network offline'));
+    global.fetch = mockFetch;
+
+    const models = await fetchLiveOpenRouterModels('sk-or-test-key');
+    expect(models.length).toBeGreaterThanOrEqual(AVAILABLE_MODELS.length);
+    expect(models[0].id).toBe(AVAILABLE_MODELS[0].id);
   });
 });
 

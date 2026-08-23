@@ -2,8 +2,9 @@
 import path from 'node:path';
 import ora from 'ora';
 import chalk from 'chalk';
-import { loadConfig, ensureStarnDirs } from './config.js';
+import { loadConfig, ensureStarnDirs, saveUserConfig } from './config.js';
 import { OpenRouterClient } from './openrouter/client.js';
+import { fetchLiveOpenRouterModels } from './openrouter/models.js';
 import { ProjectRegistry } from './workspace/registry.js';
 import { ProjectStateManager } from './workspace/state.js';
 import { ToolRegistry } from './tools/registry.js';
@@ -11,7 +12,8 @@ import { SpecialistRegistry } from './specialists/registry.js';
 import { CoreRunner } from './core/runner.js';
 import { formatBanner, formatCriticScorecard, printSectionHeader } from './cli/ui.js';
 import {
-  promptSelectModel,
+  promptApiKey,
+  promptSelectLiveModel,
   promptProjectSelection,
   promptUserQuery,
   promptContinueSession
@@ -24,20 +26,30 @@ async function main() {
   const config = loadConfig();
   ensureStarnDirs(config.globalDir);
 
-  if (!config.apiKey) {
-    console.error(chalk.red('Error: OPENROUTER_API_KEY is not set in environment or .env file.'));
-    console.error(chalk.yellow('Please set OPENROUTER_API_KEY=sk-or-v1-... before running STARN.\n'));
-    process.exit(1);
+  // 1. Interactive API Key Onboarding if missing
+  let apiKey = config.apiKey;
+  if (!apiKey) {
+    console.log(chalk.yellow('No OpenRouter API key found in environment or config.'));
+    console.log(chalk.dim('Get an API key at https://openrouter.ai/keys\n'));
+    apiKey = await promptApiKey();
+    saveUserConfig({ apiKey }, config.globalDir);
+    console.log(chalk.green(`✔ API Key saved to ${path.join(config.globalDir, 'config.json')}\n`));
   }
 
   const registryFile = path.join(config.globalDir, 'registry.json');
   const projectRegistry = new ProjectRegistry(registryFile);
 
-  // Model Selection
-  const selectedModel = await promptSelectModel(config.defaultModel);
-  projectRegistry.setDefaultModel(selectedModel);
+  // 2. Fetch Live Models from OpenRouter
+  const modelSpinner = ora('Fetching available models from OpenRouter...').start();
+  let availableModels = await fetchLiveOpenRouterModels(apiKey);
+  modelSpinner.succeed(`Loaded ${availableModels.length} models from OpenRouter.`);
 
-  // Project Selection / Creation
+  // 3. Model Selection
+  const selectedModel = await promptSelectLiveModel(availableModels, config.defaultModel);
+  projectRegistry.setDefaultModel(selectedModel);
+  saveUserConfig({ defaultModel: selectedModel }, config.globalDir);
+
+  // 4. Project Selection / Creation
   const existingProjects = projectRegistry.listProjects();
   const activeProject = projectRegistry.getActiveProject();
   const projectSelection = await promptProjectSelection(
@@ -62,13 +74,14 @@ async function main() {
   }
 
   console.log(chalk.green(`\nWorking in Project: ${chalk.bold(currentProjectRecord.name)}`));
-  console.log(chalk.dim(`Directory: ${currentProjectRecord.path}\n`));
+  console.log(chalk.dim(`Directory: ${currentProjectRecord.path}`));
+  console.log(chalk.dim(`Active Model: ${selectedModel}\n`));
 
   const stateManager = new ProjectStateManager(currentProjectRecord.path);
   stateManager.getOrCreateState(currentProjectRecord.id, currentProjectRecord.name);
 
   const client = new OpenRouterClient({
-    apiKey: config.apiKey,
+    apiKey,
     siteUrl: config.siteUrl,
     appName: config.appName
   });
