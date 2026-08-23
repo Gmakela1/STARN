@@ -10,5 +10,10 @@ export const GRADING_RUBRICS: Record<string, GradingCriteria> = {
     requiredHeadings: ['Executive Summary', 'Operational Environment', 'Operational Modes', 'Interfaces'],
     requiredKeywords: ['deployable', 'temperature', 'crew', 'envelope'],
     minWordCount: 150
+  },
+  tractor_ev_rtm: {
+    requiredHeadings: ['Requirements Traceability'],
+    requiredKeywords: ['Req ID', 'Method', 'Tooling', 'Threshold', 'Requirement 1.a'],
+    minWordCount: 80
   }
 };

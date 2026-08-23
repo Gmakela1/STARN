@@ -1,0 +1,10 @@
+{
+  "id": "tractor_ev_rtm",
+  "name": "Tractor EV Conversion RTM Generation",
+  "description": "Tests generating a complete 100% tabular Requirements Traceability Matrix mapping tractor EV requirements to shop verification tools.",
+  "expectedSpecialist": "rtm",
+  "userPrompt": "Generate a tabular Requirements Traceability Matrix (RTM) mapping all approved system requirements to test methods and available shop equipment (multimeter, torque wrench, scales, thermal camera, and yard test track).",
+  "projectContextFiles": {
+    "docs/REQUIREMENTS.md": "# System Requirements: Tractor EV Conversion\n## 1.0 Environmental & Operational Constraints\n- **Requirement 1.a [Thermal Operating Range]:** The powertrain shall operate continuously across -20C to +45C.\n- **Requirement 1.b [Ingress Protection]:** Enclosures shall meet IP66.\n## 2.0 Electrical & Mechanical Constraints\n- **Requirement 2.a [DC Bus Voltage]:** Operating voltage between 60.0V and 84.0V DC.\n- **Requirement 2.b [Conversion Mass]:** Total weight shall not exceed 130 kg."
+  }
+}
