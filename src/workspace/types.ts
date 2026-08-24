@@ -33,12 +33,28 @@ export interface IntakeState {
   answers: Record<string, string>;
 }
 
+export type PhaseStatus = 'pending' | 'in_progress' | 'approved' | 'locked';
+
+export interface WorkflowPhaseInfo {
+  id: string;
+  name: string;
+  status: PhaseStatus;
+  artifactPath: string;
+  updatedAt: string | null;
+}
+
+export interface WorkflowState {
+  activePhase: string;
+  phases: Record<string, WorkflowPhaseInfo>;
+}
+
 export interface ProjectState {
   projectId: string;
   name: string;
   currentPhase: string;
   discovery: DiscoveryState;
   intake: IntakeState;
+  workflow: WorkflowState;
   artifacts: ArtifactRecord[];
   openRisks: string[];
   recentActions: string[];

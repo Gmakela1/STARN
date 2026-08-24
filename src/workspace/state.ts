@@ -1,6 +1,43 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ProjectState, ArtifactRecord, IntakeState } from './types.js';
+import { ProjectState, ArtifactRecord, IntakeState, WorkflowState } from './types.js';
+
+export const ORDERED_WORKFLOW_PHASES = [
+  { id: 'conops', name: 'CONOPS / User Intent', artifactPath: 'docs/CONOPS.md' },
+  { id: 'capabilities', name: 'Product Capabilities', artifactPath: 'docs/CAPABILITIES.md' },
+  { id: 'requirements', name: 'System Requirements', artifactPath: 'docs/REQUIREMENTS.md' },
+  { id: 'rtm', name: 'Requirements Traceability Matrix (RTM)', artifactPath: 'docs/RTM.md' },
+  { id: 'milestones', name: 'Project Milestones & Gating', artifactPath: 'docs/MILESTONES.md' },
+  { id: 'wbs', name: 'Work Breakdown Structure (WBS)', artifactPath: 'docs/WBS.md' },
+  { id: 'sow', name: 'Statement of Work (SOW)', artifactPath: 'docs/SOW.md' }
+];
+
+function createDefaultWorkflow(artifacts: ArtifactRecord[] = []): WorkflowState {
+  const phasesMap: Record<string, any> = {};
+  for (let i = 0; i < ORDERED_WORKFLOW_PHASES.length; i++) {
+    const p = ORDERED_WORKFLOW_PHASES[i];
+    const isApproved = artifacts.some(
+      a => a.id.toUpperCase() === p.id.toUpperCase() && a.status === 'approved'
+    );
+    phasesMap[p.id] = {
+      id: p.id,
+      name: p.name,
+      status: isApproved ? 'approved' : (i === 0 ? 'in_progress' : 'pending'),
+      artifactPath: p.artifactPath,
+      updatedAt: null
+    };
+  }
+
+  // Find the first non-approved phase
+  const firstUnapproved = ORDERED_WORKFLOW_PHASES.find(
+    p => phasesMap[p.id].status !== 'approved'
+  );
+
+  return {
+    activePhase: firstUnapproved ? firstUnapproved.id : 'conops',
+    phases: phasesMap
+  };
+}
 
 export class ProjectStateManager {
   private projectPath: string;
@@ -19,12 +56,20 @@ export class ProjectStateManager {
 
     if (fs.existsSync(this.stateFilePath)) {
       const state = this.getState();
+      let changed = false;
       if (!state.intake) {
         state.intake = {
           completed: state.artifacts.some(a => a.id === 'CONOPS' && a.status === 'approved'),
           currentQuestionIndex: 0,
           answers: {}
         };
+        changed = true;
+      }
+      if (!state.workflow) {
+        state.workflow = createDefaultWorkflow(state.artifacts || []);
+        changed = true;
+      }
+      if (changed) {
         this.saveState(state);
       }
       return state;
@@ -33,7 +78,7 @@ export class ProjectStateManager {
     const initialState: ProjectState = {
       projectId,
       name,
-      currentPhase: 'discovery',
+      currentPhase: 'conops',
       discovery: {
         lastScanned: null,
         summary: '',
@@ -44,6 +89,7 @@ export class ProjectStateManager {
         currentQuestionIndex: 0,
         answers: {}
       },
+      workflow: createDefaultWorkflow([]),
       artifacts: [],
       openRisks: [],
       recentActions: []
@@ -66,6 +112,9 @@ export class ProjectStateManager {
         answers: {}
       };
     }
+    if (!parsed.workflow) {
+      parsed.workflow = createDefaultWorkflow(parsed.artifacts || []);
+    }
     return parsed;
   }
 
@@ -75,6 +124,35 @@ export class ProjectStateManager {
       fs.mkdirSync(dir, { recursive: true });
     }
     fs.writeFileSync(this.stateFilePath, JSON.stringify(state, null, 2), 'utf-8');
+  }
+
+  public setActivePhase(phaseId: string): void {
+    const state = this.getState();
+    if (state.workflow.phases[phaseId]) {
+      state.workflow.activePhase = phaseId;
+      state.currentPhase = phaseId;
+      if (state.workflow.phases[phaseId].status === 'pending') {
+        state.workflow.phases[phaseId].status = 'in_progress';
+      }
+      this.saveState(state);
+    }
+  }
+
+  public advanceToNextPhase(): string | null {
+    const state = this.getState();
+    const currentIdx = ORDERED_WORKFLOW_PHASES.findIndex(p => p.id === state.workflow.activePhase);
+    if (currentIdx === -1 || currentIdx >= ORDERED_WORKFLOW_PHASES.length - 1) {
+      return null;
+    }
+
+    const next = ORDERED_WORKFLOW_PHASES[currentIdx + 1];
+    state.workflow.activePhase = next.id;
+    state.currentPhase = next.id;
+    if (state.workflow.phases[next.id].status === 'pending') {
+      state.workflow.phases[next.id].status = 'in_progress';
+    }
+    this.saveState(state);
+    return next.id;
   }
 
   public recordIntakeAnswer(key: string, answer: string): void {
@@ -123,6 +201,14 @@ export class ProjectStateManager {
     } else {
       state.artifacts.push(fullRecord);
     }
+
+    // Update workflow phase status if matching
+    const phaseKey = artifact.id.toLowerCase();
+    if (state.workflow.phases[phaseKey]) {
+      state.workflow.phases[phaseKey].status = artifact.status === 'approved' ? 'approved' : 'in_progress';
+      state.workflow.phases[phaseKey].updatedAt = fullRecord.updatedAt;
+    }
+
     state.recentActions.push(`Updated artifact ${artifact.id} (${artifact.status})`);
     this.saveState(state);
   }

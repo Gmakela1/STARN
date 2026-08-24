@@ -43,7 +43,7 @@ describe('Project Registry & State', () => {
 
     const stateMgr = new ProjectStateManager(projPath);
     const initial = stateMgr.getOrCreateState('shed-1', 'Shed Project');
-    expect(initial.currentPhase).toBe('discovery');
+    expect(initial.currentPhase).toBe('conops');
     expect(initial.artifacts).toEqual([]);
 
     stateMgr.updateDiscoverySummary('Timber frame shed 12x10 with 3kW array', ['Under 120 sqft']);
@@ -102,5 +102,38 @@ describe('Project Registry & State', () => {
 
     expect(stateMgr.isArtifactApproved('REQUIREMENTS')).toBe(true);
     expect(stateMgr.isArtifactApproved('CAPABILITIES')).toBe(false);
+  });
+
+  it('initializes workflow with 7 phases and activePhase set to conops', () => {
+    const projPath = path.join(tempBaseDir, 'wf-project');
+    fs.mkdirSync(projPath, { recursive: true });
+    const stateMgr = new ProjectStateManager(projPath);
+    const state = stateMgr.getOrCreateState('p1', 'Tractor EV');
+    expect(state.workflow).toBeDefined();
+    expect(state.workflow.activePhase).toBe('conops');
+    expect(Object.keys(state.workflow.phases)).toEqual(
+      expect.arrayContaining(['conops', 'capabilities', 'requirements', 'rtm', 'milestones', 'wbs', 'sow'])
+    );
+  });
+
+  it('switches active phase and advances to next logical phase upon approval', () => {
+    const projPath = path.join(tempBaseDir, 'advance-project');
+    fs.mkdirSync(projPath, { recursive: true });
+    const stateMgr = new ProjectStateManager(projPath);
+    stateMgr.getOrCreateState('p1', 'Tractor EV');
+
+    stateMgr.setActivePhase('conops');
+    stateMgr.recordArtifact({
+      id: 'CONOPS',
+      title: 'CONOPS Document',
+      path: 'docs/CONOPS.md',
+      status: 'approved',
+      criticScore: 9.2
+    });
+
+    const nextPhase = stateMgr.advanceToNextPhase();
+    expect(nextPhase).toBe('capabilities');
+    expect(stateMgr.getState().workflow.activePhase).toBe('capabilities');
+    expect(stateMgr.getState().workflow.phases.conops.status).toBe('approved');
   });
 });
