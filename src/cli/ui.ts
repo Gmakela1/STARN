@@ -2,6 +2,8 @@ import chalk from 'chalk';
 import boxen from 'boxen';
 import { CriticResult } from '../core/critic.js';
 import { ModelOption } from '../openrouter/models.js';
+import { ProjectState } from '../workspace/types.js';
+import { ORDERED_WORKFLOW_PHASES } from '../workspace/state.js';
 
 export function formatBanner(): string {
   const content = `${chalk.bold.cyan('★ STARN ★')}
@@ -117,6 +119,46 @@ export function formatDocumentPreview(content: string, title: string): string {
     borderColor: 'cyan',
     title: 'Deliverable Summary',
     titleAlignment: 'left'
+  });
+}
+
+export function formatWorkflowRoadmap(state: ProjectState): string {
+  const activePhase = state.workflow?.activePhase || 'conops';
+  const phases = state.workflow?.phases || {};
+
+  let out = `${chalk.bold.cyan('STARN PROJECT WORKFLOW ROADMAP')}\n`;
+  out += `${chalk.dim(`Project: ${state.name} | Active Phase: ${activePhase.toUpperCase()}`)}\n\n`;
+
+  for (let i = 0; i < ORDERED_WORKFLOW_PHASES.length; i++) {
+    const phaseDef = ORDERED_WORKFLOW_PHASES[i];
+    const info = phases[phaseDef.id] || { status: 'pending', artifactPath: phaseDef.artifactPath };
+    const num = `[${i + 1}]`;
+    const namePadded = phaseDef.name.padEnd(36);
+
+    let statusLabel = '';
+    const isActive = activePhase === phaseDef.id;
+
+    if (info.status === 'approved') {
+      statusLabel = chalk.green('● APPROVED   ') + chalk.dim(`(${phaseDef.artifactPath})`);
+    } else if (isActive) {
+      statusLabel = chalk.bold.cyan('► IN PROGRESS') + chalk.white(' (Active Target)');
+    } else if (info.status === 'locked') {
+      statusLabel = chalk.yellow('🔒 LOCKED    ') + chalk.dim(`(Requires Prerequisite)`);
+    } else {
+      statusLabel = chalk.dim('○ PENDING');
+    }
+
+    const row = `${chalk.bold(num)} ${namePadded} ${statusLabel}`;
+    out += (isActive ? chalk.bgHex('#1f2937')(row) : row) + '\n';
+  }
+
+  out += `\n${chalk.dim('Commands: /plan (show roadmap) | /goto <phase> (switch active phase) | /next')}`;
+
+  return boxen(out, {
+    padding: 1,
+    margin: { top: 1, bottom: 1, left: 0, right: 0 },
+    borderStyle: 'round',
+    borderColor: 'cyan'
   });
 }
 

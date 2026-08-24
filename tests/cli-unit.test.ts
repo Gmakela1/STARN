@@ -4,10 +4,12 @@ import {
   formatBanner,
   formatModelChoice,
   extractCleanMarkdownDocument,
-  formatDocumentPreview
+  formatDocumentPreview,
+  formatWorkflowRoadmap
 } from '../src/cli/ui.js';
 import { CriticResult } from '../src/core/critic.js';
 import { ModelOption } from '../src/openrouter/models.js';
+import { ProjectState } from '../src/workspace/types.js';
 
 describe('CLI UI formatting', () => {
   it('formats critic scorecard cleanly with score and summary', () => {
@@ -63,5 +65,30 @@ describe('CLI UI formatting', () => {
     expect(preview).toContain('CONOPS Document');
     expect(preview).toContain('Executive Summary');
     expect(preview).toContain('Operational Environment');
+  });
+
+  it('formats project workflow roadmap banner with phase markers', () => {
+    const mockState: Partial<ProjectState> = {
+      name: 'Tractor EV Conversion',
+      workflow: {
+        activePhase: 'conops',
+        phases: {
+          conops: { id: 'conops', name: 'CONOPS / User Intent', status: 'in_progress', artifactPath: 'docs/CONOPS.md', updatedAt: null },
+          capabilities: { id: 'capabilities', name: 'Product Capabilities', status: 'pending', artifactPath: 'docs/CAPABILITIES.md', updatedAt: null },
+          requirements: { id: 'requirements', name: 'System Requirements', status: 'pending', artifactPath: 'docs/REQUIREMENTS.md', updatedAt: null },
+          rtm: { id: 'rtm', name: 'Requirements Traceability Matrix (RTM)', status: 'locked', artifactPath: 'docs/RTM.md', updatedAt: null },
+          milestones: { id: 'milestones', name: 'Project Milestones & Gating', status: 'pending', artifactPath: 'docs/MILESTONES.md', updatedAt: null },
+          wbs: { id: 'wbs', name: 'Work Breakdown Structure (WBS)', status: 'pending', artifactPath: 'docs/WBS.md', updatedAt: null },
+          sow: { id: 'sow', name: 'Statement of Work (SOW)', status: 'pending', artifactPath: 'docs/SOW.md', updatedAt: null }
+        }
+      }
+    };
+
+    const roadmap = formatWorkflowRoadmap(mockState as ProjectState);
+    expect(roadmap).toContain('STARN PROJECT WORKFLOW ROADMAP');
+    expect(roadmap).toContain('CONOPS / User Intent');
+    expect(roadmap).toContain('IN PROGRESS');
+    expect(roadmap).toContain('LOCKED');
+    expect(roadmap).toContain('/plan');
   });
 });
