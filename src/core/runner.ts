@@ -8,7 +8,7 @@ import { ChatMessage } from '../openrouter/types.js';
 import { runDiscovery } from './discovery.js';
 import { classifyRequest } from './classifier.js';
 import { runAgentToolLoop } from './agent-loop.js';
-import { CriticEvaluator, CriticResult } from './critic.js';
+import { CriticEvaluator, CriticResult, BaselineDocument } from './critic.js';
 
 export interface TurnOptions {
   userPrompt: string;
@@ -183,9 +183,23 @@ export class CoreRunner {
       stateManager.completeIntake();
     }
 
-    // 5. Specialist Execution Loop
+    // 5. Check if Target Artifact already exists to evolve
+    let existingBaselineText = '';
+    const targetDocPath = path.join(projectPath, 'docs', `${specialist.id.toUpperCase()}.md`);
+    if (fs.existsSync(targetDocPath)) {
+      try {
+        const existingContent = fs.readFileSync(targetDocPath, 'utf-8');
+        if (existingContent.trim()) {
+          existingBaselineText = `\nEXISTING BASELINE DOCUMENT (TO EVOLVE / UPDATE):\nAn approved baseline for this deliverable already exists at docs/${specialist.id.toUpperCase()}.md:\n\`\`\`markdown\n${existingContent}\n\`\`\`\nINSTRUCTION: You must EVOLVE and UPDATE this existing baseline document to incorporate the user's requested additions or changes, rather than starting from scratch.\n`;
+        }
+      } catch (_e) {
+        // ignore read error
+      }
+    }
+
+    // 6. Specialist Execution Loop
     onStatusUpdate?.(`Executing specialist: ${specialist.name}...`);
-    const enhancedSystemPrompt = `${specialist.systemPrompt}\n\n${discovery.discoveryText}`;
+    const enhancedSystemPrompt = `${specialist.systemPrompt}\n\n${discovery.discoveryText}${existingBaselineText}`;
 
     const context = { projectPath, stateManager };
     const agentResult = await runAgentToolLoop({
@@ -204,13 +218,37 @@ export class CoreRunner {
     let criticResult: CriticResult | undefined;
     let autoRevisionsRun = 0;
 
-    // 6. Critic While-Loop
+    // 7. Critic While-Loop with Program Baseline Verification
     if (specialist.requiresCritic) {
-      onStatusUpdate?.('Running harsh critic evaluation...');
+      onStatusUpdate?.('Running harsh critic evaluation with program alignment...');
       const critic = new CriticEvaluator(client);
       let attempts = 0;
       const maxAttempts = 2;
       let passed = false;
+
+      // Load all existing approved baseline documents for cross-document program alignment
+      const programBaselineDocs: BaselineDocument[] = [];
+      const docsDir = path.join(projectPath, 'docs');
+      if (fs.existsSync(docsDir)) {
+        const files = fs.readdirSync(docsDir).filter(f => f.endsWith('.md'));
+        for (const f of files) {
+          const docId = f.replace(/\.md$/i, '').toUpperCase();
+          if (docId !== specialist.id.toUpperCase()) {
+            try {
+              const content = fs.readFileSync(path.join(docsDir, f), 'utf-8');
+              if (content.trim()) {
+                programBaselineDocs.push({
+                  id: docId,
+                  path: `docs/${f}`,
+                  content
+                });
+              }
+            } catch (_e) {
+              // ignore
+            }
+          }
+        }
+      }
 
       while (attempts <= maxAttempts && !passed) {
         // Load user custom examples if present
@@ -229,7 +267,8 @@ export class CoreRunner {
           artifactContent: finalOutput,
           rubric: specialist.criticRubric || '',
           secretSauceExamples: specialist.secretSauceExamples,
-          userExamples: customExamples
+          userExamples: customExamples,
+          programBaselineDocuments: programBaselineDocs
         });
 
         if (criticResult.passed) {
@@ -242,7 +281,7 @@ export class CoreRunner {
           autoRevisionsRun++;
           onStatusUpdate?.(`Critic requested improvements (Score: ${criticResult.score}/10). Revising draft (Attempt ${attempts}/${maxAttempts})...`);
 
-          const revisionPrompt = `The Critic evaluated your draft and found the following weaknesses:\n${(criticResult.weaknesses || []).map(w => `- ${w}`).join('\n')}\n\nActionable Guidance:\n${criticResult.actionableGuidance || 'Fix weaknesses'}\n\nPlease revise the deliverable to resolve all weaknesses while maintaining rigorous physical engineering standards.`;
+          const revisionPrompt = `The Critic evaluated your draft and found the following weaknesses:\n${(criticResult.weaknesses || []).map(w => `- ${w}`).join('\n')}\n\nActionable Guidance:\n${criticResult.actionableGuidance || 'Fix weaknesses'}\n\nPlease revise the deliverable to resolve all weaknesses while maintaining rigorous physical engineering standards and program alignment.`;
 
           const revisionResult = await runAgentToolLoop({
             client,

@@ -1,11 +1,18 @@
 import { OpenRouterClient } from '../openrouter/client.js';
 
+export interface BaselineDocument {
+  id: string;
+  path: string;
+  content: string;
+}
+
 export interface CriticEvaluateOptions {
   model: string;
   artifactContent: string;
   rubric: string;
   secretSauceExamples: string[];
   userExamples: string[];
+  programBaselineDocuments?: BaselineDocument[];
 }
 
 export interface CriticResult {
@@ -21,17 +28,25 @@ export class CriticEvaluator {
   constructor(private client: OpenRouterClient) {}
 
   async evaluate(options: CriticEvaluateOptions): Promise<CriticResult> {
+    let baselineSection = '';
+    if (options.programBaselineDocuments && options.programBaselineDocuments.length > 0) {
+      baselineSection = `\nAPPROVED PROGRAM BASELINE (Upstream Source of Truth for Program Alignment):
+${options.programBaselineDocuments.map(d => `### [${d.id}] (${d.path}):\n${d.content}`).join('\n\n---\n\n')}\n`;
+    }
+
     const prompt = `You are the Harsh Critic for STARN, an uncompromising engineering evaluation agent.
-Your mission is to evaluate a drafted hardware/physical engineering project deliverable against strict engineering quality standards.
+Your mission is to evaluate a drafted hardware/physical engineering project deliverable against strict engineering quality standards and verify strict program alignment with existing project documents.
 
 CRITIC GUIDELINES:
 1. Conduct an "apples-to-oranges" quality comparison: judge standard of quality, completeness, technical rigor, clarity, and professionalism (not whether content matches examples identically).
 2. Look for vague placeholders (e.g., "TBD", "approximate", "as needed"), lack of measurable specifications (dimensions, loads, power, temperatures), and missing physical considerations.
-3. Pass (score >= 8.0) ONLY if the artifact meets or exceeds the engineering quality bar.
+3. Program Alignment & Cross-Document Traceability (CRITICAL):
+   Verify that this deliverable strictly aligns with the parameters, dimensions, electrical voltages, power levels, environmental ranges, and user intent defined in the approved upstream project documents. Reject (score < 8.0) if the deliverable contradicts, ignores, or hallucinates specifications that violate the approved program baseline.
+4. Pass (score >= 8.0) ONLY if the artifact meets or exceeds the engineering quality bar AND maintains full program alignment.
 
 GRADING RUBRIC:
 ${options.rubric}
-
+${baselineSection}
 SECRET-SAUCE QUALITY EXAMPLES (Standard of Quality Reference):
 ${options.secretSauceExamples.map((ex, i) => `### Example ${i + 1}:\n${ex}`).join('\n\n')}
 

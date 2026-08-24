@@ -59,18 +59,22 @@ describe('Agent Tool Loop', () => {
 });
 
 describe('Critic Evaluator', () => {
-  it('parses structured JSON evaluation scorecard from Critic', async () => {
+  it('parses structured JSON evaluation scorecard from Critic and includes program baseline', async () => {
     const mockClient = new OpenRouterClient({ apiKey: 'mock' });
-    vi.spyOn(mockClient, 'chatCompletion').mockResolvedValue({
-      content: JSON.stringify({
-        passed: true,
-        score: 9.1,
-        summary: 'Excellent hardware specs',
-        strengths: ['Clear load calculations'],
-        weaknesses: [],
-        actionableGuidance: ''
-      }),
-      raw: {}
+    let capturedPrompt = '';
+    vi.spyOn(mockClient, 'chatCompletion').mockImplementation(async (opts) => {
+      capturedPrompt = (opts.messages[0].content || '') as string;
+      return {
+        content: JSON.stringify({
+          passed: true,
+          score: 9.1,
+          summary: 'Excellent hardware specs with verified program alignment',
+          strengths: ['Clear load calculations', 'Aligned with approved CONOPS'],
+          weaknesses: [],
+          actionableGuidance: ''
+        }),
+        raw: {}
+      };
     });
 
     const critic = new CriticEvaluator(mockClient);
@@ -79,11 +83,21 @@ describe('Critic Evaluator', () => {
       artifactContent: '# WBS\n1.0 Framing',
       rubric: 'Rigorous engineering',
       secretSauceExamples: ['# Example\n1.0 Foundation'],
-      userExamples: []
+      userExamples: [],
+      programBaselineDocuments: [
+        {
+          id: 'CONOPS',
+          path: 'docs/CONOPS.md',
+          content: '# CONOPS\nOperating voltage: 72V DC'
+        }
+      ]
     });
 
     expect(result.passed).toBe(true);
     expect(result.score).toBe(9.1);
+    expect(capturedPrompt).toContain('APPROVED PROGRAM BASELINE');
+    expect(capturedPrompt).toContain('Operating voltage: 72V DC');
+    expect(capturedPrompt).toContain('Program Alignment & Cross-Document Traceability');
   });
 });
 
@@ -150,5 +164,49 @@ describe('Core Runner Intake & Multi-Turn', () => {
     expect(result.specialistId).toBe('conops');
     expect(result.requiresReview).toBe(false); // Question turn, not a full document
     expect(result.output).toContain('What is the project?');
+  });
+
+  it('injects existing baseline document to evolve when updating an existing document', async () => {
+    // Write an existing CONOPS to docs/
+    const docsDir = path.join(tempDir, 'docs');
+    fs.mkdirSync(docsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(docsDir, 'CONOPS.md'),
+      '# Concept of Operations\n## 1.0 Executive Summary\nOriginal tractor conversion baseline.',
+      'utf-8'
+    );
+    stateMgr.recordArtifact({
+      id: 'CONOPS',
+      title: 'Concept of Operations',
+      path: 'docs/CONOPS.md',
+      status: 'approved',
+      criticScore: 9.2
+    });
+    stateMgr.completeIntake();
+
+    let capturedSystemPrompt = '';
+    vi.spyOn(mockClient, 'chatCompletion').mockImplementation(async (opts) => {
+      const sysMsg = opts.messages.find(m => m.role === 'system');
+      if (sysMsg) capturedSystemPrompt = sysMsg.content as string;
+      return {
+        content: '# Concept of Operations\n## 1.0 Executive Summary\nUpdated tractor conversion with limp-home mode.',
+        raw: {}
+      };
+    });
+
+    const result = await CoreRunner.executeTurn({
+      userPrompt: 'Update CONOPS to add a limp-home mode',
+      projectPath: tempDir,
+      stateManager: stateMgr,
+      client: mockClient,
+      model: 'test-model',
+      toolRegistry,
+      specialistRegistry,
+      sessionMessages: []
+    });
+
+    expect(capturedSystemPrompt).toContain('EXISTING BASELINE DOCUMENT (TO EVOLVE / UPDATE)');
+    expect(capturedSystemPrompt).toContain('Original tractor conversion baseline');
+    expect(result.output).toContain('Updated tractor conversion with limp-home mode');
   });
 });
