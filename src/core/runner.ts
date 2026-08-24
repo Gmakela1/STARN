@@ -9,6 +9,7 @@ import { runDiscovery } from './discovery.js';
 import { classifyRequest } from './classifier.js';
 import { runAgentToolLoop } from './agent-loop.js';
 import { CriticEvaluator, CriticResult, BaselineDocument } from './critic.js';
+import { formatWorkflowRoadmap } from '../cli/ui.js';
 
 export interface TurnOptions {
   userPrompt: string;
@@ -49,10 +50,29 @@ export class CoreRunner {
     } = options;
 
     const state = stateManager.getState();
+    const activeWorkflowPhase = state.workflow?.activePhase || 'conops';
 
-    // 1. Classification
+    // 0. Handle quick commands (/plan, /roadmap, /status)
+    const trimmed = userPrompt.trim().toLowerCase();
+    if (trimmed === '/plan' || trimmed === '/roadmap' || trimmed === '/status') {
+      const roadmapText = formatWorkflowRoadmap(state);
+      return {
+        specialistId: 'general',
+        specialistName: 'Project Workflow Planner',
+        output: roadmapText,
+        autoRevisionsRun: 0,
+        requiresReview: false,
+        sessionMessages: [
+          ...sessionMessages,
+          { role: 'user', content: userPrompt },
+          { role: 'assistant', content: roadmapText }
+        ]
+      };
+    }
+
+    // 1. Classification (phase-aware)
     onStatusUpdate?.('Classifying request...');
-    let specialistId = await classifyRequest(userPrompt, client, model);
+    let specialistId = await classifyRequest(userPrompt, client, model, activeWorkflowPhase);
     let specialist = specialistRegistry.get(specialistId) || specialistRegistry.get('general')!;
 
     // 2. Prerequisite Check Gate
@@ -75,6 +95,11 @@ export class CoreRunner {
           ]
         };
       }
+    }
+
+    // Update active phase if shifting to a formal specialist
+    if (specialist.id !== 'general' && state.workflow?.phases[specialist.id]) {
+      stateManager.setActivePhase(specialist.id);
     }
 
     // 3. Mandatory Discovery

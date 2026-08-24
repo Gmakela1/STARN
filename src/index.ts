@@ -11,7 +11,12 @@ import { ToolRegistry } from './tools/registry.js';
 import { SpecialistRegistry } from './specialists/registry.js';
 import { ChatMessage } from './openrouter/types.js';
 import { CoreRunner } from './core/runner.js';
-import { formatBanner, formatCriticScorecard, printSectionHeader } from './cli/ui.js';
+import {
+  formatBanner,
+  formatCriticScorecard,
+  formatWorkflowRoadmap,
+  printSectionHeader
+} from './cli/ui.js';
 import {
   promptApiKey,
   promptSelectLiveModel,
@@ -42,7 +47,7 @@ async function main() {
 
   // 2. Fetch Live Models from OpenRouter
   const modelSpinner = ora('Fetching available models from OpenRouter...').start();
-  let availableModels = await fetchLiveOpenRouterModels(apiKey);
+  const availableModels = await fetchLiveOpenRouterModels(apiKey);
   modelSpinner.succeed(`Loaded ${availableModels.length} models from OpenRouter.`);
 
   // 3. Model Selection
@@ -79,7 +84,10 @@ async function main() {
   console.log(chalk.dim(`Active Model: ${selectedModel}\n`));
 
   const stateManager = new ProjectStateManager(currentProjectRecord.path);
-  stateManager.getOrCreateState(currentProjectRecord.id, currentProjectRecord.name);
+  const currentState = stateManager.getOrCreateState(currentProjectRecord.id, currentProjectRecord.name);
+
+  // Show Project Roadmap Banner
+  console.log(formatWorkflowRoadmap(currentState));
 
   const client = new OpenRouterClient({
     apiKey,
@@ -94,7 +102,7 @@ async function main() {
   let sessionMessages: ChatMessage[] = [];
 
   while (sessionActive) {
-    printSectionHeader('Active Session');
+    printSectionHeader(`Active Session [Phase: ${stateManager.getState().workflow?.activePhase?.toUpperCase() || 'CONOPS'}]`);
     const userPrompt = await promptUserQuery();
 
     let currentPrompt = userPrompt;
@@ -139,6 +147,14 @@ async function main() {
 
         if (checkpoint.action === 'feedback' && checkpoint.feedback) {
           currentPrompt = checkpoint.feedback;
+        } else if (checkpoint.action === 'accept' && result.requiresReview) {
+          // If approved deliverable, check if we can advance to next phase
+          const nextPhase = stateManager.advanceToNextPhase();
+          if (nextPhase) {
+            console.log(chalk.cyan(`\n★ Workflow Updated: Advanced to next phase [${nextPhase.toUpperCase()}].`));
+            console.log(formatWorkflowRoadmap(stateManager.getState()));
+          }
+          turnActive = false;
         } else {
           turnActive = false;
         }

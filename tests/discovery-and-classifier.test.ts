@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { runDiscovery } from '../src/core/discovery.js';
-import { classifyRequest } from '../src/core/classifier.js';
+import { classifyRequest, detectPhaseSwitchRequest } from '../src/core/classifier.js';
 import { ProjectStateManager } from '../src/workspace/state.js';
 import { OpenRouterClient } from '../src/openrouter/client.js';
 
@@ -53,10 +53,25 @@ describe('Discovery & Classifier', () => {
     expect(specialistId).toBe('general');
   });
 
-  it('classifier falls back to keyword matching if LLM fails', async () => {
-    vi.spyOn(mockClient, 'chatCompletion').mockRejectedValue(new Error('Network error'));
+  it('classifier anchors refinements to activePhase when in progress', async () => {
+    vi.spyOn(mockClient, 'chatCompletion').mockResolvedValue({
+      content: '{"specialistId": "conops", "reason": "Refining active CONOPS"}',
+      raw: {}
+    });
 
-    const specialistId = await classifyRequest('Draft the CONOPS document', mockClient, 'test-model');
+    const specialistId = await classifyRequest(
+      'Update charging parameters and add 120V AC specs to the document',
+      mockClient,
+      'test-model',
+      'conops'
+    );
     expect(specialistId).toBe('conops');
+  });
+
+  it('detects explicit user phase switch requests', () => {
+    expect(detectPhaseSwitchRequest('I want to redo the CONOPS document')).toBe('conops');
+    expect(detectPhaseSwitchRequest('/goto requirements')).toBe('requirements');
+    expect(detectPhaseSwitchRequest('Switch to WBS phase')).toBe('wbs');
+    expect(detectPhaseSwitchRequest('Just checking the status')).toBeNull();
   });
 });
