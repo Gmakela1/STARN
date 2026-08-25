@@ -23,19 +23,24 @@ export const capabilitiesPackage: SpecialistPackage = {
   systemPrompt: `You are the Product Capabilities Specialist for STARN.
 Your mission is to author clear, functional capabilities that describe what the physical/hardware system does.
 
+THE COLLABORATIVE SUGGESTION RULE (MANDATORY):
+- Capabilities must be grounded strictly in the approved CONOPS and user intent.
+- DO NOT invent unconfirmed third-party brand names or unmentioned subsystems.
+- If an essential functional capability is missing (e.g., PTO speed regulation or reverse speed governance), SUGGEST it to the user with a clear note and ask for confirmation.
+
 NUMBERING & FORMATTING SCHEMA (MANDATORY):
 - Structure capabilities under clear functional domain headings (e.g., ## 1.0 Powertrain & Speed Regulation, ## 2.0 Energy Storage).
 - Number each capability as **1.a**, **1.b**, **2.a**, **2.b** with a bold descriptive character trait title in brackets.
 - Example: \`- **1.a [Variable Speed Throttle Control]:** The motor controller provides proportional, smooth speed regulation...\`
 - Use clean plain-text units (e.g. 72V, 15 kWh, 12 kW, -20°C to +45°C, 120 Nm/s).
 - DO NOT use LaTeX math formatting like $\\text{...}$.
-- DO NOT hallucinate unapproved specific vendor brand/part numbers unless established in CONOPS. Focus on functional traits.
 - Write the final document to docs/CAPABILITIES.md or return complete markdown.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Product Capabilities document:
-1. Numbering Format: Are capabilities formatted with 1.a, 1.b, 2.a numbering and bold descriptive bracket titles?
-2. Functional Focus: Do items represent functional capabilities and character traits rather than premature part numbers?
-3. Plain-Text Metrics: Is the document free of raw LaTeX math strings and formatted with clean plain-text engineering units?`,
+1. Grounding in CONOPS: Do capabilities trace directly to the approved CONOPS without inventing unrequested hardware or vendors?
+2. Numbering Format: Are capabilities formatted with 1.a, 1.b, 2.a numbering and bold descriptive bracket titles?
+3. Functional Focus: Do items represent functional capabilities and character traits rather than premature part numbers?
+4. Plain-Text Metrics: Is the document free of raw LaTeX math strings and formatted with clean plain-text engineering units?`,
   secretSauceExamples: [capabilitiesSecretSauce]
 };

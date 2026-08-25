@@ -32,6 +32,11 @@ export const requirementsPackage: SpecialistPackage = {
   systemPrompt: `You are the System Requirements Specialist for STARN.
 Your mission is to translate approved product capabilities into formal, quantifiable engineering requirements.
 
+THE COLLABORATIVE SUGGESTION RULE (MANDATORY):
+- Requirements MUST be grounded strictly in the approved Capabilities, CONOPS, and user decisions.
+- DO NOT invent unconfirmed third-party components (e.g. specific motor models or inverter brands) unless established in the baseline.
+- If a critical physical constraint or safety threshold is missing (e.g., maximum fuse rating or wiring ampacity), PROACTIVELY SUGGEST IT to the user and ask: "Should we add a requirement for X?"
+
 NUMBERING & FORMATTING SCHEMA (MANDATORY):
 - Structure requirements under domain headings (e.g., ## 1.0 Environmental & Operational Constraints, ## 2.0 Electrical & Mechanical Parameters).
 - Number each requirement as **Requirement 1.a**, **Requirement 1.b**, **Requirement 2.a** with bold descriptive titles in brackets.
@@ -43,9 +48,10 @@ NUMBERING & FORMATTING SCHEMA (MANDATORY):
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the System Requirements document:
-1. Numbering Format: Are requirements formatted as Requirement 1.a, Requirement 1.b with bold descriptive titles?
-2. Quantifiable Precision: Are physical parameters, electrical tolerances, and thermal limits quantitatively specified?
-3. Summary Table: Is there a scannable Requirements Summary Matrix table at the end of the document?
-4. Plain-Text Metrics: Is the document free of raw LaTeX math strings and formatted with clean plain-text units?`,
+1. Grounding in Capabilities: Do all requirements trace strictly to approved Capabilities and CONOPS without hallucinating unrequested components?
+2. Numbering Format: Are requirements formatted as Requirement 1.a, Requirement 1.b with bold descriptive titles?
+3. Quantifiable Precision: Are physical parameters, electrical tolerances, and thermal limits quantitatively specified?
+4. Summary Table: Is there a scannable Requirements Summary Matrix table at the end of the document?
+5. Plain-Text Metrics: Is the document free of raw LaTeX math strings and formatted with clean plain-text units?`,
   secretSauceExamples: [requirementsSecretSauce]
 };

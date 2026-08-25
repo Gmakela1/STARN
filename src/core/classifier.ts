@@ -11,6 +11,58 @@ const VALID_SPECIALISTS = [
   'sow'
 ];
 
+export function isInformationalQuery(userMessage: string): boolean {
+  const lower = userMessage.trim().toLowerCase();
+
+  // Explicit authoring action verbs
+  const isAuthoringAction =
+    lower.startsWith('draft ') ||
+    lower.startsWith('create ') ||
+    lower.startsWith('generate ') ||
+    lower.startsWith('write ') ||
+    lower.startsWith('build ') ||
+    lower.startsWith('update ') ||
+    lower.startsWith('modify ') ||
+    lower.startsWith('revise ') ||
+    lower.startsWith('add ') ||
+    lower.startsWith('remove ') ||
+    lower.startsWith('delete ') ||
+    lower.startsWith('change ') ||
+    lower.startsWith('redo ') ||
+    lower.startsWith('synthesize ');
+
+  if (isAuthoringAction) {
+    return false;
+  }
+
+  // Question patterns / summary requests
+  const isQuestionOrSummary =
+    lower.startsWith('tell me') ||
+    lower.startsWith('what is') ||
+    lower.startsWith('what are') ||
+    lower.startsWith('what were') ||
+    lower.startsWith('what was') ||
+    lower.startsWith('what did') ||
+    lower.startsWith('how is') ||
+    lower.startsWith('how does') ||
+    lower.startsWith('how do') ||
+    lower.startsWith('why did') ||
+    lower.startsWith('why is') ||
+    lower.startsWith('summarize') ||
+    lower.startsWith('summary') ||
+    lower.startsWith('explain') ||
+    lower.startsWith('show me') ||
+    lower.startsWith('describe') ||
+    lower.startsWith('can you explain') ||
+    lower.startsWith('can you tell me') ||
+    lower.startsWith('can you summarize') ||
+    lower.includes('what is the end goal') ||
+    lower.includes('what was the end goal') ||
+    lower.endsWith('?');
+
+  return isQuestionOrSummary;
+}
+
 export function detectPhaseSwitchRequest(userMessage: string): string | null {
   const lower = userMessage.trim().toLowerCase();
 
@@ -22,7 +74,12 @@ export function detectPhaseSwitchRequest(userMessage: string): string | null {
   }
 
   // Natural language explicit switch expressions
-  const isRedoOrSwitch = lower.includes('redo') || lower.includes('switch to') || lower.includes('jump to') || lower.includes('go to phase') || lower.includes('restart');
+  const isRedoOrSwitch =
+    lower.includes('redo') ||
+    lower.includes('switch to') ||
+    lower.includes('jump to') ||
+    lower.includes('go to phase') ||
+    lower.includes('restart');
 
   if (isRedoOrSwitch) {
     if (lower.includes('conops') || lower.includes('intent') || lower.includes('concept')) return 'conops';
@@ -43,25 +100,30 @@ export async function classifyRequest(
   model: string,
   activePhase?: string
 ): Promise<string> {
-  // 1. Check for explicit phase switch request first
+  // 1. Check for explicit phase switch request
   const explicitSwitch = detectPhaseSwitchRequest(userMessage);
   if (explicitSwitch) {
     return explicitSwitch;
   }
 
+  // 2. Check if this is an informational query or question (should route to general Q&A, NOT rewrite documents)
+  if (isInformationalQuery(userMessage)) {
+    return 'general';
+  }
+
   const prompt = `You are the Request Classifier for STARN, a physical/hardware engineering project management AI.
 Classify the user's request into EXACTLY ONE of the following specialist IDs:
-- "general": General questions, scoping discussion, status queries, or advice that does NOT produce a formal engineering document.
-- "conops": Concept of operations, user intent, operational environments, system boundaries, or initial project intake.
-- "capabilities": Functional capabilities, behavioral character traits (1.a, 1.b).
-- "requirements": Engineering requirements, quantifiable constraints, physical tolerances (Requirement 1.a).
-- "rtm": Requirements Traceability Matrix, verification methods (Test, Inspection, Analysis, Demonstration).
-- "milestones": Development phases, gating criteria (MVP, IOC, FOC), acceptance gates.
-- "wbs": Work Breakdown Structure, deliverables, component hierarchical breakdown.
-- "sow": Statement of Work, vendor/contractor deliverables, project scope agreement.
+- "general": Informational questions, scoping discussion, status queries, summaries, or advice that does NOT author/rewrite a formal engineering deliverable.
+- "conops": Authoring/updating Concept of operations, user intent, operational environments, system boundaries, or initial project intake.
+- "capabilities": Authoring/updating functional capabilities, behavioral character traits (1.a, 1.b).
+- "requirements": Authoring/updating engineering requirements, quantifiable constraints, physical tolerances (Requirement 1.a).
+- "rtm": Authoring/updating Requirements Traceability Matrix, verification methods (Test, Inspection, Analysis, Demonstration).
+- "milestones": Authoring/updating development phases, gating criteria (MVP, IOC, FOC), acceptance gates.
+- "wbs": Authoring/updating Work Breakdown Structure, deliverables, component hierarchical breakdown.
+- "sow": Authoring/updating Statement of Work, vendor/contractor deliverables, project scope agreement.
 
 Active Project Workflow Phase: "${activePhase || 'conops'}"
-Note: If the user is refining, adding details, or making corrections to the currently active phase without explicitly switching phases, prefer routing to the active phase ("${activePhase || 'conops'}").
+Note: If the user is asking an informational question, querying decisions, or asking for a summary, return "general". Only return an authoring specialist if the user intends to CREATE, REVISE, or UPDATE a formal document.
 
 User Request: "${userMessage}"
 

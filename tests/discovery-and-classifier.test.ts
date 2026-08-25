@@ -3,7 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { runDiscovery } from '../src/core/discovery.js';
-import { classifyRequest, detectPhaseSwitchRequest } from '../src/core/classifier.js';
+import {
+  classifyRequest,
+  detectPhaseSwitchRequest,
+  isInformationalQuery
+} from '../src/core/classifier.js';
 import { ProjectStateManager } from '../src/workspace/state.js';
 import { OpenRouterClient } from '../src/openrouter/client.js';
 
@@ -31,6 +35,27 @@ describe('Discovery & Classifier', () => {
     expect(summary.discoveryText).toContain('docs/README.md');
     const state = stateMgr.getState();
     expect(state.discovery.lastScanned).toBeDefined();
+  });
+
+  it('identifies informational queries vs authoring requests', () => {
+    expect(isInformationalQuery("Tell me about the test project's CONOPS and what the end goal was")).toBe(true);
+    expect(isInformationalQuery('What are the key requirements we decided on?')).toBe(true);
+    expect(isInformationalQuery('Summarize the current WBS status')).toBe(true);
+    expect(isInformationalQuery('Explain how the battery voltage was selected')).toBe(true);
+
+    expect(isInformationalQuery('Draft the CONOPS document')).toBe(false);
+    expect(isInformationalQuery('Update the requirements to add 120V charging')).toBe(false);
+    expect(isInformationalQuery('Create a WBS for the electrical wiring')).toBe(false);
+  });
+
+  it('routes informational questions about CONOPS to general instead of rewriting CONOPS', async () => {
+    const specialistId = await classifyRequest(
+      "Tell me about the test project's CONOPS and what the end goal was",
+      mockClient,
+      'test-model',
+      'conops'
+    );
+    expect(specialistId).toBe('general');
   });
 
   it('classifier routes physical breakdown requests to wbs', async () => {
