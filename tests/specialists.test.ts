@@ -29,12 +29,16 @@ describe('Specialist Packages & RTM', () => {
     expect(rtm!.criticRubric).toContain('Tabular Matrix Structure');
   });
 
-  it('milestones specialist has prerequisite RTM and buckets requirements into MVP gating', () => {
+  it('milestones specialist has prerequisite RTM and enforces progressive capability layering (MVP -> IOC -> FOC) with upgrade paths', () => {
     const milestones = registry.get('milestones');
     expect(milestones).toBeDefined();
     expect(milestones!.prerequisiteArtifactId).toBe('RTM');
-    expect(milestones!.systemPrompt).toContain('RTM');
-    expect(milestones!.systemPrompt).toContain('MVP');
+    expect(milestones!.systemPrompt).toContain('PROGRESSIVE CAPABILITY LAYERING');
+    expect(milestones!.systemPrompt).toContain('MVP / MVC');
+    expect(milestones!.systemPrompt).toContain('IOC');
+    expect(milestones!.systemPrompt).toContain('FOC');
+    expect(milestones!.systemPrompt).toContain('Evolution / Upgrade Path');
+    expect(milestones!.secretSauceExamples[0]).toContain('Evolution / Upgrade Path');
   });
 
   it('wbs specialist has prerequisite MILESTONES and builds towards MVP milestone first', () => {
