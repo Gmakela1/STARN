@@ -104,7 +104,7 @@ describe('Project Registry & State', () => {
     expect(stateMgr.isArtifactApproved('CAPABILITIES')).toBe(false);
   });
 
-  it('initializes workflow with 7 phases and activePhase set to conops', () => {
+  it('initializes workflow with 8 phases and activePhase set to conops', () => {
     const projPath = path.join(tempBaseDir, 'wf-project');
     fs.mkdirSync(projPath, { recursive: true });
     const stateMgr = new ProjectStateManager(projPath);
@@ -112,7 +112,7 @@ describe('Project Registry & State', () => {
     expect(state.workflow).toBeDefined();
     expect(state.workflow.activePhase).toBe('conops');
     expect(Object.keys(state.workflow.phases)).toEqual(
-      expect.arrayContaining(['conops', 'capabilities', 'requirements', 'rtm', 'milestones', 'wbs', 'sow'])
+      expect.arrayContaining(['conops', 'capabilities', 'requirements', 'rtm', 'milestones', 'testplans', 'wbs', 'sow'])
     );
   });
 

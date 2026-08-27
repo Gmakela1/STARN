@@ -7,6 +7,7 @@ const VALID_SPECIALISTS = [
   'requirements',
   'rtm',
   'milestones',
+  'testplans',
   'wbs',
   'sow'
 ];
@@ -71,6 +72,7 @@ export function detectPhaseSwitchRequest(userMessage: string): string | null {
   if (cmdMatch) {
     const target = cmdMatch[1].toLowerCase();
     if (VALID_SPECIALISTS.includes(target)) return target;
+    if (target === 'testplan' || target === 'test_plans' || target === 'testplans') return 'testplans';
   }
 
   // Natural language explicit switch expressions
@@ -83,6 +85,7 @@ export function detectPhaseSwitchRequest(userMessage: string): string | null {
 
   if (isRedoOrSwitch) {
     if (lower.includes('conops') || lower.includes('intent') || lower.includes('concept')) return 'conops';
+    if (lower.includes('test plan') || lower.includes('testplan') || lower.includes('procedures')) return 'testplans';
     if (lower.includes('rtm') || lower.includes('traceability')) return 'rtm';
     if (lower.includes('requirement') || lower.includes('srs')) return 'requirements';
     if (lower.includes('capability') || lower.includes('capabilities')) return 'capabilities';
@@ -119,6 +122,7 @@ Classify the user's request into EXACTLY ONE of the following specialist IDs:
 - "requirements": Authoring/updating engineering requirements, quantifiable constraints, physical tolerances (Requirement 1.a).
 - "rtm": Authoring/updating Requirements Traceability Matrix, verification methods (Test, Inspection, Analysis, Demonstration).
 - "milestones": Authoring/updating development phases, gating criteria (MVP, IOC, FOC), acceptance gates.
+- "testplans": Authoring/updating shop test plans, verification procedures (TP-MVP-xx, TP-IOC-xx, TP-FOC-xx), and tooling interviews.
 - "wbs": Authoring/updating Work Breakdown Structure, deliverables, component hierarchical breakdown.
 - "sow": Authoring/updating Statement of Work, vendor/contractor deliverables, project scope agreement.
 
@@ -148,6 +152,7 @@ Respond with ONLY a JSON object: {"specialistId": "<id>", "reason": "<brief reas
   }
 
   const lower = userMessage.toLowerCase();
+  if (lower.includes('test plan') || lower.includes('testplan') || lower.includes('test procedure')) return 'testplans';
   if (lower.includes('rtm') || lower.includes('traceability') || lower.includes('verification matrix')) return 'rtm';
   if (lower.includes('conops') || lower.includes('intent') || lower.includes('concept') || lower.includes('start')) return 'conops';
   if (lower.includes('capability') || lower.includes('capabilities') || lower.includes('behavior')) return 'capabilities';

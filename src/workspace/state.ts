@@ -8,6 +8,7 @@ export const ORDERED_WORKFLOW_PHASES = [
   { id: 'requirements', name: 'System Requirements', artifactPath: 'docs/REQUIREMENTS.md' },
   { id: 'rtm', name: 'Requirements Traceability Matrix (RTM)', artifactPath: 'docs/RTM.md' },
   { id: 'milestones', name: 'Project Milestones & Gating', artifactPath: 'docs/MILESTONES.md' },
+  { id: 'testplans', name: 'Test Plans & Procedures', artifactPath: 'docs/TEST_PLANS.md' },
   { id: 'wbs', name: 'Work Breakdown Structure (WBS)', artifactPath: 'docs/WBS.md' },
   { id: 'sow', name: 'Statement of Work (SOW)', artifactPath: 'docs/SOW.md' }
 ];
@@ -17,7 +18,7 @@ function createDefaultWorkflow(artifacts: ArtifactRecord[] = []): WorkflowState 
   for (let i = 0; i < ORDERED_WORKFLOW_PHASES.length; i++) {
     const p = ORDERED_WORKFLOW_PHASES[i];
     const isApproved = artifacts.some(
-      a => a.id.toUpperCase() === p.id.toUpperCase() && a.status === 'approved'
+      a => (a.id.toUpperCase() === p.id.toUpperCase() || (p.id === 'testplans' && a.id.toUpperCase() === 'TEST_PLANS')) && a.status === 'approved'
     );
     phasesMap[p.id] = {
       id: p.id,
@@ -175,7 +176,10 @@ export class ProjectStateManager {
 
   public isArtifactApproved(id: string): boolean {
     const state = this.getState();
-    return state.artifacts.some(a => a.id.toUpperCase() === id.toUpperCase() && a.status === 'approved');
+    const normalized = id.toUpperCase();
+    return state.artifacts.some(
+      a => (a.id.toUpperCase() === normalized || (normalized === 'TEST_PLANS' && a.id.toUpperCase() === 'TESTPLANS') || (normalized === 'TESTPLANS' && a.id.toUpperCase() === 'TEST_PLANS')) && a.status === 'approved'
+    );
   }
 
   public updateDiscoverySummary(summary: string, keyConstraints: string[] = []): void {
@@ -203,10 +207,12 @@ export class ProjectStateManager {
     }
 
     // Update workflow phase status if matching
-    const phaseKey = artifact.id.toLowerCase();
-    if (state.workflow.phases[phaseKey]) {
-      state.workflow.phases[phaseKey].status = artifact.status === 'approved' ? 'approved' : 'in_progress';
-      state.workflow.phases[phaseKey].updatedAt = fullRecord.updatedAt;
+    const phaseKey = artifact.id.toLowerCase().replace(/_/g, '');
+    for (const pKey of Object.keys(state.workflow.phases)) {
+      if (pKey === phaseKey || pKey === artifact.id.toLowerCase()) {
+        state.workflow.phases[pKey].status = artifact.status === 'approved' ? 'approved' : 'in_progress';
+        state.workflow.phases[pKey].updatedAt = fullRecord.updatedAt;
+      }
     }
 
     state.recentActions.push(`Updated artifact ${artifact.id} (${artifact.status})`);

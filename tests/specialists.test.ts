@@ -4,7 +4,7 @@ import { SpecialistRegistry } from '../src/specialists/registry.js';
 describe('Specialist Packages & RTM', () => {
   const registry = new SpecialistRegistry();
 
-  it('loads all 8 specialists including general, conops, capabilities, requirements, rtm, milestones, wbs, sow', () => {
+  it('loads all 9 specialists including general, conops, capabilities, requirements, rtm, milestones, testplans, wbs, sow', () => {
     const packages = registry.listSpecialists();
     expect(packages.map(p => p.id)).toEqual(
       expect.arrayContaining([
@@ -14,6 +14,7 @@ describe('Specialist Packages & RTM', () => {
         'requirements',
         'rtm',
         'milestones',
+        'testplans',
         'wbs',
         'sow'
       ])
@@ -41,10 +42,20 @@ describe('Specialist Packages & RTM', () => {
     expect(milestones!.secretSauceExamples[0]).toContain('Evolution / Upgrade Path');
   });
 
-  it('wbs specialist has prerequisite MILESTONES and builds towards MVP milestone first', () => {
+  it('testplans specialist has prerequisite MILESTONES and conducts shop tooling interview to build phased test procedures', () => {
+    const testplans = registry.get('testplans');
+    expect(testplans).toBeDefined();
+    expect(testplans!.name).toContain('Test Plans');
+    expect(testplans!.prerequisiteArtifactId).toBe('MILESTONES');
+    expect(testplans!.systemPrompt).toContain('SHOP TOOLING INTERVIEW');
+    expect(testplans!.systemPrompt).toContain('TP-MVP');
+    expect(testplans!.secretSauceExamples[0]).toContain('TP-MVP');
+  });
+
+  it('wbs specialist has prerequisite TEST_PLANS and builds towards MVP milestone first', () => {
     const wbs = registry.get('wbs');
     expect(wbs).toBeDefined();
-    expect(wbs!.prerequisiteArtifactId).toBe('MILESTONES');
+    expect(wbs!.prerequisiteArtifactId).toBe('TEST_PLANS');
     expect(wbs!.systemPrompt).toContain('Milestone');
   });
 
@@ -71,7 +82,7 @@ describe('Specialist Packages & RTM', () => {
   });
 
   it('deliverable specialists require tool-based inspection of prior documents and maintaining a running plan', () => {
-    const deliverableSpecialists = ['capabilities', 'requirements', 'rtm', 'milestones', 'wbs', 'sow'];
+    const deliverableSpecialists = ['capabilities', 'requirements', 'rtm', 'milestones', 'testplans', 'wbs', 'sow'];
     for (const id of deliverableSpecialists) {
       const pkg = registry.get(id);
       expect(pkg).toBeDefined();
