@@ -2,7 +2,7 @@ import { SpecialistPackage } from '../../types.js';
 
 const wbsSecretSauce = `# Work Breakdown Structure (WBS): Off-Grid Solar Shed & Microgrid
 
-## 1.0 Site Preparation & Substructure
+## 1.0 Site Preparation & Substructure (MVP Component 1)
 - **1.1 Site Excavation & Layout**
   - 1.1.1 Survey property boundaries, mark 12x10 ft footprint, and verify 10 ft setbacks.
   - 1.1.2 Excavate topsoil 6 inches depth and install geotextile weed fabric + 4 inches crushed stone.
@@ -11,7 +11,7 @@ const wbsSecretSauce = `# Work Breakdown Structure (WBS): Off-Grid Solar Shed & 
   - 1.2.2 Set cardboard sonotubes, insert rebar cages (2x #4 vertical), and level top elevation (+/- 1/8").
   - 1.2.3 Pour 3000 PSI concrete and embed 5/8" galvanized adjustable post saddles.
 
-## 2.0 Superstructure & Thermal Envelope
+## 2.0 Superstructure & Thermal Envelope (MVP Component 2)
 - **2.1 Floor Platform**
   - 2.1.1 Install 4x6 pressure-treated skid beams anchored to post saddles.
   - 2.1.2 Frame floor with 2x8 pressure-treated joists at 16" on-center; install hardware cloth rodent barrier.
@@ -25,7 +25,7 @@ const wbsSecretSauce = `# Work Breakdown Structure (WBS): Off-Grid Solar Shed & 
   - 2.3.2 Install 5/8" plywood decking + full self-adhering ice & water shield membrane.
   - 2.3.3 Install 26-gauge standing seam metal roofing panels and drip edge flashing.
 
-## 3.0 Electrical & Solar Infrastructure
+## 3.0 Electrical & Solar Infrastructure (IOC Component 1)
 - **3.1 Photovoltaic Array Mounting**
   - 3.1.1 Fasten Unirac SolarMount rails using stainless steel brackets and butyl sealant flashing.
   - 3.1.2 Mount 8x 400W Tier-1 bifacial panels wired in 2S4P configuration.
@@ -35,7 +35,7 @@ const wbsSecretSauce = `# Work Breakdown Structure (WBS): Off-Grid Solar Shed & 
   - 3.2.2 Install 15kWh server-rack LiFePO4 battery cabinet with 250A Class-T fuse and disconnect switch.
   - 3.2.3 Install 100A sub-panel, bond ground bus to 2x 8ft copper ground rods spaced 6ft apart.
 
-## 4.0 Mechanical, Environmental & Commissioning
+## 4.0 Mechanical, Environmental & Commissioning (FOC Component 1)
 - **4.1 Thermal & Airflow Management**
   - 4.1.1 Install Rockwool R-23 batt insulation in walls and R-30 in ceiling.
   - 4.1.2 Install 12V thermostat-controlled 250 CFM intake louvers and exhaust fan with insect mesh.
@@ -47,29 +47,30 @@ const wbsSecretSauce = `# Work Breakdown Structure (WBS): Off-Grid Solar Shed & 
 export const wbsPackage: SpecialistPackage = {
   id: 'wbs',
   name: 'Work Breakdown Structure (WBS)',
-  description: 'Generates hierarchical Work Breakdown Structures detailing tasks, materials, fabrication, and commissioning steps.',
-  prerequisiteArtifactId: 'REQUIREMENTS',
+  description: 'Decomposes work into component work packages structured to achieve Milestone 1 (MVP) first, followed by operational milestones.',
+  prerequisiteArtifactId: 'MILESTONES',
   systemPrompt: `You are the Work Breakdown Structure (WBS) & Construction Specialist for STARN.
 Your mission is to construct a hierarchical, 100% complete Work Breakdown Structure for physical and hardware projects.
 
-MANDATORY SECTIONS:
-1.0 Site Preparation, Foundation & Substructure
-2.0 Structural Framing, Enclosure & Envelope
-3.0 Electrical, Power Generation & Storage Subsystems
-4.0 Mechanical, Environmental Controls & Ventilation
-5.0 Integration, Safety, Testing & Commissioning
+MILESTONE-GROUNDED COMPONENT BREAKDOWN (MANDATORY):
+- Structure component fabrication, procurement, machining, and assembly work packages specifically to build and verify the Milestone 1 (MVP) baseline first, followed by incremental packages for subsequent milestones (IOC, FOC).
+- Decompose each physical component into:
+  1.0 Substructure & Chassis / Foundation Work Packages (MVP)
+  2.0 Primary Structural & Mechanical Assembly Packages (MVP)
+  3.0 Electrical, High-Voltage & Power Subsystems (IOC)
+  4.0 Controls, Instrumentation, Safety & Commissioning (FOC)
 
 CRITICAL RULES:
 - Number every tier hierarchically (1.0 -> 1.1 -> 1.1.1).
-- Work packages at level 3 (e.g. 1.2.1) MUST include specific construction details: lumber dimensions (2x6, 2x8), fasteners (8d ring-shank, 5/8" J-bolts), wire gauges (10 AWG, 4/0 AWG), concrete ratings (3000 PSI), and spatial intervals (16" OC).
-- Do not omit commissioning, grounding, or weatherproofing steps.
-- Use clean plain-text units. DO NOT use LaTeX math formatting.`,
+- Work packages at level 3 (e.g. 1.2.1) MUST include specific construction details: lumber/metal dimensions, fasteners, wire gauges, torque limits, and spatial intervals.
+- Use clean plain-text units. DO NOT use LaTeX math formatting.
+- Write the final document to docs/WBS.md or return complete markdown.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Work Breakdown Structure against engineering criteria:
-1. Hierarchical Depth: Are tasks decomposed to actionable work packages (e.g. 1.1.1 level)?
-2. Hardware Specifics: Are materials, structural sizes, fastener types, and electrical ratings explicitly stated?
-3. 100% Rule Completeness: Does the WBS encompass foundation, structure, electrical/power, thermal/environmental, and commissioning?
+1. Milestone Alignment: Are work packages structured to deliver Milestone 1 (MVP) foundational components first?
+2. Hierarchical Depth: Are tasks decomposed to actionable work packages (e.g. 1.1.1 level)?
+3. Hardware Specifics: Are materials, structural sizes, fastener types, and electrical ratings explicitly stated?
 4. Plain-Text Units: Is the document free of raw LaTeX math strings?`,
   secretSauceExamples: [wbsSecretSauce]
 };

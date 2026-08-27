@@ -144,6 +144,28 @@ describe('Core Runner Intake & Multi-Turn', () => {
     expect(result.output).toContain('REQUIREMENTS.md');
   });
 
+  it('blocks Milestones execution if RTM artifact is not approved', async () => {
+    vi.spyOn(mockClient, 'chatCompletion').mockResolvedValue({
+      content: JSON.stringify({ specialistId: 'milestones', reason: 'Milestones requested' }),
+      raw: {}
+    });
+
+    const result = await CoreRunner.executeTurn({
+      userPrompt: 'Draft the project milestones',
+      projectPath: tempDir,
+      stateManager: stateMgr,
+      client: mockClient,
+      model: 'test-model',
+      toolRegistry,
+      specialistRegistry,
+      sessionMessages: []
+    });
+
+    expect(result.specialistId).toBe('general');
+    expect(result.output).toContain('Prerequisite Required');
+    expect(result.output).toContain('RTM.md');
+  });
+
   it('initiates 1-by-1 intake when no CONOPS exists on a new project', async () => {
     vi.spyOn(mockClient, 'chatCompletion').mockResolvedValue({
       content: JSON.stringify({ specialistId: 'conops', reason: 'CONOPS requested' }),

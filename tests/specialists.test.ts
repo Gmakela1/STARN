@@ -29,6 +29,28 @@ describe('Specialist Packages & RTM', () => {
     expect(rtm!.criticRubric).toContain('Tabular Matrix Structure');
   });
 
+  it('milestones specialist has prerequisite RTM and buckets requirements into MVP gating', () => {
+    const milestones = registry.get('milestones');
+    expect(milestones).toBeDefined();
+    expect(milestones!.prerequisiteArtifactId).toBe('RTM');
+    expect(milestones!.systemPrompt).toContain('RTM');
+    expect(milestones!.systemPrompt).toContain('MVP');
+  });
+
+  it('wbs specialist has prerequisite MILESTONES and builds towards MVP milestone first', () => {
+    const wbs = registry.get('wbs');
+    expect(wbs).toBeDefined();
+    expect(wbs!.prerequisiteArtifactId).toBe('MILESTONES');
+    expect(wbs!.systemPrompt).toContain('Milestone');
+  });
+
+  it('sow specialist supports tailorability (DIY, turnkey, or multi-contractor)', () => {
+    const sow = registry.get('sow');
+    expect(sow).toBeDefined();
+    expect(sow!.prerequisiteArtifactId).toBe('WBS');
+    expect(sow!.systemPrompt).toContain('contracting strategy');
+  });
+
   it('requirements specialist has prerequisite CAPABILITIES and Requirement 1.a numbering', () => {
     const reqs = registry.get('requirements');
     expect(reqs).toBeDefined();
