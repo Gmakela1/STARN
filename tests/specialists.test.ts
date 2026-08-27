@@ -65,4 +65,15 @@ describe('Specialist Packages & RTM', () => {
     expect(cap!.systemPrompt).toContain('1.a');
     expect(cap!.systemPrompt).toContain('plain-text');
   });
+
+  it('deliverable specialists require tool-based inspection of prior documents and maintaining a running plan', () => {
+    const deliverableSpecialists = ['capabilities', 'requirements', 'rtm', 'milestones', 'wbs', 'sow'];
+    for (const id of deliverableSpecialists) {
+      const pkg = registry.get(id);
+      expect(pkg).toBeDefined();
+      expect(pkg!.systemPrompt).toContain('DISCOVERY, PLANNING & EXECUTION WORKFLOW');
+      expect(pkg!.systemPrompt).toContain('fs_read');
+      expect(pkg!.systemPrompt).toContain('running plan');
+    }
+  });
 });
