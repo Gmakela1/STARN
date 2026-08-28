@@ -21,6 +21,16 @@ describe('Specialist Packages & RTM', () => {
     );
   });
 
+  it('conops specialist enforces adaptive intake interview and high-level operational blueprint', () => {
+    const conops = registry.get('conops');
+    expect(conops).toBeDefined();
+    expect(conops!.systemPrompt).toContain('ADAPTIVE INTAKE INTERVIEW');
+    expect(conops!.systemPrompt).toContain('Operating Location');
+    expect(conops!.systemPrompt).toContain('tweak subsequent questions');
+    expect(conops!.secretSauceExamples[0]).toContain('Operational Environment & Operating Location');
+    expect(conops!.secretSauceExamples[0]).toContain('Operational Use Cases & System Modes');
+  });
+
   it('rtm specialist has prerequisite REQUIREMENTS, tabular rubric, and secret sauce example', () => {
     const rtm = registry.get('rtm');
     expect(rtm).toBeDefined();
