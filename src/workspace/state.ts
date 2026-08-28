@@ -49,11 +49,40 @@ export class ProjectStateManager {
     this.stateFilePath = path.join(this.projectPath, '.starn', 'state.json');
   }
 
+  public scaffoldProjectDirectories(): void {
+    const docsDir = path.join(this.projectPath, 'docs');
+    const refDir = path.join(this.projectPath, 'reference');
+    const examplesDir = path.join(this.projectPath, 'examples');
+
+    if (!fs.existsSync(docsDir)) fs.mkdirSync(docsDir, { recursive: true });
+    if (!fs.existsSync(refDir)) {
+      fs.mkdirSync(refDir, { recursive: true });
+      const refReadme = path.join(refDir, 'README.md');
+      if (!fs.existsSync(refReadme)) {
+        fs.writeFileSync(
+          refReadme,
+          `# Project Reference Documents\n\nDrop any user-provided reference files here:\n- Component spec sheets & datasheets\n- Interface Control Documents (ICDs)\n- Donor vehicle / machine manuals & schematics\n- Engineering calculations & CAD notes\n\nSTARN will automatically discover and inspect these files when assisting you.\n`,
+          'utf-8'
+        );
+      }
+    }
+
+    if (!fs.existsSync(examplesDir)) fs.mkdirSync(examplesDir, { recursive: true });
+    for (const p of ORDERED_WORKFLOW_PHASES) {
+      const subExDir = path.join(examplesDir, p.id);
+      if (!fs.existsSync(subExDir)) {
+        fs.mkdirSync(subExDir, { recursive: true });
+      }
+    }
+  }
+
   public getOrCreateState(projectId: string, name: string): ProjectState {
     const dir = path.dirname(this.stateFilePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
+
+    this.scaffoldProjectDirectories();
 
     if (fs.existsSync(this.stateFilePath)) {
       const state = this.getState();

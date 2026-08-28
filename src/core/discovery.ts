@@ -5,12 +5,16 @@ import { ProjectStateManager } from '../workspace/state.js';
 export interface DiscoverySummary {
   existingFiles: string[];
   existingArtifacts: string[];
+  referenceFiles: string[];
+  userExampleFiles: string[];
   discoveryText: string;
 }
 
 export async function runDiscovery(projectPath: string, stateManager: ProjectStateManager): Promise<DiscoverySummary> {
   const root = path.resolve(projectPath);
   const foundFiles: string[] = [];
+  const referenceFiles: string[] = [];
+  const userExampleFiles: string[] = [];
 
   function scanDir(dir: string) {
     if (!fs.existsSync(dir)) return;
@@ -23,6 +27,11 @@ export async function runDiscovery(projectPath: string, stateManager: ProjectSta
         scanDir(full);
       } else {
         foundFiles.push(rel);
+        if (rel.startsWith('reference/') && !rel.endsWith('README.md')) {
+          referenceFiles.push(rel);
+        } else if (rel.startsWith('examples/') && (rel.endsWith('.md') || rel.endsWith('.txt'))) {
+          userExampleFiles.push(rel);
+        }
       }
     }
   }
@@ -42,6 +51,12 @@ export async function runDiscovery(projectPath: string, stateManager: ProjectSta
     }
   }
   discoveryText += `- Existing Files in Workspace:\n  ${foundFiles.length > 0 ? foundFiles.map(f => `* ${f}`).join('\n  ') : '(None)'}\n`;
+  if (referenceFiles.length > 0) {
+    discoveryText += `- User Reference Documents (ICDs / Spec Sheets / Datasheets available to inspect via fs_read):\n  ${referenceFiles.map(f => `* ${f}`).join('\n  ')}\n`;
+  }
+  if (userExampleFiles.length > 0) {
+    discoveryText += `- User Custom Reference Examples:\n  ${userExampleFiles.map(f => `* ${f}`).join('\n  ')}\n`;
+  }
   discoveryText += `- Approved/Existing Artifacts:\n  ${existingArtifacts.length > 0 ? existingArtifacts.map(a => `* ${a}`).join('\n  ') : '(None)'}\n`;
   if (state.openRisks.length > 0) {
     discoveryText += `- Open Risks:\n  ${state.openRisks.map(r => `* ${r}`).join('\n  ')}\n`;
@@ -52,6 +67,8 @@ export async function runDiscovery(projectPath: string, stateManager: ProjectSta
   return {
     existingFiles: foundFiles,
     existingArtifacts,
+    referenceFiles,
+    userExampleFiles,
     discoveryText
   };
 }

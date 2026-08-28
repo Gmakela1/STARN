@@ -37,7 +37,7 @@ describe('Project Registry & State', () => {
     expect(registry.getActiveProject()?.id).toBe(record.id);
   });
 
-  it('initializes, reads, and updates project state on disk', () => {
+  it('initializes, reads, and updates project state on disk and scaffolds docs, reference, and examples directories', () => {
     const projPath = path.join(tempBaseDir, 'shed-project');
     fs.mkdirSync(projPath, { recursive: true });
 
@@ -45,6 +45,12 @@ describe('Project Registry & State', () => {
     const initial = stateMgr.getOrCreateState('shed-1', 'Shed Project');
     expect(initial.currentPhase).toBe('conops');
     expect(initial.artifacts).toEqual([]);
+
+    // Verify scaffolding directories exist
+    expect(fs.existsSync(path.join(projPath, 'docs'))).toBe(true);
+    expect(fs.existsSync(path.join(projPath, 'reference'))).toBe(true);
+    expect(fs.existsSync(path.join(projPath, 'examples'))).toBe(true);
+    expect(fs.existsSync(path.join(projPath, 'examples', 'conops'))).toBe(true);
 
     stateMgr.updateDiscoverySummary('Timber frame shed 12x10 with 3kW array', ['Under 120 sqft']);
     stateMgr.recordArtifact({

@@ -36,8 +36,9 @@ describe('Specialist Packages & RTM', () => {
     expect(rtm).toBeDefined();
     expect(rtm!.name).toContain('Traceability Matrix');
     expect(rtm!.prerequisiteArtifactId).toBe('REQUIREMENTS');
-    expect(rtm!.secretSauceExamples[0]).toContain('| Req ID | Requirement Summary | Method |');
-    expect(rtm!.criticRubric).toContain('Tabular Matrix Structure');
+    expect(rtm!.secretSauceExamples[0]).toContain('| Capability Ref | Req ID | Requirement Statement | Method |');
+    expect(rtm!.criticRubric).toContain('100% Upstream Traceability');
+    expect(rtm!.criticRubric).toContain('Standard 4 Verification Methods');
   });
 
   it('milestones specialist enforces MVC -> IOC -> FOC progressive capability gating with consolidated requirements, 4 verification methods, and upgrade provisions', () => {
