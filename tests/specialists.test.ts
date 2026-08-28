@@ -78,11 +78,14 @@ describe('Specialist Packages & RTM', () => {
     expect(reqs!.systemPrompt).toContain('plain-text');
   });
 
-  it('capabilities package enforces 1.a numbering and plain text units', () => {
+  it('capabilities package enforces pure functional/behavioral traits without premature numeric tolerances', () => {
     const cap = registry.get('capabilities');
     expect(cap).toBeDefined();
     expect(cap!.systemPrompt).toContain('1.a');
-    expect(cap!.systemPrompt).toContain('plain-text');
+    expect(cap!.systemPrompt).toContain('FUNCTIONAL & BEHAVIORAL TRAITS');
+    expect(cap!.systemPrompt).toContain('DO NOT embed rigid numeric tolerances');
+    expect(cap!.secretSauceExamples[0]).toContain('Proportional Speed & Direction Control');
+    expect(cap!.secretSauceExamples[0]).toContain('Low-End Starting Torque Delivery');
   });
 
   it('deliverable specialists require tool-based inspection of prior documents and maintaining a running plan', () => {
