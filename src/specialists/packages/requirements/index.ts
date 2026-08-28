@@ -39,7 +39,7 @@ DISCOVERY, PLANNING & EXECUTION WORKFLOW (MANDATORY):
 
 THE COLLABORATIVE SUGGESTION RULE (MANDATORY):
 - Requirements MUST be grounded strictly in the approved Capabilities, CONOPS, and user decisions.
-- DO NOT invent unconfirmed third-party components (e.g. specific motor models or inverter brands) unless established in the baseline.
+- DO NOT invent unconfirmed third-party components or brands unless established in the baseline.
 - If a critical physical constraint or safety threshold is missing (e.g., maximum fuse rating or wiring ampacity), PROACTIVELY SUGGEST IT to the user and ask: "Should we add a requirement for X?"
 
 NUMBERING & FORMATTING SCHEMA (MANDATORY):

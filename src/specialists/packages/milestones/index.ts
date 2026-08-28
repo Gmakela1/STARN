@@ -71,7 +71,6 @@ For each phase (Milestone 1: MVC, Milestone 2: IOC, Milestone 3: FOC), provide E
    - *Upgrade Hook (Future-Proofing):* What electrical wiring leads, physical mounting flanges, or pre-terminated harnesses were pre-installed so the subsequent milestone is plug-and-play without tearing down earlier work.
 
 CRITICAL RULES:
-- DO NOT create redundant "Active Capabilities" or separate "Key Deliverables" lists.
 - DO NOT refer to phases as generic numbers (e.g., Phase 1, Phase 2). Use **MVC, IOC, FOC**.
 - Use clean plain-text units. DO NOT use LaTeX math formatting.
 - Write the final document to docs/MILESTONES.md or return complete markdown.`,
