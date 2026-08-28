@@ -30,7 +30,7 @@ describe('Specialist Packages & RTM', () => {
     expect(rtm!.criticRubric).toContain('Tabular Matrix Structure');
   });
 
-  it('milestones specialist enforces MVC -> IOC -> FOC progressive capability gating with consolidated requirements and 4 standard verification methods', () => {
+  it('milestones specialist enforces MVC -> IOC -> FOC progressive capability gating with consolidated requirements, 4 verification methods, and upgrade provisions', () => {
     const milestones = registry.get('milestones');
     expect(milestones).toBeDefined();
     expect(milestones!.prerequisiteArtifactId).toBe('RTM');
@@ -38,11 +38,12 @@ describe('Specialist Packages & RTM', () => {
     expect(milestones!.systemPrompt).toContain('IOC');
     expect(milestones!.systemPrompt).toContain('FOC');
     expect(milestones!.systemPrompt).toContain('Inspect, Test, Demo, Analysis');
-    expect(milestones!.systemPrompt).toContain('Evolution / Upgrade Path');
+    expect(milestones!.systemPrompt).toContain('Evolution & Upgrade Provisions (De-Risking & Hooks)');
     expect(milestones!.secretSauceExamples[0]).toContain('Milestone 1: MVC');
     expect(milestones!.secretSauceExamples[0]).toContain('Milestone 2: IOC');
     expect(milestones!.secretSauceExamples[0]).toContain('Milestone 3: FOC');
     expect(milestones!.secretSauceExamples[0]).toContain('Requirements & Acceptance Gates');
+    expect(milestones!.secretSauceExamples[0]).toContain('Evolution & Upgrade Provisions (De-Risking & Hooks)');
   });
 
   it('testplans specialist has prerequisite MILESTONES and conducts shop tooling interview to build phased test procedures', () => {
