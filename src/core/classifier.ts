@@ -109,7 +109,45 @@ export async function classifyRequest(
     return explicitSwitch;
   }
 
-  // 2. Check if this is an informational query or question (should route to general Q&A, NOT rewrite documents)
+  // 2. PHASE LOCKING: If the user is actively working on a formal deliverable
+  // (i.e. not general/conops), their feedback and edits are directed at that
+  // active specialist document, NOT at general Q&A.
+  if (activePhase && activePhase !== 'general' && activePhase !== 'conops') {
+    // Only route away if it's an explicit informational question (starts with "what is", "tell me", etc.)
+    // AND it doesn't contain edit/update/revise/feedback keywords
+    const lower = userMessage.trim().toLowerCase();
+    const isEditFeedback =
+      lower.startsWith('update') ||
+      lower.startsWith('change') ||
+      lower.startsWith('add') ||
+      lower.startsWith('remove') ||
+      lower.startsWith('revise') ||
+      lower.startsWith('edit') ||
+      lower.startsWith('fix') ||
+      lower.startsWith('include') ||
+      lower.startsWith('modify') ||
+      lower.includes('instead of') ||
+      lower.includes('change the') ||
+      lower.includes('add a') ||
+      lower.includes('remove the') ||
+      lower.includes('feedback') ||
+      lower.includes('correction') ||
+      lower.includes('wrong') ||
+      lower.includes('that should be') ||
+      lower.includes('should say') ||
+      lower.includes('battery') ||
+      lower.includes('motor') ||
+      lower.includes('charger') ||
+      lower.includes('compartment') ||
+      lower.includes('seat') ||
+      lower.includes('display');
+
+    if (isEditFeedback) {
+      return activePhase;
+    }
+  }
+
+  // 3. Check if this is an informational query or question (should route to general Q&A)
   if (isInformationalQuery(userMessage)) {
     return 'general';
   }
@@ -120,14 +158,17 @@ Classify the user's request into EXACTLY ONE of the following specialist IDs:
 - "conops": Authoring/updating Concept of operations, user intent, operational environments, system boundaries, or initial project intake.
 - "capabilities": Authoring/updating functional capabilities, behavioral character traits (1.a, 1.b).
 - "requirements": Authoring/updating engineering requirements, quantifiable constraints, physical tolerances (Requirement 1.a).
-- "rtm": Authoring/updating Requirements Traceability Matrix, verification methods (Test, Inspection, Analysis, Demonstration).
-- "milestones": Authoring/updating development phases, gating criteria (MVP, IOC, FOC), acceptance gates.
+- "rtm": Authoring/updating Requirements Traceability Matrix, verification methods (Inspect, Test, Demo, Analysis).
+- "milestones": Authoring/updating development phases, gating criteria (MVC, IOC, FOC), acceptance gates.
 - "testplans": Authoring/updating shop test plans, verification procedures (TP-MVP-xx, TP-IOC-xx, TP-FOC-xx), and tooling interviews.
 - "wbs": Authoring/updating Work Breakdown Structure, deliverables, component hierarchical breakdown.
 - "sow": Authoring/updating Statement of Work, vendor/contractor deliverables, project scope agreement.
 
 Active Project Workflow Phase: "${activePhase || 'conops'}"
-Note: If the user is asking an informational question, querying decisions, or asking for a summary, return "general". Only return an authoring specialist if the user intends to CREATE, REVISE, or UPDATE a formal document.
+IMPORTANT RULES:
+- If the user is providing edits, revisions, corrections, or feedback about an existing document, route to the Active Workflow Phase specialist.
+- Only return "general" for purely informational queries.
+- Only return an authoring specialist if the user intends to CREATE, REVISE, or UPDATE a formal document.
 
 User Request: "${userMessage}"
 

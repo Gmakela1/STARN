@@ -24,9 +24,9 @@ describe('Specialist Packages & RTM', () => {
   it('conops specialist enforces adaptive intake interview and high-level operational blueprint', () => {
     const conops = registry.get('conops');
     expect(conops).toBeDefined();
-    expect(conops!.systemPrompt).toContain('ADAPTIVE INTAKE INTERVIEW');
+    expect(conops!.systemPrompt).toContain('ADAPTIVE STORY-BASED INTAKE INTERVIEW');
     expect(conops!.systemPrompt).toContain('Operating Location');
-    expect(conops!.systemPrompt).toContain('tweak subsequent questions');
+    expect(conops!.systemPrompt).toContain('Walk me through how you envision using this');
     expect(conops!.secretSauceExamples[0]).toContain('Operational Environment & Operating Location');
     expect(conops!.secretSauceExamples[0]).toContain('Operational Use Cases & System Modes');
   });

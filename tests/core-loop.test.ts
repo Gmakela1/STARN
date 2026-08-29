@@ -207,7 +207,8 @@ describe('Core Runner Intake & Multi-Turn', () => {
 
     expect(result.specialistId).toBe('conops');
     expect(result.requiresReview).toBe(false); // Question turn, not a full document
-    expect(result.output).toContain('What is the project?');
+    expect(result.output).toContain('captured your project description');
+    expect(result.output).toContain('walk me through how you envision using this');
   });
 
   it('injects existing baseline document to evolve when updating an existing document', async () => {
