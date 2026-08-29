@@ -21,14 +21,19 @@ describe('Specialist Packages & RTM', () => {
     );
   });
 
-  it('conops specialist enforces adaptive intake interview and high-level operational blueprint', () => {
+  it('conops specialist enforces story-based intake, clean 5-section structure, and Section 6 Open Questions', () => {
     const conops = registry.get('conops');
     expect(conops).toBeDefined();
+    // Story-based intake
     expect(conops!.systemPrompt).toContain('ADAPTIVE STORY-BASED INTAKE INTERVIEW');
-    expect(conops!.systemPrompt).toContain('Operating Location');
     expect(conops!.systemPrompt).toContain('Walk me through how you envision using this');
-    expect(conops!.secretSauceExamples[0]).toContain('Operational Environment & Operating Location');
-    expect(conops!.secretSauceExamples[0]).toContain('Operational Use Cases & System Modes');
+    // Clean 5-section structure
+    expect(conops!.systemPrompt).toContain('## 1. Executive Summary & User Intent');
+    expect(conops!.systemPrompt).toContain('## 5. Safety, Environmental & Community Considerations');
+    // Section 6 Open Questions
+    expect(conops!.systemPrompt).toContain('## 6. Open Questions & Items for Clarification');
+    expect(conops!.systemPrompt).toContain('Do NOT silently assume answers');
+    expect(conops!.secretSauceExamples[0]).toContain('## 6. Open Questions & Items for Clarification');
   });
 
   it('rtm specialist has prerequisite REQUIREMENTS, tabular rubric, and secret sauce example', () => {

@@ -169,7 +169,7 @@ export class CoreRunner {
       try {
         const existingContent = fs.readFileSync(targetDocPath, 'utf-8');
         if (existingContent.trim()) {
-          existingBaselineText = `\nEXISTING BASELINE DOCUMENT (TO EVOLVE / UPDATE):\nAn approved baseline for this deliverable already exists at docs/${specialist.id.toUpperCase()}.md:\n\`\`\`markdown\n${existingContent}\n\`\`\`\nINSTRUCTION: You must EVOLVE and UPDATE this existing baseline document to incorporate the user's requested additions or changes, rather than starting from scratch.\n`;
+          existingBaselineText = `\nEXISTING BASELINE DOCUMENT (TO EVOLVE / UPDATE):\nAn approved baseline for this deliverable already exists at docs/${specialist.id.toUpperCase()}.md:\n\`\`\`markdown\n${existingContent}\n\`\`\`\nINSTRUCTION: You must EVOLVE and UPDATE this existing baseline document to incorporate the user's requested additions or changes, rather than starting from scratch.\n\nSECTION 6 ANSWER HANDLING (if applicable):\nIf the existing document has a Section 6 (Open Questions) and the user is now answering those questions, EDIT the relevant sections IN PLACE to reflect the answer. Remove the answered question from Section 6. Do NOT regenerate or rewrite the entire document from scratch. Do NOT include your reasoning, thought process, or meta-commentary in the document output.\n`;
         }
       } catch (_e) {
         // ignore read error
