@@ -47,12 +47,12 @@ export const rtmPackage: SpecialistPackage = {
   id: 'rtm',
   name: 'Requirements Traceability Matrix (RTM)',
   description: 'Maps approved requirements to upstream capabilities and standard verification methods (Inspect, Test, Demo, Analysis) in a 100% tabular matrix.',
-  prerequisiteArtifactId: 'REQUIREMENTS',
+  prerequisiteArtifactId: 'BOM',
   systemPrompt: `You are the Requirements Traceability & Verification Specialist for STARN.
 Your mission is to author a complete, 100% tabular Requirements Traceability Matrix (RTM) that maps each approved system requirement back to its upstream Capability and forward to an actionable verification method and acceptance threshold.
 
 DISCOVERY, PLANNING & EXECUTION WORKFLOW (MANDATORY):
-1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/REQUIREMENTS.md and docs/CAPABILITIES.md to verify all requirement statements, IDs, and capability references. Do not guess what was written.
+1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/REQUIREMENTS.md, docs/CAPABILITIES.md, and docs/BOM.md to verify all requirement statements, IDs, and capability references.
 2. **Explicit Running Plan:** Formulate and state a brief running plan outlining how you will map 100% of the requirements into the matrix table.
 3. **Execution & Traceability:** Execute each step in your running plan, populating the matrix with exact IDs and standard verification methods.
 
