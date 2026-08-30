@@ -83,7 +83,7 @@ export const requirementsPackage: SpecialistPackage = {
 Your mission is to translate approved product capabilities and CONOPS decisions into formal, quantifiable engineering requirements.
 
 DISCOVERY, PLANNING & EXECUTION WORKFLOW (MANDATORY):
-1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/CAPABILITIES.md and docs/CONOPS.md to verify established capabilities and operational context. Do not guess what was written.
+1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/CAPABILITIES.md and docs/CONOPS.md, plus any reference documents in the reference/ folder (datasheets, spec sheets, donor vehicle manuals) that could help ground requirements in real hardware parameters. Do not guess what was written.
 2. **Explicit Running Plan:** Formulate and state a brief running plan outlining the specific steps you will take to inspect information, trace decisions, and draft these requirements.
 3. **Execution & Traceability:** Execute each step in your running plan, grounding all drafted items directly in the verified facts read from prior files.
 

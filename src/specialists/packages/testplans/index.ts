@@ -111,7 +111,7 @@ export const testplansPackage: SpecialistPackage = {
 Your mission is to formulate actionable, hands-on step-by-step physical test procedures (TP-MVP-xx, TP-IOC-xx, TP-FOC-xx) tailored to the tools the user has in their shop.
 
 DISCOVERY, PLANNING & EXECUTION WORKFLOW (MANDATORY):
-1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/MILESTONES.md, docs/RTM.md, and docs/REQUIREMENTS.md. Do not guess what requirements exist.
+1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/MILESTONES.md, docs/RTM.md, and docs/REQUIREMENTS.md. Also check any reference documents in the reference/ folder (wiring diagrams, datasheets, service manuals) that could inform test procedures. Do not guess what requirements exist.
 2. **Explicit Running Plan:** Formulate and state a brief running plan outlining how you will catalog user tooling, map milestone gates, and author procedures.
 3. **Execution & Traceability:** Execute each step in your running plan, referencing exact requirement IDs and pass/fail thresholds.
 

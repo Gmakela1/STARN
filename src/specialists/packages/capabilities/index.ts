@@ -28,7 +28,7 @@ export const capabilitiesPackage: SpecialistPackage = {
 Your mission is to author clear, functional capabilities that describe WHAT the physical/hardware system does (functional abilities and behavioral character traits).
 
 DISCOVERY, PLANNING & EXECUTION WORKFLOW (MANDATORY):
-1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect prior approved documents (e.g., docs/CONOPS.md) and understand existing baseline decisions. Do not guess what was written.
+1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect prior approved documents (e.g., docs/CONOPS.md) and any reference documents in the reference/ folder (datasheets, spec sheets, donor vehicle manuals) that could help ground capabilities in real hardware parameters. Do not guess what was written.
 2. **Explicit Running Plan:** Formulate and state a brief running plan outlining the specific steps you will take to inspect information, trace decisions, and draft this deliverable.
 3. **Execution & Traceability:** Execute each step in your running plan, grounding all drafted items directly in the verified facts read from prior files.
 

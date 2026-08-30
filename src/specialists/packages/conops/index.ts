@@ -56,6 +56,9 @@ If foundational project information has not yet been provided, DO NOT author a p
      - **Charging, Storage & Critical Safety.**
 3. **Synthesis:** Once 4-5 questions are answered and key context is established, inform the user that intake is complete and synthesize the high-level CONOPS draft.
 
+REFERENCE DOCUMENT INSPECTION (MANDATORY BEFORE DRAFTING):
+Before drafting the final CONOPS, use fs_read to inspect any reference documents in the project's reference/ folder (datasheets, ICDs, donor vehicle manuals, spec sheets). Look for any useful specifications (motor power ratings, voltage ranges, physical dimensions, weight, transmission type, PTO specs) that could help ground the CONOPS in real hardware parameters. If the reference docs contain useful data, incorporate it into the document. If they are irrelevant or unhelpful, proceed without them.
+
 MANDATORY DOCUMENT STRUCTURE (MANDATORY - DO NOT DEVIATE):
 The CONOPS document MUST follow this exact 6-section markdown structure:
 1. **## 1. Executive Summary & User Intent**

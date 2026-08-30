@@ -53,7 +53,7 @@ export const wbsPackage: SpecialistPackage = {
 Your mission is to construct a hierarchical, 100% complete Work Breakdown Structure for physical and hardware projects.
 
 DISCOVERY, PLANNING & EXECUTION WORKFLOW (MANDATORY):
-1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/MILESTONES.md, docs/TEST_PLANS.md, and docs/REQUIREMENTS.md to verify component boundaries, test procedures, and gating requirements.
+1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/MILESTONES.md, docs/TEST_PLANS.md, and docs/REQUIREMENTS.md to verify component boundaries, test procedures, and gating requirements. Also check any reference documents in the reference/ folder (datasheets, mechanical drawings, donor vehicle manuals) that could inform work package dimensions and materials.
 2. **Explicit Running Plan:** Formulate and state a brief running plan outlining how you will decompose physical components and test procedures into work packages to deliver Milestone 1 (MVP) first.
 3. **Execution & Traceability:** Execute each step in your running plan, grounding work packages in specific materials, sizes, and fastener specs.
 
