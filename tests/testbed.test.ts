@@ -8,7 +8,7 @@ describe('Autonomous Testbed', () => {
     const runner = new TestbedRunner(mockClient);
     const suites = runner.loadTestSuites();
     expect(suites.length).toBeGreaterThanOrEqual(3);
-    expect(suites.some(s => s.id === 'solar_shed_wbs')).toBe(true);
+    expect(suites.some(s => s.id === 'deployable_shelter_conops')).toBe(true);
     expect(suites.some(s => s.id === 'deployable_shelter_conops')).toBe(true);
     expect(suites.some(s => s.id === 'tractor_ev_rtm')).toBe(true);
   });

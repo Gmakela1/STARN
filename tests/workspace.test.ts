@@ -118,7 +118,7 @@ describe('Project Registry & State', () => {
     expect(state.workflow).toBeDefined();
     expect(state.workflow.activePhase).toBe('conops');
     expect(Object.keys(state.workflow.phases)).toEqual(
-      expect.arrayContaining(['conops', 'capabilities', 'requirements', 'rtm', 'milestones', 'testplans', 'wbs', 'sow'])
+      expect.arrayContaining(['conops', 'architecture', 'icd', 'capabilities', 'requirements', 'bom', 'rtm', 'milestones', 'testplans', 'sow'])
     );
   });
 

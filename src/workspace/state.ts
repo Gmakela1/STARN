@@ -4,12 +4,14 @@ import { ProjectState, ArtifactRecord, IntakeState, WorkflowState } from './type
 
 export const ORDERED_WORKFLOW_PHASES = [
   { id: 'conops', name: 'CONOPS / User Intent', artifactPath: 'docs/CONOPS.md' },
+  { id: 'architecture', name: 'System Architecture & Subsystems', artifactPath: 'docs/ARCHITECTURE.md' },
+  { id: 'icd', name: 'Interface Control Document (ICD)', artifactPath: 'docs/ICD.md' },
   { id: 'capabilities', name: 'Product Capabilities', artifactPath: 'docs/CAPABILITIES.md' },
   { id: 'requirements', name: 'System Requirements', artifactPath: 'docs/REQUIREMENTS.md' },
+  { id: 'bom', name: 'Bill of Materials (BOM)', artifactPath: 'docs/BOM.md' },
   { id: 'rtm', name: 'Requirements Traceability Matrix (RTM)', artifactPath: 'docs/RTM.md' },
   { id: 'milestones', name: 'Project Milestones & Gating', artifactPath: 'docs/MILESTONES.md' },
   { id: 'testplans', name: 'Test Plans & Procedures', artifactPath: 'docs/TEST_PLANS.md' },
-  { id: 'wbs', name: 'Work Breakdown Structure (WBS)', artifactPath: 'docs/WBS.md' },
   { id: 'sow', name: 'Statement of Work (SOW)', artifactPath: 'docs/SOW.md' }
 ];
 

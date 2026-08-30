@@ -78,7 +78,7 @@ describe('CLI UI formatting', () => {
           requirements: { id: 'requirements', name: 'System Requirements', status: 'pending', artifactPath: 'docs/REQUIREMENTS.md', updatedAt: null },
           rtm: { id: 'rtm', name: 'Requirements Traceability Matrix (RTM)', status: 'locked', artifactPath: 'docs/RTM.md', updatedAt: null },
           milestones: { id: 'milestones', name: 'Project Milestones & Gating', status: 'pending', artifactPath: 'docs/MILESTONES.md', updatedAt: null },
-          wbs: { id: 'wbs', name: 'Work Breakdown Structure (WBS)', status: 'pending', artifactPath: 'docs/WBS.md', updatedAt: null },
+          testplans: { id: 'testplans', name: 'Test Plans & Procedures', status: 'pending', artifactPath: 'docs/TEST_PLANS.md', updatedAt: null },
           sow: { id: 'sow', name: 'Statement of Work (SOW)', status: 'pending', artifactPath: 'docs/SOW.md', updatedAt: null }
         }
       }

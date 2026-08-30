@@ -80,7 +80,7 @@ describe('Critic Evaluator', () => {
     const critic = new CriticEvaluator(mockClient);
     const result = await critic.evaluate({
       model: 'test-model',
-      artifactContent: '# WBS\n1.0 Framing',
+      artifactContent: '# ARCHITECTURE\n1.0 System Architecture',
       rubric: 'Rigorous engineering',
       secretSauceExamples: ['# Example\n1.0 Foundation'],
       userExamples: [],

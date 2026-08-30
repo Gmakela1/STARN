@@ -58,14 +58,14 @@ describe('Discovery & Classifier', () => {
     expect(specialistId).toBe('general');
   });
 
-  it('classifier routes physical breakdown requests to wbs', async () => {
+  it('classifier routes architecture requests to architecture', async () => {
     vi.spyOn(mockClient, 'chatCompletion').mockResolvedValue({
-      content: '{"specialistId": "wbs", "reason": "User requested work breakdown"}',
+      content: '{"specialistId": "architecture", "reason": "User requested system architecture"}',
       raw: {}
     });
 
-    const specialistId = await classifyRequest('Create a detailed WBS for the solar shed electrical wiring', mockClient, 'test-model');
-    expect(specialistId).toBe('wbs');
+    const specialistId = await classifyRequest('Create a system architecture for the tractor conversion', mockClient, 'test-model');
+    expect(specialistId).toBe('architecture');
   });
 
   it('classifier routes general questions to general', async () => {
@@ -96,7 +96,7 @@ describe('Discovery & Classifier', () => {
   it('detects explicit user phase switch requests', () => {
     expect(detectPhaseSwitchRequest('I want to redo the CONOPS document')).toBe('conops');
     expect(detectPhaseSwitchRequest('/goto requirements')).toBe('requirements');
-    expect(detectPhaseSwitchRequest('Switch to WBS phase')).toBe('wbs');
+    expect(detectPhaseSwitchRequest('Switch to architecture phase')).toBe('architecture');
     expect(detectPhaseSwitchRequest('Just checking the status')).toBeNull();
   });
 });

@@ -3,12 +3,14 @@ import { OpenRouterClient } from '../openrouter/client.js';
 const VALID_SPECIALISTS = [
   'general',
   'conops',
+  'architecture',
+  'icd',
   'capabilities',
   'requirements',
+  'bom',
   'rtm',
   'milestones',
   'testplans',
-  'wbs',
   'sow'
 ];
 
@@ -85,11 +87,13 @@ export function detectPhaseSwitchRequest(userMessage: string): string | null {
 
   if (isRedoOrSwitch) {
     if (lower.includes('conops') || lower.includes('intent') || lower.includes('concept')) return 'conops';
+    if (lower.includes('architecture') || lower.includes('subsystem') || lower.includes('block diagram')) return 'architecture';
+    if (lower.includes('icd') || lower.includes('interface') || lower.includes('interface control')) return 'icd';
+    if (lower.includes('bom') || lower.includes('bill of materials') || lower.includes('parts') || lower.includes('procurement')) return 'bom';
     if (lower.includes('test plan') || lower.includes('testplan') || lower.includes('procedures')) return 'testplans';
     if (lower.includes('rtm') || lower.includes('traceability')) return 'rtm';
     if (lower.includes('requirement') || lower.includes('srs')) return 'requirements';
     if (lower.includes('capability') || lower.includes('capabilities')) return 'capabilities';
-    if (lower.includes('wbs') || lower.includes('work breakdown')) return 'wbs';
     if (lower.includes('milestone') || lower.includes('gating')) return 'milestones';
     if (lower.includes('sow') || lower.includes('statement of work')) return 'sow';
   }
@@ -156,13 +160,16 @@ export async function classifyRequest(
 Classify the user's request into EXACTLY ONE of the following specialist IDs:
 - "general": Informational questions, scoping discussion, status queries, summaries, or advice that does NOT author/rewrite a formal engineering deliverable.
 - "conops": Authoring/updating Concept of operations, user intent, operational environments, system boundaries, or initial project intake.
-- "capabilities": Authoring/updating functional capabilities, behavioral character traits (1.a, 1.b).
-- "requirements": Authoring/updating engineering requirements, quantifiable constraints, physical tolerances (Requirement 1.a).
+- "architecture": Authoring/updating system architecture, subsystem decomposition, block diagrams, dependency graphs.
+- "icd": Authoring/updating Interface Control Document, mechanical/electrical/data/thermal interface definitions.
+- "capabilities": Authoring/updating per-subsystem functional capabilities, behavioral character traits (SS-01.a, SS-01.b).
+- "requirements": Authoring/updating per-subsystem engineering requirements, quantifiable constraints, physical tolerances (Requirement SS-01.a).
+- "bom": Authoring/updating Bill of Materials, candidate parts, datasheet links, long-lead procurement items, design decisions.
 - "rtm": Authoring/updating Requirements Traceability Matrix, verification methods (Inspect, Test, Demo, Analysis).
 - "milestones": Authoring/updating development phases, gating criteria (MVC, IOC, FOC), acceptance gates.
 - "testplans": Authoring/updating shop test plans, verification procedures (TP-MVP-xx, TP-IOC-xx, TP-FOC-xx), and tooling interviews.
-- "wbs": Authoring/updating Work Breakdown Structure, deliverables, component hierarchical breakdown.
 - "sow": Authoring/updating Statement of Work, vendor/contractor deliverables, project scope agreement.
+- "change-impact": Cross-cutting change impact analysis — flagging which downstream documents need updating when upstream documents change.
 
 Active Project Workflow Phase: "${activePhase || 'conops'}"
 IMPORTANT RULES:
@@ -196,11 +203,14 @@ Respond with ONLY a JSON object: {"specialistId": "<id>", "reason": "<brief reas
   if (lower.includes('test plan') || lower.includes('testplan') || lower.includes('test procedure')) return 'testplans';
   if (lower.includes('rtm') || lower.includes('traceability') || lower.includes('verification matrix')) return 'rtm';
   if (lower.includes('conops') || lower.includes('intent') || lower.includes('concept') || lower.includes('start')) return 'conops';
+  if (lower.includes('architecture') || lower.includes('subsystem') || lower.includes('block diagram')) return 'architecture';
+  if (lower.includes('icd') || lower.includes('interface control')) return 'icd';
+  if (lower.includes('bom') || lower.includes('bill of materials') || lower.includes('parts')) return 'bom';
   if (lower.includes('capability') || lower.includes('capabilities') || lower.includes('behavior')) return 'capabilities';
   if (lower.includes('requirement') || lower.includes('spec') || lower.includes('srs')) return 'requirements';
-  if (lower.includes('wbs') || lower.includes('work breakdown')) return 'wbs';
   if (lower.includes('milestone') || lower.includes('gate') || lower.includes('ioc') || lower.includes('foc')) return 'milestones';
   if (lower.includes('sow') || lower.includes('statement of work')) return 'sow';
+  if (lower.includes('impact') || lower.includes('what changes') || lower.includes('affect')) return 'change-impact';
 
   return activePhase || 'general';
 }

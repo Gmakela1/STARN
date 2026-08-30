@@ -4,19 +4,22 @@ import { SpecialistRegistry } from '../src/specialists/registry.js';
 describe('Specialist Packages & RTM', () => {
   const registry = new SpecialistRegistry();
 
-  it('loads all 9 specialists including general, conops, capabilities, requirements, rtm, milestones, testplans, wbs, sow', () => {
+  it('loads all 11 specialists including general, conops, architecture, icd, capabilities, requirements, bom, rtm, milestones, testplans, sow, change-impact', () => {
     const packages = registry.listSpecialists();
     expect(packages.map(p => p.id)).toEqual(
       expect.arrayContaining([
         'general',
         'conops',
+        'architecture',
+        'icd',
         'capabilities',
         'requirements',
+        'bom',
         'rtm',
         'milestones',
         'testplans',
-        'wbs',
-        'sow'
+        'sow',
+        'change-impact'
       ])
     );
   });
@@ -72,17 +75,47 @@ describe('Specialist Packages & RTM', () => {
     expect(testplans!.secretSauceExamples[0]).toContain('TP-MVP');
   });
 
-  it('wbs specialist has prerequisite TEST_PLANS and builds towards MVP milestone first', () => {
-    const wbs = registry.get('wbs');
-    expect(wbs).toBeDefined();
-    expect(wbs!.prerequisiteArtifactId).toBe('TEST_PLANS');
-    expect(wbs!.systemPrompt).toContain('Milestone');
+  it('architecture specialist decomposes CONOPS system-level capabilities into subsystems with block diagram, dependency graph, and design decisions', () => {
+    const arch = registry.get('architecture');
+    expect(arch).toBeDefined();
+    expect(arch!.prerequisiteArtifactId).toBe('CONOPS');
+    expect(arch!.systemPrompt).toContain('System Block Diagram');
+    expect(arch!.systemPrompt).toContain('Dependency Graph');
+    expect(arch!.systemPrompt).toContain('Key Design Decisions');
+    expect(arch!.secretSauceExamples[0]).toContain('SS-01');
+  });
+
+  it('icd specialist defines mechanical, electrical, data, and thermal interfaces between subsystems', () => {
+    const icd = registry.get('icd');
+    expect(icd).toBeDefined();
+    expect(icd!.prerequisiteArtifactId).toBe('ARCHITECTURE');
+    expect(icd!.systemPrompt).toContain('Mechanical Interfaces');
+    expect(icd!.systemPrompt).toContain('Electrical Interfaces');
+    expect(icd!.systemPrompt).toContain('Data / Signal Interfaces');
+    expect(icd!.secretSauceExamples[0]).toContain('ICD-M-01');
+  });
+
+  it('bom specialist generates candidate parts per subsystem with requirement satisfaction flags and design decisions', () => {
+    const bom = registry.get('bom');
+    expect(bom).toBeDefined();
+    expect(bom!.prerequisiteArtifactId).toBe('REQUIREMENTS');
+    expect(bom!.systemPrompt).toContain('candidate part');
+    expect(bom!.systemPrompt).toContain('Design Decisions Required');
+    expect(bom!.secretSauceExamples[0]).toContain('Satisfies?');
+  });
+
+  it('change-impact specialist cross-checks document consistency without rewriting files', () => {
+    const ci = registry.get('change-impact');
+    expect(ci).toBeDefined();
+    expect(ci!.systemPrompt).toContain('Change Impact');
+    expect(ci!.requiresCritic).toBe(false);
+    expect(ci!.allowedTools).not.toContain('fs_write');
   });
 
   it('sow specialist supports tailorability (DIY, turnkey, or multi-contractor)', () => {
     const sow = registry.get('sow');
     expect(sow).toBeDefined();
-    expect(sow!.prerequisiteArtifactId).toBe('WBS');
+    expect(sow!.prerequisiteArtifactId).toBe('TEST_PLANS');
     expect(sow!.systemPrompt).toContain('contracting strategy');
   });
 
@@ -90,14 +123,14 @@ describe('Specialist Packages & RTM', () => {
     const reqs = registry.get('requirements');
     expect(reqs).toBeDefined();
     expect(reqs!.prerequisiteArtifactId).toBe('CAPABILITIES');
-    expect(reqs!.systemPrompt).toContain('Requirement 1.a');
+    expect(reqs!.systemPrompt).toContain('Requirement SS-01');
     expect(reqs!.systemPrompt).toContain('plain-text');
   });
 
   it('capabilities package enforces pure functional/behavioral traits without premature numeric tolerances', () => {
     const cap = registry.get('capabilities');
     expect(cap).toBeDefined();
-    expect(cap!.systemPrompt).toContain('1.a');
+    expect(cap!.systemPrompt).toContain('SS-01.a');
     expect(cap!.systemPrompt).toContain('FUNCTIONAL & BEHAVIORAL TRAITS');
     expect(cap!.systemPrompt).toContain('DO NOT embed rigid numeric tolerances');
     expect(cap!.secretSauceExamples[0]).toContain('Proportional Speed & Direction Control');
@@ -105,7 +138,7 @@ describe('Specialist Packages & RTM', () => {
   });
 
   it('deliverable specialists require tool-based inspection of prior documents and maintaining a running plan', () => {
-    const deliverableSpecialists = ['capabilities', 'requirements', 'rtm', 'milestones', 'testplans', 'wbs', 'sow'];
+    const deliverableSpecialists = ['architecture', 'icd', 'capabilities', 'requirements', 'bom', 'rtm', 'milestones', 'testplans', 'sow'];
     for (const id of deliverableSpecialists) {
       const pkg = registry.get(id);
       expect(pkg).toBeDefined();
