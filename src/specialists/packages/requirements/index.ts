@@ -104,7 +104,7 @@ CRITICAL RULES:
 - Use clean plain-text units (e.g. 72V, 15 kWh, 12 kW, -20°C to +45°C, 120 Nm/s).
 - DO NOT use LaTeX math formatting like $\\text{...}$.
 - DO NOT duplicate requirements in a redundant end table (the RTM specialist will build the dedicated traceability matrix in the next phase).
-- You MUST write the final document to docs/REQUIREMENTS.md via the fs_write tool. AND you MUST return the complete document content in your final response — do NOT replace it with a summary or commentary.`,
+- You MUST write the final document to docs/REQUIREMENTS.md via the fs_write tool. Do NOT skip writing the file.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the System Requirements document:

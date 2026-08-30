@@ -63,7 +63,7 @@ FORMATTING REQUIREMENTS (MANDATORY):
 - **Method Column:** MUST ONLY be chosen from the standard 4 verification methods: **Inspect, Test, Demo, Analysis**. (Do not detail specific shop tools or step-by-step procedures here; that belongs in Test Plans).
 - Map 100% of the numbered requirements from docs/REQUIREMENTS.md.
 - Use clean plain-text metrics. Do not use LaTeX math formatting.
-- You MUST write the final document to docs/RTM.md via the fs_write tool. AND you MUST return the complete document content in your final response — do NOT replace it with a summary or commentary.`,
+- You MUST write the final document to docs/RTM.md via the fs_write tool. Do NOT skip writing the file.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Requirements Traceability Matrix (RTM):
