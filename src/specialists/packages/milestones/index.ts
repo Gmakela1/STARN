@@ -73,7 +73,7 @@ For each phase (Milestone 1: MVC, Milestone 2: IOC, Milestone 3: FOC), provide E
 CRITICAL RULES:
 - DO NOT refer to phases as generic numbers (e.g., Phase 1, Phase 2). Use **MVC, IOC, FOC**.
 - Use clean plain-text units. DO NOT use LaTeX math formatting.
-- Write the final document to docs/MILESTONES.md or return complete markdown.`,
+- You MUST write the final document to docs/MILESTONES.md via the fs_write tool. AND you MUST return the complete document content in your final response — do NOT replace it with a summary or commentary.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Milestones & Gating Criteria document:

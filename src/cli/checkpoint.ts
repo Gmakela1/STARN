@@ -22,8 +22,27 @@ export async function runHumanCheckpoint(
 ): Promise<{ action: CheckpointAction; feedback?: string }> {
   const { specialistId, specialistName, output, criticResult, projectPath, stateManager } = options;
 
-  const isFullDeliverable = specialistId !== 'general' && output.includes('# ');
-  const cleanedDoc = isFullDeliverable ? extractCleanMarkdownDocument(output) : output;
+  // Detect if the response contains a full document (has markdown headers) or is just commentary
+  let isFullDeliverable = specialistId !== 'general' && output.includes('# ');
+  let cleanedDoc = isFullDeliverable ? extractCleanMarkdownDocument(output) : output;
+
+  // FALLBACK: If the response is just commentary but the LLM wrote the file to disk via fs_write,
+  // read the file from disk and use it as the deliverable content.
+  if (!isFullDeliverable && specialistId !== 'general') {
+    const docName = `${specialistId.toUpperCase()}.md`;
+    const filePath = path.join(projectPath, 'docs', docName);
+    if (fs.existsSync(filePath)) {
+      try {
+        const fileContent = fs.readFileSync(filePath, 'utf-8').trim();
+        if (fileContent && fileContent.startsWith('# ')) {
+          cleanedDoc = fileContent;
+          isFullDeliverable = true;
+        }
+      } catch (_e) {
+        // ignore read errors
+      }
+    }
+  }
 
   if (isFullDeliverable) {
     console.log(formatDocumentPreview(cleanedDoc, `${specialistName} (${specialistId.toUpperCase()}.md)`));

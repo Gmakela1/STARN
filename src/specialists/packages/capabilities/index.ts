@@ -44,7 +44,7 @@ NUMBERING & FORMATTING SCHEMA (MANDATORY):
 - Number each capability as **1.a**, **1.b**, **2.a**, **2.b** with a bold descriptive character trait title in brackets.
 - Example: \`- **1.a [Proportional Speed & Direction Control]:** The motor controller provides smooth, continuous forward and reverse speed regulation...\`
 - Use clean plain-text descriptions. DO NOT use LaTeX math formatting like $\\text{...}$.
-- Write the final document to docs/CAPABILITIES.md or return complete markdown.`,
+- You MUST write the final document to docs/CAPABILITIES.md via the fs_write tool. AND you MUST return the complete document content in your final response — do NOT replace it with a summary or commentary.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Product Capabilities document:

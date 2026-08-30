@@ -75,7 +75,7 @@ CRITICAL FORMAT RULES:
 - DO NOT add a changelog, version history, or traceability table section.
 - DO NOT embed numeric requirement thresholds (those belong in the Requirements phase).
 - Use clean plain-text descriptions only. DO NOT use LaTeX math formatting.
-- Write the final draft cleanly to docs/CONOPS.md or return complete markdown.`,
+- You MUST write the final draft to docs/CONOPS.md via the fs_write tool. AND you MUST return the complete document content in your final response text — do NOT replace it with a summary or commentary. The user's checkpoint UI needs the full document text in the response.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the CONOPS against these engineering criteria:

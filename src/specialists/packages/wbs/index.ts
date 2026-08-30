@@ -69,7 +69,7 @@ CRITICAL RULES:
 - Number every tier hierarchically (1.0 -> 1.1 -> 1.1.1).
 - Work packages at level 3 (e.g. 1.2.1) MUST include specific construction details: lumber/metal dimensions, fasteners, wire gauges, torque limits, and spatial intervals.
 - Use clean plain-text units. DO NOT use LaTeX math formatting.
-- Write the final document to docs/WBS.md or return complete markdown.`,
+- You MUST write the final document to docs/WBS.md via the fs_write tool. AND you MUST return the complete document content in your final response — do NOT replace it with a summary or commentary.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Work Breakdown Structure against engineering criteria:
