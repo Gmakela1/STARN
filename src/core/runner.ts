@@ -197,6 +197,22 @@ export class CoreRunner {
     let criticResult: CriticResult | undefined;
     let autoRevisionsRun = 0;
 
+    // If the LLM wrote the file to disk but responded with commentary, recover the document for the critic
+    let artifactForCritic = finalOutput;
+    if (specialist.requiresCritic && !finalOutput.includes('# ')) {
+      try {
+        const filePath = path.join(projectPath, 'docs', `${specialist.id.toUpperCase()}.md`);
+        if (fs.existsSync(filePath)) {
+          const fileContent = fs.readFileSync(filePath, 'utf-8').trim();
+          if (fileContent && fileContent.startsWith('# ')) {
+            artifactForCritic = fileContent;
+          }
+        }
+      } catch (_e) {
+        // ignore
+      }
+    }
+
     // 7. Critic While-Loop with Program Baseline Verification
     if (specialist.requiresCritic) {
       onStatusUpdate?.('Running harsh critic evaluation with program alignment...');
@@ -243,7 +259,7 @@ export class CoreRunner {
 
         criticResult = await critic.evaluate({
           model,
-          artifactContent: finalOutput,
+          artifactContent: artifactForCritic,
           rubric: specialist.criticRubric || '',
           secretSauceExamples: specialist.secretSauceExamples,
           userExamples: customExamples,
@@ -274,6 +290,22 @@ export class CoreRunner {
             onToolCall
           });
           finalOutput = revisionResult.finalResponse;
+          // Re-check the disk file after revision (LLM may have written a new draft)
+          if (!finalOutput.includes('# ')) {
+            try {
+              const filePath = path.join(projectPath, 'docs', `${specialist.id.toUpperCase()}.md`);
+              if (fs.existsSync(filePath)) {
+                const fileContent = fs.readFileSync(filePath, 'utf-8').trim();
+                if (fileContent && fileContent.startsWith('# ')) {
+                  artifactForCritic = fileContent;
+                }
+              }
+            } catch (_e) {
+              // ignore
+            }
+          } else {
+            artifactForCritic = finalOutput;
+          }
         } else {
           break;
         }
