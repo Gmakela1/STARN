@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ToolHandler, ToolExecutionContext, ToolExecutionResponse } from '../types.js';
+import { extractTextFromPdf } from './pdf-extractor.js';
 
 export const fsReadHandler: ToolHandler = {
   name: 'fs_read',
@@ -8,7 +9,7 @@ export const fsReadHandler: ToolHandler = {
     type: 'function',
     function: {
       name: 'fs_read',
-      description: 'Read the contents of a file in the project folder',
+      description: 'Read the contents of a file in the project folder. Supports .md, .txt, .json, .csv, .pdf, and other text-based formats. For PDFs, text content is automatically extracted.',
       parameters: {
         type: 'object',
         properties: {
@@ -27,7 +28,34 @@ export const fsReadHandler: ToolHandler = {
     if (!fs.existsSync(target)) {
       return { success: false, error: `File not found: ${args.path}` };
     }
-    const content = fs.readFileSync(target, 'utf-8');
-    return { success: true, result: content };
+
+    const ext = path.extname(target).toLowerCase();
+
+    if (ext === '.pdf') {
+      try {
+        const text = await extractTextFromPdf(target);
+        const fileName = path.basename(target);
+        return {
+          success: true,
+          result: `[PDF Text Extraction: ${fileName}]\n${'='.repeat(60)}\n${text}\n${'='.repeat(60)}\n`
+        };
+      } catch (err: any) {
+        return {
+          success: true,
+          result: `[PDF: ${path.basename(target)}]\nNote: Could not extract text from this PDF. This may be a scanned image-based document. Error: ${err.message || 'Unknown'}`
+        };
+      }
+    }
+
+    // For text-based files (.md, .txt, .json, .csv, etc.)
+    try {
+      const content = fs.readFileSync(target, 'utf-8');
+      return { success: true, result: content };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: `Could not read file: ${err.message || 'Unknown error'}`
+      };
+    }
   }
 };
