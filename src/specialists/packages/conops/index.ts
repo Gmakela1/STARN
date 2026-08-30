@@ -5,6 +5,14 @@ const conopsSecretSauce = `# Concept of Operations (CONOPS): Electric Utility Tr
 ## 1. Executive Summary & User Intent
 The system converts a 19HP diesel sub-compact utility tractor into a battery-electric powertrain. The primary user intent is to achieve clean, quiet, and low-maintenance operation for routine residential and small-acreage property tasks (such as mowing grass, towing small utility trailers, and moving soil) without diesel exhaust fumes or engine maintenance.
 
+### System-Level Capabilities
+The system as a whole provides the following top-level functional capabilities:
+- **Electric traction and propulsion** via a direct motor-to-transmission swap, replacing the diesel engine while retaining the existing drivetrain.
+- **Onboard recharging** from a standard 120V AC household outlet in the garage.
+- **PTO-driven auxiliary implements** — the front loader and mower deck are driven through the retained PTO shaft powered by the electric motor.
+- **Operator dashboard** with battery state-of-charge, system status, and fault indication.
+- **Emergency high-voltage safety isolation** via manual E-stop and automatic fault detection.
+
 ## 2. Operational Environment & Operating Location
 - **Operating Location & Geography:** Operated outdoors on residential acreage and hobby farms in a subtropical climate (e.g., Florida), characterized by high ambient summer heat, intense sun exposure, high relative humidity, and seasonal rain showers.
 - **Operating Terrain & Ground Conditions:** Operates over varied outdoor terrain including maintained turf, uneven dirt pathways, and dusty mowing fields with exposure to dirt, grass clippings, and moisture.
@@ -67,6 +75,16 @@ The CONOPS document MUST follow this exact 6-section markdown structure:
 4. **## 4. System Boundaries & High-Level Interfaces**
 5. **## 5. Safety, Environmental & Community Considerations**
 6. **## 6. Open Questions & Items for Clarification**
+
+SYSTEM-LEVEL CAPABILITIES SECTION (MANDATORY ADDITION TO SECTION 1):
+After the Executive Summary in Section 1, add a subsection titled "### System-Level Capabilities" that lists the high-level functional capabilities of the entire system in 3-5 bullet points. These are NOT per-subsystem — they are the top-level things the system as a whole does. Examples:
+- "Electric traction and propulsion via a direct motor-to-transmission swap"
+- "Onboard recharging from a standard 120V AC household outlet"
+- "PTO-driven auxiliary implements (front loader, mower deck)"
+- "Operator dashboard with battery status and system telemetry"
+- "Emergency high-voltage safety isolation"
+
+These system-level capabilities are what the Architecture specialist will decompose into subsystems. Without them, the Architecture specialist has nothing to ground its decomposition in.
 
 SECTION 6 - OPEN QUESTIONS RULES (MANDATORY):
 - After drafting the main CONOPS sections, compile ANY genuinely unresolved operational questions into **Section 6** as a numbered Q1, Q2, ... list.
