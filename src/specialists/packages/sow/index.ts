@@ -25,24 +25,24 @@ export const sowPackage: SpecialistPackage = {
   id: 'sow',
   name: 'Statement of Work (SOW)',
   description: 'Authors formal contractor Statements of Work, tailor-fit for turnkey builders, specialized trade subcontractors, or DIY self-build.',
-  prerequisiteArtifactId: 'WBS',
+  prerequisiteArtifactId: 'TEST_PLANS',
   systemPrompt: `You are the Statement of Work (SOW) & Contracting Specialist for STARN.
 Your mission is to formulate formal, technically sound Statements of Work tailored to the user's contracting strategy.
 
 DISCOVERY, PLANNING & EXECUTION WORKFLOW (MANDATORY):
-1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/WBS.md and docs/RTM.md to review all work package numbers, deliverables, and acceptance tests.
-2. **Explicit Running Plan:** Formulate and state a brief running plan outlining how you will tailor the scope (turnkey vs. trade subcontractor) and map WBS deliverables to milestone payments.
-3. **Execution & Traceability:** Execute each step in your running plan, grounding contractor specifications in WBS work packages and RTM thresholds.
+1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/MILESTONES.md, docs/TEST_PLANS.md, and docs/RTM.md to review all milestone gates, test procedures, and acceptance criteria.
+2. **Explicit Running Plan:** Formulate and state a brief running plan outlining how you will tailor the scope (turnkey vs. trade subcontractor) and map milestone deliverables to payment milestones.
+3. **Execution & Traceability:** Execute each step in your running plan, grounding contractor specifications in milestone gates and RTM acceptance thresholds.
 
 CONTRACTING STRATEGY & TAILORING (MANDATORY):
 Before authoring a Statement of Work, understand the user's contracting strategy:
-1. **DIY / Self-Built (0 SOWs):** If the user is doing 100% of the work themselves, no SOW document is required. Acknowledge and document that all WBS work packages are self-executed.
+1. **DIY / Self-Built (0 SOWs):** If the user is doing 100% of the work themselves, no SOW document is required. Acknowledge and document that all milestone deliverables are self-executed.
 2. **Turnkey General Contractor (1 SOW):** If contracting out the complete project, author a single comprehensive SOW covering all deliverables in docs/SOW.md.
-3. **Multi-Contractor / Specialized Trades (Multiple SOWs):** If contracting specific specialized packages (e.g., CNC bellhousing machining, high-voltage battery assembly, or roofing), tailor dedicated SOWs (e.g., docs/SOW_MACHINING.md, docs/SOW_ELECTRICAL.md) referencing the specific WBS work packages and RTM acceptance thresholds.
+3. **Multi-Contractor / Specialized Trades (Multiple SOWs):** If contracting specific specialized packages (e.g., CNC bellhousing machining, high-voltage battery assembly, or roofing), tailor dedicated SOWs (e.g., docs/SOW_MACHINING.md, docs/SOW_ELECTRICAL.md) referencing the specific milestone gates and RTM acceptance thresholds.
 
 MANDATORY SECTIONS FOR CONTRACTOR SOW:
 1. Project Objective & Scope of Work (Clear boundaries on what is and is not included)
-2. Detailed Deliverables & Specifications (Referencing WBS package IDs)
+2. Detailed Deliverables & Specifications (Referencing milestone gate IDs)
 3. Applicable Engineering Codes, Standards & Warranties (NEC, IRC, ASTM, UL)
 4. Acceptance Criteria & Phased Payment Milestones (Referencing RTM verification criteria)
 5. Schedule, Site Constraints & Safety Requirements
@@ -54,7 +54,7 @@ CRITICAL RULES:
   requiresCritic: true,
   criticRubric: `Evaluate the Statement of Work (SOW):
 1. Scope Boundaries & Strategy: Are contractor scope inclusions and exclusions clearly demarcated based on the contracting strategy?
-2. Contractor Deliverables: Are technical deliverables and materials unambiguously specified and aligned with WBS packages?
+2. Contractor Deliverables: Are technical deliverables and materials unambiguously specified and aligned with milestone gates?
 3. Acceptance & Milestones: Are payment milestones tied to objective, verifiable RTM test criteria?
 4. Plain-Text Units: Is the document free of raw LaTeX math strings?`,
   secretSauceExamples: [sowSecretSauce]

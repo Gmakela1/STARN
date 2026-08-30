@@ -122,7 +122,7 @@ describe('Core Runner Intake & Multi-Turn', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('blocks RTM execution if REQUIREMENTS artifact is not approved', async () => {
+  it('blocks RTM execution if BOM artifact is not approved', async () => {
     vi.spyOn(mockClient, 'chatCompletion').mockResolvedValue({
       content: JSON.stringify({ specialistId: 'rtm', reason: 'RTM requested' }),
       raw: {}
@@ -141,7 +141,7 @@ describe('Core Runner Intake & Multi-Turn', () => {
 
     expect(result.specialistId).toBe('general');
     expect(result.output).toContain('Prerequisite Required');
-    expect(result.output).toContain('REQUIREMENTS.md');
+    expect(result.output).toContain('BOM.md');
   });
 
   it('blocks Milestones execution if RTM artifact is not approved', async () => {

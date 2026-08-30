@@ -138,8 +138,8 @@ describe('Project Registry & State', () => {
     });
 
     const nextPhase = stateMgr.advanceToNextPhase();
-    expect(nextPhase).toBe('capabilities');
-    expect(stateMgr.getState().workflow.activePhase).toBe('capabilities');
+    expect(nextPhase).toBe('architecture');
+    expect(stateMgr.getState().workflow.activePhase).toBe('architecture');
     expect(stateMgr.getState().workflow.phases.conops.status).toBe('approved');
   });
 });

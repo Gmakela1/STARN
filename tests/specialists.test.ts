@@ -39,11 +39,11 @@ describe('Specialist Packages & RTM', () => {
     expect(conops!.secretSauceExamples[0]).toContain('## 6. Open Questions & Items for Clarification');
   });
 
-  it('rtm specialist has prerequisite REQUIREMENTS, tabular rubric, and secret sauce example', () => {
+  it('rtm specialist has prerequisite BOM, tabular rubric, and secret sauce example', () => {
     const rtm = registry.get('rtm');
     expect(rtm).toBeDefined();
     expect(rtm!.name).toContain('Traceability Matrix');
-    expect(rtm!.prerequisiteArtifactId).toBe('REQUIREMENTS');
+    expect(rtm!.prerequisiteArtifactId).toBe('BOM');
     expect(rtm!.secretSauceExamples[0]).toContain('| Capability Ref | Req ID | Requirement Statement | Method |');
     expect(rtm!.criticRubric).toContain('100% Upstream Traceability');
     expect(rtm!.criticRubric).toContain('Standard 4 Verification Methods');
@@ -131,7 +131,7 @@ describe('Specialist Packages & RTM', () => {
     const cap = registry.get('capabilities');
     expect(cap).toBeDefined();
     expect(cap!.systemPrompt).toContain('SS-01.a');
-    expect(cap!.systemPrompt).toContain('FUNCTIONAL & BEHAVIORAL TRAITS');
+    expect(cap!.systemPrompt).toContain('PER-SUBSYSTEM CAPABILITY RULES');
     expect(cap!.systemPrompt).toContain('DO NOT embed rigid numeric tolerances');
     expect(cap!.secretSauceExamples[0]).toContain('Proportional Speed & Direction Control');
     expect(cap!.secretSauceExamples[0]).toContain('Low-End Starting Torque Delivery');
