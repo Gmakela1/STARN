@@ -1,5 +1,22 @@
 import { OpenRouterClient } from '../openrouter/client.js';
 
+// Ensure SoX is on PATH on Windows (for the mic package to find it)
+function ensureSoxOnPath(): void {
+  if (process.platform !== 'win32') return;
+  const currentPath = process.env.PATH || '';
+  const soxPaths = [
+    'C:\\tools\\sox\\sox-14.4.2',
+    'C:/tools/sox/sox-14.4.2'
+  ];
+  for (const p of soxPaths) {
+    if (!currentPath.includes(p.replace(/\\/g, '\\'))) {
+      process.env.PATH = `${p};${currentPath}`;
+    }
+  }
+}
+
+ensureSoxOnPath();
+
 export function isVoiceCommand(input: string): boolean {
   const trimmed = input.trim();
   if (!trimmed) return false;
