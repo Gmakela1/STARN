@@ -1,7 +1,10 @@
 import { select, input, confirm, password, search } from '@inquirer/prompts';
+import chalk from 'chalk';
 import { ModelOption } from '../openrouter/models.js';
 import { ProjectRecord } from '../workspace/types.js';
 import { formatModelChoice } from './ui.js';
+import { isVoiceCommand, captureVoicePrompt } from './voice.js';
+import { OpenRouterClient } from '../openrouter/client.js';
 
 export async function promptApiKey(): Promise<string> {
   const key = await password({
@@ -90,11 +93,35 @@ export async function promptProjectSelection(
   return { action: 'select', projectId: selected };
 }
 
-export async function promptUserQuery(): Promise<string> {
-  return await input({
-    message: 'What would you like to build or inspect?',
+export async function promptUserQuery(client?: OpenRouterClient): Promise<string> {
+  const raw = await input({
+    message: 'What would you like to build or inspect? (type /voice to speak)',
     validate: val => (val.trim() ? true : 'Please enter a prompt.')
   });
+
+  if (isVoiceCommand(raw) && client) {
+    console.log(chalk.cyan('🎤 Recording... (press Enter to stop and transcribe)'));
+    try {
+      const transcribed = await captureVoicePrompt(client);
+      if (!transcribed) {
+        console.log(chalk.yellow('No speech captured. Please try again.'));
+        return promptUserQuery(client);
+      }
+      console.log(chalk.green(`🎤 Captured: "${transcribed}"`));
+      console.log(chalk.dim('Press Enter to submit, or type additional text to append:\n'));
+      const append = await input({
+        message: 'Submit / append:',
+        default: ''
+      });
+      const finalText = append.trim() ? `${transcribed} ${append.trim()}` : transcribed;
+      return finalText;
+    } catch (err: any) {
+      console.log(chalk.yellow(`Voice capture failed: ${err.message}`));
+      return promptUserQuery(client);
+    }
+  }
+
+  return raw;
 }
 
 export async function promptContinueSession(): Promise<boolean> {

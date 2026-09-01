@@ -103,7 +103,7 @@ async function main() {
 
   while (sessionActive) {
     printSectionHeader(`Active Session [Phase: ${stateManager.getState().workflow?.activePhase?.toUpperCase() || 'CONOPS'}]`);
-    const userPrompt = await promptUserQuery();
+    const userPrompt = await promptUserQuery(client);
 
     let currentPrompt = userPrompt;
     let turnActive = true;

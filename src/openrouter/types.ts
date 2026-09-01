@@ -39,3 +39,7 @@ export interface ChatCompletionResult {
   toolCalls?: ToolCall[];
   raw: unknown;
 }
+
+export interface TranscriptionResult {
+  text: string;
+}
