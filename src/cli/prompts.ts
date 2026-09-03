@@ -107,14 +107,10 @@ export async function promptUserQuery(client?: OpenRouterClient): Promise<string
         console.log(chalk.yellow('No speech captured. Please try again.'));
         return promptUserQuery(client);
       }
-      console.log(chalk.green(`🎤 Captured: "${transcribed}"`));
-      console.log(chalk.dim('Press Enter to submit, or type additional text to append:\n'));
-      const append = await input({
-        message: 'Submit / append:',
-        default: ''
+      return await input({
+        message: 'Edit your prompt (or press Enter to submit):',
+        default: transcribed
       });
-      const finalText = append.trim() ? `${transcribed} ${append.trim()}` : transcribed;
-      return finalText;
     } catch (err: any) {
       console.log(chalk.yellow(`Voice capture failed: ${err.message}`));
       return promptUserQuery(client);
