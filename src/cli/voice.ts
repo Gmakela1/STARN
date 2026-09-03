@@ -1,3 +1,4 @@
+import { input } from '@inquirer/prompts';
 import { OpenRouterClient } from '../openrouter/client.js';
 
 // Ensure SoX is on PATH on Windows (for the mic package to find it)
@@ -9,8 +10,10 @@ function ensureSoxOnPath(): void {
     'C:/tools/sox/sox-14.4.2'
   ];
   for (const p of soxPaths) {
-    if (!currentPath.includes(p.replace(/\\/g, '\\'))) {
-      process.env.PATH = `${p};${currentPath}`;
+    const sep = '\\';
+    const normalized = p.replace(/\//g, sep);
+    if (!currentPath.includes(normalized)) {
+      process.env.PATH = `${normalized};${currentPath}`;
     }
   }
 }
@@ -20,9 +23,7 @@ ensureSoxOnPath();
 export function isVoiceCommand(input: string): boolean {
   const trimmed = input.trim();
   if (!trimmed) return false;
-  // /voice trigger
   if (trimmed === '/voice' || trimmed.startsWith('/voice ')) return true;
-  // Alt+V (0x00 prefix + 'v')
   if (trimmed === '\x00v' || trimmed === '\x16') return true;
   return false;
 }
@@ -33,86 +34,58 @@ export interface RecordResult {
 }
 
 /**
- * Records audio from the microphone until the user presses Enter.
- * Returns the raw PCM buffer and duration.
- * Requires `sox` (Mac/Windows) or `arecord` (Linux) to be installed.
+ * Records audio from the microphone.
+ * Uses @inquirer/input to wait for the user to press Enter to stop (handles stdin properly).
+ * Returns the raw WAV buffer and duration.
  */
-export function recordAudio(): Promise<RecordResult> {
-  return new Promise((resolve, reject) => {
-    // Dynamic import of 'mic' - it's only loaded when /voice is used
-    import('mic').then(({ default: Mic }) => {
-      const micInstance = Mic({
-        rate: '16000',
-        channels: '1',
-        fileType: 'wav',
-        debug: false
-      });
+export async function recordAudio(): Promise<RecordResult> {
+  const { default: Mic } = await import('mic');
 
-      const micInputStream = micInstance.getAudioStream();
-      const chunks: Buffer[] = [];
-      const startTime = Date.now();
+  const micInstance = Mic({
+    rate: '16000',
+    channels: '1',
+    fileType: 'wav',
+    debug: false
+  });
 
-      micInputStream.on('data', (chunk: Buffer) => {
-        chunks.push(chunk);
-      });
+  const micInputStream = micInstance.getAudioStream();
+  const chunks: Buffer[] = [];
+  const startTime = Date.now();
 
-      micInputStream.on('error', (err: Error) => {
-        reject(new Error(`Microphone error: ${err.message}. Ensure sox (Mac/Windows) or arecord (Linux) is installed.`));
-      });
+  micInputStream.on('data', (chunk: Buffer) => {
+    chunks.push(chunk);
+  });
 
-      micInputStream.on('silence', () => {
-        micInstance.stop();
-      });
-
-      // Handle the Enter key to stop recording
-      // We listen for stdin 'data' events
-      const onData = (key: Buffer) => {
-        const keyStr = key.toString();
-        // Enter key (0x0D or 0x0A)
-        if (keyStr === '\r' || keyStr === '\n' || keyStr === '\x0D' || keyStr === '\x0A') {
-          process.stdin.removeListener('data', onData);
-          micInstance.stop();
-          const durationMs = Date.now() - startTime;
-          const buffer = Buffer.concat(chunks);
-          resolve({ buffer, durationMs });
-        }
-      };
-
-      process.stdin.setRawMode?.(true);
-      process.stdin.on('data', onData);
-
-      micInstance.start();
-
-    }).catch(() => {
-      reject(new Error(
-        'Voice recording requires the "mic" npm package. Run: npm install mic\n' +
-        'Also requires sox (Mac/Windows) or arecord (Linux) to be installed:\n' +
-        '- Mac: brew install sox\n' +
-        '- Windows: choco install sox or download from https://sourceforge.net/projects/sox/\n' +
-        '- Linux: apt-get install alsa-utils'
-      ));
+  const micError = new Promise<never>((_, reject) => {
+    micInputStream.on('error', (err: Error) => {
+      reject(new Error(`Microphone error: ${err.message}. Ensure sox (Mac/Windows) or arecord (Linux) is installed.`));
     });
   });
+
+  // Start recording
+  micInstance.start();
+
+  // Wait for the user to press Enter using @inquirer/input (handles stdin properly)
+  // This is reliable because @inquirer manages stdin state correctly
+  const stopPromise = (async () => {
+    await input({ message: 'Press Enter to stop recording' });
+    micInstance.stop();
+    const durationMs = Date.now() - startTime;
+    const buffer = Buffer.concat(chunks);
+    return { buffer, durationMs };
+  })();
+
+  // Race: if mic errors, reject; otherwise return the recording
+  return Promise.race([stopPromise, micError]) as Promise<RecordResult>;
 }
 
 /**
  * Full voice prompt flow: record audio, transcribe it, return the text.
- * Restores stdin raw mode on completion.
  */
 export async function captureVoicePrompt(client: OpenRouterClient): Promise<string> {
-  let result: RecordResult | null = null;
-  try {
-    result = await recordAudio();
-  } finally {
-    // Restore raw mode
-    try {
-      process.stdin.setRawMode?.(false);
-    } catch (_e) {
-      // ignore
-    }
-  }
+  const result = await recordAudio();
 
-  if (!result || result.buffer.length < 100) {
+  if (result.buffer.length < 100) {
     return '';
   }
 
