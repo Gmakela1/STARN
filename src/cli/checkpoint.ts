@@ -1,10 +1,10 @@
-import { select, input } from '@inquirer/prompts';
+import { select, input, checkbox } from '@inquirer/prompts';
 import fs from 'node:fs';
 import path from 'node:path';
 import chalk from 'chalk';
 import { CriticResult } from '../core/critic.js';
 import { ProjectStateManager } from '../workspace/state.js';
-import { extractCleanMarkdownDocument, formatDocumentPreview } from './ui.js';
+import { formatCriticFindingsTable, extractCleanMarkdownDocument, formatDocumentPreview } from './ui.js';
 
 export interface CheckpointReviewOptions {
   specialistId: string;
@@ -127,4 +127,69 @@ export async function runHumanCheckpoint(
   }
 
   return { action: finalAction, feedback: userFeedback };
+}
+
+/**
+ * Handles the case where the critic has exhausted auto-revisions (all attempts used, still failing).
+ * Shows structured findings and lets the user intervene with per-item actions.
+ */
+export async function handleCriticFailure(
+  criticResult: CriticResult,
+  specialistName: string
+): Promise<{ action: 'feedback' | 'override' | 'discard'; feedback?: string; dismissedIndices?: number[] }> {
+  console.log(formatCriticFindingsTable(criticResult));
+
+  const allItems = criticResult.weaknesses || [];
+
+  const choice = await select({
+    message: `The ${specialistName} specialist couldn't resolve all critic findings after auto-revision. Choose action:`, 
+    choices: [
+      { name: '✎  Provide targeted feedback for specific issues', value: 'feedback' },
+      ...(allItems.length > 0
+        ? [{ name: '☑  Mark certain issues as acceptable, re-try on rest', value: 'dismiss' }]
+        : []),
+      { name: '⚡ Override — accept as-is despite critic', value: 'override' },
+      { name: '✖  Discard / cancel', value: 'discard' }
+    ]
+  });
+
+  if (choice === 'override') {
+    return { action: 'override' };
+  }
+
+  if (choice === 'discard') {
+    return { action: 'discard' };
+  }
+
+  if (choice === 'dismiss' && allItems.length > 0) {
+    const selected = await checkbox({
+      message: 'Which issues are acceptable as-is? (unselected items will be sent back for revision):',
+      choices: allItems.map((item, i) => ({
+        name: item,
+        value: i,
+        checked: false
+      }))
+    });
+
+    const dismissedIndices = selected || [];
+    const remainingIndices = allItems
+      .map((_, i) => i)
+      .filter(i => !dismissedIndices.includes(i));
+
+    if (remainingIndices.length === 0) {
+      // User dismissed all issues — treat as override
+      return { action: 'override' };
+    }
+
+    const remainingItems = remainingIndices.map(i => allItems[i]);
+    const feedback = `Resolve the remaining critic findings:\n${remainingItems.map((w, i) => `  ${i + 1}. [MAJOR] ${w}`).join('\n')}`;
+
+    return { action: 'feedback', feedback, dismissedIndices };
+  }
+
+  // Full feedback
+  const feedback = await input({
+    message: 'Enter your specific guidance for the specialist:'
+  });
+  return { action: 'feedback', feedback };
 }

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
 import path from 'node:path';
 import ora from 'ora';
 import chalk from 'chalk';
@@ -13,7 +14,7 @@ import { ChatMessage } from './openrouter/types.js';
 import { CoreRunner } from './core/runner.js';
 import {
   formatBanner,
-  formatCriticScorecard,
+  formatCompactCriticPass,
   formatWorkflowRoadmap,
   printSectionHeader
 } from './cli/ui.js';
@@ -24,7 +25,8 @@ import {
   promptUserQuery,
   promptContinueSession
 } from './cli/prompts.js';
-import { runHumanCheckpoint } from './cli/checkpoint.js';
+import { runHumanCheckpoint, handleCriticFailure } from './cli/checkpoint.js';
+import { resolveSection6, hasUnresolvedQuestions } from './cli/section6-resolver.js';
 
 async function main() {
   console.log(formatBanner());
@@ -132,8 +134,36 @@ async function main() {
         spinner.stop();
         sessionMessages = result.sessionMessages;
 
-        if (result.criticResult) {
-          console.log(formatCriticScorecard(result.criticResult));
+        const crit = result.criticResult;
+
+        // Problem 1: Display critic results compactly
+        if (crit && crit.passed) {
+          console.log(formatCompactCriticPass(crit));
+        } else if (crit && !crit.passed && result.autoRevisionsRun >= 2) {
+          // Auto-revisions exhausted — user must intervene
+          const critAction = await handleCriticFailure(crit, result.specialistName);
+          if (critAction.action === 'feedback' && critAction.feedback) {
+            currentPrompt = critAction.feedback;
+            continue; // restart turn loop with targeted feedback
+          } else if (critAction.action === 'override') {
+            crit.passed = true; // flag as overridden for checkpoint
+          } else {
+            // discard
+            turnActive = false;
+            continue;
+          }
+        }
+
+        // Problem 2: Section 6 resolution interview (CONOPS only, after passing)
+        if (result.specialistId === 'conops' && crit?.passed) {
+          const conopsPath = path.join(currentProjectRecord.path, 'docs', 'CONOPS.md');
+          if (fs.existsSync(conopsPath) && hasUnresolvedQuestions(conopsPath)) {
+            console.log();
+            await resolveSection6({
+              projectPath: currentProjectRecord.path,
+              stateManager
+            });
+          }
         }
 
         const checkpoint = await runHumanCheckpoint({

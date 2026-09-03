@@ -19,6 +19,45 @@ ${chalk.dim('Process Discipline • Specialist Packages • Harsh Critic Gating'
   });
 }
 
+export function formatCompactCriticPass(verdict: CriticResult): string {
+  const fixedNote = verdict.weaknesses.length > 0
+    ? ` — ${verdict.weaknesses.length} issue(s) auto-fixed`
+    : '';
+  return chalk.green(`✓ Critic approved (${verdict.score.toFixed(1)}/10)${fixedNote}`);
+}
+
+export function formatCriticFindingsTable(verdict: CriticResult): string {
+  let out = chalk.bold.bgYellow.black(' CRITIC REVISION EXHAUSTED ') + '\n\n';
+  out += `Score: ${chalk.bold(verdict.score.toFixed(1))}/10\n`;
+  out += `${chalk.dim(verdict.summary)}\n\n`;
+
+  const allItems = (verdict.weaknesses || []).map(w => ({ severity: 'MAJOR' as const, text: w }));
+
+  if (allItems.length > 0) {
+    out += chalk.bold('Findings:') + '\n';
+    for (let i = 0; i < allItems.length; i++) {
+      const item = allItems[i];
+      const severityTag = item.severity === 'MAJOR'
+        ? chalk.bgRed.black(' MAJOR ')
+        : chalk.bgYellow.black(' MINOR ');
+      out += `  ${i + 1}. ${severityTag} ${item.text}\n`;
+    }
+  }
+
+  if (verdict.actionableGuidance) {
+    out += `\n${chalk.cyan('Guidance:')} ${verdict.actionableGuidance}\n`;
+  }
+
+  return boxen(out, {
+    padding: 1,
+    margin: { top: 1, bottom: 1, left: 0, right: 0 },
+    borderStyle: 'single',
+    borderColor: 'yellow',
+    title: 'Critic Review (Failed After Auto-Revision)',
+    titleAlignment: 'left'
+  });
+}
+
 export function formatCriticScorecard(verdict: CriticResult): string {
   const statusBadge = verdict.passed
     ? chalk.bold.bgGreen.black(' CRITIC PASSED ')
