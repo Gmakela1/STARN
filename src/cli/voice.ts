@@ -1,20 +1,14 @@
 import { input } from '@inquirer/prompts';
+import { spawn, execSync } from 'child_process';
 import { OpenRouterClient } from '../openrouter/client.js';
 
-// Ensure SoX is on PATH on Windows (for the mic package to find it)
+// Ensure SoX is on PATH on Windows (for child_process.spawn to find it)
 function ensureSoxOnPath(): void {
   if (process.platform !== 'win32') return;
   const currentPath = process.env.PATH || '';
-  const soxPaths = [
-    'C:\\tools\\sox\\sox-14.4.2',
-    'C:/tools/sox/sox-14.4.2'
-  ];
-  for (const p of soxPaths) {
-    const sep = '\\';
-    const normalized = p.replace(/\//g, sep);
-    if (!currentPath.includes(normalized)) {
-      process.env.PATH = `${normalized};${currentPath}`;
-    }
+  const soxPath = 'C:\\tools\\sox\\sox-14.4.2';
+  if (!currentPath.toLowerCase().includes(soxPath.toLowerCase())) {
+    process.env.PATH = `${soxPath};${currentPath}`;
   }
 }
 
@@ -34,49 +28,77 @@ export interface RecordResult {
 }
 
 /**
- * Records audio from the microphone.
- * Uses @inquirer/input to wait for the user to press Enter to stop (handles stdin properly).
- * Returns the raw WAV buffer and duration.
+ * Records audio from the microphone by spawning SoX directly.
+ * Writes to a temp file to avoid pipe/stream issues.
+ * The user presses Enter (via @inquirer/input) to stop recording.
  */
 export async function recordAudio(): Promise<RecordResult> {
-  const { default: Mic } = await import('mic');
+  const tmpFile = `${process.env.TEMP || '/tmp'}/starn-voice-${Date.now()}.wav`;
 
-  const micInstance = Mic({
-    rate: '16000',
-    channels: '1',
-    fileType: 'wav',
-    debug: false
-  });
-
-  const micInputStream = micInstance.getAudioStream();
-  const chunks: Buffer[] = [];
   const startTime = Date.now();
 
-  micInputStream.on('data', (chunk: Buffer) => {
-    chunks.push(chunk);
+  // Spawn sox: capture from default microphone, write to temp file
+  const sox = spawn('sox', [
+    '-b', '16',
+    '--endian', 'little',
+    '-c', '1',
+    '-r', '16000',
+    '-e', 'signed-integer',
+    '-t', 'waveaudio', 'default',
+    tmpFile
+  ], {
+    stdio: ['ignore', 'ignore', 'pipe']
   });
 
-  const micError = new Promise<never>((_, reject) => {
-    micInputStream.on('error', (err: Error) => {
-      reject(new Error(`Microphone error: ${err.message}. Ensure sox (Mac/Windows) or arecord (Linux) is installed.`));
+  // Log stderr for debugging
+  let stderrLog = '';
+  sox.stderr.on('data', (chunk: Buffer) => {
+    stderrLog += chunk.toString();
+  });
+
+  // Handle spawn errors (e.g., sox not found)
+  const spawnError = new Promise<never>((_, reject) => {
+    sox.on('error', (err: Error) => {
+      reject(new Error(
+        `Failed to start SoX: ${err.message}. ` +
+        'Ensure SoX is installed. On Windows: download from https://sourceforge.net/projects/sox/files/sox/'
+      ));
     });
   });
 
-  // Start recording
-  micInstance.start();
-
-  // Wait for the user to press Enter using @inquirer/input (handles stdin properly)
-  // This is reliable because @inquirer manages stdin state correctly
-  const stopPromise = (async () => {
+  // Wait for user to press Enter to stop recording
+  const stopPromise = (async (): Promise<RecordResult> => {
     await input({ message: 'Press Enter to stop recording' });
-    micInstance.stop();
+    // Kill sox process
+    sox.kill('SIGTERM');
+    // On Windows, SIGTERM might not work, so also try taskkill
+    if (process.platform === 'win32' && sox.pid) {
+      try {
+        execSync(`taskkill /F /T /PID ${sox.pid}`, { stdio: 'ignore' });
+      } catch {
+        // ignore
+      }
+    }
+    // Wait briefly for file to be written
+    await new Promise(r => setTimeout(r, 500));
     const durationMs = Date.now() - startTime;
-    const buffer = Buffer.concat(chunks);
+
+    // Read the temp file
+    const fs = await import('fs');
+    let buffer: Buffer;
+    try {
+      buffer = fs.readFileSync(tmpFile);
+    } catch {
+      buffer = Buffer.alloc(0);
+    }
+
+    // Clean up temp file
+    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+
     return { buffer, durationMs };
   })();
 
-  // Race: if mic errors, reject; otherwise return the recording
-  return Promise.race([stopPromise, micError]) as Promise<RecordResult>;
+  return Promise.race([stopPromise, spawnError]) as Promise<RecordResult>;
 }
 
 /**
