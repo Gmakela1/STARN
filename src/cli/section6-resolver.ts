@@ -157,98 +157,33 @@ export async function resolveSection6(options: ResolveSection6Options): Promise<
 }
 
 /**
- * Folds an answer into the document body and removes the question from Section 6.
- * This is a simple text-based approach — for complex edits the specialist handles it.
+ * Folds an answer into the document by replacing the answered question in Section 6
+ * with a "(Resolved)" annotation and the answer text.
+ * When all questions are resolved, Section 6 is removed as a whole.
  */
 function foldAnswerIntoDoc(doc: string, question: string, answer: string): string {
-  // Find the question text in Section 6 and replace it with the answer annotation
-  // Look for the specific question text in the document
+  // Find the question in Section 6 by matching the first ~50 chars of the question
+  const qKey = question.slice(0, 50).replace(/[*]/g, '\\*');
   
-  const lines = doc.split('\n');
-  const newLines: string[] = [];
-  let inSection6 = false;
-  let questionRemoved = false;
-
-  for (const line of lines) {
-    // Track when we enter/exit Section 6
-    if (line.match(/##\s*6\.?\s*(?:Open Questions|Items for Clarification)/)) {
-      inSection6 = true;
-    } else if (line.match(/##\s*7\.?\s/) && inSection6) {
-      inSection6 = false;
-    }
-
-    // If we're in Section 6 and this line contains our question, skip it
-    if (inSection6 && !questionRemoved) {
-      // Check if this line (or paragraph) contains the question keywords
-      const qShort = question.slice(0, 40);
-      if (line.includes(qShort) || line.includes(qShort.toLowerCase())) {
-        questionRemoved = true;
-        continue;
-      }
-      // Also check the next line for the question marker
-      const nextIdx = lines.indexOf(line) + 1;
-      if (nextIdx < lines.length && lines[nextIdx].includes(qShort)) {
-        continue;
-      }
-    }
-
-    newLines.push(line);
-  }
-
-  let result = newLines.join('\n');
-
-  // Now insert the answer into the appropriate section
-  // We look for the question's topic and add the answer there
-  // Simple heuristic: find the closest matching section header
+  // Try to find the exact Q-number line first
+  const regex = new RegExp(`(\\*\\*Q\\d+\\s*[\\.:]\\s*\\**\\s*)${qKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?(?=\\n\\s*\\*\\*Q\\d+|\\n\\s*##|$)`);
   
-  // Determine topic from question keywords
-  const topicMatch = question.match(/(\w+(?:\s+\w+){0,5})/);
-  const topicKey = topicMatch ? topicMatch[1].trim().toLowerCase() : '';
+  let match = doc.match(regex);
   
-  // Find where to insert: look for a relevant section or add to subsection
-  const sections = [
-    { keyword: 'deck', header: '### Mower Deck Drive' },
-    { keyword: 'charg', header: '### Charging' },
-    { keyword: 'dwell', header: '### Charging Dwell & Recharge' },
-    { keyword: 'thermal', header: '### Thermal Behavior' },
-    { keyword: 'fault', header: '### Fault Isolation' },
-    { keyword: 'dash', header: '### Dash Display' },
-    { keyword: 'display', header: '### Dash Display' },
-    { keyword: 'packaging', header: '### Battery Packaging' },
-    { keyword: 'fuel', header: '### Fuel Tank Removal' },
-    { keyword: 'battery', header: '### Battery Placement' }
-  ];
-
-  // Try to find the most relevant existing subsection to add to
-  // If nothing fits, we add a "Resolved Items" subsection to Section 6
-  const resolvedAnnotation = `\n\n*Resolved: ${answer}*\n`;
-
-  // Insert before another section header or at end
-  const insertMarker = result.match(/\n##\s*5\./) 
-    ? result.match(/\n##\s*5\./)
-    : result.match(/\n##\s*7\./);
-
-  if (insertMarker) {
-    const insertPos = insertMarker.index!;
-    result = result.slice(0, insertPos) + '\n\n### Resolved from Open Questions\n' + resolvedAnnotation + '\n' + result.slice(insertPos);
-  } else {
-    // Insert at end of Section 6 area or end of doc
-    // Find a good place to insert
-    result += resolvedAnnotation;
+  if (!match) {
+    // Fallback: find the question by any unique fragment
+    const fragment = question.slice(0, 30).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const fallbackRegex = new RegExp(`(\\*\\*Q\\d+\\s*[\\.:]\\s*\\**\\s*)?${fragment}[\\s\\S]*?(?=\\n\\s*\\*\\*Q\\d+|\\n\\s*##|$)`);
+    match = doc.match(fallbackRegex);
   }
-
-  // Clean up: if Section 6 becomes empty, remove its header too
-  if (questionRemoved) {
-    const section6Pattern = /##\s*6\.?\s*(?:Open Questions|Items for Clarification)[\s\S]*?(?=##\s*7\.?\s|##\s*5\.?\s|$)/;
-    result = result.replace(section6Pattern, (match) => {
-      // Check if anything besides whitespace and the removed question remains
-      const cleaned = match.replace(/\*\*Q\d+[\s\S]*?(?=\*\*Q\d+|$)/g, '').trim();
-      if (cleaned.length < 10) return '<!-- Section 6 resolved -->';
-      return match;
-    });
+  
+  if (match) {
+    const replacement = `**✓ RESOLVED:** ${answer}`;
+    return doc.replace(match[0], replacement);
   }
-
-  return result;
+  
+  // Last resort: append answer after Section 6
+  return doc + `\n\n**✓ RESOLVED (${question.slice(0, 40)}...):** ${answer}\n`;
 }
 
 /**
