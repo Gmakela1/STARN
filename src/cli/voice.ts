@@ -68,6 +68,7 @@ export async function recordAudio(): Promise<RecordResult> {
 
   // Wait for user to press Enter to stop recording
   const stopPromise = (async (): Promise<RecordResult> => {
+    console.log('🎤 Recording... (speak now)');
     await input({ message: 'Press Enter to stop recording' });
     // Kill sox process
     sox.kill('SIGTERM');
