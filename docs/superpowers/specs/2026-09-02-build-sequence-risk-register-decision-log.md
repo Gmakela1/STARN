@@ -226,11 +226,27 @@ The output format is documented in the **Test Plan Data Entry Format (Tabular)**
 - **Status:** ✅ Final / 🔄 Pending / ❌ Superseded
 ```
 
-**Prompt addition to existing specialists:**
+**Generation mechanism (consolidation at approval, not per-specialist):**
 
-Each specialist's system prompt gets a paragraph:
+Specialists are **not** modified to write to the decision log. Instead, a small fixed process runs at the human checkpoint whenever a specialist document is approved:
 
-> **Decision Logging:** When you make a significant design decision (choose between alternatives, select a component, pick a parameter value, or resolve a design trade-off), append a decision entry to `docs/DECISIONS.md` using `fs_write`. Read the current file first, append your new entry, and write it back. Include the decision, alternatives considered, rationale, and source reference. This is a lightweight log — one entry per decision, not a full narrative.
+1. **After approval:** The checkpoint code reads the approved document from disk.
+2. **Extract:** It scans for a predefined marker (e.g., `## Design Decisions` or `### Design Decisions`) and extracts all entries under that section.
+3. **Append:** It appends the extracted entries to `docs/DECISIONS.md` with a standardized format.
+4. **Idempotent:** The process checks for duplicate entry IDs before appending to avoid duplicates on re-approval or revision.
+
+**Requirements on specialists:**
+- Each specialist that makes design decisions MUST include a `## Design Decisions` (or `### Design Decisions`) section in its output document.
+- This is already present in the Architecture specialist's secret sauce example. The other specialists' existing output formats already include decision-like content (BOM candidate tables, ICD interface selections, etc.).
+- The specialist's system prompt is augmented with **one line** (not a paragraph): *"Include a `## Design Decisions` section listing any significant choices made, alternatives considered, and rationale."*
+- This is a structural requirement of the output format, not a separate decision-about-whether-to-log — it removes the meta-judgment the LLM had to make.
+
+**Benefits over per-specialist appends:**
+- ✅ Zero extra tool calls during specialist execution (no read-modify-write dance)
+- ✅ One centralized writer = consistent format, no drift
+- ✅ No token spend on meta-judgment ("was this decision significant enough?")
+- ✅ Decisions are harvested from the *approved* version of the document, not the draft
+- ✅ No risk of the LLM writing to DECISIONS.md but forgetting to write the main document
 
 ## Data Model Changes
 
@@ -268,10 +284,11 @@ The `state_update` tool already exists and can write arbitrary fields. No new to
 4. Phase prerequisite gate blocks correctly (Milestones → Risk Register → Build Sequence)
 5. `pendingRisks` accumulates flags from multiple specialists
 6. `pendingRisks` clears on approval
-7. Decision Log entries can be written via `fs_write` (existing tool test covers this)
-8. Test Plan output includes tabular data entry format (Expected vs Actual vs Pass/Fail)
-9. Test Plan includes Build Sequence Reference on step-specific tests
-10. Test Plan omits Build Sequence Reference on system-level tests
+7. Decision log harvest: extracts `## Design Decisions` section from a document and appends to DECISIONS.md
+8. Decision log harvest: idempotent — does not duplicate entries on re-approval
+9. Test Plan output includes tabular data entry format (Expected vs Actual vs Pass/Fail)
+10. Test Plan includes Build Sequence Reference on step-specific tests
+11. Test Plan omits Build Sequence Reference on system-level tests
 
 ### Integration Tests
 1. Existing 63 tests still pass
@@ -284,7 +301,8 @@ The `state_update` tool already exists and can write arbitrary fields. No new to
 4. User verifies build sequence references upstream docs correctly and includes `→ VERIFY: TP-XXX` markers at stopping points
 5. User approves MVC Build Sequence, advances to Build Sequence (IOC)
 6. User verifies IOC builds on MVC
-7. User checks that Decision Log was populated by specialists
+7. User approves a document (e.g., Architecture) and verifies that `docs/DECISIONS.md` was auto-populated with the Design Decisions section from that document
+8. User approves a revision of the same document and verifies no duplicate entries in DECISIONS.md
 8. User advances to Test Plans (MVC). User verifies:
    - Test procedures reference Build Sequence steps via `Build Sequence Reference` field
    - Each test includes a tabular data entry sheet (Expected | Actual | Pass/Fail)
@@ -304,13 +322,14 @@ The `state_update` tool already exists and can write arbitrary fields. No new to
 - `src/workspace/state.ts` — add to `ORDERED_WORKFLOW_PHASES`
 - `src/workspace/types.ts` — add `pendingRisks` to `ProjectState` type
 - `src/specialists/packages/testplans/index.ts` — update to read Build Sequence, produce tabular data entry tables, add Build Sequence Reference linkage
-- `src/specialists/packages/architecture/index.ts` — add decision log prompt
-- `src/specialists/packages/icd/index.ts` — add decision log prompt
-- `src/specialists/packages/bom/index.ts` — add decision log prompt
-- `src/specialists/packages/requirements/index.ts` — add decision log prompt
-- `src/specialists/packages/capabilities/index.ts` — add decision log prompt
-- `src/specialists/packages/conops/index.ts` — add decision log prompt
-- `src/specialists/packages/milestones/index.ts` — add decision log prompt
+- `src/cli/checkpoint.ts` — add decision log harvest step: after accept/override, scan approved document for `## Design Decisions` section, extract entries, append to `docs/DECISIONS.md`
+- `src/specialists/packages/architecture/index.ts` — add one line to output format: "Include a `## Design Decisions` section" (already present in examples, just formalize)
+- `src/specialists/packages/icd/index.ts` — add one line to output format: "Include a `## Design Decisions` section"
+- `src/specialists/packages/bom/index.ts` — add one line to output format: "Include a `## Design Decisions` section" (already has candidate selection tables)
+- `src/specialists/packages/requirements/index.ts` — add one line to output format: "Include a `## Design Decisions` section"
+- `src/specialists/packages/capabilities/index.ts` — add one line to output format: "Include a `## Design Decisions` section"
+- `src/specialists/packages/conops/index.ts` — add one line to output format: "Include a `## Design Decisions` section"
+- `src/specialists/packages/milestones/index.ts` — add one line to output format: "Include a `## Design Decisions` section"
 - `tests/specialists.test.ts` — update specialist count assertions
 - `tests/workspace.test.ts` — update phase ordering assertions
 
@@ -320,5 +339,6 @@ The `state_update` tool already exists and can write arbitrary fields. No new to
 |---|---|
 | Build Sequence specialist hallucinates assembly steps not grounded in upstream docs | Critic validates against source documents; if a step can't be traced to a source, it's flagged |
 | Risk Register specialist invents risks not grounded in real documents | Same critic validation; risk source column must reference a real document section |
-| Decision Log grows too large and distracts the LLM | It's append-only, one entry per decision, not a narrative. The file is only read by the Build Sequence specialist (one read per session) |
+| Decision Log harvest misses entries if specialist didn't include a Design Decisions section | One-line structural prompt addition forces the section into every specialist's output format; checkpoint code validates the section exists before attempting harvest |
+| Decision Log accumulates duplicates on re-approval | Harvest code checks for duplicate entry IDs (D-XXX) before appending |
 | User adds 20+ risks manually, making the interview tedious | Interview is bounded — auto-generated risks are verified first, then one open-ended question for user-contributed risks |
