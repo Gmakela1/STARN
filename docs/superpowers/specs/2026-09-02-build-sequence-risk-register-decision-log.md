@@ -100,6 +100,7 @@ A `pendingRisks` array in `state.json` allows any specialist to flag a risk obse
 **Behavior:**
 - Reads all upstream docs (Architecture, ICD, BOM, Milestones, Risk Register, Decision Log)
 - References prior build sequences if they exist (for IOC building on MVC)
+- **Gate selection:** The user specifies which gate to build (e.g., "build the MVC sequence"). The specialist reads the Milestones doc for that gate's criteria and produces only that gate's document. Three separate runs produce three separate documents.
 - Each step traces to source documents
 - Test points are marked inline as placeholders for Test Plans to fill
 - Writes to disk via `fs_write`
