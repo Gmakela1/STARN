@@ -19,6 +19,60 @@ Add three new capabilities to STARN's preparation pipeline: a **Build Sequence**
 - **Prerequisite:** Milestones + Risk Register must be approved before Build Sequence can run.
 - **Allowed tools:** `fs_read`, `fs_write`, `fs_list`, `state_read`, `example_reader`
 
+### Build Sequence ↔ Test Plan Integration
+
+The Build Sequence and Test Plan for each milestone gate are tightly coupled through a stop-and-verify pattern:
+
+1. **Build Sequence marks stopping points:** Each step that requires verification carries a `→ VERIFY: TP-XXX` marker that references a specific test procedure in the Test Plan.
+2. **Test Plan provides the detailed procedure:** Each test procedure carries a backward link (`Build Sequence Reference: Build Sequence MVC, Step 5`) so there is linkage and traceability from the test plan back to the exact stopping point in the build sequence.
+3. **The linkage is one-way:** The Build Sequence stays a compact linear instruction manual (a signpost: "stop here, go test"). The Test Plan is the detailed reference with procedure, expected values, and data entry fields. We do NOT back-annotate the full test procedure into the Build Sequence — that would create two copies of the same information, a maintenance liability.
+4. **Test Plans include system-level tests not tied to any specific build step** (e.g., 1-hour continuous runtime, full thermal endurance). These have no Build Sequence Reference.
+
+### Test Plan Data Entry Format (Tabular)
+
+The Test Plan specialist produces **tabulated data entry sheets**, not just line-item procedures. Each step-specific test gets a data table where the builder records actual measurements against expected values with pass/fail checkboxes:
+
+```
+### TP-MVP-01: Mechanical Concentricity & Mounting Torque Verification
+- **Build Sequence Reference:** Build Sequence MVC, Step 5
+- **Required Tools:** Dial indicator, torque wrench
+- **Procedure:** (numbered steps)
+
+| Parameter | Expected | Actual | Pass/Fail |
+|---|---|---|---|
+| Total indicated runout (mm) | ≤ 0.050 | ___ | ☐ / ☐ |
+| Bolt 1 torque (ft-lbs) | 45 | ___ | ☐ / ☐ |
+| Bolt 2 torque (ft-lbs) | 45 | ___ | ☐ / ☐ |
+| Bolt 3 torque (ft-lbs) | 45 | ___ | ☐ / ☐ |
+| Bolt 4 torque (ft-lbs) | 45 | ___ | ☐ / ☐ |
+
+**Overall Result:** ☐ Pass / ☐ Fail
+**Notes:** _________________________________
+```
+
+System-level tests (not tied to a build step) use the same table format but omit the Build Sequence Reference:
+
+```
+### TP-MVP-07: System-Level — 1-Hour Continuous Runtime
+- **Not tied to a specific build step — run after all MVC steps complete**
+- **Procedure:** (numbered steps)
+
+| Time (min) | Pack Voltage (V) | Motor Temp (°C) | Controller Temp (°C) |
+|---|---|---|---|
+| 0 | ___ | ___ | ___ |
+| 15 | ___ | ___ | ___ |
+| 30 | ___ | ___ | ___ |
+| 45 | ___ | ___ | ___ |
+| 60 | ___ | ___ | ___ |
+
+**Result:** ☐ Pass (≥60 min runtime) / ☐ Fail
+```
+
+- Every test procedure includes at least one data table (expected vs actual, pass/fail).
+- Tests can have multiple data tables (one per measurement point).
+- The builder fills in actual values during the build as they hit each `→ VERIFY` marker.
+- The Test Plan specialist reads the Build Sequence to learn where tests slot in, then author procedures + data tables referencing those steps.
+
 ### Risk Register is a New Phase (not cross-cutting)
 
 - Full phase that blocks downstream workflow (must be approved before Build Sequence).
@@ -102,8 +156,21 @@ A `pendingRisks` array in `state.json` allows any specialist to flag a risk obse
 - References prior build sequences if they exist (for IOC building on MVC)
 - **Gate selection:** The user specifies which gate to build (e.g., "build the MVC sequence"). The specialist reads the Milestones doc for that gate's criteria and produces only that gate's document. Three separate runs produce three separate documents.
 - Each step traces to source documents
+- **Stopping points:** Steps requiring verification carry a `→ VERIFY: TP-XXX (Test Name)` marker referencing the Test Plan. This is a compact signpost — the detailed procedure lives in the Test Plan, not here.
 - Test points are marked inline as placeholders for Test Plans to fill
 - Writes to disk via `fs_write`
+
+### Test Plan Specialist (Updated Behavior)
+
+The existing Test Plan specialist (`src/specialists/packages/testplans/index.ts`) is updated to integrate with the Build Sequence.
+
+**New behavior:**
+1. **Reads the Build Sequence:** Before authoring test procedures, the specialist reads `docs/build_sequences/BUILD_SEQUENCE_{GATE}.md` to find all `→ VERIFY: TP-XXX` markers.
+2. **Produces tabular data entry sheets:** Each test procedure includes a data table with Expected, Actual, and Pass/Fail columns for the builder to fill in.
+3. **Backward linkage:** Each step-specific test carries a `Build Sequence Reference` field (e.g., "Build Sequence MVC, Step 5") so anyone reading the test plan knows exactly where in the build it fits.
+4. **System-level tests:** Tests not tied to a specific build step are labeled "Not tied to a specific build step — run after all [GATE] steps complete" and carry no Build Sequence Reference.
+
+The output format is documented in the **Test Plan Data Entry Format (Tabular)** section above.
 
 ### Risk Register Specialist
 
@@ -202,6 +269,9 @@ The `state_update` tool already exists and can write arbitrary fields. No new to
 5. `pendingRisks` accumulates flags from multiple specialists
 6. `pendingRisks` clears on approval
 7. Decision Log entries can be written via `fs_write` (existing tool test covers this)
+8. Test Plan output includes tabular data entry format (Expected vs Actual vs Pass/Fail)
+9. Test Plan includes Build Sequence Reference on step-specific tests
+10. Test Plan omits Build Sequence Reference on system-level tests
 
 ### Integration Tests
 1. Existing 63 tests still pass
@@ -211,10 +281,15 @@ The `state_update` tool already exists and can write arbitrary fields. No new to
 1. User runs STARN, advances through Milestones, triggers Risk Register
 2. User verifies auto-generated risks, adds user-contributed risks
 3. User approves Risk Register, advances to Build Sequence (MVC)
-4. User verifies build sequence references upstream docs correctly
+4. User verifies build sequence references upstream docs correctly and includes `→ VERIFY: TP-XXX` markers at stopping points
 5. User approves MVC Build Sequence, advances to Build Sequence (IOC)
 6. User verifies IOC builds on MVC
 7. User checks that Decision Log was populated by specialists
+8. User advances to Test Plans (MVC). User verifies:
+   - Test procedures reference Build Sequence steps via `Build Sequence Reference` field
+   - Each test includes a tabular data entry sheet (Expected | Actual | Pass/Fail)
+   - System-level tests exist without Build Sequence Reference
+   - User can print the test plan, fill in actual values, and check pass/fail
 
 ## File Changes
 
@@ -228,6 +303,7 @@ The `state_update` tool already exists and can write arbitrary fields. No new to
 - `src/specialists/registry.ts` — register two new specialists
 - `src/workspace/state.ts` — add to `ORDERED_WORKFLOW_PHASES`
 - `src/workspace/types.ts` — add `pendingRisks` to `ProjectState` type
+- `src/specialists/packages/testplans/index.ts` — update to read Build Sequence, produce tabular data entry tables, add Build Sequence Reference linkage
 - `src/specialists/packages/architecture/index.ts` — add decision log prompt
 - `src/specialists/packages/icd/index.ts` — add decision log prompt
 - `src/specialists/packages/bom/index.ts` — add decision log prompt
