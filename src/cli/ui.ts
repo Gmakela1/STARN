@@ -1,9 +1,12 @@
 import chalk from 'chalk';
 import boxen from 'boxen';
+import fs from 'node:fs';
+import path from 'node:path';
 import { CriticResult } from '../core/critic.js';
 import { ModelOption } from '../openrouter/models.js';
 import { ProjectState } from '../workspace/types.js';
-import { ORDERED_WORKFLOW_PHASES } from '../workspace/state.js';
+import { ORDERED_WORKFLOW_PHASES, resolveArtifactPaths } from '../workspace/state.js';
+import { countOpenQuestions, parseOpenQuestionsFromContent } from './section6-resolver.js';
 
 export function formatBanner(): string {
   const content = `${chalk.bold.cyan('★ STARN ★')}
@@ -161,7 +164,7 @@ export function formatDocumentPreview(content: string, title: string): string {
   });
 }
 
-export function formatWorkflowRoadmap(state: ProjectState): string {
+export function formatWorkflowRoadmap(state: ProjectState, projectPath?: string): string {
   const activePhase = state.workflow?.activePhase || 'conops';
   const phases = state.workflow?.phases || {};
 
@@ -174,11 +177,31 @@ export function formatWorkflowRoadmap(state: ProjectState): string {
     const num = `[${i + 1}]`;
     const namePadded = phaseDef.name.padEnd(36);
 
-    let statusLabel = '';
     const isActive = activePhase === phaseDef.id;
 
+    // Scan the doc on disk (if projectPath given): drafted? open questions?
+    let docExists = false;
+    let openQuestions = 0;
+    if (projectPath) {
+      const docPaths = resolveArtifactPaths(projectPath, phaseDef.artifactPath);
+      for (const p of docPaths) {
+        openQuestions += countOpenQuestions(p);
+        try {
+          if (fs.existsSync(p) && fs.readFileSync(p, 'utf-8').trim().length > 0) {
+            docExists = true;
+          }
+        } catch {
+          // unreadable — treat as missing
+        }
+      }
+    }
+
+    let statusLabel = '';
     if (info.status === 'approved') {
       statusLabel = chalk.green('● APPROVED   ') + chalk.dim(`(${phaseDef.artifactPath})`);
+    } else if (docExists) {
+      statusLabel = chalk.magenta('◐ DRAFTED    ') + chalk.dim(`(${phaseDef.artifactPath})`);
+      if (isActive) statusLabel += chalk.bold.cyan(' — Active Target');
     } else if (isActive) {
       statusLabel = chalk.bold.cyan('► IN PROGRESS') + chalk.white(' (Active Target)');
     } else if (info.status === 'locked') {
@@ -187,17 +210,88 @@ export function formatWorkflowRoadmap(state: ProjectState): string {
       statusLabel = chalk.dim('○ PENDING');
     }
 
+    if (openQuestions > 0) {
+      statusLabel += chalk.yellow(`  ⚠ ${openQuestions} OPEN QUESTION${openQuestions === 1 ? '' : 'S'}`);
+    }
+
     const row = `${chalk.bold(num)} ${namePadded} ${statusLabel}`;
     out += (isActive ? chalk.bgHex('#1f2937')(row) : row) + '\n';
   }
 
-  out += `\n${chalk.dim('Commands: /plan (show roadmap) | /goto <phase> (switch active phase) | /next')}`;
+  out += `\n${chalk.dim('Commands: /plan (roadmap) | /questions (list open questions) | /goto <phase> (switch phase) | /help (all commands)')}`;
 
   return boxen(out, {
     padding: 1,
     margin: { top: 1, bottom: 1, left: 0, right: 0 },
     borderStyle: 'round',
     borderColor: 'cyan'
+  });
+}
+
+export function formatHelp(): string {
+  const rows: Array<[string, string]> = [
+    ['/plan, /roadmap, /status', 'Show the project workflow roadmap'],
+    ['/questions', 'List open questions across all drafted documents'],
+    ['/goto <phase>', 'Switch the active phase (number, id, or name fragment)'],
+    ['/help', 'Show this command list'],
+    ['/voice', 'Record your next prompt by voice (type in the prompt input)']
+  ];
+
+  let out = `${chalk.bold.cyan('STARN SLASH COMMANDS')}\n\n`;
+  for (const [cmd, desc] of rows) {
+    out += `  ${chalk.bold.green(cmd.padEnd(26))} ${desc}\n`;
+  }
+  out += `\n${chalk.dim('Tip: when a document has open questions, just answer them in your next prompt —')}`;
+  out += `\n${chalk.dim('the specialist will incorporate them and update the document in place.')}`;
+
+  return boxen(out, {
+    padding: 1,
+    margin: { top: 1, bottom: 1, left: 0, right: 0 },
+    borderStyle: 'round',
+    borderColor: 'green'
+  });
+}
+
+export function formatOpenQuestionsReport(state: ProjectState, projectPath: string): string {
+  const activePhase = state.workflow?.activePhase || 'conops';
+
+  let out = `${chalk.bold.cyan('OPEN QUESTIONS ACROSS PROJECT DOCUMENTS')}\n`;
+  out += `${chalk.dim(`Project: ${state.name} | Active Phase: ${activePhase.toUpperCase()}`)}\n`;
+
+  let totalQuestions = 0;
+
+  for (const phaseDef of ORDERED_WORKFLOW_PHASES) {
+    const docPaths = resolveArtifactPaths(projectPath, phaseDef.artifactPath);
+    for (const docPath of docPaths) {
+      try {
+        if (!fs.existsSync(docPath)) continue;
+        const questions = parseOpenQuestionsFromContent(fs.readFileSync(docPath, 'utf-8'));
+        if (questions.length === 0) continue;
+
+        totalQuestions += questions.length;
+        out += `\n${chalk.bold.magenta(phaseDef.name)} ${chalk.dim(`(${path.basename(docPath)})`)}`;
+        for (let i = 0; i < questions.length; i++) {
+          out += `\n  ${chalk.yellow(`Q${i + 1}.`)} ${questions[i].slice(0, 160).replace(/\s+/g, ' ')}`;
+        }
+        out += '\n';
+      } catch {
+        // unreadable — skip
+      }
+    }
+  }
+
+  if (totalQuestions === 0) {
+    out += `\n${chalk.green('✔ No open questions found in any project document.')}`;
+  } else {
+    out += `\n${chalk.dim(`Total: ${totalQuestions} open question(s). Answer them in your next prompt for the active phase,`)}`;
+    out += `\n${chalk.dim(`or use /goto <phase> to switch to the phase you want to work on.`)}`;
+  }
+
+  return boxen(out, {
+    padding: 1,
+    margin: { top: 1, bottom: 1, left: 0, right: 0 },
+    borderStyle: 'round',
+    borderColor: 'yellow'
   });
 }
 

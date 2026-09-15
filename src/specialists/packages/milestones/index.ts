@@ -73,6 +73,7 @@ For each phase (Milestone 1: MVC, Milestone 2: IOC, Milestone 3: FOC), provide E
 CRITICAL RULES:
 - DO NOT refer to phases as generic numbers (e.g., Phase 1, Phase 2). Use **MVC, IOC, FOC**.
 - Use clean plain-text units. DO NOT use LaTeX math formatting.
+- Include a \`## Design Decisions\` section listing any significant choices made, alternatives considered, and rationale.
 - You MUST write the final document to docs/MILESTONES.md via the fs_write tool. Do NOT skip writing the file.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,

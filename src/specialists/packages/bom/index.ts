@@ -41,12 +41,15 @@ const bomSecretSauce = `# Bill of Materials (BOM): Electric Tractor Powertrain C
 | Gigavac GX14B | 500A, 12V coil, < 5 ms open | ✅ | 2 weeks | [link] | $85 |
 | TE Kilovac EV200 | 500A, 12V coil, < 5 ms open | ✅ | 4-6 weeks | [link] | $120 |
 
-## Design Decisions Required
-| Issue | Affected Reqs | Options |
-|---|---|---|
-| Motenergy ME1003 is 48V, not 72V — requires voltage change or rejection | SS-01.a, SS-02.a, ICD-E-01 | 1. Accept 48V system (change Requirements) 2. Drop ME1003, use ME1115 |
-| No 72V controller under $800 found | SS-03.a | 1. Accept higher cost 2. Reduce current requirement |
-| DIY pouch cells have 8-12 week lead — may delay MVC milestone | SS-02.a, MVC schedule | 1. Order now, accept lead time 2. Use pre-built pack (higher cost, faster) |
+## Open Questions
+**Q1. System voltage conflict.** Motenergy ME1003 is 48V, not 72V — requires voltage change or rejection.
+**Why it matters:** Affects SS-01.a, SS-02.a, ICD-E-01. Options: 1. Accept 48V system (change Requirements) 2. Drop ME1003, use ME1115.
+
+**Q2. No 72V controller under $800 found.**
+**Why it matters:** Affects SS-03.a. Options: 1. Accept higher cost 2. Reduce current requirement.
+
+**Q3. Battery cell lead time.** DIY pouch cells have 8-12 week lead — may delay MVC milestone.
+**Why it matters:** Affects SS-02.a and the MVC schedule. Options: 1. Order now, accept lead time 2. Use pre-built pack (higher cost, faster)
 
 ## Long-Lead Items (Order Now)
 - DIY battery cells: 8-12 weeks ★★
@@ -80,8 +83,9 @@ For each subsystem, provide:
 
 CRITICAL RULES:
 - Each candidate MUST list which requirements it satisfies and which it misses.
-- If NO candidate satisfies a critical requirement, add it to the \`## Design Decisions Required\` section with the affected requirements and options.
-- Do NOT silently downgrade a requirement to make a candidate fit — flag it as a design decision.
+- If NO candidate satisfies a critical requirement, add it to the \`## Open Questions\` section as a numbered **Q1.**, **Q2.**, ... item with the affected requirements and options.
+- Do NOT silently downgrade a requirement to make a candidate fit — flag it as an open question.
+- Include a \`## Design Decisions\` section listing any significant choices made, alternatives considered, and rationale.
 - Mark long-lead items with ★ (4-8 weeks) or ★★ (8+ weeks).
 - Include a \`## Long-Lead Items (Order Now)\` section at the end to flag items that could delay the project.
 - Datasheet source links use \`[link]\` as placeholder — the user fills in real URLs.

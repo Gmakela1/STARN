@@ -8,4 +8,5 @@ export interface SpecialistPackage {
   criticRubric?: string;
   secretSauceExamples: string[];
   prerequisiteArtifactId?: string;
+  prerequisiteArtifactIds?: string[];
 }

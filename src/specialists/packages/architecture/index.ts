@@ -96,13 +96,15 @@ The Architecture document MUST follow this structure:
 1. **## 1. System Block Diagram** — A text-based diagram showing how subsystems connect.
 2. **## 2. Subsystem Catalog** — Detailed breakdown of each subsystem with description, capability traceability, interfaces, and dependencies.
 3. **## 3. Dependency Graph** — What depends on what, parallel work streams, critical path to first power-on.
-4. **## 4. Key Design Decisions (Open)** — Major design decisions that need user input (voltage, chemistry, comm protocol, etc.). These are surfaced as open questions, not silently assumed.
+4. **## 4. Key Design Decisions** — Major design decisions already made, with alternatives considered and rationale.
+5. **## Open Questions** — Major decisions that still need user input (voltage, chemistry, comm protocol, etc.), following the Open Questions rules below. These are surfaced as open questions, not silently assumed.
 
 CRITICAL FORMAT RULES:
 - DO NOT add meta-commentary or changelog sections.
 - Do NOT include numeric requirement thresholds (those belong in the Requirements phase).
 - Do NOT include candidate part numbers or vendor names (those belong in the BOM phase).
 - Use clean plain-text descriptions only.
+- Include a \`## Design Decisions\` section listing any significant choices made, alternatives considered, and rationale.
 - You MUST write the final document to docs/ARCHITECTURE.md via the fs_write tool. Do NOT skip writing the file.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
@@ -110,7 +112,8 @@ CRITICAL FORMAT RULES:
 1. CONOPS Traceability: Does every subsystem trace back to a specific system-level capability from the CONOPS?
 2. Complete Subsystem Coverage: Does the block diagram and catalog cover all the functional needs implied by the CONOPS?
 3. Dependency Graph: Is there a clear dependency graph showing what blocks what and what can be built in parallel?
-4. Design Decisions: Are key design decisions surfaced as open questions rather than silently assumed?
-5. No Premature Detail: Does the document avoid numeric requirement thresholds, part numbers, and vendor names?`,
+4. Design Decisions: Are key design decisions documented with rationale in the Key Design Decisions section?
+5. Open Questions: Are genuinely unresolved decisions (voltage, chemistry, comm protocol, etc.) listed in the Open Questions section rather than silently assumed?
+6. No Premature Detail: Does the document avoid numeric requirement thresholds, part numbers, and vendor names?`,
   secretSauceExamples: [architectureSecretSauce]
 };

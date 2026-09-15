@@ -4,7 +4,7 @@ import { SpecialistRegistry } from '../src/specialists/registry.js';
 describe('Specialist Packages & RTM', () => {
   const registry = new SpecialistRegistry();
 
-  it('loads all 11 specialists including general, conops, architecture, icd, capabilities, requirements, bom, rtm, milestones, testplans, sow, change-impact', () => {
+  it('loads all 14 specialists including general, conops, architecture, icd, capabilities, requirements, bom, rtm, milestones, risk-register, build-sequence, testplans, sow, change-impact', () => {
     const packages = registry.listSpecialists();
     expect(packages.map(p => p.id)).toEqual(
       expect.arrayContaining([
@@ -17,6 +17,8 @@ describe('Specialist Packages & RTM', () => {
         'bom',
         'rtm',
         'milestones',
+        'risk-register',
+        'build-sequence',
         'testplans',
         'sow',
         'change-impact'
@@ -100,7 +102,7 @@ describe('Specialist Packages & RTM', () => {
     expect(bom).toBeDefined();
     expect(bom!.prerequisiteArtifactId).toBe('REQUIREMENTS');
     expect(bom!.systemPrompt).toContain('candidate part');
-    expect(bom!.systemPrompt).toContain('Design Decisions Required');
+    expect(bom!.systemPrompt).toContain('## Open Questions');
     expect(bom!.secretSauceExamples[0]).toContain('Satisfies?');
   });
 
@@ -138,7 +140,7 @@ describe('Specialist Packages & RTM', () => {
   });
 
   it('deliverable specialists require tool-based inspection of prior documents and maintaining a running plan', () => {
-    const deliverableSpecialists = ['architecture', 'icd', 'capabilities', 'requirements', 'bom', 'rtm', 'milestones', 'testplans', 'sow'];
+    const deliverableSpecialists = ['architecture', 'icd', 'capabilities', 'requirements', 'bom', 'rtm', 'milestones', 'risk-register', 'build-sequence', 'testplans', 'sow'];
     for (const id of deliverableSpecialists) {
       const pkg = registry.get(id);
       expect(pkg).toBeDefined();

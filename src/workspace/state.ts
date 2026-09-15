@@ -2,7 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ProjectState, ArtifactRecord, IntakeState, WorkflowState } from './types.js';
 
-export const ORDERED_WORKFLOW_PHASES = [
+export interface WorkflowPhaseDef {
+  id: string;
+  name: string;
+  artifactPath: string;
+}
+
+export const ORDERED_WORKFLOW_PHASES: WorkflowPhaseDef[] = [
   { id: 'conops', name: 'CONOPS / User Intent', artifactPath: 'docs/CONOPS.md' },
   { id: 'architecture', name: 'System Architecture & Subsystems', artifactPath: 'docs/ARCHITECTURE.md' },
   { id: 'icd', name: 'Interface Control Document (ICD)', artifactPath: 'docs/ICD.md' },
@@ -11,9 +17,62 @@ export const ORDERED_WORKFLOW_PHASES = [
   { id: 'bom', name: 'Bill of Materials (BOM)', artifactPath: 'docs/BOM.md' },
   { id: 'rtm', name: 'Requirements Traceability Matrix (RTM)', artifactPath: 'docs/RTM.md' },
   { id: 'milestones', name: 'Project Milestones & Gating', artifactPath: 'docs/MILESTONES.md' },
+  { id: 'risk-register', name: 'Risk Register', artifactPath: 'docs/RISK_REGISTER.md' },
+  { id: 'build-sequence', name: 'Build Sequence & Assembly Planning', artifactPath: 'docs/build_sequences/BUILD_SEQUENCE_{GATE}.md' },
   { id: 'testplans', name: 'Test Plans & Procedures', artifactPath: 'docs/TEST_PLANS.md' },
   { id: 'sow', name: 'Statement of Work (SOW)', artifactPath: 'docs/SOW.md' }
 ];
+
+/**
+ * Resolves a phase's artifactPath (which may contain a {GATE} template,
+ * e.g. build sequences) to concrete file paths within the project.
+ */
+export function resolveArtifactPaths(projectPath: string, artifactPath: string): string[] {
+  const full = path.join(projectPath, artifactPath);
+  if (!artifactPath.includes('{GATE}')) return [full];
+
+  // Template path — glob the directory for concrete build sequence files
+  const dir = path.dirname(full);
+  const prefix = path.basename(full).split('{GATE}')[0];
+  if (!fs.existsSync(dir)) return [];
+  try {
+    return fs.readdirSync(dir)
+      .filter(f => f.startsWith(prefix) && f.endsWith('.md'))
+      .sort()
+      .map(f => path.join(dir, f));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Resolves a user-supplied phase reference (number, id, or name fragment)
+ * to a workflow phase definition. Returns null if no match.
+ * Examples: "3" -> icd, "bom" -> bom, "risk" -> risk-register
+ */
+export function resolvePhaseRef(ref: string): WorkflowPhaseDef | null {
+  const trimmed = ref.trim().toLowerCase();
+  if (!trimmed) return null;
+
+  // Numeric reference (1-based index into the ordered phases)
+  const asNum = Number.parseInt(trimmed, 10);
+  if (!Number.isNaN(asNum) && String(asNum) === trimmed) {
+    if (asNum >= 1 && asNum <= ORDERED_WORKFLOW_PHASES.length) {
+      return ORDERED_WORKFLOW_PHASES[asNum - 1];
+    }
+    return null;
+  }
+
+  // Exact id match
+  const exact = ORDERED_WORKFLOW_PHASES.find(p => p.id === trimmed);
+  if (exact) return exact;
+
+  // Name fragment match
+  const fragment = ORDERED_WORKFLOW_PHASES.find(p =>
+    p.name.toLowerCase().includes(trimmed) || p.id.includes(trimmed)
+  );
+  return fragment || null;
+}
 
 function createDefaultWorkflow(artifacts: ArtifactRecord[] = []): WorkflowState {
   const phasesMap: Record<string, any> = {};
@@ -207,9 +266,9 @@ export class ProjectStateManager {
 
   public isArtifactApproved(id: string): boolean {
     const state = this.getState();
-    const normalized = id.toUpperCase();
+    const normalized = id.toUpperCase().replace(/_/g, '').replace(/-/g, '');
     return state.artifacts.some(
-      a => (a.id.toUpperCase() === normalized || (normalized === 'TEST_PLANS' && a.id.toUpperCase() === 'TESTPLANS') || (normalized === 'TESTPLANS' && a.id.toUpperCase() === 'TEST_PLANS')) && a.status === 'approved'
+      a => a.id.toUpperCase().replace(/_/g, '').replace(/-/g, '') === normalized && a.status === 'approved'
     );
   }
 
@@ -238,9 +297,10 @@ export class ProjectStateManager {
     }
 
     // Update workflow phase status if matching
-    const phaseKey = artifact.id.toLowerCase().replace(/_/g, '');
+    const phaseKey = artifact.id.toLowerCase().replace(/_/g, '').replace(/-/g, '');
     for (const pKey of Object.keys(state.workflow.phases)) {
-      if (pKey === phaseKey || pKey === artifact.id.toLowerCase()) {
+      const normalizedPKey = pKey.replace(/_/g, '').replace(/-/g, '');
+      if (normalizedPKey === phaseKey) {
         state.workflow.phases[pKey].status = artifact.status === 'approved' ? 'approved' : 'in_progress';
         state.workflow.phases[pKey].updatedAt = fullRecord.updatedAt;
       }

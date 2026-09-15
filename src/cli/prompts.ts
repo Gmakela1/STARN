@@ -1,4 +1,4 @@
-import { select, input, confirm, password, search } from '@inquirer/prompts';
+import { select, input, confirm, password, search, Separator } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { ModelOption } from '../openrouter/models.js';
 import { ProjectRecord } from '../workspace/types.js';
@@ -26,17 +26,41 @@ export async function promptSelectLiveModel(
   models: ModelOption[],
   currentDefault: string
 ): Promise<string> {
-  // If search is available, use searchable dropdown with live filter
-  const choices = models.map(m => ({
-    name: formatModelChoice(m),
+  const lastUsedModel = models.find(m => m.id === currentDefault);
+
+  // Build a display choice for a model — annotate the last-used one
+  const makeChoice = (m: ModelOption) => ({
+    name: m.id === currentDefault && lastUsedModel
+      ? formatModelChoice(m) + chalk.bold.green('  ← last used')
+      : formatModelChoice(m),
     value: m.id
-  }));
+  });
+
+  // Full list with last-used model pinned to position 0 (only appears once)
+  const choices = models.map(makeChoice);
+  if (lastUsedModel) {
+    const idx = choices.findIndex(c => c.value === currentDefault);
+    if (idx > 0) {
+      const [item] = choices.splice(idx, 1);
+      choices.unshift(item);
+    }
+  }
 
   try {
     return await search({
-      message: 'Select OpenRouter Model (type to filter live list):',
+      message: 'Select OpenRouter Model (type to filter):',
       source: async (term?: string) => {
-        if (!term) return choices;
+        if (!term) {
+          // Unfiltered: last-used model at top with a separator before the full list
+          if (lastUsedModel && choices.length > 1) {
+            return [
+              choices[0],
+              new Separator('─── All Models ──────────────────────────────────────────────────────'),
+              ...choices.slice(1)
+            ];
+          }
+          return choices;
+        }
         const lower = term.toLowerCase();
         return choices.filter(c => {
           const rawModel = models.find(m => m.id === c.value);

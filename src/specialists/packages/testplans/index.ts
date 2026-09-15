@@ -17,6 +17,7 @@ The following test tooling was cataloged during collaborative intake with the pr
 ## 2.0 Phase 1 (MVP) Test Procedures
 
 ### TP-MVP-01: Mechanical Concentricity & Mounting Torque Verification
+- **Build Sequence Reference:** Build Sequence MVC, Step 3 (Mount electric motor to transmission)
 - **Target Traceability:** Requirement 1.b & Phase 1 MVP Gate
 - **Verification Method:** Inspection (I)
 - **Required Shop Tools:** Dial indicator with magnetic base, torque wrench (ft-lbs).
@@ -26,6 +27,11 @@ The following test tooling was cataloged during collaborative intake with the pr
   2. Position dial indicator probe against the motor output shaft adapter rim.
   3. Rotate input shaft manually 360 degrees by hand; record total indicated runout (TIR).
   4. Verify all 4x Grade 8 mounting bolts torqued to 45 ft-lbs.
+- **Data Entry Table:**
+  | Parameter | Expected | Actual | Pass/Fail |
+  |---|---|---|---|
+  | Radial runout (TIR) | ≤ 0.050 mm | ___ | ☐ / ☐ |
+  | Mounting bolt torque | 45 ft-lbs | ___ | ☐ / ☐ |
 - **Pass / Fail Acceptance Threshold:** Total radial runout <= 0.050 mm (0.002 in); torque verified.
 
 ### TP-MVP-02: Traction DC High-Voltage Isolation Test
@@ -111,7 +117,7 @@ export const testplansPackage: SpecialistPackage = {
 Your mission is to formulate actionable, hands-on step-by-step physical test procedures (TP-MVP-xx, TP-IOC-xx, TP-FOC-xx) tailored to the tools the user has in their shop.
 
 DISCOVERY, PLANNING & EXECUTION WORKFLOW (MANDATORY):
-1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/MILESTONES.md, docs/ICD.md, docs/RTM.md, and docs/REQUIREMENTS.md. Also check any reference documents in the reference/ folder (wiring diagrams, datasheets, service manuals) that could inform test procedures. Do not guess what requirements exist.
+1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/MILESTONES.md, docs/ICD.md, docs/RTM.md, and docs/REQUIREMENTS.md. Also inspect any BUILD_SEQUENCE_*.md files in docs/build_sequences/ to find \`→ VERIFY: TP-XXX\` markers that identify which tests the Build Sequence expects at each stopping point, and reference them when authoring procedures. Also check any reference documents in the reference/ folder (wiring diagrams, datasheets, service manuals) that could inform test procedures. Do not guess what requirements exist.
 2. **Explicit Running Plan:** Formulate and state a brief running plan outlining how you will catalog user tooling, map milestone gates, and author procedures.
 3. **Execution & Traceability:** Execute each step in your running plan, referencing exact requirement IDs and pass/fail thresholds.
 
@@ -123,12 +129,17 @@ SHOP TOOLING INTERVIEW (MANDATORY):
 TEST PROCEDURE FORMAT (TP-MVP-xx, TP-IOC-xx, TP-FOC-xx):
 For each milestone phase, provide structured test procedures that verify subsystem interfaces work together:
 - **Test ID & Title:** (e.g. \`### TP-MVP-01: Motor-Controller-Battery Closed-Loop Power-On Test\`)
+- **Build Sequence Reference:** (e.g. "Build Sequence MVC, Step 5" — omit for system-level tests)
 - **Target Traceability:** Specific Requirement ID and Milestone Phase Gate.
 - **Verification Method:** (Test, Inspection, Analysis, Demonstration).
 - **Required Shop Tools:** Exact tools from user's shop catalog.
 - **Safety Precautions & Pre-Conditions:** Step-by-step lockout/safety prerequisites.
 - **Step-by-Step Procedure:** Clear, numbered hands-on shop steps.
-- **Pass / Fail Acceptance Threshold:** Exact numeric threshold and verifiable criteria.
+- **Data Entry Table:** Tabular format with Expected, Actual, and Pass/Fail columns:
+  | Parameter | Expected | Actual | Pass/Fail |
+  |---|---|---|---|
+  | [parameter name] | [threshold] | ___ | ☐ / ☐ |
+- **System-level tests:** Tests not tied to a specific build step must be labeled "Not tied to a specific build step — run after all [GATE] steps complete" and carry no Build Sequence Reference field.
 
 CRITICAL RULES:
 - Procedures must be physically realistic and tailored to the builder's actual shop environment.

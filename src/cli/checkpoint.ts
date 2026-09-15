@@ -22,13 +22,13 @@ export async function runHumanCheckpoint(
 ): Promise<{ action: CheckpointAction; feedback?: string }> {
   const { specialistId, specialistName, output, criticResult, projectPath, stateManager } = options;
 
-  // Detect if the response contains a full document (has markdown headers) or is just commentary
-  let isFullDeliverable = specialistId !== 'general' && output.includes('# ');
-  let cleanedDoc = isFullDeliverable ? extractCleanMarkdownDocument(output) : output;
+  // Always prefer the disk file as the authoritative deliverable — it is what the LLM
+  // actually wrote via the fs_write tool. The text response (output) may be commentary
+  // or an older version of the doc that pre-dates any post-write LLM edits.
+  let isFullDeliverable = false;
+  let cleanedDoc = output;
 
-  // FALLBACK: If the response is just commentary but the LLM wrote the file to disk via fs_write,
-  // read the file from disk and use it as the deliverable content.
-  if (!isFullDeliverable && specialistId !== 'general') {
+  if (specialistId !== 'general') {
     const docName = `${specialistId.toUpperCase()}.md`;
     const filePath = path.join(projectPath, 'docs', docName);
     if (fs.existsSync(filePath)) {
@@ -39,8 +39,13 @@ export async function runHumanCheckpoint(
           isFullDeliverable = true;
         }
       } catch (_e) {
-        // ignore read errors
+        // fall through to output-based extraction
       }
+    }
+    // Fallback: no disk file yet — extract from output if it looks like a document
+    if (!isFullDeliverable && output.includes('# ')) {
+      cleanedDoc = extractCleanMarkdownDocument(output);
+      isFullDeliverable = true;
     }
   }
 
@@ -115,6 +120,12 @@ export async function runHumanCheckpoint(
           criticScore: criticResult?.score
         });
 
+        // Harvest Design Decisions section into centralized decision log
+        const entriesHarvested = harvestDecisionLog(projectPath, specialistId);
+        if (entriesHarvested > 0) {
+          console.log(chalk.cyan(`\n📝 ${entriesHarvested} design decision(s) logged to docs/DECISIONS.md`));
+        }
+
         console.log(chalk.green(`\n✔ Saved clean deliverable to ${outPath}`));
       }
       finalAction = action;
@@ -127,6 +138,60 @@ export async function runHumanCheckpoint(
   }
 
   return { action: finalAction, feedback: userFeedback };
+}
+
+// Decision Log Harvest
+const DESIGN_DECISIONS_HEADER = '## Design Decisions';
+
+/**
+ * Extracts the Design Decisions section from a document and appends it to docs/DECISIONS.md.
+ * Idempotent: checks for duplicate D-XXX IDs before appending.
+ * Returns the number of new entries appended.
+ */
+export function harvestDecisionLog(projectPath: string, specialistId: string): number {
+  const docName = `${specialistId.toUpperCase()}.md`;
+  const docPath = path.join(projectPath, 'docs', docName);
+  const decisionsPath = path.join(projectPath, 'docs', 'DECISIONS.md');
+
+  if (!fs.existsSync(docPath)) return 0;
+
+  const docContent = fs.readFileSync(docPath, 'utf-8');
+  const headerIndex = docContent.indexOf(DESIGN_DECISIONS_HEADER);
+  if (headerIndex === -1) return 0;
+
+  // Extract everything from the Design Decisions header to the next top-level header or end
+  const afterHeader = docContent.slice(headerIndex + DESIGN_DECISIONS_HEADER.length);
+  const nextHeaderMatch = afterHeader.match(/\n## /);
+  const decisionsSection = nextHeaderMatch
+    ? afterHeader.slice(0, nextHeaderMatch.index)
+    : afterHeader;
+
+  const trimmedSection = decisionsSection.trim();
+  if (!trimmedSection) return 0;
+
+  // Extract all D-XXX or D-XXX IDs from the section
+  const idRegex = /D-\d+/g;
+  const newIds: string[] = trimmedSection.match(idRegex) || [];
+  if (newIds.length === 0) return 0;
+
+  // Read existing DECISIONS.md if it exists
+  let existingContent = '';
+  if (fs.existsSync(decisionsPath)) {
+    existingContent = fs.readFileSync(decisionsPath, 'utf-8');
+  }
+
+  // Check for duplicates — skip if any entry already exists
+  const existingIds: string[] = existingContent.match(/D-\d+/g) || [];
+  const alreadyExists = newIds.some(id => existingIds.includes(id));
+  if (alreadyExists) {
+    return 0; // idempotent — skip if any entry already exists
+  }
+
+  // Append the entries (no duplicate header)
+  const entry = `\n${trimmedSection}`;
+  fs.writeFileSync(decisionsPath, existingContent + entry, 'utf-8');
+
+  return newIds.length;
 }
 
 /**

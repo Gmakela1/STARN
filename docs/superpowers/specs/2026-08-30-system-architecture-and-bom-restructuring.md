@@ -174,6 +174,7 @@ SOW (contractor statements of work, if needed)
 - The user decides which specialists to re-run
 - Compares the current content of upstream documents against the approved artifact records in state.json
 - When an upstream document's `updatedAt` timestamp is newer than a downstream document's `updatedAt`, it flags the downstream document
+- when user flagging occurs with change impact analysis specialist and user agrees that a change in a forward or backward document is needed, the change necessary is captured and communicated so when the specialist is rewritting and updating a document, it only makes the necessary changes and does not change the whole document.
 
 ## Prerequisite Chain Summary
 

@@ -9,7 +9,8 @@ import { runDiscovery } from './discovery.js';
 import { classifyRequest } from './classifier.js';
 import { runAgentToolLoop } from './agent-loop.js';
 import { CriticEvaluator, CriticResult, BaselineDocument } from './critic.js';
-import { formatWorkflowRoadmap } from '../cli/ui.js';
+import { formatWorkflowRoadmap, formatHelp, formatOpenQuestionsReport } from '../cli/ui.js';
+import { resolvePhaseRef } from '../workspace/state.js';
 
 export interface TurnOptions {
   userPrompt: string;
@@ -52,22 +53,46 @@ export class CoreRunner {
     const state = stateManager.getState();
     const activeWorkflowPhase = state.workflow?.activePhase || 'conops';
 
-    // 0. Handle quick commands (/plan, /roadmap, /status)
+    // 0. Handle quick commands (/plan, /roadmap, /status, /help, /goto, /questions)
     const trimmed = userPrompt.trim().toLowerCase();
+    const quickCommandResult = (specialistName: string, output: string): TurnResult => ({
+      specialistId: 'general',
+      specialistName,
+      output,
+      autoRevisionsRun: 0,
+      requiresReview: false,
+      sessionMessages: [
+        ...sessionMessages,
+        { role: 'user', content: userPrompt },
+        { role: 'assistant', content: output }
+      ]
+    });
+
     if (trimmed === '/plan' || trimmed === '/roadmap' || trimmed === '/status') {
-      const roadmapText = formatWorkflowRoadmap(state);
-      return {
-        specialistId: 'general',
-        specialistName: 'Project Workflow Planner',
-        output: roadmapText,
-        autoRevisionsRun: 0,
-        requiresReview: false,
-        sessionMessages: [
-          ...sessionMessages,
-          { role: 'user', content: userPrompt },
-          { role: 'assistant', content: roadmapText }
-        ]
-      };
+      return quickCommandResult('Project Workflow Planner', formatWorkflowRoadmap(state, projectPath));
+    }
+
+    if (trimmed === '/help') {
+      return quickCommandResult('Help', formatHelp());
+    }
+
+    if (trimmed === '/questions') {
+      return quickCommandResult('Open Questions Report', formatOpenQuestionsReport(state, projectPath));
+    }
+
+    if (trimmed.startsWith('/goto')) {
+      const arg = userPrompt.trim().slice('/goto'.length).trim();
+      const phase = resolvePhaseRef(arg);
+      if (!phase) {
+        const msg = `Unknown phase: "${arg}". Use a phase number (1-${state.workflow?.phases ? Object.keys(state.workflow.phases).length : 12}), a phase id (e.g. "bom"), or a name fragment (e.g. "risk").\n\nTry /plan to see the phase list.`;
+        return quickCommandResult('Project Workflow Planner', msg);
+      }
+      stateManager.setActivePhase(phase.id);
+      const updated = stateManager.getState();
+      return quickCommandResult(
+        'Project Workflow Planner',
+        `★ Active phase switched to ${phase.name}.\n\n${formatWorkflowRoadmap(updated, projectPath)}`
+      );
     }
 
     // 1. Classification (phase-aware with phase locking)
@@ -76,11 +101,24 @@ export class CoreRunner {
     let specialist = specialistRegistry.get(specialistId) || specialistRegistry.get('general')!;
 
     // 2. Prerequisite Check Gate
+    const prereqIds: string[] = [];
     if (specialist.prerequisiteArtifactId) {
-      const isMet = stateManager.isArtifactApproved(specialist.prerequisiteArtifactId);
-      if (!isMet) {
-        const prereqName = specialistRegistry.get(specialist.prerequisiteArtifactId.toLowerCase())?.name || specialist.prerequisiteArtifactId;
-        const explanation = `Prerequisite Required: The ${prereqName} (${specialist.prerequisiteArtifactId}.md) deliverable has not yet been approved for this project.\n\nPlease complete and approve ${specialist.prerequisiteArtifactId}.md before proceeding to ${specialist.name}.`;
+      prereqIds.push(specialist.prerequisiteArtifactId);
+    }
+    if (specialist.prerequisiteArtifactIds) {
+      prereqIds.push(...specialist.prerequisiteArtifactIds);
+    }
+
+    if (prereqIds.length > 0) {
+      const unmetPrereqs = prereqIds.filter(id => !stateManager.isArtifactApproved(id));
+      if (unmetPrereqs.length > 0) {
+        const explanation = `Prerequisite Required: The following deliverables have not yet been approved for this project:
+${unmetPrereqs.map(id => {
+          const pkg = specialistRegistry.get(id.toLowerCase());
+          return `  - ${pkg?.name || id} (${id}.md)`;
+        }).join('\n')}
+
+Please complete and approve these before proceeding to ${specialist.name}.`;
         
         return {
           specialistId: 'general',

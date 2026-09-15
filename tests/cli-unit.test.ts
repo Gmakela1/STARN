@@ -11,6 +11,28 @@ import { CriticResult } from '../src/core/critic.js';
 import { ModelOption } from '../src/openrouter/models.js';
 import { ProjectState } from '../src/workspace/types.js';
 
+// ── Model selection choice-ordering logic (extracted from promptSelectLiveModel) ──
+function buildModelChoices(
+  models: ModelOption[],
+  currentDefault: string
+): { name: string; value: string }[] {
+  const lastUsedModel = models.find(m => m.id === currentDefault);
+  const choices = models.map(m => ({
+    name: m.id === currentDefault && lastUsedModel
+      ? formatModelChoice(m) + '  ← last used'
+      : formatModelChoice(m),
+    value: m.id
+  }));
+  if (lastUsedModel) {
+    const idx = choices.findIndex(c => c.value === currentDefault);
+    if (idx > 0) {
+      const [item] = choices.splice(idx, 1);
+      choices.unshift(item);
+    }
+  }
+  return choices;
+}
+
 describe('CLI UI formatting', () => {
   it('formats critic scorecard cleanly with score and summary', () => {
     const mockVerdict: CriticResult = {
@@ -90,5 +112,61 @@ describe('CLI UI formatting', () => {
     expect(roadmap).toContain('IN PROGRESS');
     expect(roadmap).toContain('LOCKED');
     expect(roadmap).toContain('/plan');
+  });
+});
+
+describe('Model selection — last-used pinning', () => {
+  const sampleModels: ModelOption[] = [
+    { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', description: 'Top-tier', recommended: true },
+    { id: 'openai/gpt-4o',               name: 'GPT-4o',            description: 'Strong general', recommended: true },
+    { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash',  description: 'Fast',          recommended: false },
+    { id: 'deepseek/deepseek-chat',      name: 'DeepSeek V3',       description: 'Cost-effective', recommended: false },
+  ];
+
+  it('pins the last-used model to position 0 when it is not already first', () => {
+    const choices = buildModelChoices(sampleModels, 'deepseek/deepseek-chat');
+    expect(choices[0].value).toBe('deepseek/deepseek-chat');
+  });
+
+  it('annotates the last-used model name with ← last used', () => {
+    const choices = buildModelChoices(sampleModels, 'openai/gpt-4o');
+    const lastUsedChoice = choices.find(c => c.value === 'openai/gpt-4o');
+    expect(lastUsedChoice?.name).toContain('← last used');
+  });
+
+  it('does not annotate any other model', () => {
+    const choices = buildModelChoices(sampleModels, 'openai/gpt-4o');
+    const others = choices.filter(c => c.value !== 'openai/gpt-4o');
+    for (const c of others) {
+      expect(c.name).not.toContain('← last used');
+    }
+  });
+
+  it('does not duplicate the last-used model — appears exactly once', () => {
+    const choices = buildModelChoices(sampleModels, 'google/gemini-2.0-flash-001');
+    const count = choices.filter(c => c.value === 'google/gemini-2.0-flash-001').length;
+    expect(count).toBe(1);
+  });
+
+  it('all models are still present in the list', () => {
+    const choices = buildModelChoices(sampleModels, 'deepseek/deepseek-chat');
+    expect(choices).toHaveLength(sampleModels.length);
+    for (const m of sampleModels) {
+      expect(choices.some(c => c.value === m.id)).toBe(true);
+    }
+  });
+
+  it('no change when last-used model is already first', () => {
+    const choices = buildModelChoices(sampleModels, 'anthropic/claude-3.5-sonnet');
+    expect(choices[0].value).toBe('anthropic/claude-3.5-sonnet');
+    expect(choices[0].name).toContain('← last used');
+  });
+
+  it('no pinning or annotation when currentDefault is not in the list', () => {
+    const choices = buildModelChoices(sampleModels, 'unknown/model-xyz');
+    expect(choices[0].value).toBe('anthropic/claude-3.5-sonnet'); // original order preserved
+    for (const c of choices) {
+      expect(c.name).not.toContain('← last used');
+    }
   });
 });

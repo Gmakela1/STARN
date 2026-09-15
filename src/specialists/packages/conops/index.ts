@@ -96,6 +96,7 @@ CRITICAL FORMAT RULES:
 - DO NOT add a changelog, version history, or traceability table section.
 - DO NOT embed numeric requirement thresholds (those belong in the Requirements phase).
 - Use clean plain-text descriptions only. DO NOT use LaTeX math formatting.
+- Include a \`## Design Decisions\` section listing any significant choices made, alternatives considered, and rationale.
 - You MUST write the final draft to docs/CONOPS.md via the fs_write tool. Do NOT respond with only a summary — write the actual document to disk.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,

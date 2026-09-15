@@ -48,6 +48,12 @@ export interface WorkflowState {
   phases: Record<string, WorkflowPhaseInfo>;
 }
 
+export interface PendingRisk {
+  source: string;
+  section: string;
+  risk: string;
+}
+
 export interface ProjectState {
   projectId: string;
   name: string;
@@ -58,4 +64,5 @@ export interface ProjectState {
   artifacts: ArtifactRecord[];
   openRisks: string[];
   recentActions: string[];
+  pendingRisks?: PendingRisk[];
 }

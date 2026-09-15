@@ -17,8 +17,7 @@ import {
   formatCompactCriticPass,
   formatWorkflowRoadmap,
   printSectionHeader
-} from './cli/ui.js';
-import {
+} from './cli/ui.js';import {
   promptApiKey,
   promptSelectLiveModel,
   promptProjectSelection,
@@ -26,7 +25,8 @@ import {
   promptContinueSession
 } from './cli/prompts.js';
 import { runHumanCheckpoint, handleCriticFailure } from './cli/checkpoint.js';
-import { resolveSection6, hasUnresolvedQuestions } from './cli/section6-resolver.js';
+import { collectOpenQuestions, countOpenQuestions } from './cli/section6-resolver.js';
+import { ORDERED_WORKFLOW_PHASES, resolveArtifactPaths } from './workspace/state.js';
 
 async function main() {
   console.log(formatBanner());
@@ -108,6 +108,34 @@ async function main() {
     const userPrompt = await promptUserQuery(client);
 
     let currentPrompt = userPrompt;
+
+    // Pre-turn: if the active phase's document has open questions, collect answers NOW
+    // and feed them to the specialist so the LLM integrates them into the document body.
+    // This must happen before executeTurn — not after — so the LLM sees the answers.
+    const lowered = currentPrompt.trim().toLowerCase();
+    const isQuickCommand = ['/plan', '/roadmap', '/status', '/help', '/questions'].includes(lowered)
+      || lowered.startsWith('/goto')
+      || lowered.startsWith('/voice');
+    const activePhaseNow = stateManager.getState().workflow?.activePhase || 'conops';
+    const activePhaseDef = ORDERED_WORKFLOW_PHASES.find(p => p.id === activePhaseNow);
+
+    if (activePhaseDef && !isQuickCommand) {
+      const docPaths = resolveArtifactPaths(currentProjectRecord.path, activePhaseDef.artifactPath);
+      const docWithQuestions = docPaths.find(docPath => countOpenQuestions(docPath) > 0);
+      if (docWithQuestions) {
+        const collected = await collectOpenQuestions({
+          docPath: docWithQuestions,
+          docName: path.basename(docWithQuestions)
+        });
+        if (collected.answers.length > 0) {
+          const answerBlock = collected.answers
+            .map((qa, i) => `Q${i + 1}: ${qa.question.slice(0, 150).replace(/\n/g, ' ')}\nAnswer: ${qa.answer}`)
+            .join('\n\n');
+          currentPrompt += `\n\nUSER ANSWERS TO OPEN QUESTIONS (incorporate per your instructions):\n${answerBlock}`;
+        }
+      }
+    }
+
     let turnActive = true;
 
     while (turnActive) {
@@ -151,18 +179,6 @@ async function main() {
             // discard
             turnActive = false;
             continue;
-          }
-        }
-
-        // Problem 2: Section 6 resolution interview (CONOPS only, after passing)
-        if (result.specialistId === 'conops' && crit?.passed) {
-          const conopsPath = path.join(currentProjectRecord.path, 'docs', 'CONOPS.md');
-          if (fs.existsSync(conopsPath) && hasUnresolvedQuestions(conopsPath)) {
-            console.log();
-            await resolveSection6({
-              projectPath: currentProjectRecord.path,
-              stateManager
-            });
           }
         }
 
