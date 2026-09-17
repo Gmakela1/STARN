@@ -5,6 +5,8 @@ import chalk from 'chalk';
 import boxen from 'boxen';
 import { CriticResult } from '../core/critic.js';
 import { ProjectStateManager } from '../workspace/state.js';
+import { OpenRouterClient } from '../openrouter/client.js';
+import { ToolRegistry } from '../tools/registry.js';
 import { formatCriticFindingsTable, formatCriticScorecard, extractCleanMarkdownDocument, formatDocumentPreview, formatDocumentToc, extractSections } from './ui.js';
 
 export interface CheckpointReviewOptions {
@@ -14,6 +16,9 @@ export interface CheckpointReviewOptions {
   criticResult?: CriticResult;
   projectPath: string;
   stateManager: ProjectStateManager;
+  client?: OpenRouterClient;
+  model?: string;
+  toolRegistry?: ToolRegistry;
 }
 
 export type CheckpointAction = 'accept' | 'feedback' | 'override' | 'discard' | 'browse_sections' | 'view_full_paged';
@@ -21,7 +26,7 @@ export type CheckpointAction = 'accept' | 'feedback' | 'override' | 'discard' | 
 export async function runHumanCheckpoint(
   options: CheckpointReviewOptions
 ): Promise<{ action: CheckpointAction; feedback?: string }> {
-  const { specialistId, specialistName, output, criticResult, projectPath, stateManager } = options;
+  const { specialistId, specialistName, output, criticResult, projectPath, stateManager, client, model, toolRegistry } = options;
 
   // Always prefer the disk file as the authoritative deliverable — it is what the LLM
   // actually wrote via the fs_write tool. The text response (output) may be commentary
@@ -169,8 +174,14 @@ export async function runHumanCheckpoint(
         const outPath = path.join(docsDir, docName);
         fs.writeFileSync(outPath, cleanedDoc, 'utf-8');
 
+        // Detect re-approval with content changes BEFORE recordArtifact overwrites the hash.
+        const artifactId = specialistId.toUpperCase();
+        const existingArt = stateManager.getState().artifacts.find(a => a.id === artifactId);
+        const wasPreviouslyApproved = existingArt?.status === 'approved' && !!existingArt?.approvedContentHash;
+        const changedSinceApproval = wasPreviouslyApproved && stateManager.hasContentChangedSinceApproval(artifactId);
+
         stateManager.recordArtifact({
-          id: specialistId.toUpperCase(),
+          id: artifactId,
           title: `${specialistName} Document`,
           path: path.relative(projectPath, outPath).replace(/\\/g, '/'),
           status: 'approved',
@@ -184,6 +195,42 @@ export async function runHumanCheckpoint(
         }
 
         console.log(chalk.green(`\n✔ Saved clean deliverable to ${outPath}`));
+
+        // Auto change-impact on re-approval with content changes
+        if (changedSinceApproval && client && model && toolRegistry) {
+          console.log(chalk.cyan('\n📋 Content changed since last approval — running change-impact analysis...'));
+          try {
+            const { runAgentToolLoop } = await import('../core/agent-loop.js');
+            const { changeImpactPackage } = await import('../specialists/packages/change-impact/index.js');
+            const impactResult = await runAgentToolLoop({
+              client,
+              model,
+              systemPrompt: changeImpactPackage.systemPrompt,
+              userMessage: `Analyze the impact of changes to ${artifactId}. Compare the current docs/${artifactId}.md against all other approved/draft documents in docs/. Identify which downstream documents are now inconsistent and what specific sections/interfaces/requirements are affected.`,
+              toolRegistry,
+              allowedTools: changeImpactPackage.allowedTools,
+              context: { projectPath, stateManager }
+            });
+            console.log(`\n${chalk.bold.yellow('Change Impact Report:')}\n${impactResult.finalResponse}\n`);
+
+            // Offer to align downstream docs
+            const align = await select({
+              message: 'Apply these changes to downstream docs?',
+              choices: [
+                { name: '✎ Yes — align downstream docs now', value: 'align' },
+                { name: '⏭  No — I\'ll handle it manually', value: 'skip' }
+              ]
+            });
+            if (align === 'align') {
+              userFeedback = `${impactResult.finalResponse}\n\nUSER INSTRUCTION: Apply the recommended changes above to align the downstream documents. Update the affected docs in place.`;
+              finalAction = 'feedback';
+              promptActive = false;
+              break;
+            }
+          } catch (err: any) {
+            console.log(chalk.yellow(`Change-impact analysis failed: ${err.message}`));
+          }
+        }
       }
       finalAction = action;
       promptActive = false;

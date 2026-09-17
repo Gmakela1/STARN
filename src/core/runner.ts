@@ -12,7 +12,7 @@ import { maybeCompact } from './compaction.js';
 import { Logger } from '../util/logger.js';
 import { CriticEvaluator, CriticResult, BaselineDocument } from './critic.js';
 import { formatWorkflowRoadmap, formatHelp, formatOpenQuestionsReport } from '../cli/ui.js';
-import { resolvePhaseRef } from '../workspace/state.js';
+import { resolvePhaseRef, ORDERED_WORKFLOW_PHASES } from '../workspace/state.js';
 
 export interface TurnOptions {
   userPrompt: string;
@@ -114,6 +114,21 @@ export class CoreRunner {
       if (!phase) {
         const msg = `Unknown phase: "${arg}". Use a phase number (1-${state.workflow?.phases ? Object.keys(state.workflow.phases).length : 12}), a phase id (e.g. "bom"), or a name fragment (e.g. "risk").\n\nTry /plan to see the phase list.`;
         return quickCommandResult('Project Workflow Planner', msg);
+      }
+      // REOPEN CHECK: if the target phase's artifact is approved, signal the UI
+      // to prompt the user for a revert-to-draft (with downstream re-locking).
+      const artifactId = phase.id.toUpperCase();
+      if (stateManager.isArtifactApproved(artifactId)) {
+        const idx = ORDERED_WORKFLOW_PHASES.findIndex(p => p.id === phase.id);
+        const downstream = ORDERED_WORKFLOW_PHASES.slice(idx + 1).map(p => p.name).join(', ');
+        return {
+          specialistId: 'general',
+          specialistName: 'Reopen Artifact',
+          output: `__REOPEN_PROMPT__:${artifactId}:${downstream}`,
+          autoRevisionsRun: 0,
+          requiresReview: false,
+          sessionMessages: [...sessionMessages, { role: 'user', content: userPrompt }]
+        };
       }
       stateManager.setActivePhase(phase.id);
       const updated = stateManager.getState();

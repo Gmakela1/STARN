@@ -19,7 +19,8 @@ import {
   formatContextGauge,
   formatWorkflowRoadmap,
   printSectionHeader
-} from './cli/ui.js';import {
+} from './cli/ui.js';import { confirm } from '@inquirer/prompts';
+import {
   promptApiKey,
   promptSelectLiveModel,
   promptProjectSelection,
@@ -203,6 +204,23 @@ async function main() {
         spinner.stop();
         sessionMessages = result.sessionMessages;
 
+        // Handle /goto reopen signal: target phase's artifact is approved —
+        // prompt the user to revert it to draft (with downstream re-locking).
+        if (result.output.startsWith('__REOPEN_PROMPT__:')) {
+          const [, artifactId, downstreamList] = result.output.split(':');
+          const confirmed = await confirm({
+            message: `${artifactId} is currently approved. Switching to it will revert it to draft so you can revise. Downstream phases that will re-lock: ${downstreamList}. Continue?`,
+            default: false
+          });
+          if (confirmed) {
+            stateManager.revertArtifactToDraft(artifactId);
+            console.log(chalk.cyan(`\n↺ Reverted ${artifactId} to draft. Downstream phases re-locked.`));
+            console.log(chalk.dim("You'll get an impact report when you re-approve."));
+            console.log(formatWorkflowRoadmap(stateManager.getState(), currentProjectRecord.path));
+          }
+          continue; // re-prompt
+        }
+
         const crit = result.criticResult;
 
         // Problem 1: Display critic results compactly
@@ -229,7 +247,10 @@ async function main() {
           output: result.output,
           criticResult: result.criticResult,
           projectPath: currentProjectRecord.path,
-          stateManager
+          stateManager,
+          client,
+          model: selectedModel,
+          toolRegistry
         });
 
         if (checkpoint.action === 'feedback' && checkpoint.feedback) {
