@@ -158,6 +158,49 @@ export function extractCleanMarkdownDocument(rawText: string): string {
   return rawText.trim();
 }
 
+/**
+ * Formats a two-level table of contents (## and ### headings) for a document.
+ * Used by the checkpoint panel to let the user browse sections.
+ */
+export function formatDocumentToc(content: string): string {
+  const lines = content.split('\n');
+  const tocLines: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith('## ')) {
+      tocLines.push(`  ${chalk.cyan('•')} ${line.replace(/^##\s+/, '')}`);
+    } else if (line.startsWith('### ')) {
+      tocLines.push(`    ${chalk.dim('•')} ${line.replace(/^###\s+/, '')}`);
+    }
+  }
+  return tocLines.join('\n');
+}
+
+/**
+ * Extracts the body content of each ## section in a document.
+ * Returns a map keyed by the heading text (without the ## prefix).
+ */
+export function extractSections(content: string): Record<string, string> {
+  const sections: Record<string, string> = {};
+  const lines = content.split('\n');
+  let currentHeading: string | null = null;
+  let currentContent: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith('## ')) {
+      if (currentHeading) {
+        sections[currentHeading] = currentContent.join('\n').trim();
+      }
+      currentHeading = line.replace(/^##\s+/, '');
+      currentContent = [];
+    } else if (currentHeading) {
+      currentContent.push(line);
+    }
+  }
+  if (currentHeading) {
+    sections[currentHeading] = currentContent.join('\n').trim();
+  }
+  return sections;
+}
+
 export function formatDocumentPreview(content: string, title: string): string {
   const lines = content.split('\n');
   const headings = lines.filter(l => l.startsWith('#')).slice(0, 8);
