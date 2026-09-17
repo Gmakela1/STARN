@@ -119,14 +119,12 @@ export async function classifyRequest(
     return explicitSwitch;
   }
 
-  // 2. PHASE LOCKING: If the user is actively working on a formal deliverable
-  // (i.e. not general/conops), their feedback and edits are directed at that
-  // active specialist document, NOT at general Q&A.
-  if (activePhase && activePhase !== 'general' && activePhase !== 'conops') {
-    // Only route away if it's an explicit informational question (starts with "what is", "tell me", etc.)
-    // AND it doesn't contain edit/update/revise/feedback keywords
-    const lower = userMessage.trim().toLowerCase();
-    const isEditFeedback =
+  // 2. PHASE LOCKING (fallback only): generic edit verbs route to the active phase.
+  // This now runs ONLY when the LLM classifier (below) fails or returns unparseable output.
+  // The six example-specific tractor nouns (battery, motor, charger, compartment, seat,
+  // display) have been removed — they misfired for non-tractor projects.
+  function isGenericEditFeedback(lower: string): boolean {
+    return (
       lower.startsWith('update') ||
       lower.startsWith('change') ||
       lower.startsWith('add') ||
@@ -144,22 +142,8 @@ export async function classifyRequest(
       lower.includes('correction') ||
       lower.includes('wrong') ||
       lower.includes('that should be') ||
-      lower.includes('should say') ||
-      lower.includes('battery') ||
-      lower.includes('motor') ||
-      lower.includes('charger') ||
-      lower.includes('compartment') ||
-      lower.includes('seat') ||
-      lower.includes('display');
-
-    if (isEditFeedback) {
-      return activePhase;
-    }
-  }
-
-  // 3. Check if this is an informational query or question (should route to general Q&A)
-  if (isInformationalQuery(userMessage)) {
-    return 'general';
+      lower.includes('should say')
+    );
   }
 
   const prompt = `You are the Request Classifier for STARN, a physical/hardware engineering project management AI.
@@ -201,11 +185,25 @@ Respond with ONLY a JSON object: {"specialistId": "<id>", "reason": "<brief reas
         return parsed.specialistId;
       }
     }
+    classifierLogger?.warn('LLM classifier returned unparseable response; falling back to keyword heuristics');
   } catch (e: any) {
     classifierLogger?.warn(`LLM classification failed (${e.message}); falling back to keyword heuristics`);
-    // Fallback on keywords if LLM classification fails
   }
 
+  // 3. FALLBACK (LLM failed/unparseable): generic edit verbs → active phase
+  if (activePhase && activePhase !== 'general' && activePhase !== 'conops') {
+    const lower = userMessage.trim().toLowerCase();
+    if (isGenericEditFeedback(lower)) {
+      return activePhase;
+    }
+  }
+
+  // 3b. Informational queries → general (fallback path only, since LLM didn't classify)
+  if (isInformationalQuery(userMessage)) {
+    return 'general';
+  }
+
+  // 4. Keyword-based specialist detection (final fallback)
   const lower = userMessage.toLowerCase();
   if (lower.includes('test plan') || lower.includes('testplan') || lower.includes('test procedure')) return 'testplans';
   if (lower.includes('rtm') || lower.includes('traceability') || lower.includes('verification matrix')) return 'rtm';
@@ -219,5 +217,6 @@ Respond with ONLY a JSON object: {"specialistId": "<id>", "reason": "<brief reas
   if (lower.includes('sow') || lower.includes('statement of work')) return 'sow';
   if (lower.includes('impact') || lower.includes('what changes') || lower.includes('affect')) return 'change-impact';
 
-  return activePhase || 'general';
+  // No keyword matched and no edit verb → treat as general/informational
+  return 'general';
 }
