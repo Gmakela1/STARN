@@ -24,8 +24,7 @@ import {
   promptApiKey,
   promptSelectLiveModel,
   promptProjectSelection,
-  promptUserQuery,
-  promptContinueSession
+  promptUserQuery
 } from './cli/prompts.js';
 import { runHumanCheckpoint, handleCriticFailure } from './cli/checkpoint.js';
 import { collectOpenQuestions, countOpenQuestions } from './cli/section6-resolver.js';
@@ -128,10 +127,9 @@ async function main() {
   const toolRegistry = new ToolRegistry();
   const specialistRegistry = new SpecialistRegistry();
 
-  let sessionActive = true;
   let sessionMessages: ChatMessage[] = [];
 
-  while (sessionActive) {
+  while (true) {
     const sessionTokens = estimateTokens(sessionMessages);
     printSectionHeader(`Active Session [Phase: ${stateManager.getState().workflow?.activePhase?.toUpperCase() || 'CONOPS'}] ${formatContextGauge(sessionTokens, config.compressionThreshold, config.compactionModel)}`);
     const userPrompt = await promptUserQuery(client);
@@ -280,7 +278,8 @@ async function main() {
       }
     }
 
-    sessionActive = await promptContinueSession();
+    // Session loops continuously until the user exits with Ctrl+C
+    // (handled by the SIGINT handler, which persists state and exits cleanly).
   }
 
   console.log(chalk.cyan('\n★ STARN session ended. Progress persisted to .starn/state.json. Happy building!\n'));
