@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { ProjectState, ArtifactRecord, IntakeState, WorkflowState, PendingRisk } from './types.js';
 
 export interface WorkflowPhaseDef {
@@ -336,6 +337,15 @@ export class ProjectStateManager {
       updatedAt: new Date().toISOString()
     };
 
+    // On approval, compute and store a SHA-256 content hash so re-approvals
+    // can detect whether the document actually changed.
+    if (artifact.status === 'approved') {
+      const hash = this.computeContentHash(this.projectPath, artifact.path);
+      if (hash) {
+        fullRecord.approvedContentHash = hash;
+      }
+    }
+
     if (index >= 0) {
       state.artifacts[index] = fullRecord;
     } else {
@@ -363,5 +373,68 @@ export class ProjectStateManager {
       state.recentActions.shift();
     }
     this.saveState(state);
+  }
+
+  /**
+   * Computes a SHA-256 hash of the file at the given artifact path.
+   * Returns null if the file does not exist.
+   */
+  private computeContentHash(projectPath: string, artifactPath: string): string | null {
+    const full = path.join(projectPath, artifactPath);
+    if (!fs.existsSync(full)) return null;
+    const content = fs.readFileSync(full, 'utf-8');
+    return crypto.createHash('sha256').update(content).digest('hex');
+  }
+
+  /**
+   * Reverts an approved artifact back to draft and re-locks all downstream
+   * workflow phases (transitive closure). The document stays on disk so the
+   * user can revise it. Used by the /goto reopen flow.
+   */
+  public revertArtifactToDraft(artifactId: string): void {
+    const state = this.getState();
+    const art = state.artifacts.find(a => a.id.toUpperCase() === artifactId.toUpperCase());
+    if (!art) return;
+
+    art.status = 'draft';
+    art.updatedAt = new Date().toISOString();
+
+    // Revert this phase to in_progress and set it active
+    const phaseKey = artifactId.toLowerCase().replace(/_/g, '').replace(/-/g, '');
+    if (state.workflow.phases[phaseKey]) {
+      state.workflow.phases[phaseKey].status = 'in_progress';
+      state.workflow.phases[phaseKey].updatedAt = art.updatedAt;
+    }
+    state.workflow.activePhase = phaseKey;
+    state.currentPhase = phaseKey;
+
+    // Re-lock all downstream phases (transitive closure)
+    const idx = ORDERED_WORKFLOW_PHASES.findIndex(p => p.id === phaseKey);
+    if (idx !== -1) {
+      for (let i = idx + 1; i < ORDERED_WORKFLOW_PHASES.length; i++) {
+        const downstreamId = ORDERED_WORKFLOW_PHASES[i].id;
+        if (state.workflow.phases[downstreamId]) {
+          state.workflow.phases[downstreamId].status = 'pending';
+          state.workflow.phases[downstreamId].updatedAt = null;
+        }
+      }
+    }
+
+    state.recentActions.push(`Reverted ${artifactId} to draft (downstream re-locked)`);
+    this.saveState(state);
+  }
+
+  /**
+   * Returns true if the document on disk differs from the content hash
+   * stored at the time of the last approval. Used to detect re-approvals
+   * with actual content changes (triggers auto change-impact).
+   */
+  public hasContentChangedSinceApproval(artifactId: string): boolean {
+    const state = this.getState();
+    const art = state.artifacts.find(a => a.id.toUpperCase() === artifactId.toUpperCase());
+    if (!art || !art.approvedContentHash) return false;
+    const currentHash = this.computeContentHash(this.projectPath, art.path);
+    if (!currentHash) return false;
+    return currentHash !== art.approvedContentHash;
   }
 }
