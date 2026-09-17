@@ -241,29 +241,37 @@ async function main() {
           }
         }
 
-        const checkpoint = await runHumanCheckpoint({
-          specialistId: result.specialistId,
-          specialistName: result.specialistName,
-          output: result.output,
-          criticResult: result.criticResult,
-          projectPath: currentProjectRecord.path,
-          stateManager,
-          client,
-          model: selectedModel,
-          toolRegistry
-        });
+        // Checkpoint only when a specialist completed a critic-gated draft.
+        // Quick commands, intake questions, and conversational replies just print and continue.
+        if (result.requiresReview) {
+          const checkpoint = await runHumanCheckpoint({
+            specialistId: result.specialistId,
+            specialistName: result.specialistName,
+            output: result.output,
+            criticResult: result.criticResult,
+            projectPath: currentProjectRecord.path,
+            stateManager,
+            client,
+            model: selectedModel,
+            toolRegistry
+          });
 
-        if (checkpoint.action === 'feedback' && checkpoint.feedback) {
-          currentPrompt = checkpoint.feedback;
-        } else if (checkpoint.action === 'accept' && result.requiresReview) {
-          // If approved deliverable, check if we can advance to next phase
-          const nextPhase = stateManager.advanceToNextPhase();
-          if (nextPhase) {
-            console.log(chalk.cyan(`\n★ Workflow Updated: Advanced to next phase [${nextPhase.toUpperCase()}].`));
-            console.log(formatWorkflowRoadmap(stateManager.getState()));
+          if (checkpoint.action === 'feedback' && checkpoint.feedback) {
+            currentPrompt = checkpoint.feedback;
+          } else if (checkpoint.action === 'accept') {
+            // If approved deliverable, check if we can advance to next phase
+            const nextPhase = stateManager.advanceToNextPhase();
+            if (nextPhase) {
+              console.log(chalk.cyan(`\n★ Workflow Updated: Advanced to next phase [${nextPhase.toUpperCase()}].`));
+              console.log(formatWorkflowRoadmap(stateManager.getState()));
+            }
+            turnActive = false;
+          } else {
+            turnActive = false;
           }
-          turnActive = false;
         } else {
+          // Non-review output: print it and end the turn
+          console.log(`\n${result.output}\n`);
           turnActive = false;
         }
       } catch (err: any) {
