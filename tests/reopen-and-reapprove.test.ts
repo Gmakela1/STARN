@@ -167,3 +167,58 @@ describe('workflow reconciliation on load', () => {
     expect(state.workflow.activePhase).not.toBe('bom');
   });
 });
+
+describe('workflow reconciliation rebuilds phase set from canonical list', () => {
+  let tmpDir: string;
+  let stateMgr: ProjectStateManager;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), 'starn-rebuild-test-' + Date.now());
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, 'docs'), { recursive: true });
+    stateMgr = new ProjectStateManager(tmpDir);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('adds missing canonical phases and drops obsolete ones from a stale state', () => {
+    // Stale state from an older STARN version: missing architecture/icd/bom,
+    // has obsolete 'wbs'. CONOPS approved, ARCHITECTURE.md drafted on disk.
+    fs.writeFileSync(path.join(tmpDir, 'docs', 'CONOPS.md'), '# CONOPS\nv1');
+    fs.writeFileSync(path.join(tmpDir, 'docs', 'ARCHITECTURE.md'), '# Architecture\nv1');
+    const staleState = {
+      projectId: 'test',
+      name: 'Test',
+      currentPhase: 'conops',
+      discovery: { lastScanned: null, summary: '', keyConstraints: [] },
+      intake: { completed: true, currentQuestionIndex: 5, answers: {} },
+      workflow: {
+        activePhase: 'conops',
+        phases: {
+          conops: { id: 'conops', name: 'CONOPS', status: 'approved', artifactPath: 'docs/CONOPS.md', updatedAt: null },
+          wbs: { id: 'wbs', name: 'WBS', status: 'pending', artifactPath: 'docs/WBS.md', updatedAt: null }
+        }
+      },
+      artifacts: [{ id: 'CONOPS', title: 'CONOPS', path: 'docs/CONOPS.md', status: 'approved', updatedAt: '2026-01-01' }],
+      openRisks: [],
+      recentActions: []
+    };
+    fs.mkdirSync(path.join(tmpDir, '.starn'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.starn', 'state.json'), JSON.stringify(staleState), 'utf-8');
+
+    const state = stateMgr.getOrCreateState('test', 'Test');
+
+    // Obsolete 'wbs' dropped
+    expect(state.workflow.phases['wbs']).toBeUndefined();
+    // Missing canonical phases now present
+    expect(state.workflow.phases['architecture']).toBeDefined();
+    expect(state.workflow.phases['icd']).toBeDefined();
+    expect(state.workflow.phases['bom']).toBeDefined();
+    // CONOPS still approved
+    expect(state.workflow.phases['conops'].status).toBe('approved');
+    // activePhase advanced past approved CONOPS to architecture
+    expect(state.workflow.activePhase).toBe('architecture');
+  });
+});

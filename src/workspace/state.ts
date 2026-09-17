@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { ProjectState, ArtifactRecord, IntakeState, WorkflowState, PendingRisk } from './types.js';
+import { ProjectState, ArtifactRecord, IntakeState, WorkflowState, PendingRisk, PhaseStatus } from './types.js';
 
 export interface WorkflowPhaseDef {
   id: string;
@@ -223,36 +223,62 @@ export class ProjectStateManager {
 
   /**
    * Reconciles workflow phase statuses and activePhase against the artifacts
-   * of record. Heals stale state left over from prior sessions or older STARN
-   * versions where workflow fields drifted from the actual artifacts array.
-   * Returns true if any change was made.
+   * of record AND the current canonical phase list. Heals stale state left
+   * over from prior sessions or older STARN versions where the phase set
+   * itself drifted (phases added/removed/renamed). Returns true if any change.
    */
   private reconcileWorkflowWithArtifacts(state: ProjectState): boolean {
-    if (!state.workflow || !state.workflow.phases) return false;
+    if (!state.workflow) return false;
     let changed = false;
 
-    // Sync each phase's status from the artifacts array.
-    for (const phaseId of Object.keys(state.workflow.phases)) {
-      const phase = state.workflow.phases[phaseId];
+    // Rebuild the phases map from the canonical ORDERED_WORKFLOW_PHASES list,
+    // preserving known statuses from artifacts and any prior in_progress/approved
+    // status. Drops obsolete phase ids that no longer exist in the canonical list.
+    const oldPhases = state.workflow.phases || {};
+    const newPhases: Record<string, any> = {};
+    for (let i = 0; i < ORDERED_WORKFLOW_PHASES.length; i++) {
+      const p = ORDERED_WORKFLOW_PHASES[i];
+      const old = oldPhases[p.id];
       const artifact = state.artifacts.find(a => {
         const aNorm = a.id.toUpperCase().replace(/_/g, '').replace(/-/g, '');
-        const pNorm = phaseId.toUpperCase().replace(/_/g, '').replace(/-/g, '');
+        const pNorm = p.id.toUpperCase().replace(/_/g, '').replace(/-/g, '');
         return aNorm === pNorm;
       });
+      let status: PhaseStatus;
       if (artifact) {
-        const expectedStatus = artifact.status === 'approved' ? 'approved' : 'in_progress';
-        if (phase.status !== expectedStatus) {
-          phase.status = expectedStatus;
-          changed = true;
-        }
+        status = artifact.status === 'approved' ? 'approved' : 'in_progress';
+      } else if (old?.status === 'approved') {
+        status = 'approved';
+      } else if (old?.status === 'in_progress') {
+        status = 'in_progress';
+      } else {
+        status = i === 0 ? 'in_progress' : 'pending';
+      }
+      // If anything differs from the old entry (or the phase is new), mark changed.
+      if (!old || old.status !== status || old.artifactPath !== p.artifactPath || old.name !== p.name) {
+        changed = true;
+      }
+      newPhases[p.id] = {
+        id: p.id,
+        name: p.name,
+        status,
+        artifactPath: p.artifactPath,
+        updatedAt: old?.updatedAt ?? null
+      };
+    }
+    // Detect dropped obsolete phases.
+    for (const oldId of Object.keys(oldPhases)) {
+      if (!newPhases[oldId]) {
+        changed = true;
       }
     }
+    state.workflow.phases = newPhases;
 
-    // If activePhase points to an approved phase, advance to the first
-    // non-approved phase in workflow order.
+    // If activePhase points to an approved (or missing/obsolete) phase,
+    // advance to the first non-approved phase in workflow order.
     const activePhaseId = state.workflow.activePhase;
     const activePhase = state.workflow.phases[activePhaseId];
-    if (activePhase && activePhase.status === 'approved') {
+    if (!activePhase || activePhase.status === 'approved') {
       const firstUnapproved = ORDERED_WORKFLOW_PHASES.find(p => {
         const ph = state.workflow!.phases[p.id];
         return ph && ph.status !== 'approved';
