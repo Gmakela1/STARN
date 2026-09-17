@@ -2,9 +2,10 @@ import { select, input, checkbox } from '@inquirer/prompts';
 import fs from 'node:fs';
 import path from 'node:path';
 import chalk from 'chalk';
+import boxen from 'boxen';
 import { CriticResult } from '../core/critic.js';
 import { ProjectStateManager } from '../workspace/state.js';
-import { formatCriticFindingsTable, extractCleanMarkdownDocument, formatDocumentPreview } from './ui.js';
+import { formatCriticFindingsTable, formatCriticScorecard, extractCleanMarkdownDocument, formatDocumentPreview, formatDocumentToc, extractSections } from './ui.js';
 
 export interface CheckpointReviewOptions {
   specialistId: string;
@@ -15,7 +16,7 @@ export interface CheckpointReviewOptions {
   stateManager: ProjectStateManager;
 }
 
-export type CheckpointAction = 'accept' | 'feedback' | 'override' | 'discard' | 'view_full';
+export type CheckpointAction = 'accept' | 'feedback' | 'override' | 'discard' | 'browse_sections' | 'view_full_paged';
 
 export async function runHumanCheckpoint(
   options: CheckpointReviewOptions
@@ -49,8 +50,29 @@ export async function runHumanCheckpoint(
     }
   }
 
+  // Panel 1 — Critic scorecard (always shown when a critic ran)
+  if (criticResult) {
+    console.log(formatCriticScorecard(criticResult));
+  } else {
+    console.log(chalk.dim('\n(No critic evaluation for this deliverable.)\n'));
+  }
+
+  // Panel 2 — Document TOC (for deliverables)
   if (isFullDeliverable) {
-    console.log(formatDocumentPreview(cleanedDoc, `${specialistName} (${specialistId.toUpperCase()}.md)`));
+    const lines = cleanedDoc.split('\n');
+    const wordCount = cleanedDoc.trim().split(/\s+/).filter(Boolean).length;
+    let tocBox = `${chalk.bold.cyan(`${specialistName} (${specialistId.toUpperCase()}.md)`)}\n`;
+    tocBox += `${chalk.dim(`Length: ${lines.length} lines (~${wordCount} words)`)}\n\n`;
+    tocBox += `${chalk.bold('Table of Contents:')}\n`;
+    tocBox += formatDocumentToc(cleanedDoc);
+    console.log(boxen(tocBox, {
+      padding: 1,
+      margin: { top: 1, bottom: 1, left: 0, right: 0 },
+      borderStyle: 'round',
+      borderColor: 'cyan',
+      title: 'Deliverable',
+      titleAlignment: 'left'
+    }));
   } else {
     console.log(`\n${output}\n`);
   }
@@ -63,7 +85,8 @@ export async function runHumanCheckpoint(
     const choices: Array<{ name: string; value: CheckpointAction }> = [];
 
     if (isFullDeliverable) {
-      choices.push({ name: '👁  View Full Document in Terminal', value: 'view_full' });
+      choices.push({ name: '👁  Browse sections (view a whole section)', value: 'browse_sections' });
+      choices.push({ name: '📄 View full document (paged)', value: 'view_full_paged' });
     }
 
     if (criticResult?.passed) {
@@ -85,10 +108,44 @@ export async function runHumanCheckpoint(
       choices
     });
 
-    if (action === 'view_full') {
-      console.log(`\n${chalk.bold.underline(`Full ${specialistName} Content:`)}\n`);
-      console.log(cleanedDoc);
+    if (action === 'browse_sections') {
+      const sections = extractSections(cleanedDoc);
+      const sectionNames = Object.keys(sections);
+      if (sectionNames.length === 0) {
+        console.log(chalk.yellow('No sections found in this document.\n'));
+        continue;
+      }
+      const selected = await select({
+        message: 'Select a section to view (shows the whole section):',
+        choices: sectionNames.map(name => ({ name, value: name }))
+      });
+      console.log(`\n${chalk.bold.underline(selected)}\n`);
+      console.log(sections[selected]);
       console.log(`\n${chalk.dim('─'.repeat(60))}\n`);
+      continue; // loop back to menu
+    }
+
+    if (action === 'view_full_paged') {
+      const lines = cleanedDoc.split('\n');
+      const pageSize = Math.max(20, process.stdout.rows ? process.stdout.rows - 5 : 40);
+      let offset = 0;
+      while (offset < lines.length) {
+        const slice = lines.slice(offset, offset + pageSize);
+        console.log(slice.join('\n'));
+        offset += pageSize;
+        if (offset < lines.length) {
+          const next = await select({
+            message: `Lines ${offset}/${lines.length}:`,
+            choices: [
+              { name: '▶ Next page', value: 'next' },
+              { name: '⏭ Skip to end', value: 'skip' },
+              { name: '↩ Back to menu', value: 'back' }
+            ]
+          });
+          if (next === 'skip') offset = lines.length;
+          if (next === 'back') break;
+        }
+      }
       continue; // loop back to menu
     }
 
