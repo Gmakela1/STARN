@@ -12,12 +12,15 @@ import { ToolRegistry } from './tools/registry.js';
 import { SpecialistRegistry } from './specialists/registry.js';
 import { ChatMessage } from './openrouter/types.js';
 import { CoreRunner } from './core/runner.js';
+import { estimateTokens } from './core/compaction.js';
 import {
   formatBanner,
   formatCompactCriticPass,
+  formatContextGauge,
   formatWorkflowRoadmap,
   printSectionHeader
-} from './cli/ui.js';import {
+} from './cli/ui.js';import { confirm } from '@inquirer/prompts';
+import {
   promptApiKey,
   promptSelectLiveModel,
   promptProjectSelection,
@@ -27,6 +30,9 @@ import {
 import { runHumanCheckpoint, handleCriticFailure } from './cli/checkpoint.js';
 import { collectOpenQuestions, countOpenQuestions } from './cli/section6-resolver.js';
 import { ORDERED_WORKFLOW_PHASES, resolveArtifactPaths } from './workspace/state.js';
+import { Logger } from './util/logger.js';
+import { setClassifierLogger } from './core/classifier.js';
+import { setCriticLogger } from './core/critic.js';
 
 async function main() {
   console.log(formatBanner());
@@ -56,6 +62,16 @@ async function main() {
   const selectedModel = await promptSelectLiveModel(availableModels, config.defaultModel);
   projectRegistry.setDefaultModel(selectedModel);
   saveUserConfig({ defaultModel: selectedModel }, config.globalDir);
+
+  // 3b. Compaction model onboarding (if not yet configured)
+  if (!config.compactionModel) {
+    console.log(chalk.dim('\nSelect a model for session compaction (summarizes long conversations to free context).'))
+    console.log(chalk.dim('Pick the same model, or a cheaper/faster one. Press Enter to accept the default.'))
+    const compactionModel = await promptSelectLiveModel(availableModels, selectedModel);
+    saveUserConfig({ compactionModel }, config.globalDir);
+    config.compactionModel = compactionModel;
+    console.log(chalk.green(`✔ Compaction model set to ${compactionModel}\n`));
+  }
 
   // 4. Project Selection / Creation
   const existingProjects = projectRegistry.listProjects();
@@ -88,13 +104,25 @@ async function main() {
   const stateManager = new ProjectStateManager(currentProjectRecord.path);
   const currentState = stateManager.getOrCreateState(currentProjectRecord.id, currentProjectRecord.name);
 
+  // Per-project file logger (writes to <project>/.starn/logs/starn-<date>.log)
+  const logger = new Logger(path.join(currentProjectRecord.path, '.starn'));
+  setClassifierLogger(logger);
+  setCriticLogger(logger);
+
+  // Graceful SIGINT: state is already persisted per-turn; just acknowledge and exit
+  process.on('SIGINT', () => {
+    console.log(chalk.yellow('\n\n⚠ Interrupt received. Session state has been persisted to .starn/state.json. Goodbye.\n'));
+    process.exit(0);
+  });
+
   // Show Project Roadmap Banner
   console.log(formatWorkflowRoadmap(currentState));
 
   const client = new OpenRouterClient({
     apiKey,
     siteUrl: config.siteUrl,
-    appName: config.appName
+    appName: config.appName,
+    logger
   });
 
   const toolRegistry = new ToolRegistry();
@@ -104,10 +132,20 @@ async function main() {
   let sessionMessages: ChatMessage[] = [];
 
   while (sessionActive) {
-    printSectionHeader(`Active Session [Phase: ${stateManager.getState().workflow?.activePhase?.toUpperCase() || 'CONOPS'}]`);
+    const sessionTokens = estimateTokens(sessionMessages);
+    printSectionHeader(`Active Session [Phase: ${stateManager.getState().workflow?.activePhase?.toUpperCase() || 'CONOPS'}] ${formatContextGauge(sessionTokens, config.compressionThreshold, config.compactionModel)}`);
     const userPrompt = await promptUserQuery(client);
 
     let currentPrompt = userPrompt;
+
+    // /compact-model: select the model used for session compaction (settings-only)
+    if (currentPrompt.trim().toLowerCase() === '/compact-model') {
+      const compactionModel = await promptSelectLiveModel(availableModels, config.compactionModel || selectedModel);
+      saveUserConfig({ compactionModel }, config.globalDir);
+      config.compactionModel = compactionModel;
+      console.log(chalk.green(`✔ Compaction model set to ${compactionModel}\n`));
+      continue;
+    }
 
     // Pre-turn: if the active phase's document has open questions, collect answers NOW
     // and feed them to the specialist so the LLM integrates them into the document body.
@@ -151,6 +189,10 @@ async function main() {
           toolRegistry,
           specialistRegistry,
           sessionMessages,
+          compactionModel: config.compactionModel || selectedModel,
+          compressionThreshold: config.compressionThreshold,
+          keepRecentTokens: config.keepRecentTokens,
+          logger,
           onStatusUpdate: status => {
             spinner.text = status;
           },
@@ -161,6 +203,23 @@ async function main() {
 
         spinner.stop();
         sessionMessages = result.sessionMessages;
+
+        // Handle /goto reopen signal: target phase's artifact is approved —
+        // prompt the user to revert it to draft (with downstream re-locking).
+        if (result.output.startsWith('__REOPEN_PROMPT__:')) {
+          const [, artifactId, downstreamList] = result.output.split(':');
+          const confirmed = await confirm({
+            message: `${artifactId} is currently approved. Switching to it will revert it to draft so you can revise. Downstream phases that will re-lock: ${downstreamList}. Continue?`,
+            default: false
+          });
+          if (confirmed) {
+            stateManager.revertArtifactToDraft(artifactId);
+            console.log(chalk.cyan(`\n↺ Reverted ${artifactId} to draft. Downstream phases re-locked.`));
+            console.log(chalk.dim("You'll get an impact report when you re-approve."));
+            console.log(formatWorkflowRoadmap(stateManager.getState(), currentProjectRecord.path));
+          }
+          continue; // re-prompt
+        }
 
         const crit = result.criticResult;
 
@@ -188,7 +247,10 @@ async function main() {
           output: result.output,
           criticResult: result.criticResult,
           projectPath: currentProjectRecord.path,
-          stateManager
+          stateManager,
+          client,
+          model: selectedModel,
+          toolRegistry
         });
 
         if (checkpoint.action === 'feedback' && checkpoint.feedback) {

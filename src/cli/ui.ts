@@ -8,6 +8,23 @@ import { ProjectState } from '../workspace/types.js';
 import { ORDERED_WORKFLOW_PHASES, resolveArtifactPaths } from '../workspace/state.js';
 import { countOpenQuestions, parseOpenQuestionsFromContent } from './section6-resolver.js';
 
+function formatTokenCount(tokens: number): string {
+  if (tokens >= 1000) return `${Math.round(tokens / 1000)}k`;
+  return `${tokens}`;
+}
+
+/**
+ * Context gauge for the active-session header. Shows current context size
+ * relative to the compaction threshold, colored by pressure, plus the
+ * configured compaction model.
+ */
+export function formatContextGauge(tokens: number, threshold: number, compactionModel?: string): string {
+  const pct = threshold > 0 ? Math.round((tokens / threshold) * 100) : 0;
+  const bar = pct > 80 ? chalk.red : pct > 50 ? chalk.yellow : chalk.green;
+  const modelLabel = compactionModel ? ` · Compact: ${compactionModel}` : '';
+  return bar(`Context: ${formatTokenCount(tokens)}/${formatTokenCount(threshold)}${modelLabel}`);
+}
+
 export function formatBanner(): string {
   const content = `${chalk.bold.cyan('★ STARN ★')}
 ${chalk.gray('AI Project Management for Physical & Hardware Engineering')}
@@ -141,6 +158,49 @@ export function extractCleanMarkdownDocument(rawText: string): string {
   return rawText.trim();
 }
 
+/**
+ * Formats a two-level table of contents (## and ### headings) for a document.
+ * Used by the checkpoint panel to let the user browse sections.
+ */
+export function formatDocumentToc(content: string): string {
+  const lines = content.split('\n');
+  const tocLines: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith('## ')) {
+      tocLines.push(`  ${chalk.cyan('•')} ${line.replace(/^##\s+/, '')}`);
+    } else if (line.startsWith('### ')) {
+      tocLines.push(`    ${chalk.dim('•')} ${line.replace(/^###\s+/, '')}`);
+    }
+  }
+  return tocLines.join('\n');
+}
+
+/**
+ * Extracts the body content of each ## section in a document.
+ * Returns a map keyed by the heading text (without the ## prefix).
+ */
+export function extractSections(content: string): Record<string, string> {
+  const sections: Record<string, string> = {};
+  const lines = content.split('\n');
+  let currentHeading: string | null = null;
+  let currentContent: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith('## ')) {
+      if (currentHeading) {
+        sections[currentHeading] = currentContent.join('\n').trim();
+      }
+      currentHeading = line.replace(/^##\s+/, '');
+      currentContent = [];
+    } else if (currentHeading) {
+      currentContent.push(line);
+    }
+  }
+  if (currentHeading) {
+    sections[currentHeading] = currentContent.join('\n').trim();
+  }
+  return sections;
+}
+
 export function formatDocumentPreview(content: string, title: string): string {
   const lines = content.split('\n');
   const headings = lines.filter(l => l.startsWith('#')).slice(0, 8);
@@ -234,6 +294,8 @@ export function formatHelp(): string {
     ['/questions', 'List open questions across all drafted documents'],
     ['/goto <phase>', 'Switch the active phase (number, id, or name fragment)'],
     ['/help', 'Show this command list'],
+    ['/compact', 'Summarize older session messages now (free up context)'],
+    ['/compact-model', 'Select the model used for session compaction'],
     ['/voice', 'Record your next prompt by voice (type in the prompt input)']
   ];
 

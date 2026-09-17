@@ -2,9 +2,12 @@ import { select, input, checkbox } from '@inquirer/prompts';
 import fs from 'node:fs';
 import path from 'node:path';
 import chalk from 'chalk';
+import boxen from 'boxen';
 import { CriticResult } from '../core/critic.js';
 import { ProjectStateManager } from '../workspace/state.js';
-import { formatCriticFindingsTable, extractCleanMarkdownDocument, formatDocumentPreview } from './ui.js';
+import { OpenRouterClient } from '../openrouter/client.js';
+import { ToolRegistry } from '../tools/registry.js';
+import { formatCriticFindingsTable, formatCriticScorecard, extractCleanMarkdownDocument, formatDocumentPreview, formatDocumentToc, extractSections } from './ui.js';
 
 export interface CheckpointReviewOptions {
   specialistId: string;
@@ -13,14 +16,17 @@ export interface CheckpointReviewOptions {
   criticResult?: CriticResult;
   projectPath: string;
   stateManager: ProjectStateManager;
+  client?: OpenRouterClient;
+  model?: string;
+  toolRegistry?: ToolRegistry;
 }
 
-export type CheckpointAction = 'accept' | 'feedback' | 'override' | 'discard' | 'view_full';
+export type CheckpointAction = 'accept' | 'feedback' | 'override' | 'discard' | 'browse_sections' | 'view_full_paged';
 
 export async function runHumanCheckpoint(
   options: CheckpointReviewOptions
 ): Promise<{ action: CheckpointAction; feedback?: string }> {
-  const { specialistId, specialistName, output, criticResult, projectPath, stateManager } = options;
+  const { specialistId, specialistName, output, criticResult, projectPath, stateManager, client, model, toolRegistry } = options;
 
   // Always prefer the disk file as the authoritative deliverable — it is what the LLM
   // actually wrote via the fs_write tool. The text response (output) may be commentary
@@ -49,8 +55,29 @@ export async function runHumanCheckpoint(
     }
   }
 
+  // Panel 1 — Critic scorecard (always shown when a critic ran)
+  if (criticResult) {
+    console.log(formatCriticScorecard(criticResult));
+  } else {
+    console.log(chalk.dim('\n(No critic evaluation for this deliverable.)\n'));
+  }
+
+  // Panel 2 — Document TOC (for deliverables)
   if (isFullDeliverable) {
-    console.log(formatDocumentPreview(cleanedDoc, `${specialistName} (${specialistId.toUpperCase()}.md)`));
+    const lines = cleanedDoc.split('\n');
+    const wordCount = cleanedDoc.trim().split(/\s+/).filter(Boolean).length;
+    let tocBox = `${chalk.bold.cyan(`${specialistName} (${specialistId.toUpperCase()}.md)`)}\n`;
+    tocBox += `${chalk.dim(`Length: ${lines.length} lines (~${wordCount} words)`)}\n\n`;
+    tocBox += `${chalk.bold('Table of Contents:')}\n`;
+    tocBox += formatDocumentToc(cleanedDoc);
+    console.log(boxen(tocBox, {
+      padding: 1,
+      margin: { top: 1, bottom: 1, left: 0, right: 0 },
+      borderStyle: 'round',
+      borderColor: 'cyan',
+      title: 'Deliverable',
+      titleAlignment: 'left'
+    }));
   } else {
     console.log(`\n${output}\n`);
   }
@@ -63,7 +90,8 @@ export async function runHumanCheckpoint(
     const choices: Array<{ name: string; value: CheckpointAction }> = [];
 
     if (isFullDeliverable) {
-      choices.push({ name: '👁  View Full Document in Terminal', value: 'view_full' });
+      choices.push({ name: '👁  Browse sections (view a whole section)', value: 'browse_sections' });
+      choices.push({ name: '📄 View full document (paged)', value: 'view_full_paged' });
     }
 
     if (criticResult?.passed) {
@@ -85,10 +113,44 @@ export async function runHumanCheckpoint(
       choices
     });
 
-    if (action === 'view_full') {
-      console.log(`\n${chalk.bold.underline(`Full ${specialistName} Content:`)}\n`);
-      console.log(cleanedDoc);
+    if (action === 'browse_sections') {
+      const sections = extractSections(cleanedDoc);
+      const sectionNames = Object.keys(sections);
+      if (sectionNames.length === 0) {
+        console.log(chalk.yellow('No sections found in this document.\n'));
+        continue;
+      }
+      const selected = await select({
+        message: 'Select a section to view (shows the whole section):',
+        choices: sectionNames.map(name => ({ name, value: name }))
+      });
+      console.log(`\n${chalk.bold.underline(selected)}\n`);
+      console.log(sections[selected]);
       console.log(`\n${chalk.dim('─'.repeat(60))}\n`);
+      continue; // loop back to menu
+    }
+
+    if (action === 'view_full_paged') {
+      const lines = cleanedDoc.split('\n');
+      const pageSize = Math.max(20, process.stdout.rows ? process.stdout.rows - 5 : 40);
+      let offset = 0;
+      while (offset < lines.length) {
+        const slice = lines.slice(offset, offset + pageSize);
+        console.log(slice.join('\n'));
+        offset += pageSize;
+        if (offset < lines.length) {
+          const next = await select({
+            message: `Lines ${offset}/${lines.length}:`,
+            choices: [
+              { name: '▶ Next page', value: 'next' },
+              { name: '⏭ Skip to end', value: 'skip' },
+              { name: '↩ Back to menu', value: 'back' }
+            ]
+          });
+          if (next === 'skip') offset = lines.length;
+          if (next === 'back') break;
+        }
+      }
       continue; // loop back to menu
     }
 
@@ -112,8 +174,14 @@ export async function runHumanCheckpoint(
         const outPath = path.join(docsDir, docName);
         fs.writeFileSync(outPath, cleanedDoc, 'utf-8');
 
+        // Detect re-approval with content changes BEFORE recordArtifact overwrites the hash.
+        const artifactId = specialistId.toUpperCase();
+        const existingArt = stateManager.getState().artifacts.find(a => a.id === artifactId);
+        const wasPreviouslyApproved = existingArt?.status === 'approved' && !!existingArt?.approvedContentHash;
+        const changedSinceApproval = wasPreviouslyApproved && stateManager.hasContentChangedSinceApproval(artifactId);
+
         stateManager.recordArtifact({
-          id: specialistId.toUpperCase(),
+          id: artifactId,
           title: `${specialistName} Document`,
           path: path.relative(projectPath, outPath).replace(/\\/g, '/'),
           status: 'approved',
@@ -127,6 +195,42 @@ export async function runHumanCheckpoint(
         }
 
         console.log(chalk.green(`\n✔ Saved clean deliverable to ${outPath}`));
+
+        // Auto change-impact on re-approval with content changes
+        if (changedSinceApproval && client && model && toolRegistry) {
+          console.log(chalk.cyan('\n📋 Content changed since last approval — running change-impact analysis...'));
+          try {
+            const { runAgentToolLoop } = await import('../core/agent-loop.js');
+            const { changeImpactPackage } = await import('../specialists/packages/change-impact/index.js');
+            const impactResult = await runAgentToolLoop({
+              client,
+              model,
+              systemPrompt: changeImpactPackage.systemPrompt,
+              userMessage: `Analyze the impact of changes to ${artifactId}. Compare the current docs/${artifactId}.md against all other approved/draft documents in docs/. Identify which downstream documents are now inconsistent and what specific sections/interfaces/requirements are affected.`,
+              toolRegistry,
+              allowedTools: changeImpactPackage.allowedTools,
+              context: { projectPath, stateManager }
+            });
+            console.log(`\n${chalk.bold.yellow('Change Impact Report:')}\n${impactResult.finalResponse}\n`);
+
+            // Offer to align downstream docs
+            const align = await select({
+              message: 'Apply these changes to downstream docs?',
+              choices: [
+                { name: '✎ Yes — align downstream docs now', value: 'align' },
+                { name: '⏭  No — I\'ll handle it manually', value: 'skip' }
+              ]
+            });
+            if (align === 'align') {
+              userFeedback = `${impactResult.finalResponse}\n\nUSER INSTRUCTION: Apply the recommended changes above to align the downstream documents. Update the affected docs in place.`;
+              finalAction = 'feedback';
+              promptActive = false;
+              break;
+            }
+          } catch (err: any) {
+            console.log(chalk.yellow(`Change-impact analysis failed: ${err.message}`));
+          }
+        }
       }
       finalAction = action;
       promptActive = false;

@@ -18,6 +18,7 @@ export interface ArtifactRecord {
   path: string;
   status: 'draft' | 'approved' | 'rejected';
   criticScore?: number;
+  approvedContentHash?: string;
   updatedAt: string;
 }
 

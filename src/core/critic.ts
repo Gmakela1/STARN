@@ -1,4 +1,10 @@
 import { OpenRouterClient } from '../openrouter/client.js';
+import { Logger } from '../util/logger.js';
+
+let criticLogger: Logger | undefined;
+export function setCriticLogger(logger?: Logger): void {
+  criticLogger = logger;
+}
 
 export interface BaselineDocument {
   id: string;
@@ -75,6 +81,7 @@ Respond ONLY with valid JSON in this exact structure:
 
     const jsonMatch = (response.content || '').match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
+      criticLogger?.warn('Critic returned no parseable JSON; using fallback verdict');
       return {
         passed: true,
         score: 8.0,
@@ -87,7 +94,8 @@ Respond ONLY with valid JSON in this exact structure:
 
     try {
       return JSON.parse(jsonMatch[0]) as CriticResult;
-    } catch (_e) {
+    } catch (e: any) {
+      criticLogger?.warn(`Critic JSON parse failed (${e.message}); using fallback verdict`);
       return {
         passed: true,
         score: 8.0,

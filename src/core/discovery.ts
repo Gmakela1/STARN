@@ -16,16 +16,38 @@ export async function runDiscovery(projectPath: string, stateManager: ProjectSta
   const referenceFiles: string[] = [];
   const userExampleFiles: string[] = [];
 
+  const EXCLUDED_DIRS = new Set([
+    '.git', 'node_modules', '.starn',
+    'dist', 'build', 'tests', 'testbed',
+    '.pi', '.vscode', '.idea', 'coverage'
+  ]);
+
+  const EXCLUDED_FILE_PATTERNS = [
+    /\.log$/i,
+    /\.wav$/i,
+    /\.mp3$/i,
+    /^package-lock\.json$/i,
+    /^yarn\.lock$/i,
+    /^tsconfig\.json$/i,
+    /^\.gitignore$/i,
+    /^\.env/i
+  ];
+
+  function isExcludedFile(name: string): boolean {
+    return EXCLUDED_FILE_PATTERNS.some(pattern => pattern.test(name));
+  }
+
   function scanDir(dir: string) {
     if (!fs.existsSync(dir)) return;
     const items = fs.readdirSync(dir, { withFileTypes: true });
     for (const item of items) {
-      if (item.name === '.git' || item.name === 'node_modules' || item.name === '.starn') continue;
+      if (EXCLUDED_DIRS.has(item.name)) continue;
       const full = path.join(dir, item.name);
       const rel = path.relative(root, full).replace(/\\/g, '/');
       if (item.isDirectory()) {
         scanDir(full);
       } else {
+        if (isExcludedFile(item.name)) continue;
         foundFiles.push(rel);
         if (rel.startsWith('reference/') && !rel.endsWith('README.md')) {
           referenceFiles.push(rel);
