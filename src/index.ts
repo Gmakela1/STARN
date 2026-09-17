@@ -12,9 +12,11 @@ import { ToolRegistry } from './tools/registry.js';
 import { SpecialistRegistry } from './specialists/registry.js';
 import { ChatMessage } from './openrouter/types.js';
 import { CoreRunner } from './core/runner.js';
+import { estimateTokens } from './core/compaction.js';
 import {
   formatBanner,
   formatCompactCriticPass,
+  formatContextGauge,
   formatWorkflowRoadmap,
   printSectionHeader
 } from './cli/ui.js';import {
@@ -59,6 +61,16 @@ async function main() {
   const selectedModel = await promptSelectLiveModel(availableModels, config.defaultModel);
   projectRegistry.setDefaultModel(selectedModel);
   saveUserConfig({ defaultModel: selectedModel }, config.globalDir);
+
+  // 3b. Compaction model onboarding (if not yet configured)
+  if (!config.compactionModel) {
+    console.log(chalk.dim('\nSelect a model for session compaction (summarizes long conversations to free context).'))
+    console.log(chalk.dim('Pick the same model, or a cheaper/faster one. Press Enter to accept the default.'))
+    const compactionModel = await promptSelectLiveModel(availableModels, selectedModel);
+    saveUserConfig({ compactionModel }, config.globalDir);
+    config.compactionModel = compactionModel;
+    console.log(chalk.green(`✔ Compaction model set to ${compactionModel}\n`));
+  }
 
   // 4. Project Selection / Creation
   const existingProjects = projectRegistry.listProjects();
@@ -119,10 +131,20 @@ async function main() {
   let sessionMessages: ChatMessage[] = [];
 
   while (sessionActive) {
-    printSectionHeader(`Active Session [Phase: ${stateManager.getState().workflow?.activePhase?.toUpperCase() || 'CONOPS'}]`);
+    const sessionTokens = estimateTokens(sessionMessages);
+    printSectionHeader(`Active Session [Phase: ${stateManager.getState().workflow?.activePhase?.toUpperCase() || 'CONOPS'}] ${formatContextGauge(sessionTokens, config.compressionThreshold, config.compactionModel)}`);
     const userPrompt = await promptUserQuery(client);
 
     let currentPrompt = userPrompt;
+
+    // /compact-model: select the model used for session compaction (settings-only)
+    if (currentPrompt.trim().toLowerCase() === '/compact-model') {
+      const compactionModel = await promptSelectLiveModel(availableModels, config.compactionModel || selectedModel);
+      saveUserConfig({ compactionModel }, config.globalDir);
+      config.compactionModel = compactionModel;
+      console.log(chalk.green(`✔ Compaction model set to ${compactionModel}\n`));
+      continue;
+    }
 
     // Pre-turn: if the active phase's document has open questions, collect answers NOW
     // and feed them to the specialist so the LLM integrates them into the document body.
@@ -166,6 +188,10 @@ async function main() {
           toolRegistry,
           specialistRegistry,
           sessionMessages,
+          compactionModel: config.compactionModel || selectedModel,
+          compressionThreshold: config.compressionThreshold,
+          keepRecentTokens: config.keepRecentTokens,
+          logger,
           onStatusUpdate: status => {
             spinner.text = status;
           },

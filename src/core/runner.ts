@@ -8,6 +8,8 @@ import { ChatMessage } from '../openrouter/types.js';
 import { runDiscovery } from './discovery.js';
 import { classifyRequest } from './classifier.js';
 import { runAgentToolLoop } from './agent-loop.js';
+import { maybeCompact } from './compaction.js';
+import { Logger } from '../util/logger.js';
 import { CriticEvaluator, CriticResult, BaselineDocument } from './critic.js';
 import { formatWorkflowRoadmap, formatHelp, formatOpenQuestionsReport } from '../cli/ui.js';
 import { resolvePhaseRef } from '../workspace/state.js';
@@ -21,6 +23,10 @@ export interface TurnOptions {
   toolRegistry: ToolRegistry;
   specialistRegistry: SpecialistRegistry;
   sessionMessages?: ChatMessage[];
+  compactionModel?: string;
+  compressionThreshold?: number;
+  keepRecentTokens?: number;
+  logger?: Logger;
   onStatusUpdate?: (status: string) => void;
   onToolCall?: (tool: string, args: any) => void;
 }
@@ -45,10 +51,10 @@ export class CoreRunner {
       model,
       toolRegistry,
       specialistRegistry,
-      sessionMessages = [],
       onStatusUpdate,
       onToolCall
     } = options;
+    let sessionMessages = options.sessionMessages ?? [];
 
     const state = stateManager.getState();
     const activeWorkflowPhase = state.workflow?.activePhase || 'conops';
@@ -74,6 +80,28 @@ export class CoreRunner {
 
     if (trimmed === '/help') {
       return quickCommandResult('Help', formatHelp());
+    }
+
+    if (trimmed === '/compact') {
+      // Force compaction now using the configured compaction model
+      const compactionResult = await maybeCompact({
+        client,
+        messages: sessionMessages,
+        compactionModel: options.compactionModel || model,
+        threshold: 0, // force compaction regardless of size
+        keepRecentTokens: options.keepRecentTokens ?? 20000,
+        logger: options.logger
+      });
+      return {
+        specialistId: 'general',
+        specialistName: 'Session Compaction',
+        output: compactionResult.compacted
+          ? `✓ Compacted session. ${compactionResult.tokensBefore} → ${compactionResult.tokensAfter} tokens.`
+          : 'Nothing to compact (session too small).',
+        autoRevisionsRun: 0,
+        requiresReview: false,
+        sessionMessages: compactionResult.messages
+      };
     }
 
     if (trimmed === '/questions') {
@@ -215,6 +243,20 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     }
 
     // 6. Specialist Execution Loop
+    // Auto-compaction: if context exceeds threshold, summarize older messages first.
+    const compactionResult = await maybeCompact({
+      client,
+      messages: sessionMessages,
+      compactionModel: options.compactionModel || model,
+      threshold: options.compressionThreshold ?? 100000,
+      keepRecentTokens: options.keepRecentTokens ?? 20000,
+      logger: options.logger
+    });
+    if (compactionResult.compacted) {
+      sessionMessages = compactionResult.messages;
+      onStatusUpdate?.(`Compacted session (${compactionResult.tokensBefore} → ${compactionResult.tokensAfter} tokens)`);
+    }
+
     onStatusUpdate?.(`Executing specialist: ${specialist.name}...`);
     const enhancedSystemPrompt = `${specialist.systemPrompt}\n\n${discovery.discoveryText}${existingBaselineText}`;
 

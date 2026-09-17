@@ -8,6 +8,23 @@ import { ProjectState } from '../workspace/types.js';
 import { ORDERED_WORKFLOW_PHASES, resolveArtifactPaths } from '../workspace/state.js';
 import { countOpenQuestions, parseOpenQuestionsFromContent } from './section6-resolver.js';
 
+function formatTokenCount(tokens: number): string {
+  if (tokens >= 1000) return `${Math.round(tokens / 1000)}k`;
+  return `${tokens}`;
+}
+
+/**
+ * Context gauge for the active-session header. Shows current context size
+ * relative to the compaction threshold, colored by pressure, plus the
+ * configured compaction model.
+ */
+export function formatContextGauge(tokens: number, threshold: number, compactionModel?: string): string {
+  const pct = threshold > 0 ? Math.round((tokens / threshold) * 100) : 0;
+  const bar = pct > 80 ? chalk.red : pct > 50 ? chalk.yellow : chalk.green;
+  const modelLabel = compactionModel ? ` · Compact: ${compactionModel}` : '';
+  return bar(`Context: ${formatTokenCount(tokens)}/${formatTokenCount(threshold)}${modelLabel}`);
+}
+
 export function formatBanner(): string {
   const content = `${chalk.bold.cyan('★ STARN ★')}
 ${chalk.gray('AI Project Management for Physical & Hardware Engineering')}
@@ -234,6 +251,8 @@ export function formatHelp(): string {
     ['/questions', 'List open questions across all drafted documents'],
     ['/goto <phase>', 'Switch the active phase (number, id, or name fragment)'],
     ['/help', 'Show this command list'],
+    ['/compact', 'Summarize older session messages now (free up context)'],
+    ['/compact-model', 'Select the model used for session compaction'],
     ['/voice', 'Record your next prompt by voice (type in the prompt input)']
   ];
 

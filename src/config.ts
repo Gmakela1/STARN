@@ -8,6 +8,9 @@ dotenv.config();
 export interface StarnConfig {
   apiKey: string;
   defaultModel: string;
+  compactionModel?: string;
+  compressionThreshold: number;
+  keepRecentTokens: number;
   siteUrl: string;
   appName: string;
   globalDir: string;
@@ -16,6 +19,9 @@ export interface StarnConfig {
 export interface UserConfigFile {
   apiKey?: string;
   defaultModel?: string;
+  compactionModel?: string;
+  compressionThreshold?: number;
+  keepRecentTokens?: number;
   siteUrl?: string;
   appName?: string;
 }
@@ -76,12 +82,18 @@ export function loadConfig(customGlobalDir?: string): StarnConfig {
 
   const apiKey = process.env.OPENROUTER_API_KEY || fileConfig.apiKey || '';
   const defaultModel = process.env.OPENROUTER_MODEL || fileConfig.defaultModel || 'anthropic/claude-3.5-sonnet';
+  const compactionModel = process.env.STARN_COMPACT_MODEL || fileConfig.compactionModel || '';
+  const compressionThreshold = Number(process.env.STARN_COMPACT_THRESHOLD || fileConfig.compressionThreshold || 100000);
+  const keepRecentTokens = Number(process.env.STARN_KEEP_RECENT_TOKENS || fileConfig.keepRecentTokens || 20000);
   const siteUrl = process.env.OPENROUTER_SITE_URL || fileConfig.siteUrl || 'https://github.com/makel/STARN';
   const appName = process.env.OPENROUTER_SITE_NAME || fileConfig.appName || 'STARN PM Agent';
 
   return {
     apiKey,
     defaultModel,
+    compactionModel,
+    compressionThreshold,
+    keepRecentTokens,
     siteUrl,
     appName,
     globalDir
