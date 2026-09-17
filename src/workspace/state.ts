@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ProjectState, ArtifactRecord, IntakeState, WorkflowState } from './types.js';
+import { ProjectState, ArtifactRecord, IntakeState, WorkflowState, PendingRisk } from './types.js';
 
 export interface WorkflowPhaseDef {
   id: string;
@@ -160,6 +160,10 @@ export class ProjectStateManager {
         state.workflow = createDefaultWorkflow(state.artifacts || []);
         changed = true;
       }
+      const migrated = this.migrateLegacyRisks(state);
+      if (migrated) {
+        changed = true;
+      }
       if (changed) {
         this.saveState(state);
       }
@@ -206,7 +210,49 @@ export class ProjectStateManager {
     if (!parsed.workflow) {
       parsed.workflow = createDefaultWorkflow(parsed.artifacts || []);
     }
+    this.migrateLegacyRisks(parsed);
     return parsed;
+  }
+
+  /**
+   * Migrates legacy `openRisks: string[]` entries into the structured
+   * `pendingRisks: PendingRisk[]` store. Idempotent: only migrates risks
+   * not already present (matched by risk text). Returns true if any
+   * migration occurred. Clears `openRisks` after migration.
+   */
+  private migrateLegacyRisks(state: ProjectState): boolean {
+    let changed = false;
+    if (state.openRisks && state.openRisks.length > 0) {
+      if (!state.pendingRisks) {
+        state.pendingRisks = [];
+      }
+      const existingRisks = new Set((state.pendingRisks || []).map(r => r.risk));
+      for (const legacyRisk of state.openRisks) {
+        if (!existingRisks.has(legacyRisk)) {
+          state.pendingRisks.push({
+            source: 'legacy',
+            section: 'unknown',
+            risk: legacyRisk
+          });
+          changed = true;
+        }
+      }
+      state.openRisks = [];
+      changed = true;
+    }
+    if (!state.pendingRisks) {
+      state.pendingRisks = [];
+    }
+    return changed;
+  }
+
+  public addPendingRisk(risk: PendingRisk): void {
+    const state = this.getState();
+    if (!state.pendingRisks) {
+      state.pendingRisks = [];
+    }
+    state.pendingRisks.push(risk);
+    this.saveState(state);
   }
 
   public saveState(state: ProjectState): void {

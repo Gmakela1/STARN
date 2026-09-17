@@ -89,7 +89,7 @@ describe('Tool Registry & Safe Handlers', () => {
 
     const updateRes = await registry.execute(
       'state_update',
-      { phase: 'CONOPS Drafting', addRisk: 'Wind load on roof panels', action: 'Initialized CONOPS' },
+      { phase: 'conops', addPendingRisk: { source: 'CONOPS.md', section: 'roof', risk: 'Wind load on roof panels' }, action: 'Initialized CONOPS' },
       context,
       ['state_update']
     );
@@ -103,8 +103,12 @@ describe('Tool Registry & Safe Handlers', () => {
     );
     expect(readRes.success).toBe(true);
     const parsedState = JSON.parse(readRes.result!);
-    expect(parsedState.currentPhase).toBe('CONOPS Drafting');
-    expect(parsedState.openRisks).toContain('Wind load on roof panels');
+    expect(parsedState.currentPhase).toBe('conops');
+    expect(parsedState.pendingRisks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ risk: 'Wind load on roof panels', source: 'CONOPS.md' })
+      ])
+    );
   });
 
   it('extracts text from a PDF file via fs_read', async () => {
