@@ -83,3 +83,87 @@ describe('reopen and re-approve', () => {
     expect(stateMgr.hasContentChangedSinceApproval('CONOPS')).toBe(false);
   });
 });
+
+describe('workflow reconciliation on load', () => {
+  let tmpDir: string;
+  let stateMgr: ProjectStateManager;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), 'starn-reconcile-test-' + Date.now());
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, 'docs'), { recursive: true });
+    stateMgr = new ProjectStateManager(tmpDir);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('heals stale activePhase pointing at an approved artifact', () => {
+    // Simulate a stale state: CONOPS approved but activePhase still 'conops'
+    fs.writeFileSync(path.join(tmpDir, 'docs', 'CONOPS.md'), '# CONOPS\nv1');
+    const staleState = {
+      projectId: 'test',
+      name: 'Test',
+      currentPhase: 'conops',
+      discovery: { lastScanned: null, summary: '', keyConstraints: [] },
+      intake: { completed: true, currentQuestionIndex: 5, answers: {} },
+      workflow: {
+        activePhase: 'conops',
+        phases: Object.fromEntries(ORDERED_WORKFLOW_PHASES.map((p, i) => [
+          p.id,
+          { id: p.id, name: p.name, status: i === 0 ? 'approved' : 'pending', artifactPath: p.artifactPath, updatedAt: null }
+        ]))
+      },
+      artifacts: [{ id: 'CONOPS', title: 'CONOPS', path: 'docs/CONOPS.md', status: 'approved', criticScore: 9.0, updatedAt: '2026-01-01' }],
+      openRisks: [],
+      recentActions: []
+    };
+    fs.mkdirSync(path.join(tmpDir, '.starn'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.starn', 'state.json'), JSON.stringify(staleState), 'utf-8');
+
+    // Load — reconciliation should advance activePhase past CONOPS
+    const state = stateMgr.getOrCreateState('test', 'Test');
+    expect(state.workflow.activePhase).not.toBe('conops');
+    expect(state.workflow.phases['conops'].status).toBe('approved');
+    // Active phase should be the first non-approved (architecture)
+    expect(state.workflow.activePhase).toBe('architecture');
+    expect(state.workflow.phases['architecture'].status).toBe('in_progress');
+  });
+
+  it('syncs phase status from artifacts when workflow is stale', () => {
+    // Simulate: artifact array says BOM is approved, but workflow.phases.bom.status = 'pending'
+    const staleState = {
+      projectId: 'test',
+      name: 'Test',
+      currentPhase: 'bom',
+      discovery: { lastScanned: null, summary: '', keyConstraints: [] },
+      intake: { completed: true, currentQuestionIndex: 5, answers: {} },
+      workflow: {
+        activePhase: 'bom',
+        phases: Object.fromEntries(ORDERED_WORKFLOW_PHASES.map(p => [
+          p.id,
+          { id: p.id, name: p.name, status: 'pending', artifactPath: p.artifactPath, updatedAt: null }
+        ]))
+      },
+      artifacts: [
+        { id: 'CONOPS', title: 'CONOPS', path: 'docs/CONOPS.md', status: 'approved', updatedAt: '2026-01-01' },
+        { id: 'ARCHITECTURE', title: 'Architecture', path: 'docs/ARCHITECTURE.md', status: 'approved', updatedAt: '2026-01-01' },
+        { id: 'BOM', title: 'BOM', path: 'docs/BOM.md', status: 'approved', updatedAt: '2026-01-01' }
+      ],
+      openRisks: [],
+      recentActions: []
+    };
+    fs.mkdirSync(path.join(tmpDir, '.starn'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.starn', 'state.json'), JSON.stringify(staleState), 'utf-8');
+
+    const state = stateMgr.getOrCreateState('test', 'Test');
+    // BOM phase should now reflect approved
+    expect(state.workflow.phases['bom'].status).toBe('approved');
+    // CONOPS and ARCHITECTURE too
+    expect(state.workflow.phases['conops'].status).toBe('approved');
+    expect(state.workflow.phases['architecture'].status).toBe('approved');
+    // activePhase should have advanced past all approved phases
+    expect(state.workflow.activePhase).not.toBe('bom');
+  });
+});

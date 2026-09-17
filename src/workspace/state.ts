@@ -161,6 +161,12 @@ export class ProjectStateManager {
         state.workflow = createDefaultWorkflow(state.artifacts || []);
         changed = true;
       }
+      // Reconcile workflow state against the artifacts of record — heals stale
+      // activePhase / phase statuses left over from prior sessions or older
+      // STARN versions. Also advances activePhase past any approved phases.
+      if (this.reconcileWorkflowWithArtifacts(state)) {
+        changed = true;
+      }
       const migrated = this.migrateLegacyRisks(state);
       if (migrated) {
         changed = true;
@@ -213,6 +219,55 @@ export class ProjectStateManager {
     }
     this.migrateLegacyRisks(parsed);
     return parsed;
+  }
+
+  /**
+   * Reconciles workflow phase statuses and activePhase against the artifacts
+   * of record. Heals stale state left over from prior sessions or older STARN
+   * versions where workflow fields drifted from the actual artifacts array.
+   * Returns true if any change was made.
+   */
+  private reconcileWorkflowWithArtifacts(state: ProjectState): boolean {
+    if (!state.workflow || !state.workflow.phases) return false;
+    let changed = false;
+
+    // Sync each phase's status from the artifacts array.
+    for (const phaseId of Object.keys(state.workflow.phases)) {
+      const phase = state.workflow.phases[phaseId];
+      const artifact = state.artifacts.find(a => {
+        const aNorm = a.id.toUpperCase().replace(/_/g, '').replace(/-/g, '');
+        const pNorm = phaseId.toUpperCase().replace(/_/g, '').replace(/-/g, '');
+        return aNorm === pNorm;
+      });
+      if (artifact) {
+        const expectedStatus = artifact.status === 'approved' ? 'approved' : 'in_progress';
+        if (phase.status !== expectedStatus) {
+          phase.status = expectedStatus;
+          changed = true;
+        }
+      }
+    }
+
+    // If activePhase points to an approved phase, advance to the first
+    // non-approved phase in workflow order.
+    const activePhaseId = state.workflow.activePhase;
+    const activePhase = state.workflow.phases[activePhaseId];
+    if (activePhase && activePhase.status === 'approved') {
+      const firstUnapproved = ORDERED_WORKFLOW_PHASES.find(p => {
+        const ph = state.workflow!.phases[p.id];
+        return ph && ph.status !== 'approved';
+      });
+      if (firstUnapproved) {
+        state.workflow.activePhase = firstUnapproved.id;
+        state.currentPhase = firstUnapproved.id;
+        if (state.workflow.phases[firstUnapproved.id].status === 'pending') {
+          state.workflow.phases[firstUnapproved.id].status = 'in_progress';
+        }
+        changed = true;
+      }
+    }
+
+    return changed;
   }
 
   /**
