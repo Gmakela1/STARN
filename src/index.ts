@@ -27,6 +27,9 @@ import {
 import { runHumanCheckpoint, handleCriticFailure } from './cli/checkpoint.js';
 import { collectOpenQuestions, countOpenQuestions } from './cli/section6-resolver.js';
 import { ORDERED_WORKFLOW_PHASES, resolveArtifactPaths } from './workspace/state.js';
+import { Logger } from './util/logger.js';
+import { setClassifierLogger } from './core/classifier.js';
+import { setCriticLogger } from './core/critic.js';
 
 async function main() {
   console.log(formatBanner());
@@ -88,13 +91,25 @@ async function main() {
   const stateManager = new ProjectStateManager(currentProjectRecord.path);
   const currentState = stateManager.getOrCreateState(currentProjectRecord.id, currentProjectRecord.name);
 
+  // Per-project file logger (writes to <project>/.starn/logs/starn-<date>.log)
+  const logger = new Logger(path.join(currentProjectRecord.path, '.starn'));
+  setClassifierLogger(logger);
+  setCriticLogger(logger);
+
+  // Graceful SIGINT: state is already persisted per-turn; just acknowledge and exit
+  process.on('SIGINT', () => {
+    console.log(chalk.yellow('\n\n⚠ Interrupt received. Session state has been persisted to .starn/state.json. Goodbye.\n'));
+    process.exit(0);
+  });
+
   // Show Project Roadmap Banner
   console.log(formatWorkflowRoadmap(currentState));
 
   const client = new OpenRouterClient({
     apiKey,
     siteUrl: config.siteUrl,
-    appName: config.appName
+    appName: config.appName,
+    logger
   });
 
   const toolRegistry = new ToolRegistry();

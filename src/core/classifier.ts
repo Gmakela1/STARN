@@ -1,4 +1,10 @@
 import { OpenRouterClient } from '../openrouter/client.js';
+import { Logger } from '../util/logger.js';
+
+let classifierLogger: Logger | undefined;
+export function setClassifierLogger(logger?: Logger): void {
+  classifierLogger = logger;
+}
 
 const VALID_SPECIALISTS = [
   'general',
@@ -195,7 +201,8 @@ Respond with ONLY a JSON object: {"specialistId": "<id>", "reason": "<brief reas
         return parsed.specialistId;
       }
     }
-  } catch (_e) {
+  } catch (e: any) {
+    classifierLogger?.warn(`LLM classification failed (${e.message}); falling back to keyword heuristics`);
     // Fallback on keywords if LLM classification fails
   }
 
