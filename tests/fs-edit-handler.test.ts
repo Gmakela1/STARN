@@ -132,6 +132,12 @@ describe('fs_edit handler', () => {
     expect(fs.readFileSync(docPath, 'utf-8')).toBe(original);
     // No edits logged
     expect(log.length).toBe(0);
+    // No version backup created for a failed batch (backup is after verification)
+    const versionsDir = path.join(tempDir, '.starn', 'versions');
+    if (fs.existsSync(versionsDir)) {
+      const backups = fs.readdirSync(versionsDir).filter(f => f.startsWith('CONOPS-'));
+      expect(backups.length).toBe(0);
+    }
     // Failure response includes line-numbered file
     expect(res.error).toContain('1');
     expect(res.error).toContain('|');
