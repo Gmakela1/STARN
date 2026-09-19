@@ -31,6 +31,7 @@ export interface TurnOptions {
   logger?: Logger;
   onStatusUpdate?: (status: string) => void;
   onToolCall?: (tool: string, args: any) => void;
+  signal?: AbortSignal;
 }
 
 export interface TurnResult {
@@ -41,6 +42,7 @@ export interface TurnResult {
   autoRevisionsRun: number;
   requiresReview: boolean;
   sessionMessages: ChatMessage[];
+  aborted?: boolean;
 }
 
 export class CoreRunner {
@@ -54,7 +56,8 @@ export class CoreRunner {
       toolRegistry,
       specialistRegistry,
       onStatusUpdate,
-      onToolCall
+      onToolCall,
+      signal
     } = options;
     let sessionMessages = options.sessionMessages ?? [];
 
@@ -287,8 +290,22 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
       allowedTools: specialist.allowedTools,
       context,
       priorMessages: sessionMessages,
-      onToolCall
+      onToolCall,
+      signal
     });
+
+    // User pressed ESC — abort the turn, discard partial work.
+    if (agentResult.aborted) {
+      return {
+        specialistId: specialist.id,
+        specialistName: specialist.name,
+        output: '',
+        autoRevisionsRun: 0,
+        requiresReview: false,
+        sessionMessages,
+        aborted: true
+      };
+    }
 
     let finalOutput = agentResult.finalResponse;
     let criticResult: CriticResult | undefined;
@@ -354,15 +371,32 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
           }
         }
 
-        criticResult = await critic.evaluate({
-          model,
-          artifactContent: artifactForCritic,
-          rubric: specialist.criticRubric || '',
-          secretSauceExamples: specialist.secretSauceExamples,
-          userExamples: customExamples,
-          programBaselineDocuments: programBaselineDocs,
-          appliedEdits: context.editLog
-        });
+        try {
+          criticResult = await critic.evaluate({
+            model,
+            artifactContent: artifactForCritic,
+            rubric: specialist.criticRubric || '',
+            secretSauceExamples: specialist.secretSauceExamples,
+            userExamples: customExamples,
+            programBaselineDocuments: programBaselineDocs,
+            appliedEdits: context.editLog,
+            signal
+          });
+        } catch (err: any) {
+          // ESC during critic — abort the turn.
+          if (err?.name === 'AbortError' || signal?.aborted) {
+            return {
+              specialistId: specialist.id,
+              specialistName: specialist.name,
+              output: '',
+              autoRevisionsRun: autoRevisionsRun,
+              requiresReview: false,
+              sessionMessages,
+              aborted: true
+            };
+          }
+          throw err;
+        }
 
         if (criticResult.passed) {
           passed = true;
@@ -387,9 +421,22 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
             allowedTools: specialist.allowedTools,
             context,
             priorMessages: sessionMessages,
-            onToolCall
+            onToolCall,
+            signal
           });
           finalOutput = revisionResult.finalResponse;
+          // ESC during revision — abort the whole turn.
+          if (revisionResult.aborted) {
+            return {
+              specialistId: specialist.id,
+              specialistName: specialist.name,
+              output: '',
+              autoRevisionsRun: autoRevisionsRun,
+              requiresReview: false,
+              sessionMessages,
+              aborted: true
+            };
+          }
           // Re-check the disk file after revision (LLM may have written a new draft)
           if (!finalOutput.includes('# ')) {
             try {

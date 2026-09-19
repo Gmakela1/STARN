@@ -34,10 +34,18 @@ export class OpenRouterClient {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      // An aborted signal means the user cancelled — never retry.
+      if (options.signal?.aborted) {
+        throw new DOMException('The operation was aborted', 'AbortError');
+      }
       try {
         return await this._doRequest(options);
       } catch (err: any) {
         lastError = err;
+        // Aborts are user-initiated; do not retry.
+        if (err.name === 'AbortError') {
+          throw err;
+        }
         const isRetryable = this._isRetryableError(err);
         if (!isRetryable || attempt >= maxRetries) {
           throw err;
@@ -76,7 +84,8 @@ export class OpenRouterClient {
     const res = await fetch(this.baseUrl, {
       method: 'POST',
       headers,
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: options.signal
     });
 
     if (!res.ok) {

@@ -32,6 +32,7 @@ export interface ChatCompletionOptions {
   tools?: ToolDefinition[];
   temperature?: number;
   max_tokens?: number;
+  signal?: AbortSignal;
 }
 
 export interface ChatCompletionResult {

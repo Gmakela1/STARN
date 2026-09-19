@@ -28,10 +28,11 @@ import {
 } from './cli/prompts.js';
 import { runHumanCheckpoint, handleCriticFailure } from './cli/checkpoint.js';
 import { collectOpenQuestions, countOpenQuestions } from './cli/section6-resolver.js';
-import { ORDERED_WORKFLOW_PHASES, resolveArtifactPaths } from './workspace/state.js';
-import { Logger } from './util/logger.js';
 import { setClassifierLogger } from './core/classifier.js';
 import { setCriticLogger } from './core/critic.js';
+import { attachAbortListener } from './util/abort-input.js';
+import { ORDERED_WORKFLOW_PHASES, resolveArtifactPaths } from './workspace/state.js';
+import { Logger } from './util/logger.js';
 
 async function main() {
   console.log(formatBanner());
@@ -177,6 +178,13 @@ async function main() {
     while (turnActive) {
       const spinner = ora('Initializing turn...').start();
 
+      // ESC-to-abort: attach a keypress listener for the duration of the turn.
+      // The controller's signal is threaded into the OpenRouter fetch so ESC
+      // cancels the in-flight call and returns to the prompt.
+      const abortController = new AbortController();
+      const detachAbort = attachAbortListener(abortController);
+      spinner.text = spinner.text + '  (press ESC to stop)';
+
       try {
         const result = await CoreRunner.executeTurn({
           userPrompt: currentPrompt,
@@ -191,15 +199,25 @@ async function main() {
           compressionThreshold: config.compressionThreshold,
           keepRecentTokens: config.keepRecentTokens,
           logger,
+          signal: abortController.signal,
           onStatusUpdate: status => {
-            spinner.text = status;
+            spinner.text = `${status}  (press ESC to stop)`;
           },
           onToolCall: (toolName, _args) => {
-            spinner.text = `Executing tool: ${toolName}...`;
+            spinner.text = `Executing tool: ${toolName}...  (press ESC to stop)`;
           }
         });
 
         spinner.stop();
+        detachAbort();
+
+        // ESC pressed during the turn — discard the partial turn and re-prompt.
+        if (result.aborted) {
+          console.log(chalk.yellow('\n⚠ Turn cancelled. (State is untouched — you can re-ask.)\n'));
+          turnActive = false;
+          continue;
+        }
+
         sessionMessages = result.sessionMessages;
 
         // Handle /goto reopen signal: target phase's artifact is approved —
@@ -274,6 +292,8 @@ async function main() {
         }
       } catch (err: any) {
         spinner.fail(`Execution failed: ${err.message || String(err)}`);
+        detachAbort();
+        logger?.error(`Turn error: ${err.message || String(err)}`);
         turnActive = false;
       }
     }

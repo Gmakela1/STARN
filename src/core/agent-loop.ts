@@ -14,11 +14,13 @@ export interface AgentLoopOptions {
   maxTurns?: number;
   priorMessages?: ChatMessage[];
   onToolCall?: (tool: string, args: any) => void;
+  signal?: AbortSignal;
 }
 
 export interface AgentLoopResult {
   finalResponse: string;
   messages: ChatMessage[];
+  aborted?: boolean;
 }
 
 export async function runAgentToolLoop(options: AgentLoopOptions): Promise<AgentLoopResult> {
@@ -31,7 +33,8 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
     allowedTools,
     context,
     maxTurns = 8,
-    priorMessages = []
+    priorMessages = [],
+    signal
   } = options;
   const toolDefs = toolRegistry.getDefinitions(allowedTools);
 
@@ -46,11 +49,25 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
 
   while (turn < maxTurns) {
     turn++;
-    const response = await client.chatCompletion({
-      model,
-      messages,
-      tools: toolDefs.length > 0 ? toolDefs : undefined
-    });
+    // Pre-flight: if the user aborted (ESC), stop immediately without calling the model.
+    if (signal?.aborted) {
+      return { finalResponse: '', messages, aborted: true };
+    }
+    let response;
+    try {
+      response = await client.chatCompletion({
+        model,
+        messages,
+        tools: toolDefs.length > 0 ? toolDefs : undefined,
+        signal
+      });
+    } catch (err: any) {
+      // AbortError = user pressed ESC; stop the turn gracefully.
+      if (err?.name === 'AbortError' || signal?.aborted) {
+        return { finalResponse: '', messages, aborted: true };
+      }
+      throw err;
+    }
 
     if (response.toolCalls && response.toolCalls.length > 0) {
       messages.push({

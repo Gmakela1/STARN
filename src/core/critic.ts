@@ -21,6 +21,7 @@ export interface CriticEvaluateOptions {
   userExamples: string[];
   programBaselineDocuments?: BaselineDocument[];
   appliedEdits?: EditEntry[];
+  signal?: AbortSignal;
 }
 
 export interface CriticResult {
@@ -84,7 +85,8 @@ Respond ONLY with valid JSON in this exact structure:
     const response = await this.client.chatCompletion({
       model: options.model,
       messages: [{ role: 'user', content: prompt }],
-      temperature: 0.1
+      temperature: 0.1,
+      signal: options.signal
     });
 
     const jsonMatch = (response.content || '').match(/\{[\s\S]*\}/);
