@@ -115,7 +115,7 @@ async function main() {
   });
 
   // Show Project Roadmap Banner
-  console.log(formatWorkflowRoadmap(currentState));
+  console.log(formatWorkflowRoadmap(currentState, currentProjectRecord.path));
 
   const client = new OpenRouterClient({
     apiKey,
@@ -261,7 +261,7 @@ async function main() {
             const nextPhase = stateManager.advanceToNextPhase();
             if (nextPhase) {
               console.log(chalk.cyan(`\n★ Workflow Updated: Advanced to next phase [${nextPhase.toUpperCase()}].`));
-              console.log(formatWorkflowRoadmap(stateManager.getState()));
+              console.log(formatWorkflowRoadmap(stateManager.getState(), currentProjectRecord.path));
             }
             turnActive = false;
           } else {
