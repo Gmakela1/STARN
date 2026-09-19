@@ -226,7 +226,7 @@ async function main() {
           console.log(formatCompactCriticPass(crit));
         } else if (crit && !crit.passed && result.autoRevisionsRun >= 2) {
           // Auto-revisions exhausted — user must intervene
-          const critAction = await handleCriticFailure(crit, result.specialistName);
+          const critAction = await handleCriticFailure(crit, result.specialistName, client);
           if (critAction.action === 'feedback' && critAction.feedback) {
             currentPrompt = critAction.feedback;
             continue; // restart turn loop with targeted feedback

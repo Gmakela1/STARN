@@ -8,6 +8,7 @@ import { ProjectStateManager } from '../workspace/state.js';
 import { OpenRouterClient } from '../openrouter/client.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { formatCriticFindingsTable, formatCriticScorecard, extractCleanMarkdownDocument, formatDocumentPreview, formatDocumentToc, extractSections } from './ui.js';
+import { promptInputWithVoice } from './prompts.js';
 
 export interface CheckpointReviewOptions {
   specialistId: string;
@@ -155,9 +156,10 @@ export async function runHumanCheckpoint(
     }
 
     if (action === 'feedback') {
-      const feedback = await input({
-        message: 'Enter your response / feedback for the agent:'
-      });
+      const feedback = await promptInputWithVoice(
+        'Enter your response / feedback for the agent:',
+        options.client
+      );
       userFeedback = feedback;
       finalAction = 'feedback';
       promptActive = false;
@@ -304,7 +306,8 @@ export function harvestDecisionLog(projectPath: string, specialistId: string): n
  */
 export async function handleCriticFailure(
   criticResult: CriticResult,
-  specialistName: string
+  specialistName: string,
+  client?: OpenRouterClient
 ): Promise<{ action: 'feedback' | 'override' | 'discard'; feedback?: string; dismissedIndices?: number[] }> {
   console.log(formatCriticFindingsTable(criticResult));
 
@@ -357,8 +360,9 @@ export async function handleCriticFailure(
   }
 
   // Full feedback
-  const feedback = await input({
-    message: 'Enter your specific guidance for the specialist:'
-  });
+  const feedback = await promptInputWithVoice(
+    'Enter your specific guidance for the specialist:',
+    client
+  );
   return { action: 'feedback', feedback };
 }
