@@ -75,7 +75,7 @@ CRITICAL RULES:
 - Use clean plain-text units. DO NOT use LaTeX math formatting.
 - Include a \`## Design Decisions\` section listing any significant choices made, alternatives considered, and rationale.
 - You MUST write the final document to docs/MILESTONES.md via the fs_write tool. Do NOT skip writing the file.`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Milestones & Gating Criteria document:
 1. Progressive Capability Layering: Are MVC, IOC, and FOC structured as an expanding ladder of capabilities (from basic power/movement -> essential safety/monitoring -> full implements & UI)?

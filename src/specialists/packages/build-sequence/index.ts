@@ -89,7 +89,7 @@ CRITICAL RULES:
 - Use \`→ VERIFY: TP-XXX\` markers for stopping points — do NOT include the full test procedure here.
 - Reference prior build sequences if they exist (for IOC building on MVC).
 - You MUST write the final document to docs/build_sequences/BUILD_SEQUENCE_{GATE}.md via the \`fs_write\` tool. Do NOT skip writing the file.`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Build Sequence:
 1. Source Grounding: Are all steps traced to real upstream documents? Penalize steps that cannot be traced.

@@ -64,7 +64,7 @@ FORMATTING REQUIREMENTS (MANDATORY):
 - Map 100% of the numbered requirements from docs/REQUIREMENTS.md.
 - Use clean plain-text metrics. Do not use LaTeX math formatting.
 - You MUST write the final document to docs/RTM.md via the fs_write tool. Do NOT skip writing the file.`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Requirements Traceability Matrix (RTM):
 1. 100% Upstream Traceability: Does every row cite its upstream Capability Ref (e.g. Cap 1.a) from the approved Capabilities baseline?

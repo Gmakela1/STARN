@@ -45,7 +45,7 @@ CRITICAL RULES:
 - The "Impact Description" should be descriptive text, not just a severity label.
 - The "Status" column: Open, Mitigating, Resolved, Accepted.
 - You MUST write the final document to docs/RISK_REGISTER.md via the \`fs_write\` tool. Do NOT skip writing the file.`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Risk Register:
 1. Source Grounding: Are all risks traced to real document sections? Penalize invented risks.

@@ -106,7 +106,7 @@ CRITICAL FORMAT RULES:
 - Use clean plain-text descriptions only.
 - Include a \`## Design Decisions\` section listing any significant choices made, alternatives considered, and rationale.
 - You MUST write the final document to docs/ARCHITECTURE.md via the fs_write tool. Do NOT skip writing the file.`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the System Architecture document:
 1. CONOPS Traceability: Does every subsystem trace back to a specific system-level capability from the CONOPS?

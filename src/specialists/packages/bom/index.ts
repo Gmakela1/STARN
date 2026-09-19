@@ -91,7 +91,7 @@ CRITICAL RULES:
 - Datasheet source links use \`[link]\` as placeholder — the user fills in real URLs.
 - Use clean plain-text units. DO NOT use LaTeX math formatting.
 - You MUST write the final document to docs/BOM.md via the fs_write tool. Do NOT skip writing the file.`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Bill of Materials (BOM):
 1. Subsystem Coverage: Does every subsystem from the Architecture have a BOM section?

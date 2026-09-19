@@ -50,7 +50,7 @@ MANDATORY SECTIONS FOR CONTRACTOR SOW:
 CRITICAL RULES:
 - Use clean plain-text units. DO NOT use LaTeX math formatting.
 - You MUST write the final document to docs/SOW.md (or docs/SOW_<TRADE>.md) via the fs_write tool. Do NOT skip writing the file.`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Statement of Work (SOW):
 1. Scope Boundaries & Strategy: Are contractor scope inclusions and exclusions clearly demarcated based on the contracting strategy?

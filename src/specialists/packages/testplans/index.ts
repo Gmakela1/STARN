@@ -145,7 +145,7 @@ CRITICAL RULES:
 - Procedures must be physically realistic and tailored to the builder's actual shop environment.
 - Use clean plain-text units. DO NOT use LaTeX math formatting.
 - You MUST write the final document to docs/TEST_PLANS.md via the fs_write tool. Do NOT skip writing the file.`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_list', 'state_read', 'state_update', 'example_reader'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Test Plans & Verification Procedures:
 1. Tooling Grounding: Are test procedures realistic and tailored to practical shop tools rather than unreachable multi-million dollar test labs?
