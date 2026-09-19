@@ -2,6 +2,7 @@ import { ToolDefinition } from '../openrouter/types.js';
 import { ToolExecutionContext, ToolExecutionResponse, ToolHandler } from './types.js';
 import { fsReadHandler } from './handlers/fs-read.js';
 import { fsWriteHandler } from './handlers/fs-write.js';
+import { fsEditHandler } from './handlers/fs-edit.js';
 import { fsListHandler } from './handlers/fs-list.js';
 import { stateReadHandler } from './handlers/state-read.js';
 import { stateUpdateHandler } from './handlers/state-update.js';
@@ -13,6 +14,7 @@ export class ToolRegistry {
   constructor() {
     this.register(fsReadHandler);
     this.register(fsWriteHandler);
+    this.register(fsEditHandler);
     this.register(fsListHandler);
     this.register(stateReadHandler);
     this.register(stateUpdateHandler);
