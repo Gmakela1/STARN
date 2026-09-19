@@ -1,5 +1,6 @@
 import { OpenRouterClient } from '../openrouter/client.js';
 import { Logger } from '../util/logger.js';
+import { EditEntry } from '../tools/types.js';
 
 let criticLogger: Logger | undefined;
 export function setCriticLogger(logger?: Logger): void {
@@ -19,6 +20,7 @@ export interface CriticEvaluateOptions {
   secretSauceExamples: string[];
   userExamples: string[];
   programBaselineDocuments?: BaselineDocument[];
+  appliedEdits?: EditEntry[];
 }
 
 export interface CriticResult {
@@ -40,6 +42,12 @@ export class CriticEvaluator {
 ${options.programBaselineDocuments.map(d => `### [${d.id}] (${d.path}):\n${d.content}`).join('\n\n---\n\n')}\n`;
     }
 
+    let editLogSection = '';
+    if (options.appliedEdits && options.appliedEdits.length > 0) {
+      editLogSection = `\nTARGETED EDITS APPLIED THIS TURN (verify these address the user's feedback and do not introduce drift or break cross-document alignment):
+${options.appliedEdits.map(e => `- [${e.path}] L${e.matchedLineRange.start}-${e.matchedLineRange.end}: "${e.oldText}" → "${e.newText}"`).join('\n')}\nReview the full updated document below, focusing attention on the edited regions and their downstream effects.\n`;
+    }
+
     const prompt = `You are the Harsh Critic for STARN, an uncompromising engineering evaluation agent.
 Your mission is to evaluate a drafted hardware/physical engineering project deliverable against strict engineering quality standards, verify program alignment, and enforce anti-hallucination discipline.
 
@@ -59,7 +67,7 @@ SECRET-SAUCE QUALITY EXAMPLES (Standard of Quality Reference):
 ${options.secretSauceExamples.map((ex, i) => `### Example ${i + 1}:\n${ex}`).join('\n\n')}
 
 ${options.userExamples.length > 0 ? `USER CUSTOM EXAMPLES:\n${options.userExamples.join('\n\n')}` : ''}
-
+${editLogSection}
 DRAFT ARTIFACT TO EVALUATE:
 ${options.artifactContent}
 

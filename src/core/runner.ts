@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import { OpenRouterClient } from '../openrouter/client.js';
 import { ProjectStateManager } from '../workspace/state.js';
 import { ToolRegistry } from '../tools/registry.js';
+import { ToolExecutionContext, EditEntry } from '../tools/types.js';
 import { SpecialistRegistry } from '../specialists/registry.js';
+import { SHARED_EDIT_INSTRUCTIONS } from '../specialists/shared.js';
 import { ChatMessage } from '../openrouter/types.js';
 import { runDiscovery } from './discovery.js';
 import { classifyRequest } from './classifier.js';
@@ -273,9 +275,9 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     }
 
     onStatusUpdate?.(`Executing specialist: ${specialist.name}...`);
-    const enhancedSystemPrompt = `${specialist.systemPrompt}\n\n${discovery.discoveryText}${existingBaselineText}`;
+    const enhancedSystemPrompt = `${specialist.systemPrompt}\n\n${discovery.discoveryText}${existingBaselineText}${SHARED_EDIT_INSTRUCTIONS}`;
 
-    const context = { projectPath, stateManager };
+    const context: ToolExecutionContext = { projectPath, stateManager, editLog: [] as EditEntry[] };
     const agentResult = await runAgentToolLoop({
       client,
       model,
@@ -358,7 +360,8 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
           rubric: specialist.criticRubric || '',
           secretSauceExamples: specialist.secretSauceExamples,
           userExamples: customExamples,
-          programBaselineDocuments: programBaselineDocs
+          programBaselineDocuments: programBaselineDocs,
+          appliedEdits: context.editLog
         });
 
         if (criticResult.passed) {
@@ -373,6 +376,8 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
 
           const revisionPrompt = `The Critic evaluated your draft and found the following weaknesses:\n${(criticResult.weaknesses || []).map(w => `- ${w}`).join('\n')}\n\nActionable Guidance:\n${criticResult.actionableGuidance || 'Fix weaknesses'}\n\nPlease revise the deliverable to resolve all weaknesses while maintaining rigorous physical engineering standards and program alignment.`;
 
+          // Reset the edit log so the critic sees only this revision's edits.
+          context.editLog = [];
           const revisionResult = await runAgentToolLoop({
             client,
             model,
