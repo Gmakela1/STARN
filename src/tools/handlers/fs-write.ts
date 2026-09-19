@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ToolHandler, ToolExecutionContext, ToolExecutionResponse } from '../types.js';
+import { createVersionBackup } from '../../util/version-backup.js';
 
 export const fsWriteHandler: ToolHandler = {
   name: 'fs_write',
@@ -29,6 +30,8 @@ export const fsWriteHandler: ToolHandler = {
     if (!fs.existsSync(parent)) {
       fs.mkdirSync(parent, { recursive: true });
     }
+    // Back up the prior version before overwriting (no-op on initial creation).
+    createVersionBackup(context.projectPath, target);
     fs.writeFileSync(target, args.content, 'utf-8');
     return { success: true, result: `Successfully wrote ${args.content.length} bytes to ${args.path}` };
   }
