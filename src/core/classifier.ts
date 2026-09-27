@@ -1,4 +1,5 @@
 import { OpenRouterClient } from '../openrouter/client.js';
+import { ChatMessage } from '../openrouter/types.js';
 import { Logger } from '../util/logger.js';
 
 let classifierLogger: Logger | undefined;
@@ -107,11 +108,40 @@ export function detectPhaseSwitchRequest(userMessage: string): string | null {
   return null;
 }
 
+const MAX_HISTORY_MESSAGES = 6;
+const MAX_MSG_CHARS = 500;
+
+/**
+ * Builds a compact, human-readable slice of recent conversation for the
+ * classifier prompt. Strips tool-call metadata (irrelevant to routing) and
+ * truncates long messages (e.g. drafted documents) so the classifier stays
+ * cheap. Returns a string, or '' if no history was provided.
+ */
+function buildHistorySlice(recentMessages?: ChatMessage[]): string {
+  if (!recentMessages || recentMessages.length === 0) return '';
+  const slice = recentMessages.slice(-MAX_HISTORY_MESSAGES);
+  const lines: string[] = [];
+  for (const m of slice) {
+    const role = m.role === 'assistant' ? 'Specialist' : m.role === 'user' ? 'User' : m.role;
+    // Strip tool-call blobs; keep only textual content.
+    let content = typeof m.content === 'string' ? m.content : '';
+    if (content.length > MAX_MSG_CHARS) {
+      content = content.slice(0, MAX_MSG_CHARS) + '…[truncated]';
+    }
+    if (content.trim()) {
+      lines.push(`[${role}]: ${content}`);
+    }
+  }
+  return lines.length > 0 ? lines.join('\n') : '';
+}
+
 export async function classifyRequest(
   userMessage: string,
   client: OpenRouterClient,
   model: string,
-  activePhase?: string
+  activePhase?: string,
+  recentMessages?: ChatMessage[],
+  lastActiveSpecialistId?: string
 ): Promise<string> {
   // 1. Check for explicit phase switch request
   const explicitSwitch = detectPhaseSwitchRequest(userMessage);
@@ -146,6 +176,8 @@ export async function classifyRequest(
     );
   }
 
+  const historySlice = buildHistorySlice(recentMessages);
+
   const prompt = `You are the Request Classifier for STARN, a physical/hardware engineering project management AI.
 Classify the user's request into EXACTLY ONE of the following specialist IDs:
 - "general": Informational questions, scoping discussion, status queries, summaries, or advice that does NOT author/rewrite a formal engineering deliverable.
@@ -162,7 +194,7 @@ Classify the user's request into EXACTLY ONE of the following specialist IDs:
 - "change-impact": Cross-cutting change impact analysis — flagging which downstream documents need updating when upstream documents change.
 
 Active Project Workflow Phase: "${activePhase || 'conops'}"
-IMPORTANT RULES:
+${historySlice ? `Recent conversation (oldest→newest):\n${historySlice}\n` : ''}${lastActiveSpecialistId ? `Last active specialist: "${lastActiveSpecialistId}". If the user's message is a short reply answering a question the last specialist asked, route to that specialist. If the user is changing topics or requesting a different deliverable, route to the appropriate specialist.\n` : ''}IMPORTANT RULES:
 - If the user is providing edits, revisions, corrections, or feedback about an existing document, route to the Active Workflow Phase specialist.
 - Only return "general" for purely informational queries.
 - Only return an authoring specialist if the user intends to CREATE, REVISE, or UPDATE a formal document.

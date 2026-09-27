@@ -46,6 +46,11 @@ export interface TurnResult {
 }
 
 export class CoreRunner {
+  // In-memory sticky hint: the last specialist that ran. Helps the classifier
+  // route short conversational replies (e.g. answers to a specialist's question)
+  // back to the same specialist. Resets on session restart; cleared on /goto.
+  private static lastActiveSpecialistId: string | undefined;
+
   static async executeTurn(options: TurnOptions): Promise<TurnResult> {
     const {
       userPrompt,
@@ -126,6 +131,8 @@ export class CoreRunner {
       if (stateManager.isArtifactApproved(artifactId)) {
         const idx = ORDERED_WORKFLOW_PHASES.findIndex(p => p.id === phase.id);
         const downstream = ORDERED_WORKFLOW_PHASES.slice(idx + 1).map(p => p.name).join(', ');
+        // Explicit /goto: clear the sticky hint so the next turn classifies fresh.
+        CoreRunner.lastActiveSpecialistId = undefined;
         return {
           specialistId: 'general',
           specialistName: 'Reopen Artifact',
@@ -143,9 +150,16 @@ export class CoreRunner {
       );
     }
 
-    // 1. Classification (phase-aware with phase locking)
+    // 1. Classification (phase-aware with phase locking, with conversation history)
     onStatusUpdate?.('Classifying request...');
-    let specialistId = await classifyRequest(userPrompt, client, model, activeWorkflowPhase);
+    let specialistId = await classifyRequest(
+      userPrompt,
+      client,
+      model,
+      activeWorkflowPhase,
+      sessionMessages.slice(-6),
+      CoreRunner.lastActiveSpecialistId
+    );
     let specialist = specialistRegistry.get(specialistId) || specialistRegistry.get('general')!;
 
     // 2. Prerequisite Check Gate
@@ -464,6 +478,10 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
       { role: 'user', content: userPrompt },
       { role: 'assistant', content: finalOutput }
     ];
+
+    // Track the last specialist that ran, so the next turn's classifier can
+    // route short conversational replies back to it.
+    CoreRunner.lastActiveSpecialistId = specialist.id;
 
     return {
       specialistId: specialist.id,
