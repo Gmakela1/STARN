@@ -295,6 +295,16 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     const enhancedSystemPrompt = `${specialist.systemPrompt}\n\n${discovery.discoveryText}${existingBaselineText}${SHARED_EDIT_INSTRUCTIONS}`;
 
     const context: ToolExecutionContext = { projectPath, stateManager, editLog: [] as EditEntry[] };
+    // Snapshot the target doc's mtime before the agent loop runs, so we can detect
+    // whether the model modified it this turn (via fs_edit or fs_write). Filesystem
+    // mtime granularity can lag Date.now(), so we compare against this snapshot.
+    let targetDocMtimeBefore = 0;
+    try {
+      const filePath = path.join(projectPath, 'docs', `${specialist.id.toUpperCase()}.md`);
+      if (fs.existsSync(filePath)) {
+        targetDocMtimeBefore = fs.statSync(filePath).mtimeMs;
+      }
+    } catch (_e) { /* ignore */ }
     const agentResult = await runAgentToolLoop({
       client,
       model,
@@ -325,19 +335,33 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     let criticResult: CriticResult | undefined;
     let autoRevisionsRun = 0;
 
-    // If the LLM wrote the file to disk but responded with commentary, recover the document for the critic
+    // If the LLM wrote the file to disk but responded with commentary, recover the document for the critic.
+    // When fs_edit was used (editLog non-empty), the on-disk file is the source of truth —
+    // always read it, even if the model's summary text contains a '# ' heading (the old
+    // heuristic mistook a revision summary for the document).
     let artifactForCritic = finalOutput;
-    if (specialist.requiresCritic && !finalOutput.includes('# ')) {
+    if (specialist.requiresCritic) {
+      const filePath = path.join(projectPath, 'docs', `${specialist.id.toUpperCase()}.md`);
+      const editUsed = context.editLog && context.editLog.length > 0;
+      // Read from disk if (a) fs_edit ran, (b) the file was touched this turn (fs_write),
+      // or (c) the response lacks a markdown heading.
+      let diskModified = false;
       try {
-        const filePath = path.join(projectPath, 'docs', `${specialist.id.toUpperCase()}.md`);
         if (fs.existsSync(filePath)) {
-          const fileContent = fs.readFileSync(filePath, 'utf-8').trim();
-          if (fileContent && fileContent.startsWith('# ')) {
-            artifactForCritic = fileContent;
-          }
+          diskModified = fs.statSync(filePath).mtimeMs > targetDocMtimeBefore;
         }
-      } catch (_e) {
-        // ignore
+      } catch (_e) { /* ignore */ }
+      if (editUsed || diskModified || !finalOutput.includes('# ')) {
+        try {
+          if (fs.existsSync(filePath)) {
+            const fileContent = fs.readFileSync(filePath, 'utf-8').trim();
+            if (fileContent && fileContent.startsWith('# ')) {
+              artifactForCritic = fileContent;
+            }
+          }
+        } catch (_e) {
+          // ignore
+        }
       }
     }
 
@@ -451,8 +475,18 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
               aborted: true
             };
           }
-          // Re-check the disk file after revision (LLM may have written a new draft)
-          if (!finalOutput.includes('# ')) {
+          // Re-check the disk file after revision. Prefer the on-disk file whenever
+          // fs_edit was used this revision (editLog non-empty) — the model's summary
+          // is not the document.
+          const revisionEditUsed = context.editLog && context.editLog.length > 0;
+          let revisionDiskModified = false;
+          try {
+            const filePath = path.join(projectPath, 'docs', `${specialist.id.toUpperCase()}.md`);
+            if (fs.existsSync(filePath)) {
+              revisionDiskModified = fs.statSync(filePath).mtimeMs > targetDocMtimeBefore;
+            }
+          } catch (_e) { /* ignore */ }
+          if (revisionEditUsed || revisionDiskModified || !finalOutput.includes('# ')) {
             try {
               const filePath = path.join(projectPath, 'docs', `${specialist.id.toUpperCase()}.md`);
               if (fs.existsSync(filePath)) {

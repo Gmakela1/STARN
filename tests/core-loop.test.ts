@@ -254,4 +254,79 @@ describe('Core Runner Intake & Multi-Turn', () => {
     expect(capturedSystemPrompt).toContain('Original tractor conversion baseline');
     expect(result.output).toContain('Updated tractor conversion with limp-home mode');
   });
+
+  it('reads the document from disk (not the model summary) when fs_edit was used this turn', async () => {
+    const docsDir = path.join(tempDir, 'docs');
+    fs.mkdirSync(docsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(docsDir, 'ARCHITECTURE.md'),
+      '# System Architecture\n## 1 Overview\nOriginal architecture with TBD battery.\n',
+      'utf-8'
+    );
+    stateMgr.recordArtifact({
+      id: 'CONOPS',
+      title: 'Concept of Operations',
+      path: 'docs/CONOPS.md',
+      status: 'approved',
+      criticScore: 9.0
+    });
+    stateMgr.recordArtifact({
+      id: 'ARCHITECTURE',
+      title: 'System Architecture',
+      path: 'docs/ARCHITECTURE.md',
+      status: 'approved',
+      criticScore: 9.0
+    });
+    stateMgr.completeIntake();
+
+    let criticPrompt = '';
+    vi.spyOn(mockClient, 'chatCompletion').mockImplementation(async (opts) => {
+      const msg = opts.messages[0];
+      const content = typeof msg.content === 'string' ? msg.content : '';
+      // Classifier call: route to architecture.
+      if (content.includes('Request Classifier for STARN')) {
+        return { content: '{"specialistId":"architecture","reason":"update"}', raw: {} };
+      }
+      // Agent-loop call: respond with a revision SUMMARY (not the doc),
+      // but actually perform the edit on disk (as fs_edit would).
+      if (content.includes('EXISTING BASELINE') || content.includes('System Architecture Specialist')) {
+        fs.writeFileSync(
+          path.join(docsDir, 'ARCHITECTURE.md'),
+          '# System Architecture\n## 1 Overview\nUpdated architecture with 48V LiFePO4 battery.\n',
+          'utf-8'
+        );
+        return {
+          // A summary that contains a '# ' substring (a quoted heading) — the
+          // old heuristic treats this as the document (the bug).
+          content: 'I updated # 1 Overview to specify the 48V LiFePO4 battery per your answer.',
+          raw: {}
+        };
+      }
+      // The critic call: capture its prompt.
+      if (content.includes('Harsh Critic')) {
+        criticPrompt = content;
+        return {
+          content: JSON.stringify({ passed: true, score: 9.0, summary: 'ok', strengths: [], weaknesses: [], actionableGuidance: '' }),
+          raw: {}
+        };
+      }
+      return { content: '', raw: {} };
+    });
+
+    await CoreRunner.executeTurn({
+      userPrompt: 'Update the architecture to use the 48V battery',
+      projectPath: tempDir,
+      stateManager: stateMgr,
+      client: mockClient,
+      model: 'test-model',
+      toolRegistry,
+      specialistRegistry,
+      sessionMessages: []
+    });
+
+    // The critic must receive the FULL DOCUMENT from disk, not the summary.
+    expect(criticPrompt).toContain('# System Architecture');
+    expect(criticPrompt).toContain('Updated architecture with 48V LiFePO4 battery');
+    expect(criticPrompt).not.toContain('I updated # 1 Overview to specify');
+  });
 });
