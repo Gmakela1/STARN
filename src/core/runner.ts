@@ -299,10 +299,12 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     // whether the model modified it this turn (via fs_edit or fs_write). Filesystem
     // mtime granularity can lag Date.now(), so we compare against this snapshot.
     let targetDocMtimeBefore = 0;
+    let targetDocContentBefore = '';
     try {
       const filePath = path.join(projectPath, 'docs', `${specialist.id.toUpperCase()}.md`);
       if (fs.existsSync(filePath)) {
         targetDocMtimeBefore = fs.statSync(filePath).mtimeMs;
+        targetDocContentBefore = fs.readFileSync(filePath, 'utf-8');
       }
     } catch (_e) { /* ignore */ }
     const targetDocExistedBeforeTurn = targetDocMtimeBefore > 0;
@@ -353,7 +355,8 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
       // or (c) the response lacks a markdown heading.
       try {
         if (fs.existsSync(filePath)) {
-          diskModified = fs.statSync(filePath).mtimeMs > targetDocMtimeBefore;
+          const currentContent = fs.readFileSync(filePath, 'utf-8');
+          diskModified = fs.statSync(filePath).mtimeMs > targetDocMtimeBefore || currentContent !== targetDocContentBefore;
         }
       } catch (_e) { /* ignore */ }
       if (editUsed || diskModified || !finalOutput.includes('# ')) {
@@ -534,6 +537,23 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
       { role: 'user', content: userPrompt },
       { role: 'assistant', content: finalOutput }
     ];
+
+    if (criticResult) {
+      let criticNote = `[Critic Review for ${specialist.name}]: Score: ${criticResult.score.toFixed(1)}/10.`;
+      if (criticResult.summary) {
+        criticNote += `\nSummary: ${criticResult.summary}`;
+      }
+      if (criticResult.weaknesses && criticResult.weaknesses.length > 0) {
+        criticNote += `\nWeaknesses:\n${criticResult.weaknesses.map(w => `- ${w}`).join('\n')}`;
+      }
+      if (criticResult.actionableGuidance) {
+        criticNote += `\nActionable Guidance: ${criticResult.actionableGuidance}`;
+      }
+      updatedSessionMessages.push({
+        role: 'user',
+        content: criticNote
+      });
+    }
 
     // Track the last specialist that ran, so the next turn's classifier can
     // route short conversational replies back to it.

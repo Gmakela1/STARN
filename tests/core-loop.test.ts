@@ -413,4 +413,59 @@ describe('Core Runner Intake & Multi-Turn', () => {
     expect(capturedRevisionPrompt).toContain('Use the fs_edit tool to surgically resolve');
     expect(capturedRevisionPrompt).not.toContain('Please revise the deliverable to resolve all weaknesses');
   });
+
+  it('appends critic evaluation summary and actionable guidance to sessionMessages', async () => {
+    const docsDir = path.join(tempDir, 'docs');
+    fs.mkdirSync(docsDir, { recursive: true });
+    stateMgr.recordArtifact({
+      id: 'CONOPS',
+      title: 'Concept of Operations',
+      path: 'docs/CONOPS.md',
+      status: 'approved',
+      criticScore: 9.0
+    });
+    stateMgr.completeIntake();
+
+    vi.spyOn(mockClient, 'chatCompletion').mockImplementation(async (opts: any) => {
+      const content = String(opts.messages[0]?.content || '');
+      if (content.includes('Request Classifier for STARN')) {
+        return { content: '{"specialistId":"conops","reason":"refine"}', raw: {} };
+      }
+      if (content.includes('CONOPS & Systems Architect Specialist') || content.includes('EXISTING BASELINE')) {
+        return { content: '# Concept of Operations\n\nFull deliverable text.', raw: {} };
+      }
+      if (content.includes('Critic')) {
+        return {
+          content: JSON.stringify({
+            passed: true,
+            score: 8.9,
+            summary: 'Strong CONOPS foundation.',
+            strengths: ['Clear operational modes'],
+            weaknesses: ['PTO spline dimension omitted'],
+            actionableGuidance: 'Specify 1-3/8 inch 6-spline shaft in Section 3.2.'
+          }),
+          raw: {}
+        };
+      }
+      return { content: '', raw: {} };
+    });
+
+    const result = await CoreRunner.executeTurn({
+      userPrompt: 'Review the CONOPS',
+      projectPath: tempDir,
+      stateManager: stateMgr,
+      client: mockClient,
+      model: 'test-model',
+      toolRegistry,
+      specialistRegistry,
+      sessionMessages: []
+    });
+
+    const lastMsg = result.sessionMessages[result.sessionMessages.length - 1];
+    expect(lastMsg.role).toBe('user');
+    expect(lastMsg.content).toContain('[Critic Review for CONOPS & User Intent]');
+    expect(lastMsg.content).toContain('Score: 8.9/10');
+    expect(lastMsg.content).toContain('Specify 1-3/8 inch 6-spline shaft in Section 3.2.');
+    expect(lastMsg.content).toContain('PTO spline dimension omitted');
+  });
 });
