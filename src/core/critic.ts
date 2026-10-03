@@ -22,6 +22,9 @@ export interface CriticEvaluateOptions {
   programBaselineDocuments?: BaselineDocument[];
   appliedEdits?: EditEntry[];
   signal?: AbortSignal;
+  mode?: 'full' | 'delta';
+  priorScore?: number;
+  userPrompt?: string;
 }
 
 export interface CriticResult {
@@ -49,7 +52,57 @@ ${options.programBaselineDocuments.map(d => `### [${d.id}] (${d.path}):\n${d.con
 ${options.appliedEdits.map(e => `- [${e.path}] L${e.matchedLineRange.start}-${e.matchedLineRange.end}: "${e.oldText}" → "${e.newText}"`).join('\n')}\nReview the full updated document below, focusing attention on the edited regions and their downstream effects.\n`;
     }
 
-    const prompt = `You are the Harsh Critic for STARN, an uncompromising engineering evaluation agent.
+    const isDelta = options.mode === 'delta';
+    const priorScore = options.priorScore ?? 8.5;
+
+    let prompt: string;
+    if (isDelta) {
+      let editsSummary = 'No specific edits recorded.';
+      if (options.appliedEdits && options.appliedEdits.length > 0) {
+        editsSummary = options.appliedEdits
+          .map(e => `- [${e.path}] L${e.matchedLineRange.start}-${e.matchedLineRange.end}: "${e.oldText}" → "${e.newText}"`)
+          .join('\n');
+      }
+
+      prompt = `You are the Harsh Critic for STARN, conducting a DELTA EVALUATION of targeted revisions to an existing engineering document.
+A prior baseline for this document was already reviewed and achieved a quality score of ${priorScore}/10.
+Your job is NOT to re-litigate unchanged sections, but to verify the integrity, accuracy, and consistency of this turn's changes.
+
+USER REQUEST / ANSWERS TO INCORPORATE:
+${options.userPrompt || '(Targeted revisions requested by user)'}
+
+PRIOR BASELINE SCORE: ${priorScore}/10
+
+TARGETED EDITS APPLIED THIS TURN:
+${editsSummary}
+
+CRITICAL DELTA REVIEW GUIDELINES:
+1. Intent Fidelity:
+   Verify that the edits faithfully incorporate the user's instructions or answers without omitting requested specifics, weakening engineering rigor, or inventing contradictory claims.
+2. Document-Wide Consistency:
+   Verify that downstream statements, specs, or tables within this document align with the edits. (For example, if a subsystem voltage or power source changed, confirm that dependent sections reflect this or remain valid).
+3. Non-Regression & Anti-Hallucination:
+   Verify that the edits did not delete essential requirements, introduce vague placeholders ("TBD"), or inject unrequested third-party vendor brand names/part numbers.
+4. Anti-Nitpicking Directive (MANDATORY):
+   Do NOT fail or dock points for styling, depth, or formatting in sections that were NOT touched by these edits. Focus your evaluation on the modified regions and their direct downstream dependencies.
+5. Score Anchoring Rule:
+   If the edits cleanly and accurately address the feedback without introducing contradictions or hallucinations, score >= ${priorScore}/10 and pass (score >= 8.0). Only deduct points and fail if the edits themselves are defective, contradict the user's intent, or break internal document consistency.
+
+${baselineSection}
+DRAFT ARTIFACT TO EVALUATE:
+${options.artifactContent}
+
+Respond ONLY with valid JSON in this exact structure:
+{
+  "passed": true | false,
+  "score": number (0-10),
+  "summary": "Concise verdict explanation focusing on the delta changes",
+  "strengths": ["string"],
+  "weaknesses": ["string"],
+  "actionableGuidance": "Specific instructions for the builder to fix weaknesses"
+}`;
+    } else {
+      prompt = `You are the Harsh Critic for STARN, an uncompromising engineering evaluation agent.
 Your mission is to evaluate a drafted hardware/physical engineering project deliverable against strict engineering quality standards, verify program alignment, and enforce anti-hallucination discipline.
 
 CRITIC GUIDELINES:
@@ -81,6 +134,7 @@ Respond ONLY with valid JSON in this exact structure:
   "weaknesses": ["string"],
   "actionableGuidance": "Specific instructions for the builder to fix weaknesses"
 }`;
+    }
 
     const response = await this.client.chatCompletion({
       model: options.model,
