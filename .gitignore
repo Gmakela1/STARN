@@ -4,3 +4,4 @@ dist/
 .starn/
 test-output/
 *.log
+.superpowers/
