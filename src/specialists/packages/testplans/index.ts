@@ -20,6 +20,14 @@ The following test tooling was cataloged during collaborative intake with the pr
 - **Build Sequence Reference:** Build Sequence MVC, Step 3 (Mount electric motor to transmission)
 - **Target Traceability:** Requirement 1.b & Phase 1 MVP Gate
 - **Verification Method:** Inspection (I)
+
+#### Gating Prerequisites (MANDATORY BEFORE EXECUTION)
+- [ ] **ACTION-01:** Remove Diesel Engine & Drain Fluids — \`COMPLETED\`
+- [ ] **ACTION-02:** Transmission Input Shaft Pilot Measurement — \`COMPLETED\`
+- [ ] **ACTION-03:** Mount Electric Motor & Bellhousing Adapter — \`COMPLETED\`
+- [ ] **Work Instruction Sign-off:** \`docs/work_instructions/ACTION-03-MOUNT-ELECTRIC-MOTOR-WORK-INSTRUCTION.md\` completed.
+*SAFETY WARNING: Do not attach dial indicator or rotate driveline if motor mounting bolts are not torqued.*
+
 - **Required Shop Tools:** Dial indicator with magnetic base, torque wrench (ft-lbs).
 - **Safety Precaution:** Key switch OFF, motor decoupled from battery.
 - **Step-by-Step Procedure:**
@@ -132,6 +140,8 @@ For each milestone phase, provide structured test procedures that verify subsyst
 - **Build Sequence Reference:** (e.g. "Build Sequence MVC, Step 5" — omit for system-level tests)
 - **Target Traceability:** Specific Requirement ID and Milestone Phase Gate.
 - **Verification Method:** (Test, Inspection, Analysis, Demonstration).
+- **Gating Prerequisites (MANDATORY BEFORE EXECUTION):**
+  Checklist of specific prerequisite actions (e.g. ACTION-01, ACTION-03, ACTION-05) and work instruction sign-offs that must be marked COMPLETED before this test may be performed. Include safety warnings if running the test without physical prerequisites creates hazards.
 - **Required Shop Tools:** Exact tools from user's shop catalog.
 - **Safety Precautions & Pre-Conditions:** Step-by-step lockout/safety prerequisites.
 - **Step-by-Step Procedure:** Clear, numbered hands-on shop steps.
@@ -149,9 +159,10 @@ CRITICAL RULES:
   requiresCritic: true,
   criticRubric: `Evaluate the Test Plans & Verification Procedures:
 1. Tooling Grounding: Are test procedures realistic and tailored to practical shop tools rather than unreachable multi-million dollar test labs?
-2. Milestone Traceability: Are test procedures structured under TP-MVP-xx, TP-IOC-xx, and TP-FOC-xx matching the approved Milestones?
-3. Step-by-Step Clarity: Are safety precautions and step-by-step instructions clear, numbered, and actionable?
-4. Objective Thresholds: Are pass/fail acceptance criteria quantitative and unambiguous?
-5. Plain-Text Units: Is the document free of raw LaTeX math strings?`,
+2. Gating Prerequisites: Does each test procedure lead with explicit prerequisite actions and work instructions that must be completed prior to test execution?
+3. Milestone Traceability: Are test procedures structured under TP-MVP-xx, TP-IOC-xx, and TP-FOC-xx matching the approved Milestones?
+4. Step-by-Step Clarity: Are safety precautions and step-by-step instructions clear, numbered, and actionable?
+5. Objective Thresholds: Are pass/fail acceptance criteria quantitative and unambiguous?
+6. Plain-Text Units: Is the document free of raw LaTeX math strings?`,
   secretSauceExamples: [testplansSecretSauce]
 };

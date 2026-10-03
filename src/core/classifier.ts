@@ -17,8 +17,12 @@ const VALID_SPECIALISTS = [
   'bom',
   'rtm',
   'milestones',
+  'risk-register',
+  'build-sequence',
+  'work-instructions',
   'testplans',
-  'sow'
+  'sow',
+  'change-impact'
 ];
 
 export function isInformationalQuery(userMessage: string): boolean {
@@ -189,6 +193,9 @@ Classify the user's request into EXACTLY ONE of the following specialist IDs:
 - "bom": Authoring/updating Bill of Materials, candidate parts, datasheet links, long-lead procurement items, design decisions.
 - "rtm": Authoring/updating Requirements Traceability Matrix, verification methods (Inspect, Test, Demo, Analysis).
 - "milestones": Authoring/updating development phases, gating criteria (MVC, IOC, FOC), acceptance gates.
+- "risk-register": Authoring/updating project risk register, failure modes, severity/likelihood ratings, and mitigations.
+- "build-sequence": Authoring/updating macro build sequence, milestone gate assembly schedule, and Master Action Table.
+- "work-instructions": Authoring/updating granular per-action shop floor work instructions, checklists, tool specs, torque values, photo evidence slots, and hardware non-conformance logs.
 - "testplans": Authoring/updating shop test plans, verification procedures (TP-MVP-xx, TP-IOC-xx, TP-FOC-xx), and tooling interviews.
 - "sow": Authoring/updating Statement of Work, vendor/contractor deliverables, project scope agreement.
 - "change-impact": Cross-cutting change impact analysis — flagging which downstream documents need updating when upstream documents change.
@@ -246,6 +253,9 @@ Respond with ONLY a JSON object: {"specialistId": "<id>", "reason": "<brief reas
   if (lower.includes('capability') || lower.includes('capabilities') || lower.includes('behavior')) return 'capabilities';
   if (lower.includes('requirement') || lower.includes('spec') || lower.includes('srs')) return 'requirements';
   if (lower.includes('milestone') || lower.includes('gate') || lower.includes('ioc') || lower.includes('foc')) return 'milestones';
+  if (lower.includes('work instruction') || lower.includes('work-instruction') || lower.includes('action-') || lower.includes('non-conformance')) return 'work-instructions';
+  if (lower.includes('build sequence') || lower.includes('build-sequence') || lower.includes('assembly')) return 'build-sequence';
+  if (lower.includes('risk register') || lower.includes('risk-register') || lower.includes('fmea')) return 'risk-register';
   if (lower.includes('sow') || lower.includes('statement of work')) return 'sow';
   if (lower.includes('impact') || lower.includes('what changes') || lower.includes('affect')) return 'change-impact';
 

@@ -37,7 +37,7 @@ The workflow is an ordered chain of specialist deliverables. Each produces
 one approved document that gates the next phase:
 
 CONOPS → Architecture → ICD → Capabilities → Requirements → BOM → RTM →
-Milestones → Risk Register → Build Sequence → Test Plans → SOW
+Milestones → Risk Register → Build Sequence → Work Instructions → Test Plans → SOW
 
 Plus **Change Impact** (cross-cutting, no artifact of its own) and
 **General** (Q&A, summaries, no file writes).

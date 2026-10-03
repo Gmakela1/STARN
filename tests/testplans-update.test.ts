@@ -29,4 +29,12 @@ describe('Test Plan Specialist Updates', () => {
     const pkg = registry.get('testplans');
     expect(pkg!.systemPrompt).toContain('Not tied to a specific build step');
   });
+
+  it('mandates Gating Prerequisites block at top of each test plan with prerequisite actions and work instructions', () => {
+    const pkg = registry.get('testplans');
+    expect(pkg!.systemPrompt).toContain('Gating Prerequisites (MANDATORY BEFORE EXECUTION)');
+    expect(pkg!.systemPrompt).toContain('prerequisite actions');
+    expect(pkg!.secretSauceExamples[0]).toContain('Gating Prerequisites (MANDATORY BEFORE EXECUTION)');
+    expect(pkg!.criticRubric).toContain('Gating Prerequisites');
+  });
 });
