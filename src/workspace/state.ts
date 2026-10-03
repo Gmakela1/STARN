@@ -506,6 +506,44 @@ export class ProjectStateManager {
   }
 
   /**
+   * Manually marks an existing deliverable as approved, computing its SHA-256
+   * content hash and updating workflow phase status to approved.
+   */
+  public manualApproveArtifact(artifactId: string): { success: boolean; error?: string; artifact?: ArtifactRecord } {
+    const normalizedId = artifactId.toUpperCase();
+    const phaseDef = ORDERED_WORKFLOW_PHASES.find(
+      p => p.id.toUpperCase() === normalizedId || p.id.replace(/-/g, '').toUpperCase() === normalizedId.replace(/-/g, '')
+    );
+    const title = phaseDef?.name || `${normalizedId} Deliverable`;
+    const defaultPath = phaseDef ? phaseDef.artifactPath : `docs/${normalizedId}.md`;
+
+    const diskPath = path.join(this.projectPath, defaultPath);
+    if (!fs.existsSync(diskPath)) {
+      return {
+        success: false,
+        error: `Document not found on disk at ${defaultPath}. Create or draft it first.`
+      };
+    }
+
+    const state = this.getState();
+    const existing = state.artifacts.find(a => a.id.toUpperCase() === normalizedId);
+    const criticScore = existing?.criticScore ?? 9.0;
+
+    this.recordArtifact({
+      id: normalizedId,
+      title,
+      path: defaultPath,
+      status: 'approved',
+      criticScore
+    });
+
+    return {
+      success: true,
+      artifact: this.getState().artifacts.find(a => a.id.toUpperCase() === normalizedId)
+    };
+  }
+
+  /**
    * Returns true if the document on disk differs from the content hash
    * stored at the time of the last approval. Used to detect re-approvals
    * with actual content changes (triggers auto change-impact).

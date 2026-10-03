@@ -142,4 +142,34 @@ describe('Project Registry & State', () => {
     expect(stateMgr.getState().workflow.activePhase).toBe('architecture');
     expect(stateMgr.getState().workflow.phases.conops.status).toBe('approved');
   });
+
+  it('fails manual approval if artifact file does not exist on disk', () => {
+    const projPath = path.join(tempBaseDir, 'manual-app-fail');
+    fs.mkdirSync(projPath, { recursive: true });
+    const stateMgr = new ProjectStateManager(projPath);
+    stateMgr.getOrCreateState('p1', 'Tractor EV');
+
+    const res = stateMgr.manualApproveArtifact('conops');
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('Document not found');
+  });
+
+  it('approves artifact and sets content hash when file exists', () => {
+    const projPath = path.join(tempBaseDir, 'manual-app-pass');
+    fs.mkdirSync(projPath, { recursive: true });
+    const docsDir = path.join(projPath, 'docs');
+    fs.mkdirSync(docsDir, { recursive: true });
+    fs.writeFileSync(path.join(docsDir, 'CONOPS.md'), '# CONOPS\nSystem definition', 'utf-8');
+
+    const stateMgr = new ProjectStateManager(projPath);
+    stateMgr.getOrCreateState('p1', 'Tractor EV');
+
+    const res = stateMgr.manualApproveArtifact('conops');
+    expect(res.success).toBe(true);
+    expect(res.artifact?.status).toBe('approved');
+    expect(res.artifact?.approvedContentHash).toBeDefined();
+
+    const state = stateMgr.getState();
+    expect(state.workflow?.phases.conops.status).toBe('approved');
+  });
 });
