@@ -14,6 +14,7 @@ import { sowPackage } from './packages/sow/index.js';
 import { changeImpactPackage } from './packages/change-impact/index.js';
 import { riskRegisterPackage } from './packages/risk-register/index.js';
 import { buildSequencePackage } from './packages/build-sequence/index.js';
+import { workInstructionsPackage } from './packages/work-instructions/index.js';
 
 export class SpecialistRegistry {
   private specialists: Map<string, SpecialistPackage> = new Map();
@@ -33,6 +34,7 @@ export class SpecialistRegistry {
     this.register(changeImpactPackage);
     this.register(riskRegisterPackage);
     this.register(buildSequencePackage);
+    this.register(workInstructionsPackage);
     this.applyOpenQuestionsRules();
   }
 

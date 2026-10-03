@@ -4,7 +4,7 @@ import { SpecialistRegistry } from '../src/specialists/registry.js';
 describe('Specialist Packages & RTM', () => {
   const registry = new SpecialistRegistry();
 
-  it('loads all 14 specialists including general, conops, architecture, icd, capabilities, requirements, bom, rtm, milestones, risk-register, build-sequence, testplans, sow, change-impact', () => {
+  it('loads all 15 specialists including general, conops, architecture, icd, capabilities, requirements, bom, rtm, milestones, risk-register, build-sequence, work-instructions, testplans, sow, change-impact', () => {
     const packages = registry.listSpecialists();
     expect(packages.map(p => p.id)).toEqual(
       expect.arrayContaining([
@@ -19,6 +19,7 @@ describe('Specialist Packages & RTM', () => {
         'milestones',
         'risk-register',
         'build-sequence',
+        'work-instructions',
         'testplans',
         'sow',
         'change-impact'
@@ -144,7 +145,7 @@ describe('Specialist Packages & RTM', () => {
   });
 
   it('deliverable specialists require tool-based inspection of prior documents and maintaining a running plan', () => {
-    const deliverableSpecialists = ['architecture', 'icd', 'capabilities', 'requirements', 'bom', 'rtm', 'milestones', 'risk-register', 'build-sequence', 'testplans', 'sow'];
+    const deliverableSpecialists = ['architecture', 'icd', 'capabilities', 'requirements', 'bom', 'rtm', 'milestones', 'risk-register', 'build-sequence', 'work-instructions', 'testplans', 'sow'];
     for (const id of deliverableSpecialists) {
       const pkg = registry.get(id);
       expect(pkg).toBeDefined();
