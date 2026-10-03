@@ -110,7 +110,7 @@ describe('Project Registry & State', () => {
     expect(stateMgr.isArtifactApproved('CAPABILITIES')).toBe(false);
   });
 
-  it('initializes workflow with 12 phases and activePhase set to conops', () => {
+  it('initializes workflow with 13 phases and activePhase set to conops', () => {
     const projPath = path.join(tempBaseDir, 'wf-project');
     fs.mkdirSync(projPath, { recursive: true });
     const stateMgr = new ProjectStateManager(projPath);
@@ -118,8 +118,19 @@ describe('Project Registry & State', () => {
     expect(state.workflow).toBeDefined();
     expect(state.workflow.activePhase).toBe('conops');
     expect(Object.keys(state.workflow.phases)).toEqual(
-      expect.arrayContaining(['conops', 'architecture', 'icd', 'capabilities', 'requirements', 'bom', 'rtm', 'milestones', 'risk-register', 'build-sequence', 'testplans', 'sow'])
+      expect.arrayContaining(['conops', 'architecture', 'icd', 'capabilities', 'requirements', 'bom', 'rtm', 'milestones', 'risk-register', 'build-sequence', 'work-instructions', 'testplans', 'sow'])
     );
+    expect(Object.keys(state.workflow.phases).length).toBe(13);
+  });
+
+  it('scaffolds docs/work_instructions and artifacts directories', () => {
+    const projPath = path.join(tempBaseDir, 'scaffold-dirs-project');
+    fs.mkdirSync(projPath, { recursive: true });
+    const stateMgr = new ProjectStateManager(projPath);
+    stateMgr.getOrCreateState('p1', 'Tractor EV');
+
+    expect(fs.existsSync(path.join(projPath, 'docs', 'work_instructions'))).toBe(true);
+    expect(fs.existsSync(path.join(projPath, 'artifacts'))).toBe(true);
   });
 
   it('switches active phase and advances to next logical phase upon approval', () => {

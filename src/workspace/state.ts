@@ -20,6 +20,7 @@ export const ORDERED_WORKFLOW_PHASES: WorkflowPhaseDef[] = [
   { id: 'milestones', name: 'Project Milestones & Gating', artifactPath: 'docs/MILESTONES.md' },
   { id: 'risk-register', name: 'Risk Register', artifactPath: 'docs/RISK_REGISTER.md' },
   { id: 'build-sequence', name: 'Build Sequence & Assembly Planning', artifactPath: 'docs/build_sequences/BUILD_SEQUENCE_{GATE}.md' },
+  { id: 'work-instructions', name: 'Work Instructions & Shop Floor Procedures', artifactPath: 'docs/work_instructions/ACTION-{NUM}-{SLUG}-WORK-INSTRUCTION.md' },
   { id: 'testplans', name: 'Test Plans & Procedures', artifactPath: 'docs/TEST_PLANS.md' },
   { id: 'sow', name: 'Statement of Work (SOW)', artifactPath: 'docs/SOW.md' }
 ];
@@ -30,6 +31,18 @@ export const ORDERED_WORKFLOW_PHASES: WorkflowPhaseDef[] = [
  */
 export function resolveArtifactPaths(projectPath: string, artifactPath: string): string[] {
   const full = path.join(projectPath, artifactPath);
+  if (artifactPath.includes('work_instructions')) {
+    const dir = path.join(projectPath, 'docs', 'work_instructions');
+    if (!fs.existsSync(dir)) return [];
+    try {
+      return fs.readdirSync(dir)
+        .filter(f => f.endsWith('.md'))
+        .sort()
+        .map(f => path.join(dir, f));
+    } catch {
+      return [];
+    }
+  }
   if (!artifactPath.includes('{GATE}')) return [full];
 
   // Template path — glob the directory for concrete build sequence files
@@ -113,10 +126,14 @@ export class ProjectStateManager {
 
   public scaffoldProjectDirectories(): void {
     const docsDir = path.join(this.projectPath, 'docs');
+    const workInstDir = path.join(this.projectPath, 'docs', 'work_instructions');
+    const artifactsDir = path.join(this.projectPath, 'artifacts');
     const refDir = path.join(this.projectPath, 'reference');
     const examplesDir = path.join(this.projectPath, 'examples');
 
     if (!fs.existsSync(docsDir)) fs.mkdirSync(docsDir, { recursive: true });
+    if (!fs.existsSync(workInstDir)) fs.mkdirSync(workInstDir, { recursive: true });
+    if (!fs.existsSync(artifactsDir)) fs.mkdirSync(artifactsDir, { recursive: true });
     if (!fs.existsSync(refDir)) {
       fs.mkdirSync(refDir, { recursive: true });
       const refReadme = path.join(refDir, 'README.md');
