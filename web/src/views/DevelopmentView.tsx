@@ -172,7 +172,7 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
               <Loader2 className="h-4 w-4 animate-spin text-sky-400" aria-hidden />
               <span>{status ?? 'Working…'}</span>
               {toolActivity && (
-                <span className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-300">
+                <span className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[11px] text-slate-300">
                   {toolActivity}
                 </span>
               )}
@@ -252,10 +252,10 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
             value={selectedPhase}
             onChange={e => { setEditing(false); setSelectedPhase(e.target.value); }}
             aria-label="Select document phase"
-            className="min-h-[36px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-slate-200 focus:border-sky-600 focus:outline-none"
+            className="min-h-[40px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-slate-200 focus:border-sky-600 focus:outline-none"
           >
             {roadmap.map(p => (
-              <option key={p.id} value={p.id}>
+              <option key={p.id} value={p.id} className="bg-slate-900 text-slate-200">
                 {p.name}{p.docExists ? '' : ' (not drafted)'}
               </option>
             ))}
@@ -278,7 +278,7 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
           <div className="ml-auto flex items-center gap-1.5">
             <button
               onClick={() => void refreshDoc()}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200"
+              className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200"
               aria-label="Refresh document"
               title="Refresh document"
             >
@@ -287,7 +287,7 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
             {doc && !editing && (
               <button
                 onClick={() => { setDraft(doc.content); setEditing(true); }}
-                className="flex min-h-[36px] items-center gap-1.5 rounded-lg border border-slate-700 px-3 text-xs font-medium text-slate-300 transition hover:bg-slate-800"
+                className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-slate-700 px-3 text-xs font-medium text-slate-300 transition hover:bg-slate-800"
               >
                 <Pencil className="h-3.5 w-3.5" aria-hidden /> Edit
               </button>
@@ -297,14 +297,14 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
                 <button
                   onClick={() => void saveDraft()}
                   disabled={saving}
-                  className="flex min-h-[36px] items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-40"
+                  className="flex min-h-[40px] items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-40"
                 >
                   {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Save className="h-3.5 w-3.5" aria-hidden />}
                   Save
                 </button>
                 <button
                   onClick={() => { setEditing(false); setDraft(doc?.content ?? ''); }}
-                  className="flex min-h-[36px] items-center gap-1.5 rounded-lg border border-slate-700 px-3 text-xs text-slate-300 transition hover:bg-slate-800"
+                  className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-slate-700 px-3 text-xs text-slate-300 transition hover:bg-slate-800"
                 >
                   <Eye className="h-3.5 w-3.5" aria-hidden /> Cancel
                 </button>
@@ -314,7 +314,7 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
               <button
                 onClick={() => void approvePhase()}
                 disabled={approving}
-                className="flex min-h-[36px] items-center gap-1.5 rounded-lg border border-emerald-800 px-3 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-950 disabled:opacity-40"
+                className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-emerald-800 px-3 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-950 disabled:opacity-40"
               >
                 {approving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <BadgeCheck className="h-3.5 w-3.5" aria-hidden />}
                 Approve phase
@@ -340,7 +340,7 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
             />
           ) : doc ? (
             <div className="p-5">
-              <p className="mb-3 font-mono text-[11px] text-slate-600">{doc.path}</p>
+              <p className="mb-3 font-mono text-[11px] text-slate-500">{doc.path}</p>
               <Markdown content={doc.content} />
             </div>
           ) : (
@@ -350,7 +350,7 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
                 {docError ? 'No document yet for this phase.' : 'Loading…'}
               </p>
               {docError && (
-                <p className="max-w-xs text-xs leading-relaxed text-slate-600">
+                <p className="max-w-xs text-xs leading-relaxed text-slate-500">
                   Ask the agent to draft it — e.g. “create the {selectedPhaseInfo?.name ?? 'document'}”.
                 </p>
               )}

@@ -113,7 +113,7 @@ export default function BomView() {
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
         <PackageSearch className="h-10 w-10 text-slate-700" aria-hidden />
         <p className="text-sm text-slate-400">No BOM yet ({error}).</p>
-        <p className="max-w-sm text-xs leading-relaxed text-slate-600">
+        <p className="max-w-sm text-xs leading-relaxed text-slate-500">
           Ask the agent on the Development tab to “draft the BOM” once the requirements phase is approved.
         </p>
       </div>
@@ -134,17 +134,17 @@ export default function BomView() {
             onChange={e => setFilter(e.target.value)}
             placeholder="Search part, ID, tracking…"
             aria-label="Search BOM items"
-            className="min-h-[36px] w-56 rounded-lg border border-slate-700 bg-slate-950 pl-8 pr-3 text-sm text-slate-200 placeholder:text-slate-500 focus:border-sky-600 focus:outline-none"
+            className="min-h-[40px] w-56 rounded-lg border border-slate-700 bg-slate-950 pl-8 pr-3 text-sm text-slate-200 placeholder:text-slate-500 focus:border-sky-600 focus:outline-none"
           />
         </div>
         <select
           value={subsystemFilter}
           onChange={e => setSubsystemFilter(e.target.value)}
           aria-label="Filter by subsystem"
-          className="min-h-[36px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-slate-200 focus:border-sky-600 focus:outline-none"
+          className="min-h-[40px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-slate-200 focus:border-sky-600 focus:outline-none"
         >
-          <option value="all">All subsystems</option>
-          {subsystems.map(s => <option key={s} value={s}>{s}</option>)}
+          <option value="all" className="bg-slate-900 text-slate-200">All subsystems</option>
+          {subsystems.map(s => <option key={s} value={s} className="bg-slate-900 text-slate-200">{s}</option>)}
         </select>
 
         <div className="ml-auto flex items-center gap-3 text-xs">
@@ -160,7 +160,7 @@ export default function BomView() {
           {data.tradeStudy && (
             <button
               onClick={() => setShowTradeStudy(v => !v)}
-              className={`flex min-h-[36px] items-center gap-1.5 rounded-lg border px-3 font-medium transition ${
+              className={`flex min-h-[40px] items-center gap-1.5 rounded-lg border px-3 font-medium transition ${
                 showTradeStudy
                   ? 'border-sky-700 bg-sky-950/60 text-sky-300'
                   : 'border-slate-700 text-slate-300 hover:bg-slate-800'
@@ -171,7 +171,7 @@ export default function BomView() {
           )}
           <button
             onClick={() => void load()}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200"
+            className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200"
             aria-label="Refresh BOM"
             title="Refresh BOM"
           >
@@ -275,14 +275,14 @@ export default function BomView() {
                         <span className="flex justify-end gap-1">
                           <button
                             onClick={() => void commitEdit()}
-                            className="flex h-8 w-8 items-center justify-center rounded-md bg-emerald-600 text-white hover:bg-emerald-500"
+                            className="flex h-10 w-10 items-center justify-center rounded-md bg-emerald-600 text-white hover:bg-emerald-500"
                             aria-label={`Save ${item.id}`}
                           >
                             <Check className="h-3.5 w-3.5" aria-hidden />
                           </button>
                           <button
                             onClick={() => setEdit(null)}
-                            className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-700 text-slate-400 hover:bg-slate-800"
+                            className="flex h-10 w-10 items-center justify-center rounded-md border border-slate-700 text-slate-400 hover:bg-slate-800"
                             aria-label={`Cancel edit for ${item.id}`}
                           >
                             <X className="h-3.5 w-3.5" aria-hidden />
@@ -295,7 +295,7 @@ export default function BomView() {
                               href={sourceUrl(item.source)!}
                               target="_blank"
                               rel="noreferrer"
-                              className="flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-sky-300"
+                              className="flex h-10 w-10 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-sky-300"
                               aria-label={`Open source link for ${item.id}`}
                             >
                               <ExternalLink className="h-3.5 w-3.5" aria-hidden />

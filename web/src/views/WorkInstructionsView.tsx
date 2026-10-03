@@ -130,7 +130,7 @@ export default function WorkInstructionsView() {
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
         <Wrench className="h-10 w-10 text-slate-700" aria-hidden />
         <p className="text-sm text-slate-400">No work instructions yet.</p>
-        <p className="max-w-sm text-xs leading-relaxed text-slate-600">
+        <p className="max-w-sm text-xs leading-relaxed text-slate-500">
           Once the build sequence is approved, ask the agent to “write the work instruction for
           ACTION-01” and it will appear here as an executable checklist.
         </p>
@@ -148,7 +148,7 @@ export default function WorkInstructionsView() {
           <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">Actions</h2>
           <button
             onClick={() => void loadList()}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+            className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-200"
             aria-label="Refresh list"
           >
             <RefreshCw className="h-3.5 w-3.5" aria-hidden />
@@ -170,7 +170,7 @@ export default function WorkInstructionsView() {
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-bold text-sky-300">{wi.actionId}</span>
                     {defect && <TriangleAlert className="h-3.5 w-3.5 text-rose-400" aria-label="Open non-conformance" />}
-                    <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[9px] font-bold ${WI_STATUS_TONE[wi.status.toUpperCase()] ?? 'bg-slate-800 text-slate-400'}`}>
+                    <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold ${WI_STATUS_TONE[wi.status.toUpperCase()] ?? 'bg-slate-800 text-slate-400'}`}>
                       {wi.status || '—'}
                     </span>
                   </div>
@@ -179,7 +179,7 @@ export default function WorkInstructionsView() {
                     <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-800" aria-hidden>
                       <div className={`h-full rounded-full ${pct === 100 ? 'bg-emerald-500' : 'bg-sky-500'}`} style={{ width: `${pct}%` }} />
                     </div>
-                    <span className="text-[10px] text-slate-500">{pct}%</span>
+                    <span className="text-[11px] text-slate-400">{pct}%</span>
                   </div>
                 </button>
               </li>
@@ -204,7 +204,7 @@ export default function WorkInstructionsView() {
               <p className="mt-1 flex flex-wrap gap-3 text-xs text-slate-400">
                 <span>Gate: <span className="font-semibold text-slate-300">{detail.milestoneGate || '—'}</span></span>
                 <span>Subsystem: <span className="font-mono font-semibold text-slate-300">{detail.subsystem || '—'}</span></span>
-                <span className="font-mono text-slate-600">{detail.filePath}</span>
+                <span className="font-mono text-slate-500">{detail.filePath}</span>
               </p>
             </header>
 
@@ -264,7 +264,7 @@ export default function WorkInstructionsView() {
                         <span className="font-semibold">{step.label}:</span> {step.text}
                       </p>
                       {step.gated && (
-                        <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-indigo-800 bg-indigo-950/60 px-2 py-0.5 text-[10px] font-semibold text-indigo-300">
+                        <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-indigo-800 bg-indigo-950/60 px-2 py-0.5 text-[11px] font-semibold text-indigo-300">
                           <FlaskConical className="h-3 w-3" aria-hidden /> Gated verification test
                         </span>
                       )}
@@ -309,7 +309,7 @@ export default function WorkInstructionsView() {
                   ))}
                 </ul>
               ) : (
-                <p className="mt-3 text-xs text-slate-600">
+                <p className="mt-3 text-xs text-slate-500">
                   No evidence linked in the document yet. Uploads land in the flat <span className="font-mono">artifacts/</span> folder with
                   deterministic names the agent can reference.
                 </p>

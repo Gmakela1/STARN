@@ -138,22 +138,22 @@ export default function DashboardView() {
           <ol className="divide-y divide-slate-800/70">
             {roadmap.map((phase, idx) => (
               <li key={phase.id} className="flex items-center gap-3 px-4 py-2.5">
-                <span className="w-5 text-right font-mono text-[11px] text-slate-600">{idx + 1}</span>
+                <span className="w-5 text-right font-mono text-[11px] text-slate-500">{idx + 1}</span>
                 <PhaseStatusIcon status={phase.status} />
                 <div className="min-w-0 flex-1">
                   <p className={`truncate text-sm font-medium ${phase.status === 'LOCKED' ? 'text-slate-600' : 'text-slate-200'}`}>
                     {phase.name}
                   </p>
-                  <p className="truncate font-mono text-[10px] text-slate-600">{phase.artifactPath}</p>
+                  <p className="truncate font-mono text-[11px] text-slate-500">{phase.artifactPath}</p>
                 </div>
                 {phase.openQuestions > 0 && (
-                  <span className="flex items-center gap-1 rounded-full bg-amber-950/70 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+                  <span className="flex items-center gap-1 rounded-full bg-amber-950/70 px-2 py-0.5 text-[11px] font-semibold text-amber-300">
                     <MessageSquareWarning className="h-3 w-3" aria-hidden />
                     {phase.openQuestions} open
                   </span>
                 )}
                 {phase.criticScore !== undefined && (
-                  <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                  <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] font-semibold text-slate-300">
                     Critic {phase.criticScore.toFixed(1)}
                   </span>
                 )}
@@ -179,7 +179,7 @@ export default function DashboardView() {
               {issues.slice(0, 6).map(issue => (
                 <li key={issue.id} className="flex items-center gap-3 px-4 py-2.5">
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase ${
                       issue.type === 'non_conformance'
                         ? 'bg-rose-950/70 text-rose-300'
                         : 'bg-amber-950/70 text-amber-300'
@@ -188,7 +188,7 @@ export default function DashboardView() {
                     {issue.type === 'non_conformance' ? 'Defect' : 'Question'}
                   </span>
                   <p className="min-w-0 flex-1 truncate text-sm text-slate-300">{issue.title}</p>
-                  <span className="font-mono text-[10px] text-slate-600">{issue.source}</span>
+                  <span className="font-mono text-[11px] text-slate-500">{issue.source}</span>
                 </li>
               ))}
             </ul>

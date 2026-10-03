@@ -107,7 +107,7 @@ export default function IssuesAndQuestionsView({ onPushToAgent }: IssuesAndQuest
                       {issue.subsystem}
                     </span>
                   )}
-                  <span className="ml-auto font-mono text-[10px] text-slate-600">{issue.source}</span>
+                  <span className="ml-auto font-mono text-[11px] text-slate-500">{issue.source}</span>
                 </header>
                 <h3 className="mt-2 text-sm font-semibold text-slate-100">{issue.title}</h3>
                 <p className="mt-1 text-sm leading-relaxed text-slate-300">{issue.description}</p>
@@ -147,7 +147,7 @@ export default function IssuesAndQuestionsView({ onPushToAgent }: IssuesAndQuest
                   <span className="rounded-full bg-amber-950/80 px-2.5 py-0.5 font-mono text-[11px] font-bold text-amber-300">
                     {issue.title}
                   </span>
-                  <span className="ml-auto font-mono text-[10px] text-slate-600">{issue.source}</span>
+                  <span className="ml-auto font-mono text-[11px] text-slate-500">{issue.source}</span>
                 </header>
                 <p className="mt-2 text-sm leading-relaxed text-slate-300">{issue.description}</p>
                 <div className="mt-3">
