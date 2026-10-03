@@ -109,7 +109,7 @@ describe('Core Runner Intake & Multi-Turn', () => {
   let specialistRegistry: SpecialistRegistry;
 
   beforeEach(() => {
-    tempDir = path.join(os.tmpdir(), 'starn-runner-test-' + Date.now());
+    tempDir = path.join(os.tmpdir(), 'starn-runner-test-' + Date.now() + '-' + Math.random().toString(36).substring(2));
     fs.mkdirSync(tempDir, { recursive: true });
     stateMgr = new ProjectStateManager(tempDir);
     stateMgr.getOrCreateState('p1', 'Tractor Test');
@@ -328,5 +328,89 @@ describe('Core Runner Intake & Multi-Turn', () => {
     expect(criticPrompt).toContain('# System Architecture');
     expect(criticPrompt).toContain('Updated architecture with 48V LiFePO4 battery');
     expect(criticPrompt).not.toContain('I updated # 1 Overview to specify');
+  });
+
+  it('invokes Critic in delta mode with prior score and surgical revision guidance on edit turns', async () => {
+    const docsDir = path.join(tempDir, 'docs');
+    fs.mkdirSync(docsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(docsDir, 'CONOPS.md'),
+      '# Concept of Operations\nBaseline',
+      'utf-8'
+    );
+    stateMgr.recordArtifact({
+      id: 'CONOPS',
+      title: 'Concept of Operations',
+      path: 'docs/CONOPS.md',
+      status: 'approved',
+      criticScore: 9.3
+    });
+    stateMgr.completeIntake();
+
+    let capturedCriticPrompt = '';
+    let capturedRevisionPrompt = '';
+
+    vi.spyOn(mockClient, 'chatCompletion').mockImplementation(async (opts: any) => {
+      const msg = opts.messages[0];
+      const content = typeof msg.content === 'string' ? msg.content : '';
+
+      // Classifier
+      if (content.includes('Request Classifier for STARN')) {
+        return { content: '{"specialistId":"conops","reason":"edit"}', raw: {} };
+      }
+      // Specialist turn (simulating an edit)
+      if (content.includes('CONOPS & Systems Architect Specialist') || content.includes('EXISTING BASELINE')) {
+        // If this is a revision loop call, capture the revision user prompt
+        const userMsg = opts.messages.find((m: any) => m.role === 'user');
+        if (userMsg && userMsg.content.includes('The Critic evaluated your')) {
+          capturedRevisionPrompt = userMsg.content;
+        }
+
+        fs.writeFileSync(
+          path.join(docsDir, 'CONOPS.md'),
+          '# Concept of Operations\nBaseline with 540 RPM PTO',
+          'utf-8'
+        );
+        return { content: 'I updated Section 3 for PTO.', raw: {} };
+      }
+      // Critic evaluation
+      if (content.includes('Critic')) {
+        capturedCriticPrompt = content;
+        // Fail the first critic call to trigger auto-revision
+        return {
+          content: JSON.stringify({
+            passed: false,
+            score: 7.5,
+            summary: 'Minor inconsistency in Section 4',
+            strengths: [],
+            weaknesses: ['Section 4 still mentions belt drive'],
+            actionableGuidance: 'Update Section 4 to match PTO'
+          }),
+          raw: {}
+        };
+      }
+      return { content: '', raw: {} };
+    });
+
+    await CoreRunner.executeTurn({
+      userPrompt: 'Add a 540 RPM PTO to CONOPS',
+      projectPath: tempDir,
+      stateManager: stateMgr,
+      client: mockClient,
+      model: 'test-model',
+      toolRegistry,
+      specialistRegistry,
+      sessionMessages: []
+    });
+
+    // Critic prompt must be in delta mode with prior score and user prompt
+    expect(capturedCriticPrompt).toContain('DELTA EVALUATION');
+    expect(capturedCriticPrompt).toContain('PRIOR BASELINE SCORE: 9.3/10');
+    expect(capturedCriticPrompt).toContain('Add a 540 RPM PTO to CONOPS');
+
+    // Auto-revision prompt must instruct surgical fs_edit instead of full rewrite
+    expect(capturedRevisionPrompt).toContain('targeted edits');
+    expect(capturedRevisionPrompt).toContain('Use the fs_edit tool to surgically resolve');
+    expect(capturedRevisionPrompt).not.toContain('Please revise the deliverable to resolve all weaknesses');
   });
 });

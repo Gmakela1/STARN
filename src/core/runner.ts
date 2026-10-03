@@ -305,6 +305,11 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
         targetDocMtimeBefore = fs.statSync(filePath).mtimeMs;
       }
     } catch (_e) { /* ignore */ }
+    const targetDocExistedBeforeTurn = targetDocMtimeBefore > 0;
+    const existingArtifact = state.artifacts.find(
+      a => a.id.toUpperCase() === specialist.id.toUpperCase()
+    );
+    const priorArtifactScore = existingArtifact?.criticScore ?? 8.5;
     const agentResult = await runAgentToolLoop({
       client,
       model,
@@ -340,12 +345,12 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     // always read it, even if the model's summary text contains a '# ' heading (the old
     // heuristic mistook a revision summary for the document).
     let artifactForCritic = finalOutput;
+    let diskModified = false;
     if (specialist.requiresCritic) {
       const filePath = path.join(projectPath, 'docs', `${specialist.id.toUpperCase()}.md`);
       const editUsed = context.editLog && context.editLog.length > 0;
       // Read from disk if (a) fs_edit ran, (b) the file was touched this turn (fs_write),
       // or (c) the response lacks a markdown heading.
-      let diskModified = false;
       try {
         if (fs.existsSync(filePath)) {
           diskModified = fs.statSync(filePath).mtimeMs > targetDocMtimeBefore;
@@ -409,6 +414,10 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
           }
         }
 
+        const isDeltaReview = targetDocExistedBeforeTurn && (
+          (context.editLog && context.editLog.length > 0) || diskModified
+        );
+
         try {
           criticResult = await critic.evaluate({
             model,
@@ -418,7 +427,10 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
             userExamples: customExamples,
             programBaselineDocuments: programBaselineDocs,
             appliedEdits: context.editLog,
-            signal
+            signal,
+            mode: isDeltaReview ? 'delta' : 'full',
+            priorScore: isDeltaReview ? priorArtifactScore : undefined,
+            userPrompt: isDeltaReview ? userPrompt : undefined
           });
         } catch (err: any) {
           // ESC during critic — abort the turn.
@@ -446,7 +458,16 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
           autoRevisionsRun++;
           onStatusUpdate?.(`Critic requested improvements (Score: ${criticResult.score}/10). Revising draft (Attempt ${attempts}/${maxAttempts})...`);
 
-          const revisionPrompt = `The Critic evaluated your draft and found the following weaknesses:\n${(criticResult.weaknesses || []).map(w => `- ${w}`).join('\n')}\n\nActionable Guidance:\n${criticResult.actionableGuidance || 'Fix weaknesses'}\n\nPlease revise the deliverable to resolve all weaknesses while maintaining rigorous physical engineering standards and program alignment.`;
+          const isDeltaReview = targetDocExistedBeforeTurn && (
+            (context.editLog && context.editLog.length > 0) || diskModified
+          );
+
+          const revisionPrompt = isDeltaReview
+            ? `The Critic evaluated your targeted edits to docs/${specialist.id.toUpperCase()}.md and found the following issues:\n` +
+              `${(criticResult.weaknesses || []).map(w => `- ${w}`).join('\n')}\n\n` +
+              `Actionable Guidance:\n${criticResult.actionableGuidance || 'Fix weaknesses'}\n\n` +
+              `INSTRUCTION: Use the fs_edit tool to surgically resolve these specific issues in the document. Do NOT rewrite or regenerate the entire document.`
+            : `The Critic evaluated your draft and found the following weaknesses:\n${(criticResult.weaknesses || []).map(w => `- ${w}`).join('\n')}\n\nActionable Guidance:\n${criticResult.actionableGuidance || 'Fix weaknesses'}\n\nPlease revise the deliverable to resolve all weaknesses while maintaining rigorous physical engineering standards and program alignment.`;
 
           // Reset the edit log so the critic sees only this revision's edits.
           context.editLog = [];
@@ -486,6 +507,7 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
               revisionDiskModified = fs.statSync(filePath).mtimeMs > targetDocMtimeBefore;
             }
           } catch (_e) { /* ignore */ }
+          diskModified = revisionDiskModified;
           if (revisionEditUsed || revisionDiskModified || !finalOutput.includes('# ')) {
             try {
               const filePath = path.join(projectPath, 'docs', `${specialist.id.toUpperCase()}.md`);
