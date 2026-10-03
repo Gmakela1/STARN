@@ -42,7 +42,7 @@
 - Consumes: `EditEntry` from `src/tools/types.js`
 - Produces: `mode?: 'full' | 'delta'`, `priorScore?: number`, `userPrompt?: string` on `CriticEvaluateOptions` in `src/core/critic.ts`.
 
-- [ ] **Step 1: Write the failing unit tests for Delta Review Mode**
+- [x] **Step 1: Write the failing unit tests for Delta Review Mode**
 
 Create `tests/critic-delta.test.ts`:
 ```typescript
@@ -147,12 +147,12 @@ describe('CriticEvaluator Delta Review Mode', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/critic-delta.test.ts`  
 Expected: FAIL (`TS2353: Object literal may only specify known properties, and 'mode' does not exist in type 'CriticEvaluateOptions'`).
 
-- [ ] **Step 3: Implement Delta Mode in `src/core/critic.ts`**
+- [x] **Step 3: Implement Delta Mode in `src/core/critic.ts`**
 
 Update `src/core/critic.ts`:
 1. In `CriticEvaluateOptions`, add:
@@ -259,17 +259,17 @@ Respond ONLY with valid JSON in this exact structure:
     }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/critic-delta.test.ts`  
 Expected: PASS (2 tests).
 
-- [ ] **Step 5: Run existing tests to ensure no regression**
+- [x] **Step 5: Run existing tests to ensure no regression**
 
 Run: `npx vitest run tests/critic-edit-log.test.ts`  
 Expected: PASS (2 tests).
 
-- [ ] **Step 6: Commit Task 1**
+- [x] **Step 6: Commit Task 1**
 
 ```bash
 git add src/core/critic.ts tests/critic-delta.test.ts
@@ -288,7 +288,7 @@ git commit -m "feat(critic): implement Delta Review mode with score anchoring an
 - Consumes: `mode`, `priorScore`, `userPrompt` options on `CriticEvaluator.evaluate`.
 - Produces: Delta-mode Critic invocation and targeted auto-revision prompts on edit turns in `CoreRunner.executeTurn`.
 
-- [ ] **Step 1: Write the failing integration test in `tests/core-loop.test.ts`**
+- [x] **Step 1: Write the failing integration test in `tests/core-loop.test.ts`**
 
 In `tests/core-loop.test.ts`, add a test to the `Core Runner Intake & Multi-Turn` describe block:
 ```typescript
@@ -377,12 +377,12 @@ In `tests/core-loop.test.ts`, add a test to the `Core Runner Intake & Multi-Turn
   });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/core-loop.test.ts -t "invokes Critic in delta mode"`  
 Expected: FAIL (`expected capturedCriticPrompt to contain 'DELTA EVALUATION'`).
 
-- [ ] **Step 3: Update `src/core/runner.ts` to wire Delta Review mode**
+- [x] **Step 3: Update `src/core/runner.ts` to wire Delta Review mode**
 
 In `src/core/runner.ts`:
 1. Before the agent loop, check if target document existed and capture prior score:
@@ -441,17 +441,17 @@ In `src/core/runner.ts`:
               `Please revise the deliverable to resolve all weaknesses while maintaining rigorous physical engineering standards and program alignment.`;
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run tests/core-loop.test.ts -t "invokes Critic in delta mode"`  
 Expected: PASS.
 
-- [ ] **Step 5: Run the full `tests/core-loop.test.ts` suite**
+- [x] **Step 5: Run the full `tests/core-loop.test.ts` suite**
 
 Run: `npx vitest run tests/core-loop.test.ts`  
 Expected: PASS (all 9 tests).
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 ```bash
 git add src/core/runner.ts tests/core-loop.test.ts
@@ -464,16 +464,16 @@ git commit -m "feat(runner): wire Delta Review mode and surgical revision prompt
 
 **Files:** None (pipeline verification).
 
-- [ ] **Step 1: Run type-check and full test suite**
+- [x] **Step 1: Run type-check and full test suite**
 
 Run: `npm test`  
 Expected: `tsc --noEmit` clean, and all 197+ tests in all test files PASS.
 
-- [ ] **Step 2: Rebuild distribution files**
+- [x] **Step 2: Rebuild distribution files**
 
 Run: `npx tsc`  
 Expected: Clean compile into `dist/`.
 
-- [ ] **Step 3: Commit and Push**
+- [x] **Step 3: Commit and Push**
 
 Push all commits to `origin master`.
