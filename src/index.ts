@@ -36,8 +36,11 @@ import { setCriticLogger } from './core/critic.js';
 import { attachAbortListener } from './util/abort-input.js';
 import { ORDERED_WORKFLOW_PHASES, resolveArtifactPaths } from './workspace/state.js';
 import { Logger } from './util/logger.js';
+import { ServerSessionManager } from './server/session.js';
+import { startWebServer } from './server/server.js';
 
 async function main() {
+  const isWebMode = process.argv.includes('--web');
   console.log(formatBanner());
 
   const config = loadConfig();
@@ -130,6 +133,44 @@ async function main() {
 
   const toolRegistry = new ToolRegistry();
   const specialistRegistry = new SpecialistRegistry();
+
+  // --- Web mode: serve the HTTP adapter + React UI instead of the terminal loop ---
+  if (isWebMode) {
+    const portArgIdx = process.argv.indexOf('--port');
+    const port = portArgIdx !== -1 ? Number(process.argv[portArgIdx + 1]) || 3000 : 3000;
+
+    const session = new ServerSessionManager({
+      projectPath: currentProjectRecord.path,
+      stateManager,
+      client,
+      model: selectedModel,
+      toolRegistry,
+      specialistRegistry,
+      compactionModel: config.compactionModel || selectedModel,
+      compressionThreshold: config.compressionThreshold,
+      keepRecentTokens: config.keepRecentTokens,
+      logger
+    });
+
+    const started = await startWebServer({
+      projectPath: currentProjectRecord.path,
+      stateManager,
+      session,
+      port,
+      onSettingsSaved: s => {
+        if (s.agentModel) saveUserConfig({ defaultModel: s.agentModel }, config.globalDir);
+        if (s.compactionModel) saveUserConfig({ compactionModel: s.compactionModel }, config.globalDir);
+      }
+    });
+
+    console.log(chalk.green('\n★ STARN web UI is running:'));
+    for (const url of started.urls) {
+      console.log(chalk.cyan(`   ${url}`));
+    }
+    console.log(chalk.dim('\nAgent turns, checkpoints, BOM, shop floor, and settings are served over HTTP.'));
+    console.log(chalk.dim('Press Ctrl+C to stop. State persists to .starn/state.json.\n'));
+    return; // HTTP server keeps the event loop alive
+  }
 
   let sessionMessages: ChatMessage[] = [];
 

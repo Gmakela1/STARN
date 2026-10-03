@@ -149,6 +149,7 @@ export class ServerSessionManager {
     status: 'approved' | 'revision_requested' | 'discarded';
     savedPath?: string;
     revisionPrompt?: string;
+    nextPhase?: string;
   } {
     const pending = this.pending;
     if (!pending) {
@@ -192,6 +193,11 @@ export class ServerSessionManager {
     });
 
     this.pending = null;
-    return { status: 'approved', savedPath: path.relative(projectPath, outPath).replace(/\\/g, '/') };
+    const nextPhase = stateManager.advanceToNextPhase();
+    return {
+      status: 'approved',
+      savedPath: path.relative(projectPath, outPath).replace(/\\/g, '/'),
+      nextPhase: nextPhase ?? undefined
+    };
   }
 }

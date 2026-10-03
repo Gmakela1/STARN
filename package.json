@@ -11,6 +11,9 @@
     "prestart": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
+    "web": "tsx src/index.ts --web",
+    "dev:web": "npm --prefix web run dev",
+    "build:web": "npm --prefix web run build",
     "test": "tsc --noEmit && vitest run",
     "test:watch": "vitest",
     "testbed": "tsx testbed/index.ts"
