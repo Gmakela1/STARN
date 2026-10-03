@@ -171,3 +171,27 @@ Respond ONLY with valid JSON in this exact structure:
     }
   }
 }
+
+/**
+ * Enriches user revision feedback with the critic's evaluation context so the
+ * specialist sees the score, weaknesses, and actionable guidance alongside the
+ * human note. Headless — shared by the terminal checkpoint and the web server.
+ */
+export function enrichFeedbackWithCritic(feedback: string, criticResult?: CriticResult): string {
+  if (!criticResult) return feedback;
+  const hasGuidance = !!criticResult.actionableGuidance;
+  const hasWeaknesses = criticResult.weaknesses && criticResult.weaknesses.length > 0;
+  if (!hasGuidance && !hasWeaknesses) return feedback;
+
+  let out = `${feedback}\n\n[CRITIC EVALUATION CONTEXT FOR THIS REVISION]:\nScore: ${criticResult.score.toFixed(1)}/10`;
+  if (criticResult.summary) {
+    out += `\nSummary: ${criticResult.summary}`;
+  }
+  if (hasWeaknesses) {
+    out += `\nWeaknesses:\n${criticResult.weaknesses.map(w => `- ${w}`).join('\n')}`;
+  }
+  if (hasGuidance) {
+    out += `\nActionable Guidance: ${criticResult.actionableGuidance}`;
+  }
+  return out;
+}
