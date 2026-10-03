@@ -1,0 +1,69 @@
+@import 'tailwindcss';
+
+/* Dark slate theme baseline — applied before React mounts to prevent FOUC */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background-color: #020617; /* slate-950 */
+  color: #f1f5f9; /* slate-100 */
+}
+
+/* Thin dark scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: #334155;
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Markdown-ish rendering inside chat bubbles and doc previews */
+.doc-prose {
+  line-height: 1.65;
+  font-size: 0.875rem;
+}
+.doc-prose h1,
+.doc-prose h2,
+.doc-prose h3 {
+  font-weight: 700;
+  color: #f8fafc;
+  margin: 1em 0 0.4em;
+}
+.doc-prose h1 {
+  font-size: 1.25rem;
+}
+.doc-prose h2 {
+  font-size: 1.1rem;
+}
+.doc-prose code {
+  background: #1e293b;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.8em;
+}
+.doc-prose table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.75em 0;
+}
+.doc-prose th,
+.doc-prose td {
+  border: 1px solid #334155;
+  padding: 0.35em 0.6em;
+  text-align: left;
+  font-size: 0.8rem;
+}
+.doc-prose th {
+  background: #0f172a;
+  color: #cbd5e1;
+}
