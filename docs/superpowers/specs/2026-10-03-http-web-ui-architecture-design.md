@@ -66,10 +66,12 @@ STARN/
 │       ├── layouts/           # AppShell, TopNav tabs, Status bar
 │       ├── views/
 │       │   ├── DevelopmentView.tsx       # Tab 1: Split Chat + Live Document Preview/Editor
-│       │   ├── DashboardView.tsx         # Tab 2: Project Metadata, 13-Phase Roadmap, Health
+│       │   ├── DashboardView.tsx         # Tab 2: Project Metadata, Financials, 13-Phase Roadmap
 │       │   ├── BomView.tsx               # Tab 3: Sourcing Trade Study + Procurement Ledger
 │       │   ├── WorkInstructionsView.tsx  # Tab 4: Shop Checklist, Active Action, Artifacts
-│       │   └── SettingsView.tsx          # Tab 5: Model Selection (Agent, Critic, Twin)
+│       │   ├── IssuesAndQuestionsView.tsx# Tab 5: Hardware Non-conformances, Open Questions
+│       │   ├── DigitalTwinView.tsx       # Tab 6: 3D Viewport Stage, Subsystem Tree HUD
+│       │   └── SettingsView.tsx          # Tab 7: Model Selection (Agent, Critic, Twin)
 │       └── main.tsx
 ```
 
@@ -94,10 +96,16 @@ All endpoints return standard JSON with uniform error envelopes:
 
 ### 3.1 Project & State Endpoints
 - `GET /api/project`:
-  - Returns: `{ id, name, activePhase, summary, openQuestionsCount, openRisksCount, models: { agent, critic, compaction } }`
+  - Returns: `{ id, name, activePhase, summary, openQuestionsCount, openRisksCount, models: { agent, critic, compaction, digitalTwin }, financials: { totalEstimated, totalActual, netVariance, procurementProgressPercent } }`
+- `GET /api/dashboard`:
+  - Returns consolidated dashboard data: project metadata, financial rollup cards, roadmap status with artifact hashes, recent activity, open questions, and flagged issues.
 - `GET /api/roadmap`:
   - Returns: Array of 13 canonical phases:
     `[ { id, name, status: "COMPLETED"|"IN_PROGRESS"|"PENDING_REVIEW"|"LOCKED", artifactPath, contentHash } ]`
+- `GET /api/issues`:
+  - Returns list of open builder questions from `state.json` and hardware non-conformance defects logged across all work instructions (`Flag Status: OPEN_NON_CONFORMANCE`).
+- `POST /api/issues/:issueId/push-to-agent`:
+  - Triggers an agent turn with the issue context (defect description, affected action, photo evidence) routed to `work-instructions` or `change-impact` for immediate impact analysis and shop repair procedure generation.
 - `GET /api/settings`:
   - Returns current model configurations and available OpenRouter models.
 - `POST /api/settings`:
@@ -199,13 +207,14 @@ When a turn finishes with `requiresReview: true`:
 
 ## 4. Frontend View Specifications (Top Navigation Tabs)
 
-The application shell provides persistent top tabs allowing frictionless switching across views:
+The application shell provides persistent top tabs allowing frictionless switching across 7 dedicated views:
 
 ```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│  STARN  |  [Project Development]  [Dashboard]  [BOM & Sourcing]  [Shop Work]  [Settings]│
-│  Active: Powertrain (Phase 6)  ● Connected (Port 3000)               Model: Claude-3.7  │
-└────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│  STARN  |  [1. Development]  [2. Dashboard]  [3. BOM & Sourcing]  [4. Shop Work]                       │
+│            [5. Questions & Issues]  [6. 3D Digital Twin]  [7. Settings]                                │
+│  Active: Phase 6 (BOM)  ● Connected (Port 3000)                             Model: Claude-3.7          │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -244,9 +253,14 @@ The primary creative workspace for interacting with the AI agent and authoring a
 ---
 
 ### Tab 2: Project Dashboard View
-A high-level command center showing comprehensive project health and status.
+A high-level command center showing comprehensive project health, roadmap, and financial metrics.
 
-- **Project Metadata Card:** Project Name, Target Goal, Active Workflow Phase, Total Estimated Budget, Open Risks.
+- **Financial Overview Rollup Cards (Top Row):**
+  - `Total Budget Estimated` (e.g. $12,500.00)
+  - `Committed / Actual Spend` (e.g. $11,800.00)
+  - `Net Variance` (e.g. -$700.00 Under Budget in Green)
+  - `Procurement % Complete` (e.g. 75% with progress bar)
+- **Project Metadata & Active Milestones:** Project Name, Target Goal, Active Workflow Phase, Target Milestone Gate (`MVC`, `IOC`, `FOC`).
 - **13-Phase Canonical Workflow Roadmap:**
   - Interactive vertical timeline showing all 13 phases in order.
   - Phase badges:
@@ -256,7 +270,7 @@ A high-level command center showing comprehensive project health and status.
     - 🔒 `LOCKED` (upstream prerequisites incomplete).
   - Clicking any phase opens its document in the viewer or loads its specialist.
 - **Document Repository Index:** Table of all generated documents with file size, last modified timestamp, and quick-download buttons.
-- **Open Questions & Risks Panel:** Displays unresolved engineering questions and active failure modes cataloged in `docs/RISK_REGISTER.md`.
+- **Quick Summary Indicators:** Active risk count from `docs/RISK_REGISTER.md` and pending questions count.
 
 ---
 
@@ -310,6 +324,7 @@ The hands-on shop-floor command center for execution, assembly, and testing.
   - Clicking any action opens its shop floor procedure (`ACTION-<NUM>-...-WORK-INSTRUCTION.md`).
   - Interactive checkboxes for each mechanical step: ticking a box immediately updates the Markdown file on disk.
   - Tool and Torque Callouts: Highlighted warning boxes for critical torque specs (e.g. `45 ft-lbs Dial Torque Wrench`).
+  - Navigation buttons: `[<< Previous Action]`, `[Close Work Instruction]`, `[Next Action >>]`.
   - Inline Agent Command: "Talk to AI" quick prompt to report progress ("Step 2 completed, moving to runout measurement").
 - **Integrated Test Plans Gating:**
   - Displays inline test procedures (`TP-MVP-xx`) required by this action.
@@ -320,13 +335,91 @@ The hands-on shop-floor command center for execution, assembly, and testing.
 
 ---
 
-### Tab 5: Settings & Model Assignment View
+### Tab 5: Questions, Actions & Issues Flagged View
+Dedicated operational inbox for builder decisions, open engineering questions, and physical non-conformances flagged on the shop floor.
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ OPEN QUESTIONS, ACTIONS & FLAGGED SHOP DEFECTS                                         │
+│                                                                                        │
+│ [Filter: All (5)]  [Hardware Issues (2)]  [Open Questions (2)]  [Pending Approvals (1)]│
+│                                                                                        │
+│ ┌────────────────────────────────────────────────────────────────────────────────────┐ │
+│ │ 🚨 HARDWARE NON-CONFORMANCE: ACTION-03 Motor Bellhousing Bolt Hole Mismatch        │ │
+│ │ Subsystem: SS-02 Powertrain | Flagged: Today 10:14 AM | Status: OPEN_NON_CONFORMANCE│ │
+│ │ Description: Top two M12 bolt holes are offset by 3.5mm from adapter plate rim.    │ │
+│ │ Evidence Photo: artifacts/ACTION-03-MOUNT-MOTOR-WI-1-DEFECT-BOLT.jpg [View]        │ │
+│ │                                                                                    │ │
+│ │ [Push to AI Agent for Impact Analysis & Shop Repair WI]   [Mark Resolved Manually] │ │
+│ └────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                        │
+│ ┌────────────────────────────────────────────────────────────────────────────────────┐ │
+│ │ ❓ OPEN BUILDER QUESTION: Inverter Water vs. Air Cooling Loop Decision             │ │
+│ │ Subsystem: SS-03 Thermal Management | Specialist: Requirements | Phase 5           │ │
+│ │ Question: "Does the builder prefer a 12V DC liquid pump radiator loop or heatsink  │ │
+│ │           ducted fans for the 100V 400A controller in high-ambient operations?"   │ │
+│ │ [Type Answer & Submit to Agent]                                                    │ │
+│ └────────────────────────────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Hardware Non-Conformance Tickets:**
+  - Automatically aggregated from all work instructions (`Flag Status: OPEN_NON_CONFORMANCE`).
+  - Displays defect description, target subsystem, and evidence photo.
+  - **"Push to AI Agent for Impact Analysis & Shop Repair WI" Button:**
+    - Immediately initiates an agent turn routed to `change-impact` or `work-instructions`.
+    - Prompts the agent to assess structural/safety implications, draft an `ACTION-03-MOUNT-MOTOR-WI-2.md` rework instruction, or update the Risk Register.
+- **Open Builder Questions:**
+  - Unanswered intake questions logged during discovery or specialist drafting.
+  - Inline reply field: builder types their answer and submits it directly into the agent context.
+- **Pending Human Actions & Approvals:**
+  - Checklist of user-required actions (e.g. "Order long-lead motor adapter", "Confirm 240V shop outlet standard").
+
+---
+
+### Tab 6: 3D Digital Twin View (Dedicated Viewport & Readiness HUD)
+The visual hardware viewport hosting the interactive spatial digital twin model.
+
+```
+┌──────────────────────────────────────────────────────┬─────────────────────────────────┐
+│ 3D DIGITAL TWIN VIEWPORT                             │ SUBSYSTEM EXPLORER & READINESS │
+│                                                      │                                 │
+│ [3D Canvas Stage: Three.js / WebGL]                  │ Subsystem Status:               │
+│                                                      │ ☑ SS-01 Chassis & Frame  [100%] │
+│        ┌──────────────┐                              │ ☑ SS-02 Powertrain       [ 65%] │
+│       /              /|                              │ ☐ SS-03 Battery Pack     [ 20%] │
+│      /   [3D TRACTOR] |                              │ ☐ SS-04 Hydraulics       [  0%] │
+│     ┌──────────────┐  |                              │                                 │
+│     |              |  /                              │ Selected: SS-02 Powertrain      │
+│     |              | /                               │ - Status: Motor Mount in Prog.  │
+│     └──────────────┘/                                │ - Active Action: ACTION-03      │
+│                                                      │ - Open Issues: 1 Non-conformance│
+│ Controls: [Orbit] [Pan] [Reset View]                 │ - BOM Items: 4/6 Received       │
+│ Display Mode: [Solid Mesh] [X-Ray] [Exploded]        │                                 │
+│ Overlay: [Subsystem Colors] [Readiness Heatmap]      │ [Open Work Instruction]         │
+│                                                      │ [Open BOM Parts]                │
+└──────────────────────────────────────────────────────┴─────────────────────────────────┘
+```
+
+- **Viewport Container:**
+  - Clean, high-performance HTML5 `<canvas>` stage ready for Three.js rendering.
+  - Initial scaffolding includes 3D coordinate axes, camera orbit controls, and CAD/GLTF upload button (`.gltf`, `.glb`, `.obj`).
+  - Displays subsystem wireframe bounding boxes mapped to project subsystems.
+- **Subsystem Explorer & Readiness Heatmap:**
+  - Subsystems (`SS-01`, `SS-02`, etc.) retrieved dynamically from `docs/ARCHITECTURE.md` and `docs/ICD.md`.
+  - Toggles to show/hide individual subsystem layers (e.g. hide Chassis to view Battery Busbars).
+  - Readiness color codes: Green (Completed & Verified), Blue (Assembled / In-Progress), Amber (Non-conformance / Blocked), Gray (Unbuilt).
+  - Clicking any subsystem reveals its specs, linked BOM parts, active work instructions, and open non-conformances with direct links.
+
+---
+
+### Tab 7: Settings & Model Assignment View
 Centralized configuration management for AI models and server parameters.
 
 - **Agent Model Selector:** Select model for main specialist turns (e.g. `anthropic/claude-3.7-sonnet`, `deepseek/deepseek-r1`).
 - **Critic Model Selector:** Assign dedicated harsh critic model (can be a distinct high-reasoning model).
 - **Compaction Model Selector:** Assign fast/cheap context compaction model (e.g. `google/gemini-2.0-flash-001`).
-- **Digital Twin Model Selector:** Pre-configured slot to assign the spatial reasoning/mesh synthesis model for Phase 3.
+- **Digital Twin Model Selector:** Assign the spatial reasoning model used to synthesize 3D subsystem coordinate maps and GLTF meshes.
 - **API & Connection Config:**
   - OpenRouter API Key input & validation check.
   - Server port configuration (default: 3000).
@@ -359,7 +452,10 @@ To guarantee that the frontend does not leak into the backend logic:
 - **Stage 4: BOM, Shop Work Instructions & Evidence Views**
   - Build Tab 3 (Two-Tier BOM Datatable, Trade Studies, Financial Cost Rollup).
   - Build Tab 4 (Master Action Checklist, Interactive Work Instructions, Gated Testing, Artifacts Photo Uploader & Gallery).
-- **Stage 5: Settings Tab, CLI Integration & End-to-End Polish**
-  - Build Tab 5 (Model selection, OpenRouter config, port setting).
+- **Stage 5: Questions & Issues, 3D Digital Twin Viewport & Settings**
+  - Build Tab 5 (Hardware non-conformances, open builder questions, user action items, direct "Push to AI Agent" trigger).
+  - Build Tab 6 (3D Canvas viewport container, camera controls, subsystem tree, readiness heatmap).
+  - Build Tab 7 (Model selection, OpenRouter config, port setting).
+- **Stage 6: CLI Integration & End-to-End Polish**
   - Wire `--web` flag in `src/index.ts` and add `npm run web` / `npm run dev:web` scripts.
   - Verify complete workflow on local machine and local network IP.
