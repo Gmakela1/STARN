@@ -51,7 +51,7 @@
 - Modify: `src/workspace/state.ts`
 - Modify: `tests/workspace.test.ts`
 
-- [ ] **Step 1: Write failing tests in `tests/workspace.test.ts`**
+- [x] **Step 1: Write failing tests in `tests/workspace.test.ts`**
 
 Update the phase count test and add scaffolding check:
 ```typescript
@@ -79,12 +79,12 @@ Update the phase count test and add scaffolding check:
   });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/workspace.test.ts -t "13 phases"`  
 Expected: FAIL.
 
-- [ ] **Step 3: Update `src/workspace/state.ts`**
+- [x] **Step 3: Update `src/workspace/state.ts`**
 
 1. In `ORDERED_WORKFLOW_PHASES`:
 ```typescript
@@ -112,12 +112,12 @@ Expected: FAIL.
   }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/workspace.test.ts`  
 Expected: PASS (all 9 tests).
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```bash
 git add src/workspace/state.ts tests/workspace.test.ts
@@ -132,7 +132,7 @@ git commit -m "feat(workspace): add work-instructions to 13-phase workflow and s
 - Modify: `src/specialists/packages/bom/index.ts`
 - Modify: `tests/specialists.test.ts`
 
-- [ ] **Step 1: Write/update tests in `tests/specialists.test.ts`**
+- [x] **Step 1: Write/update tests in `tests/specialists.test.ts`**
 
 Assert that BOM secret sauce and rubric enforce `Qty`, procurement tracking columns, cost rollups, and trade study separation:
 ```typescript
@@ -147,12 +147,12 @@ Assert that BOM secret sauce and rubric enforce `Qty`, procurement tracking colu
   });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/specialists.test.ts -t "Two-Tier BOM"`  
 Expected: FAIL.
 
-- [ ] **Step 3: Update `src/specialists/packages/bom/index.ts`**
+- [x] **Step 3: Update `src/specialists/packages/bom/index.ts`**
 
 Update `bomSecretSauce`, `systemPrompt`, and `criticRubric`:
 - Add `Qty`, `Source / URL`, `Order & Tracking #`, `Status`, `Est. Unit`, `Est. Total`, `Actual Total`, `Variance` to `docs/BOM.md`.
@@ -160,12 +160,12 @@ Update `bomSecretSauce`, `systemPrompt`, and `criticRubric`:
 - Instruct creating `docs/TRADE_STUDY.md` for candidate options and trade-offs.
 - Update `criticRubric` to require `Qty`, financial rollup, and procurement tracking fields.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/specialists.test.ts`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
 
 ```bash
 git add src/specialists/packages/bom/index.ts tests/specialists.test.ts
@@ -180,26 +180,26 @@ git commit -m "feat(bom): upgrade to Two-Tier BOM with quantity, procurement tra
 - Modify: `src/specialists/packages/build-sequence/index.ts`
 - Modify: `tests/build-sequence.test.ts`
 
-- [ ] **Step 1: Write/update test in `tests/build-sequence.test.ts`**
+- [x] **Step 1: Write/update test in `tests/build-sequence.test.ts`**
 
 Assert that `build-sequence` prompt and secret sauce enforce the Master Action Table linking to Work Instructions in `docs/work_instructions/`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/build-sequence.test.ts`  
 Expected: FAIL.
 
-- [ ] **Step 3: Implement in `src/specialists/packages/build-sequence/index.ts`**
+- [x] **Step 3: Implement in `src/specialists/packages/build-sequence/index.ts`**
 
 - Update `buildSequenceSecretSauce` to include the `## Master Action Table` with columns: `Action #`, `Action Description`, `Target Subsystem`, `Prerequisite Actions`, `Work Instruction Document`, `Status`, `Non-Conformance`.
 - Update `systemPrompt` and `criticRubric` to mandate the Master Action Table and hyperlinks to `docs/work_instructions/ACTION-<NUM>-<SLUG>-WORK-INSTRUCTION.md`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/build-sequence.test.ts`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
 
 ```bash
 git add src/specialists/packages/build-sequence/index.ts tests/build-sequence.test.ts
@@ -215,7 +215,7 @@ git commit -m "feat(build-sequence): mandate Master Action Table linking to Work
 - Modify: `src/specialists/registry.ts`
 - Create: `tests/work-instructions.test.ts`
 
-- [ ] **Step 1: Write failing unit tests in `tests/work-instructions.test.ts`**
+- [x] **Step 1: Write failing unit tests in `tests/work-instructions.test.ts`**
 
 Verify package metadata, prompt, allowed tools, and secret sauce:
 ```typescript
@@ -246,12 +246,12 @@ describe('Work Instructions Specialist', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/work-instructions.test.ts`  
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `src/specialists/packages/work-instructions/index.ts` and register it**
+- [x] **Step 3: Implement `src/specialists/packages/work-instructions/index.ts` and register it**
 
 - Define `workInstructionsSecretSauce` with:
   - Header with Milestone Gate, Target Subsystem, Status (`READY | IN-PROGRESS | COMPLETED | BLOCKED`).
@@ -262,12 +262,12 @@ Expected: FAIL.
 - Define `workInstructionsPackage` with `id: 'work-instructions'`, `prerequisiteArtifactId: 'BUILD_SEQUENCE'`.
 - Register in `src/specialists/registry.ts`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/work-instructions.test.ts`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit Task 4**
+- [x] **Step 5: Commit Task 4**
 
 ```bash
 git add src/specialists/packages/work-instructions/index.ts src/specialists/registry.ts tests/work-instructions.test.ts
@@ -284,31 +284,31 @@ git commit -m "feat(specialists): implement dedicated Work Instructions speciali
 - Modify: `AGENTS.md`
 - Test: `tests/testplans-update.test.ts`
 
-- [ ] **Step 1: Write/update test in `tests/testplans-update.test.ts`**
+- [x] **Step 1: Write/update test in `tests/testplans-update.test.ts`**
 
 Assert that Test Plans prompt and secret sauce mandate the `### Gating Prerequisites (MANDATORY BEFORE EXECUTION)` section listing prerequisite actions/work instructions.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/testplans-update.test.ts`  
 Expected: FAIL.
 
-- [ ] **Step 3: Implement gating in `src/specialists/packages/testplans/index.ts`**
+- [x] **Step 3: Implement gating in `src/specialists/packages/testplans/index.ts`**
 
 - Update `testplansSecretSauce`, `systemPrompt`, and `criticRubric` to mandate:
   `### Gating Prerequisites (MANDATORY BEFORE EXECUTION)` with required upstream actions (e.g. Action 01, Action 03, Action 05) and work instruction sign-offs.
 
-- [ ] **Step 4: Update `src/core/classifier.ts` and `AGENTS.md`**
+- [x] **Step 4: Update `src/core/classifier.ts` and `AGENTS.md`**
 
 - In `src/core/classifier.ts`, add `"work-instructions"` description to the classifier routing prompt.
 - In `AGENTS.md`, update workflow chain to document the 13 canonical phases.
 
-- [ ] **Step 5: Run full test suite & type-check**
+- [x] **Step 5: Run full test suite & type-check**
 
 Run: `npm test` (`tsc --noEmit && vitest run`)  
 Expected: All tests pass, zero type errors.
 
-- [ ] **Step 6: Commit Task 5**
+- [x] **Step 6: Commit Task 5**
 
 ```bash
 git add src/specialists/packages/testplans/index.ts src/core/classifier.ts AGENTS.md tests/testplans-update.test.ts
@@ -319,6 +319,6 @@ git commit -m "feat(testplans): enforce bidirectional prerequisite action gating
 
 ### Task 6: Full Pipeline Verification & Push
 
-- [ ] **Step 1: Run `npm test`**
-- [ ] **Step 2: Run `npx tsc`**
-- [ ] **Step 3: Push commits to `origin/master`**
+- [x] **Step 1: Run `npm test`**
+- [x] **Step 2: Run `npx tsc`**
+- [x] **Step 3: Push commits to `origin/master`**
