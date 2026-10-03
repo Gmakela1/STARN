@@ -2,100 +2,84 @@ import { SpecialistPackage } from '../../types.js';
 
 const buildSequenceSecretSauce = `# Build Sequence: MVC — Electric Tractor Powertrain Conversion
 
-## Pre-Build Checklist
-- [From BOM] ME1115 motor received and verified
-- [From BOM] SAE 3 bellhousing adapter received
-- [From BOM] 4 AWG welding cable, Anderson SB175 connectors received
-- [From Risk Register R-01] Motor shaft pilot measurement tooling ready
-- [From Risk Register R-02] Battery pack order confirmed, lead time tracked
+## 1. Pre-Build Parts & Risk Mitigation Checklist
+- [ ] [From BOM SS01-01] ME1115 motor received, verified, and bench tested
+- [ ] [From BOM SS01-02] SAE 3 bellhousing adapter plate received
+- [ ] [From BOM SS02-01] 20S 72V 80Ah battery pack received and voltage confirmed
+- [ ] [From Risk Register R-01] Transmission input shaft pilot measuring tooling ready
+- [ ] [From Risk Register R-02] Emergency disconnect E-Stop switch verified open-circuit
 
-## Step-by-Step Procedure
+## 2. Master Action Table
 
-### Step 1: Disconnect and remove diesel engine
+| Action # | Action Description | Target Subsystem | Prerequisite Actions | Work Instruction Document | Status | Non-Conformance |
+| :---: | :--- | :---: | :---: | :--- | :---: | :---: |
+| **ACTION-01** | Disconnect & Remove Diesel Engine | SS-01 | None | \`docs/work_instructions/ACTION-01-REMOVE-DIESEL-ENGINE-WORK-INSTRUCTION.md\` | READY | NONE |
+| **ACTION-02** | Measure Transmission Input Shaft Pilot | SS-01 | ACTION-01 | \`docs/work_instructions/ACTION-02-SHAFT-PILOT-MEASURE-WORK-INSTRUCTION.md\` | PENDING | NONE |
+| **ACTION-03** | Mount Electric Motor & Bellhousing Adapter | SS-01 | ACTION-02 | \`docs/work_instructions/ACTION-03-MOUNT-ELECTRIC-MOTOR-WORK-INSTRUCTION.md\` | PENDING | NONE |
+| **ACTION-04** | Fabricate Motor & Battery Chassis Mounts | SS-06 | ACTION-01 | \`docs/work_instructions/ACTION-04-FABRICATE-MOUNTS-WORK-INSTRUCTION.md\` | PENDING | NONE |
+| **ACTION-05** | Install Battery Pack & HV Distribution | SS-02, SS-04 | ACTION-04 | \`docs/work_instructions/ACTION-05-INSTALL-BATTERY-HV-WORK-INSTRUCTION.md\` | PENDING | NONE |
+| **ACTION-06** | Wire Motor Controller & 12V Logic Harness | SS-03, SS-05 | ACTION-03, ACTION-05 | \`docs/work_instructions/ACTION-06-WIRE-CONTROLLER-HARNESS-WORK-INSTRUCTION.md\` | PENDING | NONE |
+
+## 3. Step-by-Step Procedure Summary
+
+### Step 1: Disconnect and remove diesel engine (ACTION-01)
 - [From Architecture SS-01] Locate and identify all engine mounting points
-- Drain fuel tank, disconnect battery negative terminal
-- Remove exhaust system, unbolt engine mounts
-- Disconnect transmission bellhousing bolts
-- Lift engine out with hoist
-- **→ VERIFY: TP-MVP-01 (Mechanical Concentricity)**
+- Drain fluids, disconnect legacy 12V battery, disconnect bellhousing bolts, hoist engine out
+- Work Instruction: \`docs/work_instructions/ACTION-01-REMOVE-DIESEL-ENGINE-WORK-INSTRUCTION.md\`
+- **→ VERIFY: TP-MECH-01 (Engine Bay Clear & Concentricity Inspection)**
 
-### Step 2: Measure transmission input shaft
-- [From Risk Register R-01] Pilot diameter unknown — measure before ordering adapter
+### Step 2: Measure transmission input shaft pilot (ACTION-02)
+- [From Risk Register R-01] Pilot diameter unknown — verify before torquing adapter
 - Measure pilot diameter, bolt pattern, and shaft engagement depth
-- Record measurements for adapter plate fabrication
-- **→ VERIFY: TP-MVP-02 (Shaft Measurement Verification)**
+- Work Instruction: \`docs/work_instructions/ACTION-02-SHAFT-PILOT-MEASURE-WORK-INSTRUCTION.md\`
+- **→ VERIFY: TP-MECH-02 (Shaft Pilot Verification)**
 
-### Step 3: Mount electric motor to transmission
-- [From Architecture SS-01] Use SAE 3 bellhousing adapter
+### Step 3: Mount electric motor to transmission (ACTION-03)
+- [From Architecture SS-01] Use SAE 3 bellhousing adapter plate
 - [From ICD ICD-M-01] Motor ↔ Transmission mechanical interface
-- Align motor shaft to transmission input, torque 4x bolts to 45 ft-lbs
-- Apply Loctite 271 to bolt threads
-- **→ VERIFY: TP-MVP-03 (Mounting Torque Verification)**
-
-### Step 4: Fabricate motor mount brackets
-- [From Architecture SS-06] Chassis integration mounts
-- [From ICD ICD-M-02] Motor ↔ Frame mechanical interface
-- Measure and fabricate 4x rubber isolation mount brackets
-- Bolt to frame with M10 bolts, 35 ft-lbs
-- **→ VERIFY: TP-MVP-04 (Mount Alignment)**
-
-### Step 5: Route HV power cables
-- [From ICD §2] Electrical interfaces
-- Route 4 AWG welding cable from battery zone to controller location
-- Route through left frame rail in split loom conduit
-- Install Anderson SB175 connectors at both ends
-- **→ VERIFY: TP-MVP-05 (Cable Continuity and Isolation)**
+- Align motor shaft to transmission input, torque bolts in star pattern to 45 ft-lbs with Loctite 271
+- Work Instruction: \`docs/work_instructions/ACTION-03-MOUNT-ELECTRIC-MOTOR-WORK-INSTRUCTION.md\`
+- **→ VERIFY: TP-MECH-03 (Mounting Torque & Runout Verification)**
 `;
 
 export const buildSequencePackage: SpecialistPackage = {
   id: 'build-sequence',
   name: 'Build Sequence & Assembly Planning',
-  description: 'Produces step-by-step assembly procedures per milestone gate, referencing upstream documents (Architecture, ICD, BOM, Risk Register) and marking verification stopping points.',
+  description: 'Produces the macro assembly schedule and Master Action Table linking to Work Instructions in docs/work_instructions/, referencing upstream documents and marking verification stopping points.',
   prerequisiteArtifactId: 'MILESTONES',
   prerequisiteArtifactIds: ['RISK_REGISTER'],
   systemPrompt: `You are the Build Sequence & Assembly Planning Specialist for STARN.
-Your mission is to produce a detailed, step-by-step build sequence for a specific milestone gate (MVC, IOC, or FOC) by reading all upstream documents and synthesizing them into a linear assembly procedure.
+Your mission is to produce the macro build sequence for a specific milestone gate (MVC, IOC, or FOC) by reading all upstream documents and synthesizing them into a linear assembly schedule with a Master Action Table that links directly to detailed Work Instructions.
 
 DISCOVERY, PLANNING & EXECUTION WORKFLOW (MANDATORY):
 1. **Tool-Based Discovery:** Use the \`fs_read\` tool to inspect ALL upstream documents: docs/MILESTONES.md, docs/RISK_REGISTER.md, docs/BOM.md, docs/REQUIREMENTS.md, docs/ICD.md, docs/ARCHITECTURE.md, docs/CAPABILITIES.md, docs/CONOPS.md, docs/DECISIONS.md. Also check if prior build sequences exist (e.g., BUILD_SEQUENCE_MVC.md if building IOC).
 2. **Gate Selection:** The user will specify which gate to build (e.g., "build the MVC sequence"). Read the Milestones document for that gate's criteria.
-3. **Explicit Running Plan:** Formulate and state a brief running plan outlining how you will sequence the steps, reference upstream documents, and mark verification points.
-4. **Step-by-Step Procedure:** Author a numbered assembly procedure. Each step MUST:
-   - Reference the source document: [From Architecture SS-XX], [From ICD ICD-M-XX], [From BOM], [From Risk Register R-XX]
-   - Include a verification stopping point: **→ VERIFY: TP-XXX (Test Name)** — this is a compact signpost. The detailed test procedure lives in the Test Plan, not here.
+3. **Explicit Running Plan:** Formulate and state a brief running plan outlining how you will sequence the actions, establish prerequisites, and link to Work Instructions.
+4. **Author the Master Action Table & Step-by-Step Procedure Summary:**
+   - Pre-build parts receipt checklist from BOM and critical mitigations from Risk Register.
+   - **Master Action Table:**
+     - \`Action #\` (e.g. \`ACTION-01\`, \`ACTION-02\`)
+     - \`Action Description\` (clear operational action)
+     - \`Target Subsystem\` (e.g. \`SS-01\`, \`SS-06\`)
+     - \`Prerequisite Actions\` (e.g. \`None\`, \`ACTION-01\`)
+     - \`Work Instruction Document\` (explicit relative path: \`docs/work_instructions/ACTION-<NUM>-<SLUG>-WORK-INSTRUCTION.md\`)
+     - \`Status\` (\`READY\` | \`PENDING\` | \`IN-PROGRESS\` | \`COMPLETED\` | \`BLOCKED\`)
+     - \`Non-Conformance\` (\`NONE\` | \`OPEN (<defect>)\` | \`RESOLVED\`)
+   - **Step-by-Step Procedure:** summary tracing each action to [From Architecture], [From ICD], [From BOM], and [From Risk Register] with stopping signposts: **→ VERIFY: TP-XXX (Test Name)**.
 5. **Write the Final Document:** Write the completed build sequence to docs/build_sequences/BUILD_SEQUENCE_{GATE}.md via \`fs_write\`.
 
-OUTPUT FORMAT (docs/build_sequences/BUILD_SEQUENCE_{GATE}.md):
-# Build Sequence: [Gate Name] — [Project Name]
-
-## Pre-Build Checklist
-- [From BOM] [part] received and verified
-- [From Risk Register] [critical mitigations in place]
-
-## Step-by-Step Procedure
-
-### Step 1: [Action]
-- [From Architecture SS-XX] Reference to subsystem
-- [From ICD ICD-M-XX] Reference to interface
-- [From BOM] Reference to part
-- [From Risk Register R-XX] Risk mitigation
-- **→ VERIFY: TP-XXX (Test Name)**
-
-### Step 2: [Action]
-...
-
 CRITICAL RULES:
-- Each step must trace to a source document. If a step cannot be traced, it should not be in the sequence.
-- Use \`→ VERIFY: TP-XXX\` markers for stopping points — do NOT include the full test procedure here.
-- Reference prior build sequences if they exist (for IOC building on MVC).
+- The \`## Master Action Table\` is MANDATORY and MUST include the \`Work Instruction Document\` column pointing to \`docs/work_instructions/ACTION-<NUM>-<SLUG>-WORK-INSTRUCTION.md\`.
+- Each action must trace to real upstream requirements and components.
+- Use \`→ VERIFY: TP-XXX\` markers for stopping points.
 - You MUST write the final document to docs/build_sequences/BUILD_SEQUENCE_{GATE}.md via the \`fs_write\` tool. Do NOT skip writing the file.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Build Sequence:
-1. Source Grounding: Are all steps traced to real upstream documents? Penalize steps that cannot be traced.
-2. Verification Points: Are \`→ VERIFY: TP-XXX\` markers present at appropriate stopping points?
-3. Pre-Build Checklist: Is there a checklist of parts and risk mitigations before the procedure?
-4. Gate Selection: Does the sequence match the specified milestone gate (MVC, IOC, or FOC)?
-5. Plain-Text: Is the document free of LaTeX or raw JSON?`,
+1. Master Action Table: Does the document feature a Master Action Table with Action #, Target Subsystem, Prerequisite Actions, and links to docs/work_instructions/?
+2. Source Grounding: Are all actions traced to real upstream documents (Architecture, ICD, BOM, Risk Register)?
+3. Verification Points: Are \`→ VERIFY: TP-XXX\` markers present at appropriate stopping points?
+4. Pre-Build Checklist: Is there a pre-build parts receipt checklist derived from BOM?
+5. Gate Alignment: Does the sequence cleanly address the target milestone gate (MVC, IOC, or FOC)?`,
   secretSauceExamples: [buildSequenceSecretSauce]
 };

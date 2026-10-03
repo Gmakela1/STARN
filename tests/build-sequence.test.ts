@@ -40,4 +40,14 @@ describe('Build Sequence Specialist', () => {
     expect(pkg!.systemPrompt).toContain('DISCOVERY, PLANNING & EXECUTION WORKFLOW');
     expect(pkg!.systemPrompt).toContain('fs_read');
   });
+
+  it('mandates Master Action Table linking to Work Instructions in docs/work_instructions/', () => {
+    const pkg = registry.get('build-sequence');
+    expect(pkg!.systemPrompt).toContain('Master Action Table');
+    expect(pkg!.systemPrompt).toContain('docs/work_instructions/');
+    expect(pkg!.systemPrompt).toContain('Work Instruction Document');
+    expect(pkg!.secretSauceExamples[0]).toContain('Master Action Table');
+    expect(pkg!.secretSauceExamples[0]).toContain('docs/work_instructions/');
+    expect(pkg!.criticRubric).toContain('Master Action Table');
+  });
 });
