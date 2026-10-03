@@ -13,7 +13,7 @@ import { runAgentToolLoop } from './agent-loop.js';
 import { maybeCompact } from './compaction.js';
 import { Logger } from '../util/logger.js';
 import { CriticEvaluator, CriticResult, BaselineDocument } from './critic.js';
-import { formatWorkflowRoadmap, formatHelp, formatOpenQuestionsReport } from '../cli/ui.js';
+import { TurnFormatters, headlessFormatters } from './formatters.js';
 import { resolvePhaseRef, ORDERED_WORKFLOW_PHASES } from '../workspace/state.js';
 
 export interface TurnOptions {
@@ -32,6 +32,11 @@ export interface TurnOptions {
   onStatusUpdate?: (status: string) => void;
   onToolCall?: (tool: string, args: any) => void;
   signal?: AbortSignal;
+  /**
+   * Presentation-specific formatters for quick-command outputs. Defaults to
+   * headless plain-text formatters; the terminal CLI injects chalk-styled ones.
+   */
+  formatters?: TurnFormatters;
 }
 
 export interface TurnResult {
@@ -65,6 +70,7 @@ export class CoreRunner {
       signal
     } = options;
     let sessionMessages = options.sessionMessages ?? [];
+    const fmt = options.formatters ?? headlessFormatters;
 
     const state = stateManager.getState();
     const activeWorkflowPhase = state.workflow?.activePhase || 'conops';
@@ -85,11 +91,11 @@ export class CoreRunner {
     });
 
     if (trimmed === '/plan' || trimmed === '/roadmap' || trimmed === '/status') {
-      return quickCommandResult('Project Workflow Planner', formatWorkflowRoadmap(state, projectPath));
+      return quickCommandResult('Project Workflow Planner', fmt.formatWorkflowRoadmap(state, projectPath));
     }
 
     if (trimmed === '/help') {
-      return quickCommandResult('Help', formatHelp());
+      return quickCommandResult('Help', fmt.formatHelp());
     }
 
     if (trimmed === '/compact') {
@@ -115,7 +121,7 @@ export class CoreRunner {
     }
 
     if (trimmed === '/questions') {
-      return quickCommandResult('Open Questions Report', formatOpenQuestionsReport(state, projectPath));
+      return quickCommandResult('Open Questions Report', fmt.formatOpenQuestionsReport(state, projectPath));
     }
 
     if (trimmed.startsWith('/goto')) {
@@ -146,7 +152,7 @@ export class CoreRunner {
       const updated = stateManager.getState();
       return quickCommandResult(
         'Project Workflow Planner',
-        `★ Active phase switched to ${phase.name}.\n\n${formatWorkflowRoadmap(updated, projectPath)}`
+        `★ Active phase switched to ${phase.name}.\n\n${fmt.formatWorkflowRoadmap(updated, projectPath)}`
       );
     }
 

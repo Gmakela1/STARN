@@ -18,6 +18,8 @@ import {
   formatCompactCriticPass,
   formatContextGauge,
   formatWorkflowRoadmap,
+  formatHelp,
+  formatOpenQuestionsReport,
   printSectionHeader
 } from './cli/ui.js';import { confirm } from '@inquirer/prompts';
 import {
@@ -255,6 +257,7 @@ async function main() {
           keepRecentTokens: config.keepRecentTokens,
           logger,
           signal: abortController.signal,
+          formatters: { formatWorkflowRoadmap, formatHelp, formatOpenQuestionsReport },
           onStatusUpdate: status => {
             spinner.text = `${status}  (press ESC to stop)`;
           },
