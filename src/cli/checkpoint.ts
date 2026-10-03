@@ -24,6 +24,25 @@ export interface CheckpointReviewOptions {
 
 export type CheckpointAction = 'accept' | 'feedback' | 'override' | 'discard' | 'browse_sections' | 'view_full_paged';
 
+export function enrichFeedbackWithCritic(feedback: string, criticResult?: CriticResult): string {
+  if (!criticResult) return feedback;
+  const hasGuidance = !!criticResult.actionableGuidance;
+  const hasWeaknesses = criticResult.weaknesses && criticResult.weaknesses.length > 0;
+  if (!hasGuidance && !hasWeaknesses) return feedback;
+
+  let out = `${feedback}\n\n[CRITIC EVALUATION CONTEXT FOR THIS REVISION]:\nScore: ${criticResult.score.toFixed(1)}/10`;
+  if (criticResult.summary) {
+    out += `\nSummary: ${criticResult.summary}`;
+  }
+  if (hasWeaknesses) {
+    out += `\nWeaknesses:\n${criticResult.weaknesses.map(w => `- ${w}`).join('\n')}`;
+  }
+  if (hasGuidance) {
+    out += `\nActionable Guidance: ${criticResult.actionableGuidance}`;
+  }
+  return out;
+}
+
 export async function runHumanCheckpoint(
   options: CheckpointReviewOptions
 ): Promise<{ action: CheckpointAction; feedback?: string }> {
@@ -160,7 +179,7 @@ export async function runHumanCheckpoint(
         'Enter your response / feedback for the agent:',
         options.client
       );
-      userFeedback = feedback;
+      userFeedback = enrichFeedbackWithCritic(feedback, criticResult);
       finalAction = 'feedback';
       promptActive = false;
       break;
