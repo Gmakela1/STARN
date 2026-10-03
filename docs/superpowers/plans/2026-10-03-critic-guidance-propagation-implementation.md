@@ -41,7 +41,7 @@
 - Modify: `src/core/runner.ts`
 - Test: `tests/core-loop.test.ts`
 
-- [ ] **Step 1: Write failing test in `tests/core-loop.test.ts`**
+- [x] **Step 1: Write failing test in `tests/core-loop.test.ts`**
 
 Add a test asserting that `result.sessionMessages` includes a structured Critic summary note when a deliverable has undergone critic review:
 ```typescript
@@ -101,12 +101,12 @@ Add a test asserting that `result.sessionMessages` includes a structured Critic 
   });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/core-loop.test.ts -t "appends critic evaluation summary"`  
 Expected: FAIL (`expected lastMsg.content to contain '[Critic Review...'`).
 
-- [ ] **Step 3: Implement in `src/core/runner.ts`**
+- [x] **Step 3: Implement in `src/core/runner.ts`**
 
 In `src/core/runner.ts`, where `updatedSessionMessages` is constructed (around line 540):
 ```typescript
@@ -134,17 +134,17 @@ In `src/core/runner.ts`, where `updatedSessionMessages` is constructed (around l
     }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/core-loop.test.ts -t "appends critic evaluation summary"`  
 Expected: PASS.
 
-- [ ] **Step 5: Run full core-loop tests**
+- [x] **Step 5: Run full core-loop tests**
 
 Run: `npx vitest run tests/core-loop.test.ts`  
 Expected: PASS (10 tests).
 
-- [ ] **Step 6: Commit Task 1**
+- [x] **Step 6: Commit Task 1**
 
 ```bash
 git add src/core/runner.ts tests/core-loop.test.ts
@@ -159,16 +159,16 @@ git commit -m "feat(runner): append in-memory critic review context to sessionMe
 - Modify: `src/cli/checkpoint.ts`
 - Test: `tests/checkpoint-ui.test.ts`
 
-- [ ] **Step 1: Write failing unit test in `tests/checkpoint-ui.test.ts`**
+- [x] **Step 1: Write failing unit test in `tests/checkpoint-ui.test.ts`**
 
 In `tests/checkpoint-ui.test.ts`, add a test testing the checkpoint feedback enrichment helper function or behavior when feedback is returned with a critic result.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/checkpoint-ui.test.ts`  
 Expected: FAIL.
 
-- [ ] **Step 3: Implement enrichment in `src/cli/checkpoint.ts`**
+- [x] **Step 3: Implement enrichment in `src/cli/checkpoint.ts`**
 
 When the user enters feedback in `runHumanCheckpoint`, if `criticResult` exists and has `actionableGuidance` or `weaknesses`:
 ```typescript
@@ -196,12 +196,12 @@ When the user enters feedback in `runHumanCheckpoint`, if `criticResult` exists 
     }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/checkpoint-ui.test.ts`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
 
 ```bash
 git add src/cli/checkpoint.ts tests/checkpoint-ui.test.ts
@@ -212,6 +212,6 @@ git commit -m "feat(checkpoint): enrich user feedback with checkpoint critic sco
 
 ### Task 3: Full Pipeline Verification & Type-Check
 
-- [ ] **Step 1: Run `npm test` (`tsc --noEmit && vitest run`)**
-- [ ] **Step 2: Rebuild distribution (`npx tsc`)**
-- [ ] **Step 3: Push commits to `origin/master`**
+- [x] **Step 1: Run `npm test` (`tsc --noEmit && vitest run`)**
+- [x] **Step 2: Rebuild distribution (`npx tsc`)**
+- [x] **Step 3: Push commits to `origin/master`**
