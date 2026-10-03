@@ -27,6 +27,7 @@ import {
   promptUserQuery
 } from './cli/prompts.js';
 import { runHumanCheckpoint, handleCriticFailure } from './cli/checkpoint.js';
+import { runDocumentViewer, resolveDocTarget } from './cli/doc-viewer.js';
 import { collectOpenQuestions, countOpenQuestions } from './cli/section6-resolver.js';
 import { setClassifierLogger } from './core/classifier.js';
 import { setCriticLogger } from './core/critic.js';
@@ -146,12 +147,66 @@ async function main() {
       continue;
     }
 
+    const lowered = currentPrompt.trim().toLowerCase();
+
+    // /view: inspect any deliverable in read-only mode (no LLM, 0 tokens)
+    if (lowered === '/view' || lowered.startsWith('/view ')) {
+      const arg = currentPrompt.trim().slice('/view'.length).trim();
+      await runDocumentViewer({
+        projectPath: currentProjectRecord.path,
+        stateManager,
+        targetArg: arg || undefined
+      });
+      continue;
+    }
+
+    // /approve: manually mark a deliverable as approved on disk and unlock next phase
+    if (lowered === '/approve' || lowered.startsWith('/approve ')) {
+      const arg = currentPrompt.trim().slice('/approve'.length).trim();
+      const phase = resolveDocTarget(arg);
+      if (!phase) {
+        console.log(chalk.yellow(`\n⚠ Please specify which document to approve (e.g. /approve conops, /approve 1).\n`));
+        continue;
+      }
+      const approveRes = stateManager.manualApproveArtifact(phase.id);
+      if (!approveRes.success) {
+        console.log(chalk.red(`\n✖ ${approveRes.error}\n`));
+        continue;
+      }
+      const nextPhase = stateManager.advanceToNextPhase();
+      console.log(chalk.green(`\n✔ Manually approved deliverable: [${phase.name}]`));
+      if (nextPhase) {
+        console.log(chalk.cyan(`★ Workflow Advanced: Current active phase is now [${nextPhase.toUpperCase()}].`));
+      }
+      console.log(formatWorkflowRoadmap(stateManager.getState(), currentProjectRecord.path));
+      continue;
+    }
+
+    // /draft or /revert: manually revert an approved deliverable to draft
+    if (lowered === '/draft' || lowered.startsWith('/draft ') || lowered === '/revert' || lowered.startsWith('/revert ')) {
+      const prefix = lowered.startsWith('/revert') ? '/revert' : '/draft';
+      const arg = currentPrompt.trim().slice(prefix.length).trim();
+      const phase = resolveDocTarget(arg);
+      if (!phase) {
+        console.log(chalk.yellow(`\n⚠ Please specify which document to revert to draft (e.g. /draft conops, /draft 1).\n`));
+        continue;
+      }
+      stateManager.revertArtifactToDraft(phase.id);
+      console.log(chalk.cyan(`\n↺ Reverted [${phase.name}] to draft. Downstream phases re-locked.`));
+      console.log(chalk.dim("You'll get an impact report when you re-approve."));
+      console.log(formatWorkflowRoadmap(stateManager.getState(), currentProjectRecord.path));
+      continue;
+    }
+
     // Pre-turn: if the active phase's document has open questions, collect answers NOW
     // and feed them to the specialist so the LLM integrates them into the document body.
     // This must happen before executeTurn — not after — so the LLM sees the answers.
-    const lowered = currentPrompt.trim().toLowerCase();
     const isQuickCommand = ['/plan', '/roadmap', '/status', '/help', '/questions'].includes(lowered)
       || lowered.startsWith('/goto')
+      || lowered.startsWith('/view')
+      || lowered.startsWith('/approve')
+      || lowered.startsWith('/draft')
+      || lowered.startsWith('/revert')
       || lowered.startsWith('/voice');
     const activePhaseNow = stateManager.getState().workflow?.activePhase || 'conops';
     const activePhaseDef = ORDERED_WORKFLOW_PHASES.find(p => p.id === activePhaseNow);

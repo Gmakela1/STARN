@@ -43,7 +43,7 @@
 - Modify: `src/workspace/state.ts`
 - Test: `tests/workspace.test.ts`
 
-- [ ] **Step 1: Write failing unit test in `tests/workspace.test.ts`**
+- [x] **Step 1: Write failing unit test in `tests/workspace.test.ts`**
 
 Add tests asserting:
 1. `manualApproveArtifact` returns error if file does not exist.
@@ -77,12 +77,12 @@ describe('manualApproveArtifact', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/workspace.test.ts -t "manualApproveArtifact"`  
 Expected: FAIL (`mgr.manualApproveArtifact is not a function`).
 
-- [ ] **Step 3: Implement `manualApproveArtifact` in `src/workspace/state.ts`**
+- [x] **Step 3: Implement `manualApproveArtifact` in `src/workspace/state.ts`**
 
 ```typescript
   public manualApproveArtifact(artifactId: string): { success: boolean; error?: string; artifact?: ArtifactRecord } {
@@ -122,17 +122,17 @@ Expected: FAIL (`mgr.manualApproveArtifact is not a function`).
   }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/workspace.test.ts -t "manualApproveArtifact"`  
 Expected: PASS.
 
-- [ ] **Step 5: Run full workspace tests**
+- [x] **Step 5: Run full workspace tests**
 
 Run: `npx vitest run tests/workspace.test.ts`  
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 1**
+- [x] **Step 6: Commit Task 1**
 
 ```bash
 git add src/workspace/state.ts tests/workspace.test.ts
@@ -147,18 +147,18 @@ git commit -m "feat(state): add manualApproveArtifact to ProjectStateManager"
 - Create: `src/cli/doc-viewer.ts`
 - Create: `tests/doc-viewer.test.ts`
 
-- [ ] **Step 1: Write unit tests in `tests/doc-viewer.test.ts`**
+- [x] **Step 1: Write unit tests in `tests/doc-viewer.test.ts`**
 
 Test helper functions:
 1. `resolveDocTarget(targetArg: string, phases: WorkflowPhaseDefinition[])` resolving by ID, number, or name.
 2. Formatter for viewer header.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/doc-viewer.test.ts`  
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `src/cli/doc-viewer.ts`**
+- [x] **Step 3: Implement `src/cli/doc-viewer.ts`**
 
 Export:
 - `resolveDocTarget(targetArg, phases)`
@@ -167,12 +167,12 @@ Export:
   - Verify file exists.
   - Display header, TOC, section browser, or paged view.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/doc-viewer.test.ts`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
 
 ```bash
 git add src/cli/doc-viewer.ts tests/doc-viewer.test.ts
@@ -187,23 +187,23 @@ git commit -m "feat(cli): create interactive document viewer component"
 - Modify: `src/index.ts`
 - Modify: `src/cli/ui.ts`
 
-- [ ] **Step 1: Update `/help` command listing in `src/cli/ui.ts`**
+- [x] **Step 1: Update `/help` command listing in `src/cli/ui.ts`**
 
 Add `/view`, `/approve`, `/draft` to the help table.
 
-- [ ] **Step 2: Wire commands in `src/index.ts`**
+- [x] **Step 2: Wire commands in `src/index.ts`**
 
 In the main command prompt loop before the turn:
 1. Handle `/view [doc]` -> invoke `runDocumentViewer(...)`, then `continue`.
 2. Handle `/approve [doc]` -> resolve phase, call `stateManager.manualApproveArtifact(...)`, advance phase, print confirmation & roadmap, then `continue`.
 3. Handle `/draft [doc]` (or `/revert [doc]`) -> resolve phase, call `stateManager.revertArtifactToDraft(...)`, print confirmation & roadmap, then `continue`.
 
-- [ ] **Step 3: Run full test suite & type-check**
+- [x] **Step 3: Run full test suite & type-check**
 
 Run: `npm test`  
 Expected: All tests PASS, `tsc --noEmit` clean.
 
-- [ ] **Step 4: Build distribution & commit**
+- [x] **Step 4: Build distribution & commit**
 
 ```bash
 git add src/index.ts src/cli/ui.ts

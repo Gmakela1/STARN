@@ -292,6 +292,9 @@ export function formatHelp(): string {
   const rows: Array<[string, string]> = [
     ['/plan, /roadmap, /status', 'Show the project workflow roadmap'],
     ['/questions', 'List open questions across all drafted documents'],
+    ['/view [doc]', 'Inspect a deliverable in read-only mode (TOC, section, paged)'],
+    ['/approve [doc]', 'Manually approve a deliverable and unlock next phase'],
+    ['/draft [doc]', 'Revert an approved deliverable to draft (re-locks downstream)'],
     ['/goto <phase>', 'Switch the active phase (number, id, or name fragment)'],
     ['/help', 'Show this command list'],
     ['/compact', 'Summarize older session messages now (free up context)'],
