@@ -3,13 +3,13 @@ import path from 'node:path';
 import chalk from 'chalk';
 import boxen from 'boxen';
 import { select } from '@inquirer/prompts';
-import { ProjectStateManager, ORDERED_WORKFLOW_PHASES, WorkflowPhaseDefinition } from '../workspace/state.js';
+import { ProjectStateManager, ORDERED_WORKFLOW_PHASES, WorkflowPhaseDef } from '../workspace/state.js';
 import { formatDocumentToc, extractSections } from './ui.js';
 
 export function resolveDocTarget(
   targetArg: string,
-  phases: WorkflowPhaseDefinition[] = ORDERED_WORKFLOW_PHASES
-): WorkflowPhaseDefinition | undefined {
+  phases: WorkflowPhaseDef[] = ORDERED_WORKFLOW_PHASES
+): WorkflowPhaseDef | undefined {
   const trimmed = targetArg.trim().toLowerCase();
   if (!trimmed) return undefined;
 
@@ -70,7 +70,7 @@ export async function runDocumentViewer(options: {
   const { projectPath, stateManager, targetArg } = options;
   const state = stateManager.getState();
 
-  let targetPhase: WorkflowPhaseDefinition | undefined;
+  let targetPhase: WorkflowPhaseDef | undefined;
 
   if (targetArg && targetArg.trim().length > 0) {
     targetPhase = resolveDocTarget(targetArg);
