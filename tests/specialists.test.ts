@@ -103,7 +103,11 @@ describe('Specialist Packages & RTM', () => {
     expect(bom!.prerequisiteArtifactId).toBe('REQUIREMENTS');
     expect(bom!.systemPrompt).toContain('candidate part');
     expect(bom!.systemPrompt).toContain('## Open Questions');
-    expect(bom!.secretSauceExamples[0]).toContain('Satisfies?');
+    expect(bom!.systemPrompt).toContain('Qty');
+    expect(bom!.systemPrompt).toContain('Financial & Procurement Rollup');
+    expect(bom!.systemPrompt).toContain('TRADE_STUDY.md');
+    expect(bom!.secretSauceExamples[0]).toContain('Qty');
+    expect(bom!.secretSauceExamples[0]).toContain('Financial & Procurement Rollup');
   });
 
   it('change-impact specialist cross-checks document consistency without rewriting files', () => {

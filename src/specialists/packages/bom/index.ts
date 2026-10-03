@@ -1,6 +1,33 @@
 import { SpecialistPackage } from '../../types.js';
 
-const bomSecretSauce = `# Bill of Materials (BOM): Electric Tractor Powertrain Conversion
+const bomSecretSauce = `# Bill of Materials (BOM) & Procurement Tracker: Electric Tractor Conversion
+
+## 1. Master Procurement & Inventory Ledger
+
+| Item # | Part / Description | Subsystem | Qty | Source / URL | Order & Tracking # | Status | Est. Unit | Est. Total | Actual Total | Variance |
+| :---: | :--- | :---: | :---: | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| **SS01-01** | Motenergy ME1115 BLDC Motor | SS-01 | 1 | [link] | #ORD-9821 (1Z999...) | Received | $895.00 | $895.00 | $920.00 | +$25.00 |
+| **SS01-02** | SAE 3 Bellhousing Adapter Flange | SS-01 | 1 | [link] | #MFG-104 | Ordered | $350.00 | $350.00 | $350.00 | $0.00 |
+| **SS02-01** | 20S 72V 80Ah LiFePO4 Battery Pack | SS-02 | 1 | [link] | #B-4412 (9400...) | Shipped | $1,450.00 | $1,450.00 | $1,450.00 | $0.00 |
+| **SS03-01** | Kelly KLS7245N Motor Controller | SS-03 | 1 | [link] | #KL-8820 | Bench Tested | $520.00 | $520.00 | $495.00 | -$25.00 |
+| **SS04-01** | Gigavac GX14B 500A Main Contactor | SS-04 | 1 | [link] | #GV-01 | Received | $85.00 | $85.00 | $85.00 | $0.00 |
+| **SS07-03** | 1/2" JIC to SAE -08 Hydraulic Fitting | SS-07 | 4 | [link] | #H-102 | Identified | $8.50 | $34.00 | — | — |
+
+*Allowed Statuses:* \`Identified\` | \`Ordered\` | \`Shipped\` | \`Received\` | \`Bench Tested\`
+
+## 2. Financial & Procurement Rollup
+- **Total Estimated Budget:** $3,334.00
+- **Total Actual Committed Spend:** $2,850.00
+- **Net Budget Variance:** $0.00 (on track)
+- **Procurement Progress:** 5 of 6 line items committed (83%) | 2 Verified / Bench Tested (33%)
+
+## 3. Long-Lead Items & Order Priority
+- **SS02-01 [Battery Pack]:** 4-6 weeks lead time ★ (Ordered, Tracking active)
+- **SS01-02 [Adapter Flange]:** 4-6 weeks lead time ★ (Machining in progress)
+
+---
+
+# Trade Study & Candidate Evaluation (docs/TRADE_STUDY.md)
 
 ## SS-01: Traction Motor
 - **Requirement SS-01.a:** 6.0 kW continuous, 12.0 kW peak, 72V nominal, 0-3,500 RPM
@@ -8,96 +35,74 @@ const bomSecretSauce = `# Bill of Materials (BOM): Electric Tractor Powertrain C
 
 | Candidate | Specs | Satisfies? | Lead Time | Source | Est. Price |
 |---|---|---|---|---|---|
-| ME1115 | 72V, 12kW peak, 28 Nm, 0-4000 RPM, 8.5 kg | ✅ | 4-6 weeks | [mfg link] | $895 |
+| ME1115 (Selected) | 72V, 12kW peak, 28 Nm, 0-4000 RPM, 8.5 kg | ✅ | 4-6 weeks | [mfg link] | $895 |
 | Motenergy ME1003 | 48V, 10kW peak, 22 Nm, 0-3500 RPM, 7.2 kg | ⚠️ 48V, not 72V | 3-5 weeks | [mfg link] | $650 |
 | Golden Motor HPM5000 | 72V, 8kW cont, 25 Nm, 0-4500 RPM, 11 kg | ⚠️ 8kW < 12kW peak req | 2-3 weeks | [link] | $720 |
 
-## SS-02: Battery Pack
-- **Requirement SS-02.a:** >= 5.0 kWh usable capacity, 72V nominal
-- **Requirement SS-02.b:** Charge from 120V 15A outlet, < 8 hours
-
-| Candidate | Specs | Satisfies? | Lead Time | Source | Est. Price |
-|---|---|---|---|---|---|
-| 20S 72V 80Ah LiFePO4 | 5.76 kWh, 38 kg, 1C continuous, built-in BMS | ✅ | 4-6 weeks | [link] | $1,450 |
-| 20S 72V 60Ah LiFePO4 | 4.32 kWh, 30 kg | ❌ 4.32 < 5.0 kWh | 4-6 weeks | [link] | $1,100 |
-| DIY 20S 72V 100Ah pouch | 7.2 kWh, 28 kg, custom BMS | ✅ | 8-12 weeks ★★ LONG LEAD | [cell link] | $1,200 |
-
-## SS-03: Motor Controller
-- **Requirement SS-03.a:** 60.0V-84.0V DC bus, 120A continuous, 250A peak
-- **Requirement SS-03.b:** CAN bus communication, programmable throttle mapping
-
-| Candidate | Specs | Satisfies? | Lead Time | Source | Est. Price |
-|---|---|---|---|---|---|
-| Kelly KLS7245N | 24-72V, 120A cont, 250A peak, CAN | ✅ | 2-3 weeks | [link] | $520 |
-| Curtis 1234SE | 24-80V, 130A cont, 300A peak, CAN | ✅ | 4-6 weeks | [link] | $780 |
-| Sevcon Gen4 | 24-80V, 100A cont, 200A peak, CAN | ⚠️ 100A < 120A req | 6-8 weeks ★ | [link] | $950 |
-
-## SS-04: HV Distribution & Safety
-- **Requirement SS-04.a:** Emergency cutoff < 20 ms
-- **Requirement SS-04.b:** Isolation resistance >= 500 kOhm
-
-| Candidate | Specs | Satisfies? | Lead Time | Source | Est. Price |
-|---|---|---|---|---|---|
-| Gigavac GX14B | 500A, 12V coil, < 5 ms open | ✅ | 2 weeks | [link] | $85 |
-| TE Kilovac EV200 | 500A, 12V coil, < 5 ms open | ✅ | 4-6 weeks | [link] | $120 |
-
 ## Open Questions
-**Q1. System voltage conflict.** Motenergy ME1003 is 48V, not 72V — requires voltage change or rejection.
-**Why it matters:** Affects SS-01.a, SS-02.a, ICD-E-01. Options: 1. Accept 48V system (change Requirements) 2. Drop ME1003, use ME1115.
-
-**Q2. No 72V controller under $800 found.**
-**Why it matters:** Affects SS-03.a. Options: 1. Accept higher cost 2. Reduce current requirement.
-
-**Q3. Battery cell lead time.** DIY pouch cells have 8-12 week lead — may delay MVC milestone.
-**Why it matters:** Affects SS-02.a and the MVC schedule. Options: 1. Order now, accept lead time 2. Use pre-built pack (higher cost, faster)
-
-## Long-Lead Items (Order Now)
-- DIY battery cells: 8-12 weeks ★★
-- Custom motor adapter plate machining: 4-6 weeks ★
-- ME1115 motor: 4-6 weeks ★`;
+**Q1. Hydraulic fitting thread type.** Confirm whether donor tractor pump uses SAE ORB or NPT ports.
+**Why it matters:** Affects SS07-03 fitting procurement. Incorrect thread will cause fluid weeping under pressure.`;
 
 export const bomPackage: SpecialistPackage = {
   id: 'bom',
   name: 'Bill of Materials (BOM)',
-  description: 'Generates candidate parts per subsystem, checks against requirements, flags long-lead items, and surfaces design decisions when no part fits.',
+  description: 'Generates the Two-Tier BOM: the master procurement & inventory ledger in BOM.md with quantity, URLs, tracking, and cost rollups, plus candidate trade studies in TRADE_STUDY.md.',
   prerequisiteArtifactId: 'REQUIREMENTS',
   systemPrompt: `You are the Bill of Materials (BOM) Specialist for STARN.
-Your mission is to generate candidate parts for each subsystem based on the approved per-subsystem requirements, and flag any mismatches as design decisions.
+Your mission is to generate the Two-Tier Bill of Materials:
+1. **Tier 1 (Master Procurement & Inventory Ledger):** Written to \`docs/BOM.md\` with exact quantities, part descriptions, live sourcing URLs, order & tracking numbers, procurement statuses, actual vs estimated prices, and financial budget rollups.
+2. **Tier 2 (Candidate Trade Study & Alternatives Table):** Written to \`docs/TRADE_STUDY.md\` evaluating candidate parts against system requirements, lead times, and compatibility.
 
 DISCOVERY, PLANNING & EXECUTION WORKFLOW (MANDATORY):
 1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/REQUIREMENTS.md, docs/ICD.md, and docs/ARCHITECTURE.md to understand the requirements, interface parameters, and subsystem boundaries. Do not guess what was written.
-2. **Explicit Running Plan:** Formulate and state a brief running plan outlining which subsystems you will source candidates for and in what order.
-3. **Execution & Traceability:** Execute each step in your running plan, grounding every candidate part in the requirements it must satisfy.
+2. **Explicit Running Plan:** Formulate and state a brief running plan outlining which subsystems you will source parts for and in what order.
+3. **Execution & Traceability:** Author the Two-Tier deliverables, grounding every selected and candidate part in the requirements it satisfies.
 
-BOM STRUCTURE (MANDATORY):
-For each subsystem, provide:
-1. **Subsystem heading** (e.g., \`## SS-01: Traction Motor\`)
-2. **The requirements** that apply to this subsystem (copied from docs/REQUIREMENTS.md)
-3. **A candidate part table** with columns:
-   - \`Candidate\` — Part name/model
-   - \`Specs\` — Key specifications relevant to the requirements
-   - \`Satisfies?\` — ✅ (fully satisfies), ⚠️ (partial mismatch), ❌ (does not satisfy)
-   - \`Lead Time\` — Estimated procurement lead time
-   - \`Source\` — \`[link]\` placeholder (user fills in real URLs)
-   - \`Est. Price\` — Estimated price
+TIER 1 STRUCTURE (docs/BOM.md) (MANDATORY):
+1. **Master Procurement & Inventory Ledger:**
+   Table with columns:
+   - \`Item #\` — Subsystem item ID (e.g. \`SS01-01\`, \`SS02-01\`)
+   - \`Part / Description\` — Manufacturer & part name
+   - \`Subsystem\` — Target subsystem ID (e.g. \`SS-01\`)
+   - \`Qty\` — Quantity required (integer count, e.g. \`1\`, \`4\`)
+   - \`Source / URL\` — \`[link]\` placeholder or vendor URL
+   - \`Order & Tracking #\` — Order # and carrier tracking info (or \`—\` if not yet ordered)
+   - \`Status\` — One of: \`Identified\` | \`Ordered\` | \`Shipped\` | \`Received\` | \`Bench Tested\`
+   - \`Est. Unit\` — Estimated unit price
+   - \`Est. Total\` — Estimated total (\`Qty\` × \`Est. Unit\`)
+   - \`Actual Total\` — Actual committed total (or \`—\` if pending)
+   - \`Variance\` — Difference (\`Actual Total\` - \`Est. Total\`)
+2. **Financial & Procurement Rollup:**
+   - **Total Estimated Budget:** Sum of all estimated totals.
+   - **Total Actual Committed Spend:** Sum of actuals for ordered/received parts.
+   - **Net Budget Variance:** Total actual minus estimated variance.
+   - **Procurement Progress:** Percentage of parts committed and verified.
+3. **Long-Lead Items & Order Priority:**
+   - Mark items with ★ (4-8 weeks) or ★★ (8+ weeks) that must be ordered immediately.
+
+TIER 2 STRUCTURE (docs/TRADE_STUDY.md) (MANDATORY):
+For each subsystem:
+1. Subsystem heading & applicable requirements.
+2. Candidate comparison table (\`Candidate\`, \`Specs\`, \`Satisfies?\` [✅/⚠️/❌], \`Lead Time\`, \`Source\`, \`Est. Price\`).
+3. Trade-off rationale explaining why the primary candidate was selected over alternatives.
 
 CRITICAL RULES:
-- Each candidate MUST list which requirements it satisfies and which it misses.
-- If NO candidate satisfies a critical requirement, add it to the \`## Open Questions\` section as a numbered **Q1.**, **Q2.**, ... item with the affected requirements and options.
-- Do NOT silently downgrade a requirement to make a candidate fit — flag it as an open question.
-- Include a \`## Design Decisions\` section listing any significant choices made, alternatives considered, and rationale.
-- Mark long-lead items with ★ (4-8 weeks) or ★★ (8+ weeks).
-- Include a \`## Long-Lead Items (Order Now)\` section at the end to flag items that could delay the project.
-- Datasheet source links use \`[link]\` as placeholder — the user fills in real URLs.
-- Use clean plain-text units. DO NOT use LaTeX math formatting.
-- You MUST write the final document to docs/BOM.md via the fs_write tool. Do NOT skip writing the file.`,
+- The \`Qty\` column in docs/BOM.md is MANDATORY.
+- The \`## Financial & Procurement Rollup\` in docs/BOM.md is MANDATORY.
+- Do NOT silently downgrade requirements to make a part fit — flag discrepancies as open questions.
+- Write docs/BOM.md using \`fs_write\` (or \`fs_edit\` if updating an existing draft).
+- Write docs/TRADE_STUDY.md using \`fs_write\`.
+
+OPEN QUESTIONS SECTION (MANDATORY in docs/BOM.md):
+- Include a \`## Open Questions\` section listing ANY genuinely unresolved decisions. Format each as a numbered item: **Q1. <title>.** <details>, followed by **Why it matters:**.
+- If nothing is unresolved, omit the section.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the Bill of Materials (BOM):
-1. Subsystem Coverage: Does every subsystem from the Architecture have a BOM section?
-2. Requirement Coverage: Does every requirement have at least one candidate part listed?
-3. Mismatch Flagging: Are requirements with no satisfying candidate explicitly flagged in the Design Decisions section?
-4. Lead Time Awareness: Are lead times noted, especially for long-lead items?
-5. No Silent Downgrades: Does the document avoid silently reducing requirements to fit available parts?`,
+1. Two-Tier Completeness: Does docs/BOM.md provide the master procurement ledger with Qty, status, URLs, and pricing?
+2. Financial & Procurement Rollup: Is there a clear cost rollup summarizing total estimated budget, committed spend, and variance?
+3. Trade Study Rigor: Are candidate alternatives compared against requirements with explicit ✅/⚠️/❌ compliance flags?
+4. Lead Time Awareness: Are long-lead components identified and prioritized?
+5. No Silent Downgrades: Are mismatched specifications flagged as open questions rather than silently ignored?`,
   secretSauceExamples: [bomSecretSauce]
 };
