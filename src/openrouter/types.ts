@@ -32,7 +32,13 @@ export interface ChatCompletionOptions {
   tools?: ToolDefinition[];
   temperature?: number;
   max_tokens?: number;
+  tool_choice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
   signal?: AbortSignal;
+}
+
+/** Minimal chat interface every model-using core module depends on. */
+export interface ChatClient {
+  chatCompletion(options: ChatCompletionOptions): Promise<ChatCompletionResult>;
 }
 
 export interface ChatCompletionResult {
