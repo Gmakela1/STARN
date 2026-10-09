@@ -5,6 +5,7 @@ import { ProjectStateManager, ORDERED_WORKFLOW_PHASES, resolveArtifactPaths, res
 import { countOpenQuestions, parseOpenQuestionsFromContent } from '../core/open-questions-parser.js';
 import { createVersionBackup } from '../util/version-backup.js';
 import { parseBomDocument, updateBomRow, BomItemUpdate } from './parsers/bom-parser.js';
+import { parseTradeStudyDocument } from './parsers/trade-study-parser.js';
 import { parseWorkInstruction, toggleWorkInstructionStep, ParsedWorkInstruction } from './parsers/actions-parser.js';
 import { aggregateProjectIssues, OpenQuestionGroup, ProjectIssue } from './parsers/issues-parser.js';
 import { ServerSessionManager } from './session.js';
@@ -390,6 +391,13 @@ export async function handleApiRequest(
         if (!result.success) return fail(res, 409, result.error ?? 'Approval failed');
         return ok(res, { artifact: result.artifact });
       }
+    }
+
+    // --- Trade Study --------------------------------------------------------
+    if (method === 'GET' && url.pathname === '/api/trade-study') {
+      const content = safeReadFile(path.join(deps.projectPath, 'docs', 'TRADE_STUDY.md'));
+      if (!content) return ok(res, []);
+      return ok(res, parseTradeStudyDocument(content));
     }
 
     // --- BOM -----------------------------------------------------------------
