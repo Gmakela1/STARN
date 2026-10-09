@@ -11,6 +11,7 @@ import {
   ProjectIssue,
   RoadmapPhase,
   Settings,
+  SubsystemTradeStudy,
   WorkInstruction
 } from '../types/api';
 
@@ -40,8 +41,9 @@ export const api = {
   approveDoc: (phaseId: string) =>
     call<{ artifact: unknown }>('POST', `/api/docs/${encodeURIComponent(phaseId)}/approve`),
 
-  // BOM
+  // BOM & Trade Studies
   fetchBom: () => call<BomData>('GET', '/api/bom'),
+  fetchTradeStudy: () => call<SubsystemTradeStudy[]>('GET', '/api/trade-study'),
   updateBomItem: (itemId: string, updates: Partial<Pick<BomItem, 'qty' | 'tracking' | 'status' | 'actualTotal'>>) =>
     call<BomData>('PATCH', `/api/bom/items/${encodeURIComponent(itemId)}`, updates),
 

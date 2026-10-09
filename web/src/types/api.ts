@@ -146,11 +146,30 @@ export interface BomData {
   tradeStudy: string | null;
 }
 
+export interface TradeStudyCandidate {
+  candidate: string;
+  specs: string;
+  satisfies: 'compliant' | 'warning' | 'non_compliant';
+  leadTime: string;
+  source: string;
+  estPrice: number | null;
+}
+
+export interface SubsystemTradeStudy {
+  subsystemId: string;
+  subsystemName: string;
+  requirements: string[];
+  candidates: TradeStudyCandidate[];
+  rationale: string;
+}
+
 export interface Settings {
   agentModel: string;
   criticModel?: string;
   compactionModel?: string;
   digitalTwinModel?: string;
+  digitalTwinProvider?: 'openrouter' | 'local';
+  digitalTwinBaseUrl?: string;
   port: number;
   projectPath: string;
 }

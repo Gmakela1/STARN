@@ -22,26 +22,26 @@ import DigitalTwinView from '../views/DigitalTwinView';
 import SettingsView from '../views/SettingsView';
 
 export type TabId =
-  | 'development'
   | 'dashboard'
-  | 'bom'
-  | 'work'
+  | 'development'
   | 'issues'
+  | 'parts'
+  | 'work'
   | 'twin'
   | 'settings';
 
-const TABS: Array<{ id: TabId; label: string; icon: typeof Bot }> = [
-  { id: 'development', label: 'Development', icon: Bot },
+const TABS: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'bom', label: 'BOM & Sourcing', icon: PackageSearch },
-  { id: 'work', label: 'Shop Floor', icon: Wrench },
+  { id: 'development', label: 'Development', icon: Bot },
   { id: 'issues', label: 'Questions & Issues', icon: MessageSquareWarning },
+  { id: 'parts', label: 'Parts', icon: PackageSearch },
+  { id: 'work', label: 'Work Instructions', icon: Wrench },
   { id: 'twin', label: 'Digital Twin', icon: Box },
   { id: 'settings', label: 'Settings', icon: SettingsIcon }
 ];
 
 export default function AppShell() {
-  const [tab, setTab] = useState<TabId>('development');
+  const [tab, setTab] = useState<TabId>('dashboard');
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [connected, setConnected] = useState(true);
   const turnStream = useTurnStream();
@@ -136,12 +136,10 @@ export default function AppShell() {
 
       {/* Active view */}
       <main className="min-h-0 flex-1 overflow-hidden">
+        {tab === 'dashboard' && <DashboardView />}
         {tab === 'development' && (
           <DevelopmentView turnStream={turnStream} project={project} onProjectChanged={refreshProject} />
         )}
-        {tab === 'dashboard' && <DashboardView />}
-        {tab === 'bom' && <BomView />}
-        {tab === 'work' && <WorkInstructionsView />}
         {tab === 'issues' && (
           <IssuesAndQuestionsView
             onPushToAgent={async prompt => {
@@ -150,6 +148,8 @@ export default function AppShell() {
             }}
           />
         )}
+        {tab === 'parts' && <BomView />}
+        {tab === 'work' && <WorkInstructionsView />}
         {tab === 'twin' && <DigitalTwinView />}
         {tab === 'settings' && <SettingsView onSaved={refreshProject} />}
       </main>
