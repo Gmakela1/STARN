@@ -15,7 +15,7 @@ import { ProjectInfo } from '../types/api';
 import { useTurnStream } from '../api/useTurnStream';
 import DevelopmentView from '../views/DevelopmentView';
 import DashboardView from '../views/DashboardView';
-import BomView from '../views/BomView';
+import PartsView from '../views/PartsView';
 import WorkInstructionsView from '../views/WorkInstructionsView';
 import IssuesAndQuestionsView from '../views/IssuesAndQuestionsView';
 import DigitalTwinView from '../views/DigitalTwinView';
@@ -148,7 +148,7 @@ export default function AppShell() {
             }}
           />
         )}
-        {tab === 'parts' && <BomView />}
+        {tab === 'parts' && <PartsView />}
         {tab === 'work' && <WorkInstructionsView />}
         {tab === 'twin' && <DigitalTwinView />}
         {tab === 'settings' && <SettingsView onSaved={refreshProject} />}
