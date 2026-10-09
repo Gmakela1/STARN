@@ -5,43 +5,16 @@ import {
   TrendingUp,
   TrendingDown,
   PackageCheck,
-  CircleCheck,
-  CircleDashed,
-  CircleDot,
-  Lock,
-  FileClock,
   Loader2,
-  MessageSquareWarning,
-  RefreshCw
+  RefreshCw,
+  FileText
 } from 'lucide-react';
 import { api } from '../api/client';
-import { DashboardData, RoadmapPhase } from '../types/api';
+import { DashboardData } from '../types/api';
+import TreasureMapRoadmap from '../components/TreasureMapRoadmap';
 
 const money = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
-
-function PhaseStatusIcon({ status }: { status: RoadmapPhase['status'] }) {
-  switch (status) {
-    case 'COMPLETED':
-      return <CircleCheck className="h-4 w-4 text-emerald-400" aria-hidden />;
-    case 'IN_PROGRESS':
-      return <CircleDot className="h-4 w-4 animate-pulse text-sky-400" aria-hidden />;
-    case 'PENDING_REVIEW':
-      return <FileClock className="h-4 w-4 text-amber-400" aria-hidden />;
-    case 'LOCKED':
-      return <Lock className="h-4 w-4 text-slate-600" aria-hidden />;
-    default:
-      return <CircleDashed className="h-4 w-4 text-slate-600" aria-hidden />;
-  }
-}
-
-const STATUS_LABEL: Record<RoadmapPhase['status'], { label: string; tone: string }> = {
-  COMPLETED: { label: 'Approved', tone: 'text-emerald-300' },
-  IN_PROGRESS: { label: 'In progress', tone: 'text-sky-300' },
-  PENDING_REVIEW: { label: 'Draft on disk', tone: 'text-amber-300' },
-  PENDING: { label: 'Pending', tone: 'text-slate-500' },
-  LOCKED: { label: 'Locked', tone: 'text-slate-600' }
-};
 
 export default function DashboardView() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -87,12 +60,45 @@ export default function DashboardView() {
   if (!data) return null;
   const { project, roadmap, issues } = data;
   const fin = project.financials;
-  const approvedCount = roadmap.filter(p => p.status === 'COMPLETED').length;
   const varianceOver = fin.netVariance > 0;
 
   return (
-    <div className="h-full overflow-y-auto p-4 lg:p-6">
+    <div className="h-full overflow-y-auto p-4 lg:p-6 bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-6xl space-y-6">
+        {/* Project Overview / White Paper Card */}
+        <section aria-label="Project overview" className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 backdrop-blur-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-1.5 max-w-2xl">
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-sky-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-sky-300 border border-sky-500/30">
+                  SYSTEM OVERVIEW
+                </span>
+                <span className="rounded bg-slate-800 px-2 py-0.5 font-mono text-[11px] text-slate-300">
+                  Gate: [{project.activePhase.toUpperCase()}]
+                </span>
+              </div>
+              <h1 className="text-2xl font-black text-white tracking-tight">{project.name}</h1>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {project.summary || 'Hardware engineering program governed by rigorous specialist phase-gates.'}
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
+              <button
+                id="export-briefing-btn"
+                onClick={() => {
+                  const event = new CustomEvent('open-executive-briefing');
+                  window.dispatchEvent(event);
+                }}
+                className="flex min-h-[44px] items-center gap-2 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 px-4 text-xs font-bold text-white shadow-md hover:from-sky-500 hover:to-indigo-500 transition-all"
+              >
+                <FileText className="h-4 w-4" />
+                Export 2-Page Executive Briefing
+              </button>
+            </div>
+          </div>
+        </section>
+
         {/* Financial rollup cards */}
         <section aria-label="Financial rollup" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
@@ -127,42 +133,9 @@ export default function DashboardView() {
           </div>
         </section>
 
-        {/* Roadmap */}
-        <section aria-label="Program roadmap" className="rounded-xl border border-slate-800 bg-slate-900/40">
-          <header className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
-            <h2 className="text-sm font-bold text-slate-200">Program Roadmap</h2>
-            <span className="text-xs text-slate-400">
-              <span className="font-semibold text-emerald-300">{approvedCount}</span> / {roadmap.length} phases approved
-            </span>
-          </header>
-          <ol className="divide-y divide-slate-800/70">
-            {roadmap.map((phase, idx) => (
-              <li key={phase.id} className="flex items-center gap-3 px-4 py-2.5">
-                <span className="w-5 text-right font-mono text-[11px] text-slate-500">{idx + 1}</span>
-                <PhaseStatusIcon status={phase.status} />
-                <div className="min-w-0 flex-1">
-                  <p className={`truncate text-sm font-medium ${phase.status === 'LOCKED' ? 'text-slate-600' : 'text-slate-200'}`}>
-                    {phase.name}
-                  </p>
-                  <p className="truncate font-mono text-[11px] text-slate-500">{phase.artifactPath}</p>
-                </div>
-                {phase.openQuestions > 0 && (
-                  <span className="flex items-center gap-1 rounded-full bg-amber-950/70 px-2 py-0.5 text-[11px] font-semibold text-amber-300">
-                    <MessageSquareWarning className="h-3 w-3" aria-hidden />
-                    {phase.openQuestions} open
-                  </span>
-                )}
-                {phase.criticScore !== undefined && (
-                  <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] font-semibold text-slate-300">
-                    Critic {phase.criticScore.toFixed(1)}
-                  </span>
-                )}
-                <span className={`w-24 text-right text-[11px] font-medium ${STATUS_LABEL[phase.status].tone}`}>
-                  {STATUS_LABEL[phase.status].label}
-                </span>
-              </li>
-            ))}
-          </ol>
+        {/* Serpentine Treasure Map Roadmap */}
+        <section aria-label="Milestone trail">
+          <TreasureMapRoadmap roadmap={roadmap} />
         </section>
 
         {/* Issues snapshot */}
