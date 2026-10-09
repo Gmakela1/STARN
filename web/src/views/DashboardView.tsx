@@ -12,6 +12,7 @@ import {
 import { api } from '../api/client';
 import { DashboardData } from '../types/api';
 import TreasureMapRoadmap from '../components/TreasureMapRoadmap';
+import ExecutiveBriefingModal from '../components/ExecutiveBriefingModal';
 
 const money = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -20,6 +21,7 @@ export default function DashboardView() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showBriefingModal, setShowBriefingModal] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -86,11 +88,8 @@ export default function DashboardView() {
             <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
               <button
                 id="export-briefing-btn"
-                onClick={() => {
-                  const event = new CustomEvent('open-executive-briefing');
-                  window.dispatchEvent(event);
-                }}
-                className="flex min-h-[44px] items-center gap-2 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 px-4 text-xs font-bold text-white shadow-md hover:from-sky-500 hover:to-indigo-500 transition-all"
+                onClick={() => setShowBriefingModal(true)}
+                className="flex min-h-[44px] items-center gap-2 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 px-4 text-xs font-bold text-white shadow-md hover:from-sky-500 hover:to-indigo-500 transition-all cursor-pointer"
               >
                 <FileText className="h-4 w-4" />
                 Export 2-Page Executive Briefing
@@ -168,6 +167,11 @@ export default function DashboardView() {
           )}
         </section>
       </div>
+
+      {/* 2-Page Executive Briefing Modal */}
+      {showBriefingModal && (
+        <ExecutiveBriefingModal data={data} onClose={() => setShowBriefingModal(false)} />
+      )}
     </div>
   );
 }

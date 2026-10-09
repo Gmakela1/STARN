@@ -67,3 +67,74 @@ body,
   background: #0f172a;
   color: #cbd5e1;
 }
+
+/* ========================================================================= */
+/* 2-PAGE EXECUTIVE BRIEFING PRINT & DIRECT-TO-PDF STYLES                     */
+/* ========================================================================= */
+@media print {
+  @page {
+    size: letter portrait;
+    margin: 0.4in;
+  }
+  html,
+  body,
+  #root {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  header,
+  nav,
+  aside,
+  .no-print {
+    display: none !important;
+  }
+  .briefing-modal-backdrop {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+    display: block !important;
+  }
+  .briefing-modal-content {
+    border: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    width: 100% !important;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .briefing-page {
+    page-break-after: always !important;
+    break-after: page !important;
+    min-height: 9.8in;
+    box-sizing: border-box;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    padding: 0 !important;
+    margin-bottom: 0 !important;
+  }
+  .briefing-page:last-child {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+  .print-text-dark {
+    color: #0f172a !important;
+  }
+  .print-text-muted {
+    color: #475569 !important;
+  }
+  .print-bg-card {
+    background-color: #f8fafc !important;
+    border-color: #cbd5e1 !important;
+  }
+  .print-border {
+    border-color: #cbd5e1 !important;
+  }
+}
