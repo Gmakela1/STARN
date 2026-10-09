@@ -47,7 +47,7 @@
 - Consumes: `StarnConfig`, `UserConfigFile`, `saveUserConfig` from `src/config.ts`.
 - Produces: `digitalTwinModel?: string`, `digitalTwinProvider?: 'openrouter' | 'local'`, `digitalTwinBaseUrl?: string` on `StarnConfig`, `SettingsResponse`, and `ServerSessionManager`.
 
-- [ ] **Step 1: Write the failing test for digital twin config persistence in `tests/config-settings.test.ts`**
+- [x] **Step 1: Write the failing test for digital twin config persistence in `tests/config-settings.test.ts`**
 
 ```ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -85,21 +85,21 @@ describe('Digital Twin & Local Model Config', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/config-settings.test.ts`
 Expected: FAIL with property undefined assertions.
 
-- [ ] **Step 3: Update `src/config.ts`, `src/server/types.ts`, `src/server/session.ts`, and `src/server/router.ts`**
+- [x] **Step 3: Update `src/config.ts`, `src/server/types.ts`, `src/server/session.ts`, and `src/server/router.ts`**
 
 Add fields to `StarnConfig` and `UserConfigFile`. Update `ServerSessionManager` getters/setters. Update `/api/settings` GET and POST in `router.ts` to return and accept `digitalTwinProvider`, `digitalTwinBaseUrl`, and `digitalTwinModel`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/config-settings.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```bash
 git add src/config.ts src/server/types.ts src/server/session.ts src/server/router.ts tests/config-settings.test.ts
@@ -139,7 +139,7 @@ git commit -m "feat(config): add local model and digital twin endpoint settings 
   ```
 - Endpoint: `GET /api/trade-study` returns `{ success: true, data: SubsystemTradeStudy[] }`.
 
-- [ ] **Step 1: Write the failing unit test in `tests/trade-study-parser.test.ts`**
+- [x] **Step 1: Write the failing unit test in `tests/trade-study-parser.test.ts`**
 
 ```ts
 import { describe, it, expect } from 'vitest';
@@ -183,21 +183,21 @@ describe('Trade Study Parser', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/trade-study-parser.test.ts`
 Expected: FAIL with module not found.
 
-- [ ] **Step 3: Implement `src/server/parsers/trade-study-parser.ts` and add `GET /api/trade-study` to `src/server/router.ts`**
+- [x] **Step 3: Implement `src/server/parsers/trade-study-parser.ts` and add `GET /api/trade-study` to `src/server/router.ts`**
 
 Parse markdown sections matching `## (SS-\d+):?\s*(.*)`, extract bullet requirements, candidate table rows (parsing `✅` -> `'compliant'`, `⚠️` -> `'warning'`, `❌` -> `'non_compliant'`), price regex `\$([0-9,.]+)`, and rationale text. In `src/server/router.ts`, wire up `GET /api/trade-study` reading `docs/TRADE_STUDY.md`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/trade-study-parser.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
 
 ```bash
 git add src/server/parsers/trade-study-parser.ts src/server/router.ts tests/trade-study-parser.test.ts
@@ -230,7 +230,7 @@ git commit -m "feat(server): implement trade study markdown parser and GET /api/
   ```
 - Consumes: `promptSelectLiveModel` and new `promptDigitalTwinSettings` in `src/cli/prompts.ts`.
 
-- [ ] **Step 1: Write failing unit test in `tests/briefing-formatter.test.ts`**
+- [x] **Step 1: Write failing unit test in `tests/briefing-formatter.test.ts`**
 
 ```ts
 import { describe, it, expect } from 'vitest';
@@ -266,12 +266,12 @@ describe('Executive Briefing Formatter', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/briefing-formatter.test.ts`
 Expected: FAIL with module not found.
 
-- [ ] **Step 3: Implement `src/core/briefing-formatter.ts`, `src/cli/prompts.ts`, and wire commands in `src/index.ts`**
+- [x] **Step 3: Implement `src/core/briefing-formatter.ts`, `src/cli/prompts.ts`, and wire commands in `src/index.ts`**
 
 1. In `src/core/briefing-formatter.ts`, implement plain-text and markdown formatters.
 2. In `src/cli/prompts.ts`, implement `promptDigitalTwinSettings(availableModels: string[], currentConfig: StarnConfig)` allowing selection between OpenRouter model and Local Endpoint (with custom URL and model name).
@@ -280,12 +280,12 @@ Expected: FAIL with module not found.
    - Handle `/briefing`: formats data, prints to console, writes to `docs/EXECUTIVE_BRIEFING.md`.
    - Handle `/web`: starts `startWebServer({ port: 3000, openBrowserOnStart: true })`, prints URLs, and keeps process alive.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/briefing-formatter.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
 
 ```bash
 git add src/core/briefing-formatter.ts src/cli/prompts.ts src/index.ts tests/briefing-formatter.test.ts
@@ -307,20 +307,20 @@ git commit -m "feat(cli): add /web handoff, /twin-model local configuration, and
 - Adds `SubsystemTradeStudy` and `TradeStudyCandidate` to `web/src/types/api.ts`.
 - Adds `api.fetchTradeStudy(): Promise<SubsystemTradeStudy[]>` to `web/src/api/client.ts`.
 
-- [ ] **Step 1: Update API types and client in `web/src/types/api.ts` and `web/src/api/client.ts`**
+- [x] **Step 1: Update API types and client in `web/src/types/api.ts` and `web/src/api/client.ts`**
 
 Export `SubsystemTradeStudy` and `TradeStudyCandidate`. Add `fetchTradeStudy: () => call<SubsystemTradeStudy[]>('GET', '/api/trade-study')`.
 
-- [ ] **Step 2: Reorder tabs in `web/src/layouts/AppShell.tsx`**
+- [x] **Step 2: Reorder tabs in `web/src/layouts/AppShell.tsx`**
 
 Set default tab to `dashboard`. Update tab definitions and icons (`Boxes` for Parts, `Wrench` for Work Instructions).
 
-- [ ] **Step 3: Verify web compilation**
+- [x] **Step 3: Verify web compilation**
 
 Run: `npm --prefix web run build`
 Expected: Build succeeds with new tab structure.
 
-- [ ] **Step 4: Commit Task 4**
+- [x] **Step 4: Commit Task 4**
 
 ```bash
 git add web/src/layouts/AppShell.tsx web/src/types/api.ts web/src/api/client.ts
@@ -343,23 +343,23 @@ git commit -m "feat(web): reorder AppShell to 7 canonical tabs and add trade stu
   2. `bom`: Engineering BOM (`docs/BOM.md`) with subsystem filter, quantities, specs, and estimated totals.
   3. `parts`: Logistics tracker with order numbers, tracking numbers, status dropdowns, actual totals, and inline row editing.
 
-- [ ] **Step 1: Implement `web/src/views/PartsView.tsx` with 3-tab navigation bar**
+- [x] **Step 1: Implement `web/src/views/PartsView.tsx` with 3-tab navigation bar**
 
 Include header sub-tabs `[ Sourcing ]`, `[ BOM ]`, `[ Parts ]` with active state styling.
 - `sourcing`: Render cards per subsystem displaying candidate comparison table with compliance badges (`bg-emerald-950 text-emerald-300` for ✅, `bg-amber-950 text-amber-300` for ⚠️, `bg-rose-950 text-rose-300` for ❌) and selection rationale.
 - `bom`: Clean engineering table showing Item #, Description, Subsystem, Qty, Est Unit, Est Total, and Vendor Links.
 - `parts`: Procurement execution table with inline tracking # input, actual total input, status dropdown, variance column, and save/cancel actions.
 
-- [ ] **Step 2: Update `web/src/layouts/AppShell.tsx` to mount `PartsView` and remove `BomView.tsx`**
+- [x] **Step 2: Update `web/src/layouts/AppShell.tsx` to mount `PartsView` and remove `BomView.tsx`**
 
 Swap the import and rendering for tab `'parts'`.
 
-- [ ] **Step 3: Run web build to verify type safety**
+- [x] **Step 3: Run web build to verify type safety**
 
 Run: `npm --prefix web run build`
 Expected: Clean build (`tsc --noEmit && vite build`).
 
-- [ ] **Step 4: Commit Task 5**
+- [x] **Step 4: Commit Task 5**
 
 ```bash
 git add web/src/views/PartsView.tsx web/src/layouts/AppShell.tsx
@@ -379,7 +379,7 @@ git commit -m "feat(web): implement 3-tier Parts hub with Sourcing, BOM, and Par
 - Consumes: `roadmap: RoadmapPhase[]`, `onSelectPhase?: (phaseId: string) => void`.
 - Produces: Visual serpentine S-curve milestone trail rendering the 13 canonical phases with status badges, critic scores, and open questions chips.
 
-- [ ] **Step 1: Implement `web/src/components/TreasureMapRoadmap.tsx`**
+- [x] **Step 1: Implement `web/src/components/TreasureMapRoadmap.tsx`**
 
 Build a responsive SVG and card milestone component:
 - 13 canonical phase nodes arranged across winding rows (Row 1: Left-to-Right 1-4; Row 2: Right-to-Left 8-5; Row 3: Left-to-Right 9-12; Row 4: 13).
@@ -387,18 +387,18 @@ Build a responsive SVG and card milestone component:
 - Milestone station cards: phase number, name, artifact name, status ring (Completed emerald, In-Progress sky pulse, Pending Review amber, Locked slate), critic score chip (`8.7/10`), and open questions indicator.
 - Click handler allowing the user to select and inspect the phase.
 
-- [ ] **Step 2: Update `web/src/views/DashboardView.tsx` to mount `TreasureMapRoadmap` and Project Overview Card**
+- [x] **Step 2: Update `web/src/views/DashboardView.tsx` to mount `TreasureMapRoadmap` and Project Overview Card**
 
 Add a prominent Project Overview / White Paper card at the top displaying:
 - Project title, domain description, active gate, financial summary, and an "Export 2-Page Executive Briefing" button.
 - Mount `TreasureMapRoadmap` as the primary visual display.
 
-- [ ] **Step 3: Run web build to verify compilation**
+- [x] **Step 3: Run web build to verify compilation**
 
 Run: `npm --prefix web run build`
 Expected: Clean build.
 
-- [ ] **Step 4: Commit Task 6**
+- [x] **Step 4: Commit Task 6**
 
 ```bash
 git add web/src/components/TreasureMapRoadmap.tsx web/src/views/DashboardView.tsx
@@ -418,7 +418,7 @@ git commit -m "feat(web): add serpentine treasure map roadmap and project overvi
 - Consumes: `DashboardData` from `api.fetchDashboard()`.
 - Produces: Modal displaying a structured 2-page print briefing with 1-click "Save as PDF" triggering native print dialog.
 
-- [ ] **Step 1: Add `@media print` rules to `web/src/index.css`**
+- [x] **Step 1: Add `@media print` rules to `web/src/index.css`**
 
 ```css
 @media print {
@@ -455,22 +455,22 @@ git commit -m "feat(web): add serpentine treasure map roadmap and project overvi
 }
 ```
 
-- [ ] **Step 2: Implement `web/src/components/ExecutiveBriefingModal.tsx`**
+- [x] **Step 2: Implement `web/src/components/ExecutiveBriefingModal.tsx`**
 
 - Full-screen modal with "Save as PDF / Print" button calling `window.print()` and Close button.
 - **Page 1:** Executive Summary, System Scope, Subsystem Matrix (SS-01 to SS-08), and Budget vs Actual Financial Rollup.
 - **Page 2:** Clean Linear Phase-Gate Subway Flowchart (the formal engineering flowchart requested for formal reports), Milestone Deliverable Matrix, and Critical Open Risks / Non-Conformances.
 
-- [ ] **Step 3: Wire modal into `web/src/views/DashboardView.tsx`**
+- [x] **Step 3: Wire modal into `web/src/views/DashboardView.tsx`**
 
 Connect "Export 2-Page Executive Briefing" button to open modal state.
 
-- [ ] **Step 4: Run web build to verify compilation**
+- [x] **Step 4: Run web build to verify compilation**
 
 Run: `npm --prefix web run build`
 Expected: Clean build.
 
-- [ ] **Step 5: Commit Task 7**
+- [x] **Step 5: Commit Task 7**
 
 ```bash
 git add web/src/components/ExecutiveBriefingModal.tsx web/src/index.css web/src/views/DashboardView.tsx
@@ -490,11 +490,11 @@ git commit -m "feat(web): implement 2-page executive briefing modal with direct 
 - Allows user to toggle between `OpenRouter Cloud` and `Local / Private Host (OpenAI-compatible)`.
 - If Local: input for base URL (default `http://localhost:11434/v1`) and model identifier.
 
-- [ ] **Step 1: Expand `Settings` type in `web/src/types/api.ts`**
+- [x] **Step 1: Expand `Settings` type in `web/src/types/api.ts`**
 
 Add `digitalTwinProvider?: 'openrouter' | 'local'`, `digitalTwinBaseUrl?: string`, `digitalTwinModel?: string`.
 
-- [ ] **Step 2: Update `web/src/views/SettingsView.tsx`**
+- [x] **Step 2: Update `web/src/views/SettingsView.tsx`**
 
 Add a dedicated "Digital Twin Spatial Model" card with:
 - Provider Radio/Toggle: OpenRouter vs Local Endpoint.
@@ -502,12 +502,12 @@ Add a dedicated "Digital Twin Spatial Model" card with:
 - Model name input (e.g. `llama3.3:70b`, `qwen2.5-coder:32b`).
 - Save button applying updates via `api.saveSettings`.
 
-- [ ] **Step 3: Run web build to verify compilation**
+- [x] **Step 3: Run web build to verify compilation**
 
 Run: `npm --prefix web run build`
 Expected: Clean build.
 
-- [ ] **Step 4: Commit Task 8**
+- [x] **Step 4: Commit Task 8**
 
 ```bash
 git add web/src/views/SettingsView.tsx web/src/types/api.ts
@@ -530,9 +530,9 @@ git commit -m "feat(web): add digital twin local endpoint configuration to setti
 3. **Print Layout:** Test print media layout so page 1 and page 2 break cleanly without overflowing to page 3.
 4. **Empty States:** Ensure friendly explanatory text if `docs/TRADE_STUDY.md` or `docs/BOM.md` are not yet drafted.
 
-- [ ] **Step 1: Audit and apply ergonomics and contrast improvements across views**
-- [ ] **Step 2: Verify `npm --prefix web run build` and `npx vitest run`**
-- [ ] **Step 3: Commit Task 9**
+- [x] **Step 1: Audit and apply ergonomics and contrast improvements across views**
+- [x] **Step 2: Verify `npm --prefix web run build` and `npx vitest run`**
+- [x] **Step 3: Commit Task 9**
 
 ```bash
 git add web/src/
@@ -545,21 +545,21 @@ git commit -m "polish(web): run UI self-critique pass for 44px touch targets, pr
 
 **Files:** None (verification and branch integration).
 
-- [ ] **Step 1: Run full strict TypeScript compile**
+- [x] **Step 1: Run full strict TypeScript compile**
 
 Run: `npx tsc --noEmit && npm --prefix web run build`
 Expected: Zero type errors across backend and frontend.
 
-- [ ] **Step 2: Run complete backend test suite**
+- [x] **Step 2: Run complete backend test suite**
 
 Run: `npx vitest run`
 Expected: All tests passing.
 
-- [ ] **Step 3: Smoke test TUI slash commands**
+- [x] **Step 3: Smoke test TUI slash commands**
 
 Verify `/web`, `/twin-model`, and `/briefing` in a live smoke run.
 
-- [ ] **Step 4: Commit plan completion and push to `origin/master`**
+- [x] **Step 4: Commit plan completion and push to `origin/master`**
 
 ```bash
 git push origin master
