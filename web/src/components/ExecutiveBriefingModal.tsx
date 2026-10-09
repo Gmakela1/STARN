@@ -60,10 +60,10 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
         {/* ================================================================= */}
         {/* PAGE 1: EXECUTIVE SUMMARY, FINANCIALS, SUBSYSTEM MATRIX           */}
         {/* ================================================================= */}
-        <section className="briefing-page w-full max-w-[8.5in] min-h-[11in] bg-white text-slate-900 p-10 md:p-12 shadow-2xl rounded-sm flex flex-col justify-between">
-          <div className="space-y-6">
+        <section className="briefing-page w-full max-w-[8.5in] min-h-[10.2in] max-h-[10.8in] bg-white text-slate-900 p-8 md:p-10 shadow-2xl rounded-sm flex flex-col justify-between overflow-hidden">
+          <div className="space-y-5">
             {/* Header */}
-            <div className="border-b-2 border-slate-900 pb-4">
+            <div className="border-b-2 border-slate-900 pb-3">
               <div className="flex items-start justify-between">
                 <div>
                   <div className="text-[10px] font-black uppercase tracking-widest text-sky-700">
@@ -185,8 +185,8 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
         {/* ================================================================= */}
         {/* PAGE 2: LINEAR PHASE-GATE FLOWCHART, AUDIT MATRIX, DEFECTS        */}
         {/* ================================================================= */}
-        <section className="briefing-page w-full max-w-[8.5in] min-h-[11in] bg-white text-slate-900 p-10 md:p-12 shadow-2xl rounded-sm flex flex-col justify-between">
-          <div className="space-y-6">
+        <section className="briefing-page w-full max-w-[8.5in] min-h-[10.2in] max-h-[10.8in] bg-white text-slate-900 p-8 md:p-10 shadow-2xl rounded-sm flex flex-col justify-between overflow-hidden">
+          <div className="space-y-5">
             {/* Header */}
             <div className="border-b-2 border-slate-900 pb-2">
               <div className="flex items-center justify-between">

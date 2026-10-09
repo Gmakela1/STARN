@@ -379,13 +379,13 @@ export default function PartsView() {
             {/* Filter toolbar */}
             <div className="flex flex-wrap items-center gap-3">
               <div className="relative flex-1 min-w-[240px]">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Filter BOM components..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 py-2 pl-9 pr-3 text-xs text-slate-100 placeholder-slate-500 focus:border-sky-500 focus:outline-none"
+                  className="w-full min-h-[44px] rounded-lg border border-slate-800 bg-slate-900 py-2.5 pl-9 pr-3 text-xs text-slate-100 placeholder-slate-500 focus:border-sky-500 focus:outline-none"
                 />
               </div>
 
@@ -393,7 +393,7 @@ export default function PartsView() {
                 <select
                   value={subsystemFilter}
                   onChange={e => setSubsystemFilter(e.target.value)}
-                  className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="min-h-[44px] rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none cursor-pointer"
                 >
                   <option value="all">All Subsystems ({bomData?.items.length ?? 0})</option>
                   {subsystems.map(s => (
@@ -476,13 +476,13 @@ export default function PartsView() {
             {/* Filter toolbar */}
             <div className="flex flex-wrap items-center gap-3">
               <div className="relative flex-1 min-w-[240px]">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Filter parts by tracking or description..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 py-2 pl-9 pr-3 text-xs text-slate-100 placeholder-slate-500 focus:border-sky-500 focus:outline-none"
+                  className="w-full min-h-[44px] rounded-lg border border-slate-800 bg-slate-900 py-2.5 pl-9 pr-3 text-xs text-slate-100 placeholder-slate-500 focus:border-sky-500 focus:outline-none"
                 />
               </div>
 
@@ -490,7 +490,7 @@ export default function PartsView() {
                 <select
                   value={subsystemFilter}
                   onChange={e => setSubsystemFilter(e.target.value)}
-                  className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="min-h-[44px] rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none cursor-pointer"
                 >
                   <option value="all">All Subsystems ({bomData?.items.length ?? 0})</option>
                   {subsystems.map(s => (
