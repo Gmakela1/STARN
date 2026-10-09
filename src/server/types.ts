@@ -76,6 +76,8 @@ export interface SettingsResponse {
   criticModel?: string;
   compactionModel?: string;
   digitalTwinModel?: string;
+  digitalTwinProvider?: 'openrouter' | 'local';
+  digitalTwinBaseUrl?: string;
   port: number;
   projectPath: string;
 }

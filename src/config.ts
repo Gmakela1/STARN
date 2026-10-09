@@ -14,6 +14,9 @@ export interface StarnConfig {
   siteUrl: string;
   appName: string;
   globalDir: string;
+  digitalTwinModel?: string;
+  digitalTwinProvider?: 'openrouter' | 'local';
+  digitalTwinBaseUrl?: string;
 }
 
 export interface UserConfigFile {
@@ -24,6 +27,9 @@ export interface UserConfigFile {
   keepRecentTokens?: number;
   siteUrl?: string;
   appName?: string;
+  digitalTwinModel?: string;
+  digitalTwinProvider?: 'openrouter' | 'local';
+  digitalTwinBaseUrl?: string;
 }
 
 export function getGlobalStarnDir(): string {
@@ -87,6 +93,9 @@ export function loadConfig(customGlobalDir?: string): StarnConfig {
   const keepRecentTokens = Number(process.env.STARN_KEEP_RECENT_TOKENS || fileConfig.keepRecentTokens || 20000);
   const siteUrl = process.env.OPENROUTER_SITE_URL || fileConfig.siteUrl || 'https://github.com/makel/STARN';
   const appName = process.env.OPENROUTER_SITE_NAME || fileConfig.appName || 'STARN PM Agent';
+  const digitalTwinModel = process.env.STARN_TWIN_MODEL || fileConfig.digitalTwinModel;
+  const digitalTwinProvider = (process.env.STARN_TWIN_PROVIDER as 'openrouter' | 'local') || fileConfig.digitalTwinProvider;
+  const digitalTwinBaseUrl = process.env.STARN_TWIN_BASE_URL || fileConfig.digitalTwinBaseUrl;
 
   return {
     apiKey,
@@ -96,6 +105,9 @@ export function loadConfig(customGlobalDir?: string): StarnConfig {
     keepRecentTokens,
     siteUrl,
     appName,
-    globalDir
+    globalDir,
+    digitalTwinModel,
+    digitalTwinProvider,
+    digitalTwinBaseUrl
   };
 }

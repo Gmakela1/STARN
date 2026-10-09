@@ -20,6 +20,9 @@ export interface SessionDeps {
   compressionThreshold?: number;
   keepRecentTokens?: number;
   logger?: Logger;
+  digitalTwinModel?: string;
+  digitalTwinProvider?: 'openrouter' | 'local';
+  digitalTwinBaseUrl?: string;
 }
 
 export interface PendingCheckpoint {
@@ -68,6 +71,30 @@ export class ServerSessionManager {
 
   get compactionModel(): string | undefined {
     return this.deps.compactionModel;
+  }
+
+  get digitalTwinModel(): string | undefined {
+    return this.deps.digitalTwinModel;
+  }
+
+  setDigitalTwinModel(model: string | undefined): void {
+    this.deps.digitalTwinModel = model;
+  }
+
+  get digitalTwinProvider(): 'openrouter' | 'local' | undefined {
+    return this.deps.digitalTwinProvider;
+  }
+
+  setDigitalTwinProvider(provider: 'openrouter' | 'local' | undefined): void {
+    this.deps.digitalTwinProvider = provider;
+  }
+
+  get digitalTwinBaseUrl(): string | undefined {
+    return this.deps.digitalTwinBaseUrl;
+  }
+
+  setDigitalTwinBaseUrl(url: string | undefined): void {
+    this.deps.digitalTwinBaseUrl = url;
   }
 
   getPendingCheckpoint(): PendingCheckpoint | null {
