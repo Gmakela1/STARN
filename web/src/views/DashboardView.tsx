@@ -80,9 +80,18 @@ export default function DashboardView() {
                 </span>
               </div>
               <h1 className="text-2xl font-black text-white tracking-tight">{project.name}</h1>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                {project.summary || 'Hardware engineering program governed by rigorous specialist phase-gates.'}
-              </p>
+              {project.summarySource === 'none' ? (
+                <p className="text-sm text-slate-400">
+                  No overview yet. Start the CONOPS intake in Development to define the project.
+                </p>
+              ) : (
+                <>
+                  <p className="whitespace-pre-line text-sm leading-relaxed text-slate-200">{project.summary}</p>
+                  {project.summarySource === 'intake' && (
+                    <p className="text-xs text-amber-300">Charter pending: showing your intake answer until the CONOPS is drafted.</p>
+                  )}
+                </>
+              )}
             </div>
 
             <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">

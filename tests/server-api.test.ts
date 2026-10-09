@@ -104,6 +104,30 @@ describe('HTTP Server API', () => {
     expect(json.data.financials.totalActual).toBe(920);
   });
 
+  it('GET /api/project summary comes from CONOPS Section 1 when present', async () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'docs', 'CONOPS.md'),
+      '# CONOPS\n\n## 1. Executive Summary & User Intent\nElectric tractor conversion.\n\n### System-Level Capabilities\n- x\n'
+    );
+    const { json } = await request(server, 'GET', '/api/project');
+    expect(json.data.summary).toBe('Electric tractor conversion.');
+    expect(json.data.summarySource).toBe('conops');
+  });
+
+  it('GET /api/project summary falls back to the intake project answer', async () => {
+    stateManager.recordIntakeAnswer('projectName', 'An electric utility tractor');
+    const { json } = await request(server, 'GET', '/api/project');
+    expect(json.data.summary).toBe('An electric utility tractor');
+    expect(json.data.summarySource).toBe('intake');
+  });
+
+  it('GET /api/project summary never exposes the discovery briefing', async () => {
+    stateManager.updateDiscoverySummary('PROJECT DISCOVERY BRIEFING:\n- Existing Files');
+    const { json } = await request(server, 'GET', '/api/project');
+    expect(json.data.summary).toBe('');
+    expect(json.data.summarySource).toBe('none');
+  });
+
   it('GET /api/roadmap returns all 13 canonical phases', async () => {
     const { status, json } = await request(server, 'GET', '/api/roadmap');
     expect(status).toBe(200);

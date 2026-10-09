@@ -44,6 +44,7 @@ import {
   formatExecutiveBriefingPlain,
   formatExecutiveBriefingMarkdown
 } from './core/briefing-formatter.js';
+import { extractConopsOverview } from './core/conops-overview.js';
 import { parseBomDocument } from './server/parsers/bom-parser.js';
 
 async function main() {
@@ -276,11 +277,7 @@ async function main() {
       let conopsSummary: string | undefined;
       if (fs.existsSync(conopsPath)) {
         try {
-          const conopsContent = fs.readFileSync(conopsPath, 'utf-8');
-          const firstSection = conopsContent.split(/^##\s+/m)[1];
-          if (firstSection) {
-            conopsSummary = firstSection.split('\n').filter(l => l.trim() && !l.startsWith('#')).slice(0, 3).join(' ');
-          }
+          conopsSummary = extractConopsOverview(fs.readFileSync(conopsPath, 'utf-8')) ?? undefined;
         } catch {}
       }
 

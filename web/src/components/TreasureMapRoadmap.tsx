@@ -5,24 +5,22 @@ import {
   Lock,
   CircleDashed,
   HelpCircle,
-  Award,
-  Sparkles
+  Award
 } from 'lucide-react';
 import { RoadmapPhase } from '../types/api';
 
 interface TreasureMapRoadmapProps {
   roadmap: RoadmapPhase[];
-  onSelectPhase?: (phaseId: string) => void;
 }
 
-export default function TreasureMapRoadmap({ roadmap, onSelectPhase }: TreasureMapRoadmapProps) {
-  // 13 canonical phases split into serpentine rows:
-  // Row 1: 0, 1, 2, 3 (L -> R)
-  // Row 2: 7, 6, 5, 4 (R -> L)
-  // Row 3: 8, 9, 10, 11 (L -> R)
-  // Row 4: 12 (SOW)
+/** Template paths (e.g. {GATE}, {NUM}) show their folder instead of the raw pattern. */
+const displayPath = (p: string) => (p.includes('{') ? p.slice(0, p.lastIndexOf('/') + 1) : p);
+
+export default function TreasureMapRoadmap({ roadmap }: TreasureMapRoadmapProps) {
+  // Rows of 4 in natural (DOM/reading) order. Row 2 is reversed visually on
+  // lg screens only (4 columns) to form the serpentine; narrower layouts stay sequential.
   const row1 = roadmap.slice(0, 4);
-  const row2 = [roadmap[7], roadmap[6], roadmap[5], roadmap[4]].filter(Boolean);
+  const row2 = roadmap.slice(4, 8);
   const row3 = roadmap.slice(8, 12);
   const row4 = roadmap.slice(12, 13);
 
@@ -39,7 +37,7 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase }: TreasureM
       borderClass = 'border-emerald-500/40 bg-emerald-950/20 shadow-emerald-950/50 shadow-sm';
       ringClass = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50';
     } else if (isInProgress) {
-      borderClass = 'border-sky-500 bg-sky-950/30 shadow-sky-900/30 shadow-md animate-pulse-subtle';
+      borderClass = 'border-sky-500 bg-sky-950/30 shadow-sky-900/30 shadow-md';
       ringClass = 'bg-sky-500 text-slate-950 font-bold border-sky-400';
     } else if (isPendingReview) {
       borderClass = 'border-amber-500/50 bg-amber-950/20';
@@ -49,8 +47,7 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase }: TreasureM
     return (
       <div
         key={phase.id}
-        onClick={() => onSelectPhase?.(phase.id)}
-        className={`group relative flex flex-col justify-between rounded-xl border p-3.5 transition-all duration-200 cursor-pointer hover:border-sky-400 hover:scale-[1.02] ${borderClass}`}
+        className={`relative flex h-full flex-col justify-between rounded-xl border p-3.5 ${borderClass}`}
       >
         <div className="flex items-start justify-between gap-2">
           {/* Station Number Ring */}
@@ -68,7 +65,7 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase }: TreasureM
               </span>
             )}
             {isInProgress && (
-              <span className="inline-flex items-center gap-1 rounded bg-sky-950/80 px-2 py-0.5 text-[10px] font-semibold text-sky-300 border border-sky-800/40 animate-pulse">
+              <span className="inline-flex items-center gap-1 rounded bg-sky-950/80 px-2 py-0.5 text-[10px] font-semibold text-sky-300 border border-sky-800/40 motion-safe:animate-pulse">
                 <CircleDot className="h-3 w-3" /> Active Gate
               </span>
             )}
@@ -92,11 +89,11 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase }: TreasureM
 
         {/* Phase Details */}
         <div className="mt-2.5">
-          <h4 className="text-sm font-bold text-slate-100 group-hover:text-sky-300 transition-colors">
+          <h4 className="text-sm font-bold text-slate-100">
             {phase.name}
           </h4>
           <p className="mt-0.5 font-mono text-[11px] text-slate-400 truncate" title={phase.artifactPath}>
-            {phase.artifactPath}
+            {displayPath(phase.artifactPath)}
           </p>
         </div>
 
@@ -127,11 +124,10 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase }: TreasureM
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h3 className="text-base font-bold text-white flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-sky-400" />
-            Milestone Trail Roadmap ("Treasure Map")
+            Program Roadmap
           </h3>
           <p className="text-xs text-slate-400">
-            Interactive serpentine phase-gate pipeline. Each approved deliverable unlocks downstream execution.
+            Each approved deliverable unlocks the next phase.
           </p>
         </div>
       </div>
@@ -149,10 +145,11 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase }: TreasureM
         {/* ROW 2: 8 <- 5 (Right to Left) */}
         <div className="relative">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {row2.map(p => {
-              const actualIdx = roadmap.findIndex(x => x.id === p.id);
-              return renderStation(p, actualIdx + 1);
-            })}
+            {row2.map((p, i) => (
+              <div key={p.id} className={['lg:order-4', 'lg:order-3', 'lg:order-2', 'lg:order-1'][i]}>
+                {renderStation(p, 5 + i)}
+              </div>
+            ))}
           </div>
           {/* Connector down-left to row 3 on desktop */}
           <div className="hidden lg:block absolute -bottom-5 left-12 h-6 w-12 border-l-2 border-b-2 border-dashed border-sky-500/60 rounded-bl-xl" />

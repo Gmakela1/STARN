@@ -85,11 +85,10 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
             {/* 1. Executive Summary */}
             <div className="space-y-2">
               <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b border-slate-200 pb-1">
-                1. System Scope & Operational Intent
+                1. Project Overview
               </h2>
-              <p className="text-xs leading-relaxed text-slate-700 text-justify">
-                {project.summary ||
-                  'System scope, operational concepts, and functional baselines established and governed per approved STARN specialist deliverables.'}
+              <p className="whitespace-pre-line text-xs leading-relaxed text-slate-700">
+                {project.summary || 'Project overview pending: CONOPS has not been drafted.'}
               </p>
             </div>
 
@@ -131,48 +130,6 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
               </div>
             </div>
 
-            {/* 3. Subsystem Architecture Overview */}
-            <div className="space-y-2">
-              <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b border-slate-200 pb-1">
-                3. Subsystem Decomposition & Readiness
-              </h2>
-              <table className="w-full text-left text-xs border border-slate-200">
-                <thead className="bg-slate-100 text-slate-700 text-[10px] font-bold uppercase">
-                  <tr>
-                    <th className="p-2 border-b border-slate-200">Subsystem</th>
-                    <th className="p-2 border-b border-slate-200">Designation</th>
-                    <th className="p-2 border-b border-slate-200 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 text-[11px]">
-                  <tr>
-                    <td className="p-2 font-mono font-bold text-slate-900">SS-01</td>
-                    <td className="p-2 text-slate-800">Structural Frame & Deployable Mountings</td>
-                    <td className="p-2 text-center text-emerald-800 font-semibold">Active Baseline</td>
-                  </tr>
-                  <tr>
-                    <td className="p-2 font-mono font-bold text-slate-900">SS-02</td>
-                    <td className="p-2 text-slate-800">High-Voltage Battery & Energy Storage</td>
-                    <td className="p-2 text-center text-emerald-800 font-semibold">Active Baseline</td>
-                  </tr>
-                  <tr>
-                    <td className="p-2 font-mono font-bold text-slate-900">SS-03</td>
-                    <td className="p-2 text-slate-800">Power Conversion & Distribution Inverters</td>
-                    <td className="p-2 text-center text-emerald-800 font-semibold">Active Baseline</td>
-                  </tr>
-                  <tr>
-                    <td className="p-2 font-mono font-bold text-slate-900">SS-04</td>
-                    <td className="p-2 text-slate-800">Thermal Dissipation & Environmental Enclosure</td>
-                    <td className="p-2 text-center text-slate-600">Pending Review</td>
-                  </tr>
-                  <tr>
-                    <td className="p-2 font-mono font-bold text-slate-900">SS-05</td>
-                    <td className="p-2 text-slate-800">Telemetry, Safety Interlocks & Emergency Stop</td>
-                    <td className="p-2 text-center text-slate-600">Pending Review</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
           </div>
 
           {/* Page 1 Footer */}
@@ -197,10 +154,10 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
               </div>
             </div>
 
-            {/* 4. Linear Phase-Gate Subway Flowchart (Formal Report Standard) */}
+            {/* 3. Phase-Gate Flowchart */}
             <div className="space-y-2">
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b border-slate-200 pb-1">
-                4. Linear Phase-Gate Subway Flowchart
+                3. Phase-Gate Flowchart
               </h3>
               <div className="rounded border border-slate-200 bg-slate-50 p-3">
                 <div className="flex items-center justify-between overflow-x-auto gap-1">
@@ -216,7 +173,7 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
                             isApproved
                               ? 'bg-emerald-600 text-white'
                               : isActive
-                              ? 'bg-sky-600 text-white animate-pulse'
+                              ? 'bg-sky-600 text-white'
                               : isPending
                               ? 'bg-amber-500 text-white'
                               : 'bg-slate-300 text-slate-600'
@@ -237,10 +194,10 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
               </div>
             </div>
 
-            {/* 5. Milestone Deliverables Audit Matrix */}
+            {/* 4. Milestone Deliverables Audit Matrix */}
             <div className="space-y-2">
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b border-slate-200 pb-1">
-                5. Milestone Deliverables & Critic Scores
+                4. Milestone Deliverables & Critic Scores
               </h3>
               <table className="w-full text-left text-xs border border-slate-200">
                 <thead className="bg-slate-100 text-slate-700 text-[10px] font-bold uppercase">
@@ -281,7 +238,7 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
             {/* 6. Hardware Non-Conformances & Risks */}
             <div className="space-y-2">
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b border-slate-200 pb-1">
-                6. Critical Non-Conformances & Builder Questions
+                5. Critical Non-Conformances & Builder Questions
               </h3>
               {nonConformances.length === 0 && openQuestions.length === 0 ? (
                 <div className="p-2.5 rounded bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800 font-medium">

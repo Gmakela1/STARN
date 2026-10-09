@@ -5,6 +5,7 @@ import { ProjectStateManager, ORDERED_WORKFLOW_PHASES, resolveArtifactPaths, res
 import { countOpenQuestions, parseOpenQuestionsFromContent } from '../core/open-questions-parser.js';
 import { createVersionBackup } from '../util/version-backup.js';
 import { parseBomDocument, updateBomRow, BomItemUpdate } from './parsers/bom-parser.js';
+import { extractConopsOverview } from '../core/conops-overview.js';
 import { parseTradeStudyDocument } from './parsers/trade-study-parser.js';
 import { parseWorkInstruction, toggleWorkInstructionStep, ParsedWorkInstruction } from './parsers/actions-parser.js';
 import { aggregateProjectIssues, OpenQuestionGroup, ProjectIssue } from './parsers/issues-parser.js';
@@ -115,6 +116,17 @@ function getBomFinancials(projectPath: string) {
   return parseBomDocument(content).financials;
 }
 
+function buildSummary(
+  projectPath: string,
+  intakeProjectAnswer: string | undefined
+): Pick<ProjectInfoResponse, 'summary' | 'summarySource'> {
+  const conops = safeReadFile(path.join(projectPath, 'docs', 'CONOPS.md'));
+  const overview = conops ? extractConopsOverview(conops) : null;
+  if (overview) return { summary: overview, summarySource: 'conops' };
+  if (intakeProjectAnswer?.trim()) return { summary: intakeProjectAnswer.trim(), summarySource: 'intake' };
+  return { summary: '', summarySource: 'none' };
+}
+
 function buildProjectInfo(deps: RouterDeps): ProjectInfoResponse {
   const state = deps.stateManager.getState();
   let openQuestionsCount = 0;
@@ -127,7 +139,7 @@ function buildProjectInfo(deps: RouterDeps): ProjectInfoResponse {
     id: state.projectId,
     name: state.name,
     activePhase: state.workflow?.activePhase || 'conops',
-    summary: state.discovery?.summary || '',
+    ...buildSummary(deps.projectPath, state.intake?.answers?.projectName),
     openQuestionsCount,
     openRisksCount: (state.openRisks || []).length,
     models: {

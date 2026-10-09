@@ -14,7 +14,9 @@ export interface ProjectInfoResponse {
   id: string;
   name: string;
   activePhase: string;
+  /** Human-readable overview: CONOPS Section 1 prose, else intake answer, else empty. */
   summary: string;
+  summarySource: 'conops' | 'intake' | 'none';
   openQuestionsCount: number;
   openRisksCount: number;
   models: {

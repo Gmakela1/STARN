@@ -37,6 +37,7 @@ export interface ProjectInfo {
   name: string;
   activePhase: string;
   summary: string;
+  summarySource: 'conops' | 'intake' | 'none';
   openQuestionsCount: number;
   openRisksCount: number;
   models: {
