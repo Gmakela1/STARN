@@ -525,9 +525,6 @@ export async function handleApiRequest(
       return ok(res, {
         agentModel: deps.session?.model ?? '',
         compactionModel: deps.session?.compactionModel,
-        digitalTwinModel: deps.session?.digitalTwinModel,
-        digitalTwinProvider: deps.session?.digitalTwinProvider,
-        digitalTwinBaseUrl: deps.session?.digitalTwinBaseUrl,
         port: deps.port ?? 3000,
         projectPath: deps.projectPath
       });
@@ -537,16 +534,10 @@ export async function handleApiRequest(
       const body = await readJsonBody(req);
       if (body.agentModel && deps.session) deps.session.setModel(String(body.agentModel));
       if (body.compactionModel && deps.session) deps.session.setCompactionModel(String(body.compactionModel));
-      if (body.digitalTwinModel !== undefined && deps.session) deps.session.setDigitalTwinModel(body.digitalTwinModel ? String(body.digitalTwinModel) : undefined);
-      if (body.digitalTwinProvider !== undefined && deps.session) deps.session.setDigitalTwinProvider(body.digitalTwinProvider ? (body.digitalTwinProvider as any) : undefined);
-      if (body.digitalTwinBaseUrl !== undefined && deps.session) deps.session.setDigitalTwinBaseUrl(body.digitalTwinBaseUrl ? String(body.digitalTwinBaseUrl) : undefined);
       deps.onSettingsSaved?.(body);
       return ok(res, {
         agentModel: deps.session?.model ?? '',
         compactionModel: deps.session?.compactionModel,
-        digitalTwinModel: deps.session?.digitalTwinModel,
-        digitalTwinProvider: deps.session?.digitalTwinProvider,
-        digitalTwinBaseUrl: deps.session?.digitalTwinBaseUrl,
         port: deps.port ?? 3000,
         projectPath: deps.projectPath
       });

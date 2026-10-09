@@ -23,7 +23,6 @@ export interface ProjectInfoResponse {
     agent: string;
     critic?: string;
     compaction?: string;
-    digitalTwin?: string;
   };
   financials: BomFinancials;
 }
@@ -77,9 +76,6 @@ export interface SettingsResponse {
   agentModel: string;
   criticModel?: string;
   compactionModel?: string;
-  digitalTwinModel?: string;
-  digitalTwinProvider?: 'openrouter' | 'local';
-  digitalTwinBaseUrl?: string;
   port: number;
   projectPath: string;
 }

@@ -26,8 +26,7 @@ import {
   promptApiKey,
   promptSelectLiveModel,
   promptProjectSelection,
-  promptUserQuery,
-  promptDigitalTwinSettings
+  promptUserQuery
 } from './cli/prompts.js';
 import { runHumanCheckpoint, handleCriticFailure } from './cli/checkpoint.js';
 import { runDocumentViewer, resolveDocTarget } from './cli/doc-viewer.js';
@@ -157,10 +156,7 @@ async function main() {
       compactionModel: config.compactionModel || selectedModel,
       compressionThreshold: config.compressionThreshold,
       keepRecentTokens: config.keepRecentTokens,
-      logger,
-      digitalTwinModel: config.digitalTwinModel,
-      digitalTwinProvider: config.digitalTwinProvider,
-      digitalTwinBaseUrl: config.digitalTwinBaseUrl
+      logger
     });
 
     const started = await startWebServer({
@@ -171,13 +167,6 @@ async function main() {
       onSettingsSaved: s => {
         if (s.agentModel) saveUserConfig({ defaultModel: s.agentModel }, config.globalDir);
         if (s.compactionModel) saveUserConfig({ compactionModel: s.compactionModel }, config.globalDir);
-        if (s.digitalTwinModel !== undefined || s.digitalTwinProvider !== undefined || s.digitalTwinBaseUrl !== undefined) {
-          saveUserConfig({
-            digitalTwinModel: s.digitalTwinModel,
-            digitalTwinProvider: s.digitalTwinProvider,
-            digitalTwinBaseUrl: s.digitalTwinBaseUrl
-          }, config.globalDir);
-        }
       }
     });
 
@@ -208,20 +197,6 @@ async function main() {
       continue;
     }
 
-    // /twin-model: configure digital twin reasoning model / local endpoint
-    if (currentPrompt.trim().toLowerCase() === '/twin-model') {
-      const twinSettings = await promptDigitalTwinSettings(availableModels, config);
-      saveUserConfig({
-        digitalTwinProvider: twinSettings.digitalTwinProvider,
-        digitalTwinBaseUrl: twinSettings.digitalTwinBaseUrl,
-        digitalTwinModel: twinSettings.digitalTwinModel
-      }, config.globalDir);
-      config.digitalTwinProvider = twinSettings.digitalTwinProvider;
-      config.digitalTwinBaseUrl = twinSettings.digitalTwinBaseUrl;
-      config.digitalTwinModel = twinSettings.digitalTwinModel;
-      console.log(chalk.green(`✔ Digital Twin configured: [${twinSettings.digitalTwinProvider}] ${twinSettings.digitalTwinModel}${twinSettings.digitalTwinBaseUrl ? ` at ${twinSettings.digitalTwinBaseUrl}` : ''}\n`));
-      continue;
-    }
 
     // /web or /browser: Option A in-process handoff to browser web UI
     if (currentPrompt.trim().toLowerCase() === '/web' || currentPrompt.trim().toLowerCase() === '/browser') {
@@ -236,10 +211,7 @@ async function main() {
         compactionModel: config.compactionModel,
         compressionThreshold: config.compressionThreshold,
         keepRecentTokens: config.keepRecentTokens,
-        logger,
-        digitalTwinModel: config.digitalTwinModel,
-        digitalTwinProvider: config.digitalTwinProvider,
-        digitalTwinBaseUrl: config.digitalTwinBaseUrl
+        logger
       });
       session.setSessionMessages(sessionMessages);
 
@@ -251,13 +223,6 @@ async function main() {
         onSettingsSaved: s => {
           if (s.agentModel) saveUserConfig({ defaultModel: s.agentModel }, config.globalDir);
           if (s.compactionModel) saveUserConfig({ compactionModel: s.compactionModel }, config.globalDir);
-          if (s.digitalTwinModel !== undefined || s.digitalTwinProvider !== undefined || s.digitalTwinBaseUrl !== undefined) {
-            saveUserConfig({
-              digitalTwinModel: s.digitalTwinModel,
-              digitalTwinProvider: s.digitalTwinProvider,
-              digitalTwinBaseUrl: s.digitalTwinBaseUrl
-            }, config.globalDir);
-          }
         }
       });
 
@@ -401,7 +366,7 @@ async function main() {
     // Pre-turn: if the active phase's document has open questions, collect answers NOW
     // and feed them to the specialist so the LLM integrates them into the document body.
     // This must happen before executeTurn — not after — so the LLM sees the answers.
-    const isQuickCommand = ['/plan', '/roadmap', '/status', '/help', '/questions', '/twin-model', '/briefing', '/summary', '/report', '/web', '/browser'].includes(lowered)
+    const isQuickCommand = ['/plan', '/roadmap', '/status', '/help', '/questions', '/briefing', '/summary', '/report', '/web', '/browser'].includes(lowered)
       || lowered.startsWith('/goto')
       || lowered.startsWith('/view')
       || lowered.startsWith('/approve')

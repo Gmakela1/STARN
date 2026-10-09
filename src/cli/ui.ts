@@ -299,7 +299,6 @@ export function formatHelp(): string {
     ['/help', 'Show this command list'],
     ['/compact', 'Summarize older session messages now (free up context)'],
     ['/compact-model', 'Select the model used for session compaction'],
-    ['/twin-model', 'Configure digital twin model / local OpenAI endpoint'],
     ['/briefing', 'Generate 2-page executive summary and save to docs/'],
     ['/web', 'Launch browser UI and hand off session to HTTP server'],
     ['/voice', 'Record your next prompt by voice (type in the prompt input)']

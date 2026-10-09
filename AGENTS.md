@@ -78,8 +78,10 @@ critic extracts and applies the quality standard; it must not copy content.
 
 ## Tools (strictly scoped)
 
-Native function calling via OpenRouter only. Scope tools per specialist
-allow-list:
+Native function calling via OpenRouter or any OpenAI-compatible endpoint
+(Ollama, LM Studio, llama.cpp server). Each model role (drafting, critic,
+classifier, compaction) is assigned its own provider + model. Scope tools
+per specialist allow-list:
 
 - List directory / Read file / Write file (path-traversal-guarded, project-rooted)
 - Read project state / Update project state (Zod-validated)
@@ -94,7 +96,7 @@ without touching the agent loop.
 ## Context Management & Reliability
 
 - **Compaction:** when session context exceeds a configurable threshold, summarize older messages (structured format) and keep recent ones. Configurable compaction model, independent of the working model.
-- **Retry:** OpenRouter calls retry with exponential backoff on 429/5xx, respecting `Retry-After`.
+- **Retry:** Provider calls retry with exponential backoff on 429/5xx, respecting `Retry-After`.
 - **Logging:** structured file logs per project for post-mortem diagnosis.
 - **Type safety:** `tsc --noEmit` runs in the test pipeline. Type errors fail the build.
 
@@ -108,14 +110,14 @@ whole, not only isolated units.
 
 ## Technical Preferences
 
-- Language: TypeScript (strict). OpenRouter only. Config via env vars + `~/.starn/config.json`.
+- Language: TypeScript (strict). OpenRouter + OpenAI-compatible local providers; no silent fallback between providers. Config via env vars + `~/.starn/config.json`.
 - Clean separation: core agent loop, specialist packages, tools, state, critic, **presentation layer** (terminal today, web tomorrow).
 - Core modules must compile and run with zero terminal-library imports.
 
 ## Out of Scope (current surface)
 
 - Slack or any chat platform
-- Local model serving (pi / llama.cpp)
+- Launching or managing local model servers (STARN connects to them; it does not start them)
 - Web search
 - Complex multi-agent swarms
 - Auth / multi-user (until web migration)
