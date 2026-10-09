@@ -46,6 +46,14 @@ export type CheckpointDecision = 'approve' | 'revise' | 'discard';
 export class ServerSessionManager {
   private deps: SessionDeps;
   private sessionMessages: ChatMessage[] = [];
+
+  setSessionMessages(messages: ChatMessage[]): void {
+    this.sessionMessages = [...messages];
+  }
+
+  getSessionMessages(): ChatMessage[] {
+    return [...this.sessionMessages];
+  }
   private pending: PendingCheckpoint | null = null;
   private activeAbort: AbortController | null = null;
 

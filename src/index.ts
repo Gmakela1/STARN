@@ -26,7 +26,8 @@ import {
   promptApiKey,
   promptSelectLiveModel,
   promptProjectSelection,
-  promptUserQuery
+  promptUserQuery,
+  promptDigitalTwinSettings
 } from './cli/prompts.js';
 import { runHumanCheckpoint, handleCriticFailure } from './cli/checkpoint.js';
 import { runDocumentViewer, resolveDocTarget } from './cli/doc-viewer.js';
@@ -38,6 +39,12 @@ import { ORDERED_WORKFLOW_PHASES, resolveArtifactPaths } from './workspace/state
 import { Logger } from './util/logger.js';
 import { ServerSessionManager } from './server/session.js';
 import { startWebServer } from './server/server.js';
+import {
+  BriefingData,
+  formatExecutiveBriefingPlain,
+  formatExecutiveBriefingMarkdown
+} from './core/briefing-formatter.js';
+import { parseBomDocument } from './server/parsers/bom-parser.js';
 
 async function main() {
   const isWebMode = process.argv.includes('--web');
@@ -149,7 +156,10 @@ async function main() {
       compactionModel: config.compactionModel || selectedModel,
       compressionThreshold: config.compressionThreshold,
       keepRecentTokens: config.keepRecentTokens,
-      logger
+      logger,
+      digitalTwinModel: config.digitalTwinModel,
+      digitalTwinProvider: config.digitalTwinProvider,
+      digitalTwinBaseUrl: config.digitalTwinBaseUrl
     });
 
     const started = await startWebServer({
@@ -160,6 +170,13 @@ async function main() {
       onSettingsSaved: s => {
         if (s.agentModel) saveUserConfig({ defaultModel: s.agentModel }, config.globalDir);
         if (s.compactionModel) saveUserConfig({ compactionModel: s.compactionModel }, config.globalDir);
+        if (s.digitalTwinModel !== undefined || s.digitalTwinProvider !== undefined || s.digitalTwinBaseUrl !== undefined) {
+          saveUserConfig({
+            digitalTwinModel: s.digitalTwinModel,
+            digitalTwinProvider: s.digitalTwinProvider,
+            digitalTwinBaseUrl: s.digitalTwinBaseUrl
+          }, config.globalDir);
+        }
       }
     });
 
@@ -187,6 +204,149 @@ async function main() {
       saveUserConfig({ compactionModel }, config.globalDir);
       config.compactionModel = compactionModel;
       console.log(chalk.green(`✔ Compaction model set to ${compactionModel}\n`));
+      continue;
+    }
+
+    // /twin-model: configure digital twin reasoning model / local endpoint
+    if (currentPrompt.trim().toLowerCase() === '/twin-model') {
+      const twinSettings = await promptDigitalTwinSettings(availableModels, config);
+      saveUserConfig({
+        digitalTwinProvider: twinSettings.digitalTwinProvider,
+        digitalTwinBaseUrl: twinSettings.digitalTwinBaseUrl,
+        digitalTwinModel: twinSettings.digitalTwinModel
+      }, config.globalDir);
+      config.digitalTwinProvider = twinSettings.digitalTwinProvider;
+      config.digitalTwinBaseUrl = twinSettings.digitalTwinBaseUrl;
+      config.digitalTwinModel = twinSettings.digitalTwinModel;
+      console.log(chalk.green(`✔ Digital Twin configured: [${twinSettings.digitalTwinProvider}] ${twinSettings.digitalTwinModel}${twinSettings.digitalTwinBaseUrl ? ` at ${twinSettings.digitalTwinBaseUrl}` : ''}\n`));
+      continue;
+    }
+
+    // /web or /browser: Option A in-process handoff to browser web UI
+    if (currentPrompt.trim().toLowerCase() === '/web' || currentPrompt.trim().toLowerCase() === '/browser') {
+      const port = Number(process.env.STARN_PORT || 3000);
+      const session = new ServerSessionManager({
+        projectPath: currentProjectRecord.path,
+        stateManager,
+        client,
+        model: selectedModel,
+        toolRegistry,
+        specialistRegistry,
+        compactionModel: config.compactionModel,
+        compressionThreshold: config.compressionThreshold,
+        keepRecentTokens: config.keepRecentTokens,
+        logger,
+        digitalTwinModel: config.digitalTwinModel,
+        digitalTwinProvider: config.digitalTwinProvider,
+        digitalTwinBaseUrl: config.digitalTwinBaseUrl
+      });
+      session.setSessionMessages(sessionMessages);
+
+      const started = await startWebServer({
+        projectPath: currentProjectRecord.path,
+        stateManager,
+        session,
+        port,
+        onSettingsSaved: s => {
+          if (s.agentModel) saveUserConfig({ defaultModel: s.agentModel }, config.globalDir);
+          if (s.compactionModel) saveUserConfig({ compactionModel: s.compactionModel }, config.globalDir);
+          if (s.digitalTwinModel !== undefined || s.digitalTwinProvider !== undefined || s.digitalTwinBaseUrl !== undefined) {
+            saveUserConfig({
+              digitalTwinModel: s.digitalTwinModel,
+              digitalTwinProvider: s.digitalTwinProvider,
+              digitalTwinBaseUrl: s.digitalTwinBaseUrl
+            }, config.globalDir);
+          }
+        }
+      });
+
+      console.log(chalk.green('\n★ STARN web UI is running and session handed off:'));
+      for (const url of started.urls) {
+        console.log(chalk.cyan(`   ${url}`));
+      }
+      console.log(chalk.dim('\nCLI is now in web monitor mode. Browser has been opened.'));
+      console.log(chalk.dim('Press Ctrl+C to stop. State persists to .starn/state.json.\n'));
+      return; // Keep event loop running with HTTP server
+    }
+
+    // /briefing: 2-page executive briefing summary
+    if (currentPrompt.trim().toLowerCase() === '/briefing' || currentPrompt.trim().toLowerCase() === '/summary' || currentPrompt.trim().toLowerCase() === '/report') {
+      const state = stateManager.getState();
+      const conopsPath = path.join(currentProjectRecord.path, 'docs', 'CONOPS.md');
+      let conopsSummary: string | undefined;
+      if (fs.existsSync(conopsPath)) {
+        try {
+          const conopsContent = fs.readFileSync(conopsPath, 'utf-8');
+          const firstSection = conopsContent.split(/^##\s+/m)[1];
+          if (firstSection) {
+            conopsSummary = firstSection.split('\n').filter(l => l.trim() && !l.startsWith('#')).slice(0, 3).join(' ');
+          }
+        } catch {}
+      }
+
+      const bomPath = path.join(currentProjectRecord.path, 'docs', 'BOM.md');
+      let financials = { totalEstimated: 0, totalActual: 0, netVariance: 0 };
+      if (fs.existsSync(bomPath)) {
+        try {
+          const bomContent = fs.readFileSync(bomPath, 'utf-8');
+          const parsed = parseBomDocument(bomContent);
+          financials = parsed.financials;
+        } catch {}
+      }
+
+      const wiDir = path.join(currentProjectRecord.path, 'docs', 'work_instructions');
+      const openIssues: Array<{ title: string; type: string }> = [];
+      if (fs.existsSync(wiDir)) {
+        for (const file of fs.readdirSync(wiDir).filter(f => f.endsWith('.md'))) {
+          const content = fs.readFileSync(path.join(wiDir, file), 'utf-8');
+          if (content.includes('OPEN_NON_CONFORMANCE')) {
+            openIssues.push({
+              title: `Work Instruction ${file} flagged with Open Non-Conformance`,
+              type: 'non_conformance'
+            });
+          }
+        }
+      }
+      for (const def of ORDERED_WORKFLOW_PHASES) {
+        const docPaths = resolveArtifactPaths(currentProjectRecord.path, def.artifactPath);
+        for (const p of docPaths) {
+          const qCount = countOpenQuestions(p);
+          if (qCount > 0) {
+            openIssues.push({
+              title: `${path.basename(p)} has ${qCount} open question(s)`,
+              type: 'open_question'
+            });
+          }
+        }
+      }
+
+      const phases = ORDERED_WORKFLOW_PHASES.map(p => {
+        const ph = state.workflow?.phases?.[p.id];
+        const artifact = state.artifacts.find(a => a.id === p.id.toUpperCase());
+        return {
+          id: p.id,
+          name: p.name,
+          status: ph?.status ? ph.status.toUpperCase() : 'LOCKED',
+          criticScore: artifact?.criticScore
+        };
+      });
+
+      const briefingData: BriefingData = {
+        projectName: currentProjectRecord.name,
+        activePhase: state.workflow?.activePhase || 'conops',
+        conopsSummary,
+        financials,
+        phases,
+        openIssues
+      };
+
+      const plainText = formatExecutiveBriefingPlain(briefingData);
+      console.log('\n' + plainText + '\n');
+
+      const mdText = formatExecutiveBriefingMarkdown(briefingData);
+      const briefingFilePath = path.join(currentProjectRecord.path, 'docs', 'EXECUTIVE_BRIEFING.md');
+      fs.writeFileSync(briefingFilePath, mdText, 'utf-8');
+      console.log(chalk.green(`✔ Saved 2-page executive briefing to docs/EXECUTIVE_BRIEFING.md\n`));
       continue;
     }
 
@@ -244,7 +404,7 @@ async function main() {
     // Pre-turn: if the active phase's document has open questions, collect answers NOW
     // and feed them to the specialist so the LLM integrates them into the document body.
     // This must happen before executeTurn — not after — so the LLM sees the answers.
-    const isQuickCommand = ['/plan', '/roadmap', '/status', '/help', '/questions'].includes(lowered)
+    const isQuickCommand = ['/plan', '/roadmap', '/status', '/help', '/questions', '/twin-model', '/briefing', '/summary', '/report', '/web', '/browser'].includes(lowered)
       || lowered.startsWith('/goto')
       || lowered.startsWith('/view')
       || lowered.startsWith('/approve')

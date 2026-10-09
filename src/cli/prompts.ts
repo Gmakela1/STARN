@@ -83,6 +83,65 @@ export async function promptSelectLiveModel(
   }
 }
 
+export async function promptDigitalTwinSettings(
+  models: ModelOption[],
+  currentConfig: {
+    digitalTwinProvider?: 'openrouter' | 'local';
+    digitalTwinBaseUrl?: string;
+    digitalTwinModel?: string;
+  }
+): Promise<{
+  digitalTwinProvider: 'openrouter' | 'local';
+  digitalTwinBaseUrl?: string;
+  digitalTwinModel: string;
+}> {
+  const provider = await select<'openrouter' | 'local'>({
+    message: 'Select Digital Twin Spatial Reasoning Provider:',
+    choices: [
+      {
+        name: 'OpenRouter Cloud (High-parameter multimodal reasoning)',
+        value: 'openrouter'
+      },
+      {
+        name: 'Local / Private Endpoint (Ollama, vLLM, LM Studio OpenAI-compatible)',
+        value: 'local'
+      }
+    ],
+    default: currentConfig.digitalTwinProvider ?? 'openrouter'
+  });
+
+  if (provider === 'local') {
+    const baseUrl = await input({
+      message: 'Enter Local Base URL (e.g. http://localhost:11434/v1 or http://192.168.1.X:8000/v1):',
+      default: currentConfig.digitalTwinBaseUrl || 'http://localhost:11434/v1',
+      validate: val => (val.trim().length > 0 ? true : 'Base URL cannot be empty.')
+    });
+
+    const model = await input({
+      message: 'Enter Local Model Tag (e.g. llama3.3:70b, qwen2.5-coder:32b):',
+      default: currentConfig.digitalTwinModel || 'llama3.3:70b',
+      validate: val => (val.trim().length > 0 ? true : 'Model tag cannot be empty.')
+    });
+
+    return {
+      digitalTwinProvider: 'local',
+      digitalTwinBaseUrl: baseUrl.trim(),
+      digitalTwinModel: model.trim()
+    };
+  }
+
+  // OpenRouter selection
+  const model = await promptSelectLiveModel(
+    models,
+    currentConfig.digitalTwinModel || 'anthropic/claude-3.5-sonnet'
+  );
+
+  return {
+    digitalTwinProvider: 'openrouter',
+    digitalTwinModel: model
+  };
+}
+
 export async function promptProjectSelection(
   existingProjects: ProjectRecord[],
   activeId: string | null
