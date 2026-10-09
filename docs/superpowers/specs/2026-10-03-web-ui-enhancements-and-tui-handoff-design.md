@@ -202,29 +202,54 @@ Inside `web/src/views/PartsView.tsx` (replacing `BomView.tsx`), a sticky seconda
 
 ---
 
-### 3.5. Local / Private Model Configuration for Digital Twin (Settings)
+### 3.5. Local / Private Model Configuration for Digital Twin (Settings & TUI)
 
-In `web/src/views/SettingsView.tsx` and `src/server/types.ts`:
-- Expand Settings data model:
+In `src/config.ts`, `web/src/views/SettingsView.tsx`, and `src/server/types.ts`:
+- Expand configuration data model:
   ```ts
-  export interface SettingsResponse {
-    agentModel: string;
-    criticModel?: string;
+  export interface StarnConfig {
+    apiKey: string;
+    defaultModel: string;
     compactionModel?: string;
+    compressionThreshold: number;
+    keepRecentTokens: number;
+    siteUrl: string;
+    appName: string;
+    globalDir: string;
+    // Digital Twin & Local Provider Settings:
     digitalTwinModel?: string;
     digitalTwinProvider?: 'openrouter' | 'local';
-    digitalTwinBaseUrl?: string; // e.g. "http://192.168.1.50:11434/v1" or "http://localhost:8000/v1"
-    port: number;
-    projectPath: string;
+    digitalTwinBaseUrl?: string; // e.g. "http://192.168.1.50:11434/v1" or "http://localhost:11434/v1"
   }
   ```
-- **Settings UI Controls:**
+- **Web Settings UI Controls:**
   - Toggle: `OpenRouter Cloud` vs. `Local / Private Host (OpenAI-compatible)`.
   - When `Local` is selected:
     - Input: **Endpoint URL** (e.g. `http://localhost:11434/v1` for Ollama, `http://192.168.1.50:8000/v1` for vLLM).
     - Input: **Model Identifier** (e.g. `llama3.3:70b`, `qwen2.5-coder:32b`, `mistral-nemo`).
-    - "Test Connection" button calling `GET /v1/models` to verify reachability.
   - Persisted to user configuration `~/.starn/config.json`.
+
+---
+
+### 3.6. Full TUI Parity: Local Models, Digital Twin, and Executive Briefing
+
+The TUI interactive loop must have complete feature parity with the web interface:
+
+1. **`/twin-model` Slash Command in TUI:**
+   - Dedicated slash command in `src/index.ts`.
+   - Prompts the user:
+     - Provider choice: `OpenRouter Cloud` vs. `Local / Private Host (e.g. Ollama, vLLM, LM Studio)`.
+     - If `OpenRouter`: pick from fetched live model list.
+     - If `Local`: prompt for local endpoint URL (defaults to `http://localhost:11434/v1`) and model name/tag (e.g. `llama3.3:70b`).
+   - Persists to `~/.starn/config.json` via `saveUserConfig`.
+   - Displays confirmation with configured endpoint and model name.
+
+2. **`/briefing` Slash Command in TUI:**
+   - Prints the structured 2-page executive briefing directly to the terminal using headless formatters (`src/core/formatters.ts`).
+   - Outputs:
+     - Part 1: Executive Overview, Project Description, Active Phase, and Financial Rollup (Budget vs. Actual vs. Variance).
+     - Part 2: Linear Phase-Gate Milestone Roadmap, Deliverable Status Matrix, and Open Non-Conformances.
+   - Automatically writes/updates `docs/EXECUTIVE_BRIEFING.md` on disk for offline inspection and versioning.
 
 ---
 
@@ -274,11 +299,12 @@ In `web/src/views/SettingsView.tsx` and `src/server/types.ts`:
 
 ## 6. Implementation Stages
 
-- **Stage 1:** CLI TUI `/web` command and in-process handoff in `src/index.ts`.
-- **Stage 2:** Backend Trade Study parser (`src/server/parsers/trade-study-parser.ts`) and `GET /api/trade-study` route.
-- **Stage 3:** Local Digital Twin endpoint settings in backend and `SettingsView`.
+- **Stage 1:** Config and types updates (`src/config.ts`, `src/server/types.ts`) supporting `digitalTwinModel`, `digitalTwinProvider`, and `digitalTwinBaseUrl`.
+- **Stage 2:** CLI TUI `/web`, `/twin-model`, and `/briefing` commands in `src/index.ts` with interactive prompts for local endpoints.
+- **Stage 3:** Backend Trade Study parser (`src/server/parsers/trade-study-parser.ts`) and `GET /api/trade-study` route with unit tests.
 - **Stage 4:** AppShell 7-tab reorder & renaming (`Dashboard`, `Development`, `Questions & Issues`, `Parts`, `Work Instructions`, `Digital Twin`, `Settings`).
 - **Stage 5:** Revamped `PartsView` with 3 sub-tabs (`Sourcing`, `BOM`, `Parts`).
 - **Stage 6:** Dashboard visual serpentine milestone "Treasure Map" + Project Overview card.
 - **Stage 7:** 2-Page Executive Briefing modal with `@media print` 1-click Save to PDF.
-- **Stage 8:** Verification pass (`tsc`, vitest test suite, web production build).
+- **Stage 8:** SettingsView support for local digital twin endpoint and model configuration.
+- **Stage 9:** Verification pass (`tsc`, vitest test suite, web production build).
