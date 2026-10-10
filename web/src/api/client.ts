@@ -11,6 +11,7 @@ import {
   ProjectIssue,
   RoadmapPhase,
   Settings,
+  SettingsUpdate,
   SubsystemTradeStudy,
   WorkInstruction
 } from '../types/api';
@@ -84,5 +85,9 @@ export const api = {
 
   // Settings
   fetchSettings: () => call<Settings>('GET', '/api/settings'),
-  saveSettings: (settings: Partial<Settings>) => call<Settings>('POST', '/api/settings', settings)
+  saveSettings: (update: SettingsUpdate) => call<Settings>('PUT', '/api/settings', update),
+  listProviderModels: (id: string) =>
+    call<{ models: string[] }>('GET', `/api/providers/${encodeURIComponent(id)}/models`),
+  probeProvider: (id: string, model: string) =>
+    call<{ ok: boolean; detail: string }>('POST', `/api/providers/${encodeURIComponent(id)}/probe`, { model })
 };

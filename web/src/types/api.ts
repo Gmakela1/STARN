@@ -44,7 +44,6 @@ export interface ProjectInfo {
     agent: string;
     critic?: string;
     compaction?: string;
-    digitalTwin?: string;
   };
   financials: BomFinancials;
 }
@@ -164,15 +163,43 @@ export interface SubsystemTradeStudy {
   rationale: string;
 }
 
+export type ModelRole = 'drafting' | 'critic' | 'classifier' | 'compaction';
+
+export interface RoleAssignment {
+  providerId: string;
+  model: string;
+}
+
+export type Assignments = Record<ModelRole, RoleAssignment>;
+
+/** Provider as returned by the API. Keys are never returned. */
+export interface ProviderView {
+  id: string;
+  name: string;
+  baseUrl: string;
+  hasKey: boolean;
+  builtIn: boolean;
+}
+
+/** Provider as sent to the API. Omit apiKey to keep the stored key; '' clears it. */
+export interface ProviderInput {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiKey?: string;
+}
+
 export interface Settings {
-  agentModel: string;
-  criticModel?: string;
-  compactionModel?: string;
-  digitalTwinModel?: string;
-  digitalTwinProvider?: 'openrouter' | 'local';
-  digitalTwinBaseUrl?: string;
+  providers: ProviderView[];
+  assignments: Assignments;
   port: number;
   projectPath: string;
+  probe?: { ok: boolean; detail: string };
+}
+
+export interface SettingsUpdate {
+  providers?: ProviderInput[];
+  assignments?: Partial<Assignments>;
 }
 
 export interface CheckpointDecisionResult {
