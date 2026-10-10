@@ -298,6 +298,7 @@ export function formatHelp(): string {
     ['/goto <phase>', 'Switch the active phase (number, id, or name fragment)'],
     ['/help', 'Show this command list'],
     ['/compact', 'Summarize older session messages now (free up context)'],
+    ['/models', 'Manage providers (OpenRouter, Ollama, LM Studio) and per-role model assignments'],
     ['/compact-model', 'Select the model used for session compaction'],
     ['/briefing', 'Generate 2-page executive summary and save to docs/'],
     ['/web', 'Launch browser UI and hand off session to HTTP server'],

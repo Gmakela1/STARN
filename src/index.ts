@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ora from 'ora';
 import chalk from 'chalk';
-import { loadConfig, ensureStarnDirs, saveUserConfig, ProviderConfig, Assignments } from './config.js';
+import { loadConfig, ensureStarnDirs, saveUserConfig, ProviderConfig, Assignments, OPENROUTER_PROVIDER_ID } from './config.js';
+import { allProviders, createRoleClients } from './models/role-clients.js';
+import { formatAssignments, needsOpenRouterKey } from './cli/model-settings.js';
 import { OpenRouterClient } from './openrouter/client.js';
 import { fetchLiveOpenRouterModels } from './openrouter/models.js';
 import { ProjectRegistry } from './workspace/registry.js';
@@ -26,7 +28,9 @@ import {
   promptApiKey,
   promptSelectLiveModel,
   promptProjectSelection,
-  promptUserQuery
+  promptUserQuery,
+  promptModelForProvider,
+  promptModelsMenu
 } from './cli/prompts.js';
 import { runHumanCheckpoint, handleCriticFailure } from './cli/checkpoint.js';
 import { runDocumentViewer, resolveDocTarget } from './cli/doc-viewer.js';
@@ -53,9 +57,9 @@ async function main() {
   const config = loadConfig();
   ensureStarnDirs(config.globalDir);
 
-  // 1. Interactive API Key Onboarding if missing
+  // 1. Interactive API Key Onboarding (only when a role runs on OpenRouter)
   let apiKey = config.apiKey;
-  if (!apiKey) {
+  if (!apiKey && needsOpenRouterKey(config.assignments)) {
     console.log(chalk.yellow('No OpenRouter API key found in environment or config.'));
     console.log(chalk.dim('Get an API key at https://openrouter.ai/keys\n'));
     apiKey = await promptApiKey();
@@ -66,23 +70,31 @@ async function main() {
   const registryFile = path.join(config.globalDir, 'registry.json');
   const projectRegistry = new ProjectRegistry(registryFile);
 
-  // 2. Fetch Live Models from OpenRouter
-  const modelSpinner = ora('Fetching available models from OpenRouter...').start();
-  const availableModels = await fetchLiveOpenRouterModels(apiKey);
-  modelSpinner.succeed(`Loaded ${availableModels.length} models from OpenRouter.`);
+  // 2. Fetch Live Models from OpenRouter (only with a key)
+  let availableModels: Awaited<ReturnType<typeof fetchLiveOpenRouterModels>> = [];
+  if (apiKey) {
+    const modelSpinner = ora('Fetching available models from OpenRouter...').start();
+    availableModels = await fetchLiveOpenRouterModels(apiKey);
+    modelSpinner.succeed(`Loaded ${availableModels.length} models from OpenRouter.`);
+  }
 
-  // 3. Model Selection
-  const selectedModel = await promptSelectLiveModel(availableModels, config.defaultModel);
-  projectRegistry.setDefaultModel(selectedModel);
-  saveUserConfig({ defaultModel: selectedModel }, config.globalDir);
+  // 3. Drafting model selection (OpenRouter drafting only; local roles are managed via /models)
+  if (config.assignments.drafting.providerId === OPENROUTER_PROVIDER_ID) {
+    const draftingModel = await promptSelectLiveModel(availableModels, config.assignments.drafting.model);
+    config.assignments.drafting.model = draftingModel;
+    config.defaultModel = draftingModel;
+    projectRegistry.setDefaultModel(draftingModel);
+    saveUserConfig({ defaultModel: draftingModel, assignments: config.assignments }, config.globalDir);
+  }
 
-  // 3b. Compaction model onboarding (if not yet configured)
-  if (!config.compactionModel) {
+  // 3b. Compaction model onboarding (if not yet configured, OpenRouter only)
+  if (!config.compactionModel && config.assignments.compaction.providerId === OPENROUTER_PROVIDER_ID) {
     console.log(chalk.dim('\nSelect a model for session compaction (summarizes long conversations to free context).'))
     console.log(chalk.dim('Pick the same model, or a cheaper/faster one. Press Enter to accept the default.'))
-    const compactionModel = await promptSelectLiveModel(availableModels, selectedModel);
-    saveUserConfig({ compactionModel }, config.globalDir);
+    const compactionModel = await promptSelectLiveModel(availableModels, config.assignments.drafting.model);
+    config.assignments.compaction = { providerId: OPENROUTER_PROVIDER_ID, model: compactionModel };
     config.compactionModel = compactionModel;
+    saveUserConfig({ compactionModel, assignments: config.assignments }, config.globalDir);
     console.log(chalk.green(`✔ Compaction model set to ${compactionModel}\n`));
   }
 
@@ -112,7 +124,7 @@ async function main() {
 
   console.log(chalk.green(`\nWorking in Project: ${chalk.bold(currentProjectRecord.name)}`));
   console.log(chalk.dim(`Directory: ${currentProjectRecord.path}`));
-  console.log(chalk.dim(`Active Model: ${selectedModel}\n`));
+  console.log(chalk.dim(formatAssignments(config.assignments, config.providers) + '\n'));
 
   const stateManager = new ProjectStateManager(currentProjectRecord.path);
   const currentState = stateManager.getOrCreateState(currentProjectRecord.id, currentProjectRecord.name);
@@ -131,17 +143,22 @@ async function main() {
   // Show Project Roadmap Banner
   console.log(formatWorkflowRoadmap(currentState, currentProjectRecord.path));
 
-  const client = new OpenRouterClient({
+  // Voice transcription always uses OpenRouter.
+  const voiceClient = new OpenRouterClient({
     apiKey,
     siteUrl: config.siteUrl,
     appName: config.appName,
     logger
   });
+  const buildRoleClients = () =>
+    createRoleClients({ apiKey, providers: config.providers, assignments: config.assignments, siteUrl: config.siteUrl, appName: config.appName, logger });
+  let roleClients = buildRoleClients();
 
   /** Persists provider/assignment changes (from web Settings or /models) and keeps legacy mirrors in sync. */
   const persistModelSettings = (s: { providers: ProviderConfig[]; assignments: Assignments }) => {
     config.providers = s.providers;
     config.assignments = s.assignments;
+    roleClients = buildRoleClients();
     config.defaultModel = s.assignments.drafting.model;
     config.compactionModel = s.assignments.compaction.model;
     saveUserConfig(
@@ -195,16 +212,34 @@ async function main() {
   while (true) {
     const sessionTokens = estimateTokens(sessionMessages);
     printSectionHeader(`Active Session [Phase: ${stateManager.getState().workflow?.activePhase?.toUpperCase() || 'CONOPS'}] ${formatContextGauge(sessionTokens, config.compressionThreshold, config.compactionModel)}`);
-    const userPrompt = await promptUserQuery(client);
+    const userPrompt = await promptUserQuery(voiceClient);
 
     let currentPrompt = userPrompt;
 
     // /compact-model: select the model used for session compaction (settings-only)
     if (currentPrompt.trim().toLowerCase() === '/compact-model') {
-      const compactionModel = await promptSelectLiveModel(availableModels, config.compactionModel || selectedModel);
-      saveUserConfig({ compactionModel }, config.globalDir);
-      config.compactionModel = compactionModel;
-      console.log(chalk.green(`✔ Compaction model set to ${compactionModel}\n`));
+      const provider = allProviders(apiKey, config.providers).find(p => p.id === config.assignments.compaction.providerId)!;
+      const compactionModel = await promptModelForProvider(provider, availableModels, config.assignments.compaction.model);
+      if (compactionModel) {
+        persistModelSettings({
+          providers: config.providers,
+          assignments: { ...config.assignments, compaction: { providerId: provider.id, model: compactionModel } }
+        });
+        console.log(chalk.green(`✔ Compaction model set to ${compactionModel} on ${provider.name}\n`));
+      }
+      continue;
+    }
+
+    // /models: manage providers and per-role model assignments
+    if (currentPrompt.trim().toLowerCase() === '/models') {
+      const updated = await promptModelsMenu(
+        { apiKey, providers: config.providers, assignments: config.assignments, siteUrl: config.siteUrl, appName: config.appName },
+        availableModels
+      );
+      if (updated) {
+        persistModelSettings(updated);
+        console.log(chalk.green('✔ Model settings saved.\n'));
+      }
       continue;
     }
 
@@ -376,7 +411,7 @@ async function main() {
     // Pre-turn: if the active phase's document has open questions, collect answers NOW
     // and feed them to the specialist so the LLM integrates them into the document body.
     // This must happen before executeTurn — not after — so the LLM sees the answers.
-    const isQuickCommand = ['/plan', '/roadmap', '/status', '/help', '/questions', '/briefing', '/summary', '/report', '/web', '/browser'].includes(lowered)
+    const isQuickCommand = ['/models', '/plan', '/roadmap', '/status', '/help', '/questions', '/briefing', '/summary', '/report', '/web', '/browser'].includes(lowered)
       || lowered.startsWith('/goto')
       || lowered.startsWith('/view')
       || lowered.startsWith('/approve')
@@ -420,12 +455,18 @@ async function main() {
           userPrompt: currentPrompt,
           projectPath: currentProjectRecord.path,
           stateManager,
-          client,
-          model: selectedModel,
+          client: roleClients.drafting.client,
+          model: roleClients.drafting.model,
+          draftingProviderName: roleClients.drafting.providerName,
+          criticClient: roleClients.critic.client,
+          criticModel: roleClients.critic.model,
+          classifierClient: roleClients.classifier.client,
+          classifierModel: roleClients.classifier.model,
+          compactionClient: roleClients.compaction.client,
+          compactionModel: roleClients.compaction.model,
           toolRegistry,
           specialistRegistry,
           sessionMessages,
-          compactionModel: config.compactionModel || selectedModel,
           compressionThreshold: config.compressionThreshold,
           keepRecentTokens: config.keepRecentTokens,
           logger,
@@ -475,7 +516,7 @@ async function main() {
           console.log(formatCompactCriticPass(crit));
         } else if (crit && !crit.passed && result.autoRevisionsRun >= 2) {
           // Auto-revisions exhausted — user must intervene
-          const critAction = await handleCriticFailure(crit, result.specialistName, client);
+          const critAction = await handleCriticFailure(crit, result.specialistName, voiceClient);
           if (critAction.action === 'feedback' && critAction.feedback) {
             currentPrompt = critAction.feedback;
             continue; // restart turn loop with targeted feedback
@@ -498,8 +539,9 @@ async function main() {
             criticResult: result.criticResult,
             projectPath: currentProjectRecord.path,
             stateManager,
-            client,
-            model: selectedModel,
+            client: roleClients.drafting.client,
+            model: roleClients.drafting.model,
+            voiceClient,
             toolRegistry
           });
 
@@ -518,7 +560,7 @@ async function main() {
           }
         } else {
           // Non-review output: print it and end the turn
-          console.log(`\n${result.output}\n`);
+          console.log(result.error ? chalk.yellow(`\n⚠ ${result.output}\n`) : `\n${result.output}\n`);
           turnActive = false;
         }
       } catch (err: any) {

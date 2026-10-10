@@ -81,6 +81,7 @@ export function formatHelpPlain(): string {
     ['/goto <phase>', 'Switch the active phase (number, id, or name fragment)'],
     ['/help', 'Show this command list'],
     ['/compact', 'Summarize older session messages now (free up context)'],
+    ['/models', 'Manage providers (OpenRouter, Ollama, LM Studio) and per-role model assignments'],
     ['/compact-model', 'Select the model used for session compaction'],
     ['/voice', 'Record your next prompt by voice (type in the prompt input)']
   ];
