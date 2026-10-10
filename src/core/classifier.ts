@@ -1,5 +1,4 @@
-import { OpenRouterClient } from '../openrouter/client.js';
-import { ChatMessage } from '../openrouter/types.js';
+import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { Logger } from '../util/logger.js';
 
 let classifierLogger: Logger | undefined;
@@ -141,7 +140,7 @@ function buildHistorySlice(recentMessages?: ChatMessage[]): string {
 
 export async function classifyRequest(
   userMessage: string,
-  client: OpenRouterClient,
+  client: ChatClient,
   model: string,
   activePhase?: string,
   recentMessages?: ChatMessage[],

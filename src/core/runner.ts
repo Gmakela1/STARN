@@ -1,12 +1,11 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import { OpenRouterClient } from '../openrouter/client.js';
 import { ProjectStateManager } from '../workspace/state.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { ToolExecutionContext, EditEntry } from '../tools/types.js';
 import { SpecialistRegistry } from '../specialists/registry.js';
 import { SHARED_EDIT_INSTRUCTIONS } from '../specialists/shared.js';
-import { ChatMessage } from '../openrouter/types.js';
+import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { runDiscovery } from './discovery.js';
 import { classifyRequest } from './classifier.js';
 import { runAgentToolLoop } from './agent-loop.js';
@@ -20,8 +19,16 @@ export interface TurnOptions {
   userPrompt: string;
   projectPath: string;
   stateManager: ProjectStateManager;
-  client: OpenRouterClient;
+  /** Drafting + intake client/model. Other roles fall back to these when unset. */
+  client: ChatClient;
   model: string;
+  criticClient?: ChatClient;
+  criticModel?: string;
+  classifierClient?: ChatClient;
+  classifierModel?: string;
+  compactionClient?: ChatClient;
+  /** Provider name of the drafting client, used in the no-document guard message. */
+  draftingProviderName?: string;
   toolRegistry: ToolRegistry;
   specialistRegistry: SpecialistRegistry;
   sessionMessages?: ChatMessage[];
@@ -48,6 +55,8 @@ export interface TurnResult {
   requiresReview: boolean;
   sessionMessages: ChatMessage[];
   aborted?: boolean;
+  /** True when the turn failed in a way the user must act on (e.g. drafting model produced no document). */
+  error?: boolean;
 }
 
 export class CoreRunner {
@@ -101,7 +110,7 @@ export class CoreRunner {
     if (trimmed === '/compact') {
       // Force compaction now using the configured compaction model
       const compactionResult = await maybeCompact({
-        client,
+        client: options.compactionClient ?? client,
         messages: sessionMessages,
         compactionModel: options.compactionModel || model,
         threshold: 0, // force compaction regardless of size
@@ -160,8 +169,8 @@ export class CoreRunner {
     onStatusUpdate?.('Classifying request...');
     let specialistId = await classifyRequest(
       userPrompt,
-      client,
-      model,
+      options.classifierClient ?? client,
+      options.classifierModel ?? model,
       activeWorkflowPhase,
       sessionMessages.slice(-6),
       CoreRunner.lastActiveSpecialistId
@@ -285,7 +294,7 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     // 6. Specialist Execution Loop
     // Auto-compaction: if context exceeds threshold, summarize older messages first.
     const compactionResult = await maybeCompact({
-      client,
+      client: options.compactionClient ?? client,
       messages: sessionMessages,
       compactionModel: options.compactionModel || model,
       threshold: options.compressionThreshold ?? 100000,
@@ -377,12 +386,36 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
           // ignore
         }
       }
+
+      // Guard: the drafting model made no tool calls and neither wrote nor returned a document.
+      // Common with local models that lack tool calling. Never send an empty
+      // artifact to the critic; surface an actionable error instead.
+      if (!editUsed && !diskModified && !finalOutput.includes('# ') && (agentResult.toolCallCount ?? 0) === 0) {
+        const reply = finalOutput.trim();
+        const output =
+          `Drafting model "${model}" on "${options.draftingProviderName ?? 'OpenRouter'}" produced no document. ` +
+          `It may not support tool calling. Reassign drafting in Settings or /models.` +
+          (reply ? `\n\nModel reply:\n${reply}` : '');
+        return {
+          specialistId: specialist.id,
+          specialistName: specialist.name,
+          output,
+          autoRevisionsRun: 0,
+          requiresReview: false,
+          error: true,
+          sessionMessages: [
+            ...sessionMessages,
+            { role: 'user', content: userPrompt },
+            { role: 'assistant', content: reply || output }
+          ]
+        };
+      }
     }
 
     // 7. Critic While-Loop with Program Baseline Verification
     if (specialist.requiresCritic) {
       onStatusUpdate?.('Running harsh critic evaluation with program alignment...');
-      const critic = new CriticEvaluator(client);
+      const critic = new CriticEvaluator(options.criticClient ?? client);
       let attempts = 0;
       const maxAttempts = 2;
       let passed = false;
@@ -429,7 +462,7 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
 
         try {
           criticResult = await critic.evaluate({
-            model,
+            model: options.criticModel ?? model,
             artifactContent: artifactForCritic,
             rubric: specialist.criticRubric || '',
             secretSauceExamples: specialist.secretSauceExamples,
@@ -578,7 +611,7 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
 
   // Helper: Generate dynamic adaptive intake question via LLM
   private static async generateDynamicIntakeQuestion(
-    client: OpenRouterClient,
+    client: ChatClient,
     model: string,
     userPrompt: string,
     answerKey: string,

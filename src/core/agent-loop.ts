@@ -1,10 +1,9 @@
-import { OpenRouterClient } from '../openrouter/client.js';
-import { ChatMessage } from '../openrouter/types.js';
+import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { ToolExecutionContext } from '../tools/types.js';
 
 export interface AgentLoopOptions {
-  client: OpenRouterClient;
+  client: ChatClient;
   model: string;
   systemPrompt: string;
   userMessage: string;
@@ -21,6 +20,8 @@ export interface AgentLoopResult {
   finalResponse: string;
   messages: ChatMessage[];
   aborted?: boolean;
+  /** Number of tool calls the model issued during this loop. */
+  toolCallCount?: number;
 }
 
 export async function runAgentToolLoop(options: AgentLoopOptions): Promise<AgentLoopResult> {
@@ -46,6 +47,7 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
 
   let turn = 0;
   let finalResponse = '';
+  let toolCallCount = 0;
 
   while (turn < maxTurns) {
     turn++;
@@ -70,6 +72,7 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
     }
 
     if (response.toolCalls && response.toolCalls.length > 0) {
+      toolCallCount += response.toolCalls.length;
       messages.push({
         role: 'assistant',
         content: response.content,
@@ -105,6 +108,7 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
 
   return {
     finalResponse,
-    messages
+    messages,
+    toolCallCount
   };
 }

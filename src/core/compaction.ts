@@ -1,5 +1,4 @@
-import { ChatMessage } from '../openrouter/types.js';
-import { OpenRouterClient } from '../openrouter/client.js';
+import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { Logger } from '../util/logger.js';
 
 const CHARS_PER_TOKEN = 4;
@@ -86,7 +85,7 @@ Conversation history to summarize:
  * messages. Uses the configured compactionModel (independent of working model).
  */
 export async function generateSummary(
-  client: OpenRouterClient,
+  client: ChatClient,
   model: string,
   messagesToSummarize: ChatMessage[]
 ): Promise<string> {
@@ -100,7 +99,7 @@ export async function generateSummary(
 }
 
 export interface MaybeCompactOptions {
-  client: OpenRouterClient;
+  client: ChatClient;
   messages: ChatMessage[];
   compactionModel: string;
   threshold: number;

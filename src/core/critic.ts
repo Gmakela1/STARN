@@ -1,4 +1,4 @@
-import { OpenRouterClient } from '../openrouter/client.js';
+import { ChatClient } from '../openrouter/types.js';
 import { Logger } from '../util/logger.js';
 import { EditEntry } from '../tools/types.js';
 
@@ -37,7 +37,7 @@ export interface CriticResult {
 }
 
 export class CriticEvaluator {
-  constructor(private client: OpenRouterClient) {}
+  constructor(private client: ChatClient) {}
 
   async evaluate(options: CriticEvaluateOptions): Promise<CriticResult> {
     let baselineSection = '';

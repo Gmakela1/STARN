@@ -9,6 +9,7 @@ import { CriticResult, enrichFeedbackWithCritic } from '../core/critic.js';
 export { enrichFeedbackWithCritic };
 import { ProjectStateManager } from '../workspace/state.js';
 import { OpenRouterClient } from '../openrouter/client.js';
+import { ChatClient } from '../openrouter/types.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { formatCriticFindingsTable, formatCriticScorecard, extractCleanMarkdownDocument, formatDocumentPreview, formatDocumentToc, extractSections } from './ui.js';
 import { promptInputWithVoice } from './prompts.js';
@@ -20,8 +21,11 @@ export interface CheckpointReviewOptions {
   criticResult?: CriticResult;
   projectPath: string;
   stateManager: ProjectStateManager;
-  client?: OpenRouterClient;
+  /** Drafting client/model (change-impact analysis). */
+  client?: ChatClient;
   model?: string;
+  /** OpenRouter client for voice transcription. */
+  voiceClient?: OpenRouterClient;
   toolRegistry?: ToolRegistry;
 }
 
@@ -161,7 +165,7 @@ export async function runHumanCheckpoint(
     if (action === 'feedback') {
       const feedback = await promptInputWithVoice(
         'Enter your response / feedback for the agent:',
-        options.client
+        options.voiceClient
       );
       userFeedback = enrichFeedbackWithCritic(feedback, criticResult);
       finalAction = 'feedback';
