@@ -8,7 +8,7 @@ import { OpenRouterClient } from '../openrouter/client.js';
 import { Assignments, MODEL_ROLES, ModelRole, OPENROUTER_PROVIDER_ID, ProviderConfig } from '../config.js';
 import { allProviders, createProviderClient } from '../models/role-clients.js';
 import { listProviderModels, probeToolCalling } from '../models/provider-models.js';
-import { assignedRolesFor, formatAssignments } from './model-settings.js';
+import { assignedRolesFor, formatAssignments, validateProviderInput } from './model-settings.js';
 
 export async function promptApiKey(): Promise<string> {
   const key = await password({
@@ -221,8 +221,8 @@ export async function promptModelsMenu(
     if (action === 'done') return changed ? { providers, assignments } : null;
 
     if (action === 'add') {
-      const name = (await input({ message: 'Provider name:', default: 'Ollama' })).trim();
-      const baseUrl = (await input({ message: 'Base URL (API root):', default: 'http://localhost:11434/v1' })).trim();
+      const name = (await input({ message: 'Provider name:', default: 'Ollama', validate: v => (v.trim() ? true : 'Provider needs a name') })).trim();
+      const baseUrl = (await input({ message: 'Base URL (API root):', default: 'http://localhost:11434/v1', validate: v => validateProviderInput(name, v) })).trim();
       const apiKey = (await password({ message: 'API key (optional, Enter to skip):', mask: '*' })).trim();
       const baseId = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'provider';
       let id = baseId === OPENROUTER_PROVIDER_ID ? `${baseId}-local` : baseId;

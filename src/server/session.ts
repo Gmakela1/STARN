@@ -133,12 +133,19 @@ export class ServerSessionManager {
     for (const p of providers) {
       if (!p.id || p.id === OPENROUTER_PROVIDER_ID) throw new Error(`Provider id "${p.id}" is reserved or empty`);
       if (ids.has(p.id)) throw new Error(`Duplicate provider id "${p.id}"`);
+      if (!p.name?.trim()) throw new Error(`Provider "${p.id}" needs a name`);
+      if (!/^https?:\/\//i.test(p.baseUrl?.trim() ?? '')) {
+        throw new Error(`Provider "${p.name}" base URL must start with http:// or https://`);
+      }
+      p.name = p.name.trim();
+      p.baseUrl = p.baseUrl.trim();
       ids.add(p.id);
     }
     const assignments = cloneAssignments(this.deps.assignments);
     for (const role of MODEL_ROLES) {
       const a = update.assignments?.[role];
-      if (a) assignments[role] = { providerId: String(a.providerId), model: String(a.model) };
+      if (a) assignments[role] = { providerId: String(a.providerId), model: String(a.model ?? '').trim() };
+      if (!assignments[role].model) throw new Error(`Config error: role "${role}" has no model`);
     }
     validateAssignments(assignments, providers);
     this.deps.providers = providers;

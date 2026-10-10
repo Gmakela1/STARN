@@ -17,3 +17,10 @@ export function assignedRolesFor(providerId: string, a: Assignments): ModelRole[
 export function needsOpenRouterKey(a: Assignments): boolean {
   return assignedRolesFor(OPENROUTER_PROVIDER_ID, a).length > 0;
 }
+
+/** Validates a provider name + base URL for the /models add flow. Returns true or an error message. */
+export function validateProviderInput(name: string, baseUrl: string): true | string {
+  if (!name.trim()) return 'Provider needs a name';
+  if (!/^https?:\/\//i.test(baseUrl.trim())) return 'Base URL must start with http:// or https://';
+  return true;
+}

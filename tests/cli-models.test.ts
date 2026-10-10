@@ -33,3 +33,13 @@ describe('CLI model settings helpers', () => {
     expect(needsOpenRouterKey(allLocal)).toBe(false);
   });
 });
+
+import { validateProviderInput } from '../src/cli/model-settings.js';
+
+describe('validateProviderInput', () => {
+  it('rejects empty name and non-http base URL; accepts a valid provider', () => {
+    expect(validateProviderInput(' ', 'http://h/v1')).toBe('Provider needs a name');
+    expect(validateProviderInput('Ollama', 'localhost:11434/v1')).toBe('Base URL must start with http:// or https://');
+    expect(validateProviderInput('Ollama', 'http://localhost:11434/v1')).toBe(true);
+  });
+});

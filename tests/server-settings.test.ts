@@ -135,6 +135,29 @@ describe('settings + providers API', () => {
     expect(json.data.probe).toBeUndefined();
   });
 
+  it('PUT with empty model → 400 naming the role', async () => {
+    const { status, json } = await request(server, 'PUT', '/api/settings', {
+      assignments: { compaction: { providerId: 'openrouter', model: '  ' } }
+    });
+    expect(status).toBe(400);
+    expect(json.error).toContain('role "compaction" has no model');
+  });
+
+  it('PUT provider with base URL lacking http(s) scheme → 400', async () => {
+    const { status, json } = await request(server, 'PUT', '/api/settings', {
+      providers: [{ id: 'lm', name: 'LM Studio', baseUrl: 'localhost:1234/v1' }]
+    });
+    expect(status).toBe(400);
+    expect(json.error).toContain('must start with http:// or https://');
+  });
+
+  it('PUT provider with empty name → 400', async () => {
+    const { status } = await request(server, 'PUT', '/api/settings', {
+      providers: [{ id: 'lm', name: ' ', baseUrl: 'http://127.0.0.1:1/v1' }]
+    });
+    expect(status).toBe(400);
+  });
+
   it('POST /api/settings behaves like PUT', async () => {
     const { status } = await request(server, 'POST', '/api/settings', { assignments: { critic: { providerId: 'ghost', model: 'x' } } });
     expect(status).toBe(400);
