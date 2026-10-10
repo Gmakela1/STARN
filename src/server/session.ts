@@ -3,7 +3,9 @@ import path from 'node:path';
 import { CoreRunner, TurnResult } from '../core/runner.js';
 import { CriticResult, enrichFeedbackWithCritic } from '../core/critic.js';
 import { ChatMessage } from '../openrouter/types.js';
-import { OpenRouterClient } from '../openrouter/client.js';
+import { ChatClient } from '../openrouter/types.js';
+import { Assignments, MODEL_ROLES, OPENROUTER_PROVIDER_ID, ProviderConfig, validateAssignments } from '../config.js';
+import { allProviders, createProviderClient, createRoleClients, RoleClients } from '../models/role-clients.js';
 import { ProjectStateManager } from '../workspace/state.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { SpecialistRegistry } from '../specialists/registry.js';
@@ -12,11 +14,16 @@ import { Logger } from '../util/logger.js';
 export interface SessionDeps {
   projectPath: string;
   stateManager: ProjectStateManager;
-  client: OpenRouterClient;
-  model: string;
+  /** OpenRouter API key (built-in provider). */
+  apiKey: string;
+  providers: ProviderConfig[];
+  assignments: Assignments;
+  /** Test seam: builds a client for a provider. Defaults to real OpenAI-compatible clients. */
+  clientFactory?: (p: ProviderConfig) => ChatClient;
+  siteUrl?: string;
+  appName?: string;
   toolRegistry: ToolRegistry;
   specialistRegistry: SpecialistRegistry;
-  compactionModel?: string;
   compressionThreshold?: number;
   keepRecentTokens?: number;
   logger?: Logger;
@@ -54,28 +61,89 @@ export class ServerSessionManager {
   private pending: PendingCheckpoint | null = null;
   private activeAbort: AbortController | null = null;
 
+  private roleClients: RoleClients;
+
   constructor(deps: SessionDeps) {
-    this.deps = deps;
+    this.deps = { ...deps, providers: deps.providers.map(p => ({ ...p })), assignments: cloneAssignments(deps.assignments) };
+    this.roleClients = this.buildRoleClients();
+  }
+
+  private buildRoleClients(): RoleClients {
+    return createRoleClients(
+      {
+        apiKey: this.deps.apiKey,
+        providers: this.deps.providers,
+        assignments: this.deps.assignments,
+        siteUrl: this.deps.siteUrl,
+        appName: this.deps.appName,
+        logger: this.deps.logger
+      },
+      this.deps.clientFactory
+    );
   }
 
   get busy(): boolean {
     return this.activeAbort !== null;
   }
 
+  get apiKey(): string {
+    return this.deps.apiKey;
+  }
+
+  get providers(): ProviderConfig[] {
+    return this.deps.providers.map(p => ({ ...p }));
+  }
+
+  get assignments(): Assignments {
+    return cloneAssignments(this.deps.assignments);
+  }
+
+  /** Drafting model (derived from assignments). */
   get model(): string {
-    return this.deps.model;
+    return this.deps.assignments.drafting.model;
   }
 
-  setModel(model: string): void {
-    this.deps.model = model;
+  /** Compaction model (derived from assignments). */
+  get compactionModel(): string {
+    return this.deps.assignments.compaction.model;
   }
 
-  setCompactionModel(model: string): void {
-    this.deps.compactionModel = model;
+  /** Provider config (built-in OpenRouter or user) by id; undefined when unknown. */
+  providerById(providerId: string): ProviderConfig | undefined {
+    return allProviders(this.deps.apiKey, this.deps.providers).find(p => p.id === providerId);
   }
 
-  get compactionModel(): string | undefined {
-    return this.deps.compactionModel;
+  /** Fresh client for a provider id (for model listing / probing); undefined when unknown. */
+  clientFor(providerId: string): ChatClient | undefined {
+    const p = this.providerById(providerId);
+    if (!p) return undefined;
+    return this.deps.clientFactory
+      ? this.deps.clientFactory(p)
+      : createProviderClient(p, { siteUrl: this.deps.siteUrl, appName: this.deps.appName, logger: this.deps.logger });
+  }
+
+  /**
+   * Validates and applies provider/assignment changes, then rebuilds role clients.
+   * Throws (without mutating) on: reserved/duplicate provider ids, or any role
+   * referencing an unknown provider.
+   */
+  applySettings(update: { providers?: ProviderConfig[]; assignments?: Partial<Assignments> }): void {
+    const providers = update.providers ? update.providers.map(p => ({ ...p })) : this.providers;
+    const ids = new Set<string>();
+    for (const p of providers) {
+      if (!p.id || p.id === OPENROUTER_PROVIDER_ID) throw new Error(`Provider id "${p.id}" is reserved or empty`);
+      if (ids.has(p.id)) throw new Error(`Duplicate provider id "${p.id}"`);
+      ids.add(p.id);
+    }
+    const assignments = cloneAssignments(this.deps.assignments);
+    for (const role of MODEL_ROLES) {
+      const a = update.assignments?.[role];
+      if (a) assignments[role] = { providerId: String(a.providerId), model: String(a.model) };
+    }
+    validateAssignments(assignments, providers);
+    this.deps.providers = providers;
+    this.deps.assignments = assignments;
+    this.roleClients = this.buildRoleClients();
   }
 
 
@@ -106,12 +174,18 @@ export class ServerSessionManager {
         userPrompt: prompt,
         projectPath: this.deps.projectPath,
         stateManager: this.deps.stateManager,
-        client: this.deps.client,
-        model: this.deps.model,
+        client: this.roleClients.drafting.client,
+        model: this.roleClients.drafting.model,
+        draftingProviderName: this.roleClients.drafting.providerName,
+        criticClient: this.roleClients.critic.client,
+        criticModel: this.roleClients.critic.model,
+        classifierClient: this.roleClients.classifier.client,
+        classifierModel: this.roleClients.classifier.model,
+        compactionClient: this.roleClients.compaction.client,
+        compactionModel: this.roleClients.compaction.model,
         toolRegistry: this.deps.toolRegistry,
         specialistRegistry: this.deps.specialistRegistry,
         sessionMessages: this.sessionMessages,
-        compactionModel: this.deps.compactionModel,
         compressionThreshold: this.deps.compressionThreshold,
         keepRecentTokens: this.deps.keepRecentTokens,
         logger: this.deps.logger,
@@ -209,4 +283,13 @@ export class ServerSessionManager {
       nextPhase: nextPhase ?? undefined
     };
   }
+}
+
+function cloneAssignments(a: Assignments): Assignments {
+  return {
+    drafting: { ...a.drafting },
+    critic: { ...a.critic },
+    classifier: { ...a.classifier },
+    compaction: { ...a.compaction }
+  };
 }

@@ -6,6 +6,10 @@ import { countOpenQuestions, parseOpenQuestionsFromContent } from '../core/open-
 import { createVersionBackup } from '../util/version-backup.js';
 import { parseBomDocument, updateBomRow, BomItemUpdate } from './parsers/bom-parser.js';
 import { extractConopsOverview } from '../core/conops-overview.js';
+import { OPENROUTER_PROVIDER_ID, ProviderConfig } from '../config.js';
+import { allProviders } from '../models/role-clients.js';
+import { listProviderModels, probeToolCalling } from '../models/provider-models.js';
+import { fetchLiveOpenRouterModels } from '../openrouter/models.js';
 import { parseTradeStudyDocument } from './parsers/trade-study-parser.js';
 import { parseWorkInstruction, toggleWorkInstructionStep, ParsedWorkInstruction } from './parsers/actions-parser.js';
 import { aggregateProjectIssues, OpenQuestionGroup, ProjectIssue } from './parsers/issues-parser.js';
@@ -25,7 +29,7 @@ export interface RouterDeps {
   /** Static assets directory (built web UI). Optional. */
   webDistPath?: string;
   /** Called when settings are saved, so the host can persist them. */
-  onSettingsSaved?: (settings: Partial<SettingsResponse>) => void;
+  onSettingsSaved?: (settings: { providers: ProviderConfig[]; assignments: SettingsResponse['assignments'] }) => void;
   port?: number;
 }
 
@@ -114,6 +118,25 @@ function getBomFinancials(projectPath: string) {
     return { totalEstimated: 0, totalActual: 0, netVariance: 0, procurementProgressPercent: 0 };
   }
   return parseBomDocument(content).financials;
+}
+
+function buildSettings(deps: RouterDeps): SettingsResponse {
+  const session = deps.session;
+  const providers = session
+    ? allProviders(session.apiKey, session.providers).map(p => ({
+        id: p.id,
+        name: p.name,
+        baseUrl: p.baseUrl,
+        hasKey: Boolean(p.apiKey),
+        builtIn: p.id === OPENROUTER_PROVIDER_ID
+      }))
+    : [];
+  return {
+    providers,
+    assignments: session ? session.assignments : ({} as SettingsResponse['assignments']),
+    port: deps.port ?? 3000,
+    projectPath: deps.projectPath
+  };
 }
 
 function buildSummary(
@@ -522,25 +545,68 @@ export async function handleApiRequest(
 
     // --- Settings ---------------------------------------------------------------
     if (method === 'GET' && url.pathname === '/api/settings') {
-      return ok(res, {
-        agentModel: deps.session?.model ?? '',
-        compactionModel: deps.session?.compactionModel,
-        port: deps.port ?? 3000,
-        projectPath: deps.projectPath
-      });
+      return ok(res, buildSettings(deps));
     }
 
-    if (method === 'POST' && url.pathname === '/api/settings') {
+    if ((method === 'PUT' || method === 'POST') && url.pathname === '/api/settings') {
+      const session = deps.session;
+      if (!session) return fail(res, 503, 'No active session');
       const body = await readJsonBody(req);
-      if (body.agentModel && deps.session) deps.session.setModel(String(body.agentModel));
-      if (body.compactionModel && deps.session) deps.session.setCompactionModel(String(body.compactionModel));
-      deps.onSettingsSaved?.(body);
-      return ok(res, {
-        agentModel: deps.session?.model ?? '',
-        compactionModel: deps.session?.compactionModel,
-        port: deps.port ?? 3000,
-        projectPath: deps.projectPath
-      });
+      const draftingBefore = JSON.stringify(session.assignments.drafting);
+
+      let providers: ProviderConfig[] | undefined;
+      if (Array.isArray(body.providers)) {
+        const existing = new Map(session.providers.map(p => [p.id, p]));
+        providers = body.providers.map((p: any): ProviderConfig => {
+          const out: ProviderConfig = { id: String(p.id ?? ''), name: String(p.name ?? ''), baseUrl: String(p.baseUrl ?? '') };
+          // apiKey omitted = keep existing; '' = clear; otherwise set.
+          const key = p.apiKey === undefined ? existing.get(out.id)?.apiKey : String(p.apiKey);
+          if (key) out.apiKey = key;
+          return out;
+        });
+      }
+
+      try {
+        session.applySettings({ providers, assignments: body.assignments });
+      } catch (err: any) {
+        return fail(res, 400, err?.message ?? 'Invalid settings');
+      }
+
+      deps.onSettingsSaved?.({ providers: session.providers, assignments: session.assignments });
+
+      const response: SettingsResponse = buildSettings(deps);
+      const drafting = session.assignments.drafting;
+      if (JSON.stringify(drafting) !== draftingBefore) {
+        const client = session.clientFor(drafting.providerId);
+        if (client) response.probe = await probeToolCalling(client, drafting.model);
+      }
+      return ok(res, response);
+    }
+
+    // --- Providers -------------------------------------------------------------
+    if (segments[1] === 'providers' && segments.length === 4) {
+      const session = deps.session;
+      if (!session) return fail(res, 503, 'No active session');
+      const providerId = decodeURIComponent(segments[2]);
+      const provider = session.providerById(providerId);
+      if (!provider) return fail(res, 404, `Unknown provider "${providerId}"`);
+
+      if (method === 'GET' && segments[3] === 'models') {
+        try {
+          const models = provider.id === OPENROUTER_PROVIDER_ID
+            ? (await fetchLiveOpenRouterModels(provider.apiKey)).map(m => m.id)
+            : await listProviderModels(provider);
+          return ok(res, { models });
+        } catch (err: any) {
+          return fail(res, 502, err?.message ?? 'Provider unreachable');
+        }
+      }
+
+      if (method === 'POST' && segments[3] === 'probe') {
+        const body = await readJsonBody(req);
+        const client = session.clientFor(providerId)!;
+        return ok(res, await probeToolCalling(client, String(body.model ?? '')));
+      }
     }
 
     return fail(res, 404, `Unknown API route: ${method} ${url.pathname}`);

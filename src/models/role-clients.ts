@@ -35,18 +35,20 @@ export function allProviders(apiKey: string, providers: ProviderConfig[]): Provi
   ];
 }
 
+/** Real client for one provider: OpenRouterClient for the built-in, OpenAICompatClient otherwise. */
+export function createProviderClient(p: ProviderConfig, opts: { siteUrl?: string; appName?: string; logger?: Logger } = {}): ChatClient {
+  return p.id === OPENROUTER_PROVIDER_ID
+    ? new OpenRouterClient({ apiKey: p.apiKey ?? '', siteUrl: opts.siteUrl, appName: opts.appName, logger: opts.logger })
+    : new OpenAICompatClient({ providerName: p.name, baseUrl: p.baseUrl, apiKey: p.apiKey, logger: opts.logger });
+}
+
 /** Builds one client per provider in use and maps each role to { client, model, providerName }. */
 export function createRoleClients(
   cfg: RoleClientsConfig,
   factory?: (p: ProviderConfig) => ChatClient
 ): RoleClients {
   const byId = new Map(allProviders(cfg.apiKey, cfg.providers).map(p => [p.id, p]));
-  const make =
-    factory ??
-    ((p: ProviderConfig): ChatClient =>
-      p.id === OPENROUTER_PROVIDER_ID
-        ? new OpenRouterClient({ apiKey: p.apiKey ?? '', siteUrl: cfg.siteUrl, appName: cfg.appName, logger: cfg.logger })
-        : new OpenAICompatClient({ providerName: p.name, baseUrl: p.baseUrl, apiKey: p.apiKey, logger: cfg.logger }));
+  const make = factory ?? ((p: ProviderConfig) => createProviderClient(p, cfg));
 
   const clients = new Map<string, ChatClient>();
   const result = {} as RoleClients;

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ora from 'ora';
 import chalk from 'chalk';
-import { loadConfig, ensureStarnDirs, saveUserConfig } from './config.js';
+import { loadConfig, ensureStarnDirs, saveUserConfig, ProviderConfig, Assignments } from './config.js';
 import { OpenRouterClient } from './openrouter/client.js';
 import { fetchLiveOpenRouterModels } from './openrouter/models.js';
 import { ProjectRegistry } from './workspace/registry.js';
@@ -138,6 +138,18 @@ async function main() {
     logger
   });
 
+  /** Persists provider/assignment changes (from web Settings or /models) and keeps legacy mirrors in sync. */
+  const persistModelSettings = (s: { providers: ProviderConfig[]; assignments: Assignments }) => {
+    config.providers = s.providers;
+    config.assignments = s.assignments;
+    config.defaultModel = s.assignments.drafting.model;
+    config.compactionModel = s.assignments.compaction.model;
+    saveUserConfig(
+      { providers: s.providers, assignments: s.assignments, defaultModel: s.assignments.drafting.model, compactionModel: s.assignments.compaction.model },
+      config.globalDir
+    );
+  };
+
   const toolRegistry = new ToolRegistry();
   const specialistRegistry = new SpecialistRegistry();
 
@@ -149,11 +161,13 @@ async function main() {
     const session = new ServerSessionManager({
       projectPath: currentProjectRecord.path,
       stateManager,
-      client,
-      model: selectedModel,
+      apiKey,
+      providers: config.providers,
+      assignments: config.assignments,
+      siteUrl: config.siteUrl,
+      appName: config.appName,
       toolRegistry,
       specialistRegistry,
-      compactionModel: config.compactionModel || selectedModel,
       compressionThreshold: config.compressionThreshold,
       keepRecentTokens: config.keepRecentTokens,
       logger
@@ -164,10 +178,7 @@ async function main() {
       stateManager,
       session,
       port,
-      onSettingsSaved: s => {
-        if (s.agentModel) saveUserConfig({ defaultModel: s.agentModel }, config.globalDir);
-        if (s.compactionModel) saveUserConfig({ compactionModel: s.compactionModel }, config.globalDir);
-      }
+      onSettingsSaved: persistModelSettings
     });
 
     console.log(chalk.green('\n★ STARN web UI is running:'));
@@ -204,11 +215,13 @@ async function main() {
       const session = new ServerSessionManager({
         projectPath: currentProjectRecord.path,
         stateManager,
-        client,
-        model: selectedModel,
+        apiKey,
+        providers: config.providers,
+        assignments: config.assignments,
+        siteUrl: config.siteUrl,
+        appName: config.appName,
         toolRegistry,
         specialistRegistry,
-        compactionModel: config.compactionModel,
         compressionThreshold: config.compressionThreshold,
         keepRecentTokens: config.keepRecentTokens,
         logger
@@ -220,10 +233,7 @@ async function main() {
         stateManager,
         session,
         port,
-        onSettingsSaved: s => {
-          if (s.agentModel) saveUserConfig({ defaultModel: s.agentModel }, config.globalDir);
-          if (s.compactionModel) saveUserConfig({ compactionModel: s.compactionModel }, config.globalDir);
-        }
+        onSettingsSaved: persistModelSettings
       });
 
       console.log(chalk.green('\n★ STARN web UI is running and session handed off:'));

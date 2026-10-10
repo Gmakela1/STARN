@@ -79,8 +79,15 @@ describe('HTTP Server API', () => {
     session = new ServerSessionManager({
       projectPath: tempDir,
       stateManager,
-      client: mockClient,
-      model: 'test-model',
+      apiKey: 'mock',
+      providers: [],
+      assignments: {
+        drafting: { providerId: 'openrouter', model: 'test-model' },
+        critic: { providerId: 'openrouter', model: 'test-model' },
+        classifier: { providerId: 'openrouter', model: 'test-model' },
+        compaction: { providerId: 'openrouter', model: 'test-model' }
+      },
+      clientFactory: () => mockClient,
       toolRegistry: new ToolRegistry(),
       specialistRegistry: new SpecialistRegistry()
     });

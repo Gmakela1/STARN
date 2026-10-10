@@ -1,3 +1,4 @@
+import type { Assignments } from '../config.js';
 import { CriticResult } from '../core/critic.js';
 import { BomFinancials, BomItem } from './parsers/bom-parser.js';
 import { ParsedWorkInstruction } from './parsers/actions-parser.js';
@@ -72,10 +73,20 @@ export interface ActionSummaryResponse extends ParsedWorkInstruction {
   filePath: string;
 }
 
+export interface ProviderView {
+  id: string;
+  name: string;
+  baseUrl: string;
+  /** True when an API key is stored. Keys are never returned. */
+  hasKey: boolean;
+  builtIn: boolean;
+}
+
 export interface SettingsResponse {
-  agentModel: string;
-  criticModel?: string;
-  compactionModel?: string;
+  providers: ProviderView[];
+  assignments: Assignments;
   port: number;
   projectPath: string;
+  /** Present when the drafting assignment changed: tool-calling probe result. */
+  probe?: { ok: boolean; detail: string };
 }
