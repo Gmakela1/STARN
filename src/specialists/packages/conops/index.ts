@@ -2,8 +2,36 @@ import { SpecialistPackage } from '../../types.js';
 
 const conopsSecretSauce = `# Concept of Operations (CONOPS): Electric Utility Tractor Conversion
 
-## 1. Executive Summary & User Intent
-The system converts a 19HP diesel sub-compact utility tractor into a battery-electric powertrain. The primary user intent is to achieve clean, quiet, and low-maintenance operation for routine residential and small-acreage property tasks (such as mowing grass, towing small utility trailers, and moving soil) without diesel exhaust fumes or engine maintenance.
+## 1. Project Overview & Charter
+
+### Background & Problem
+The donor vehicle is a 19HP diesel sub-compact utility tractor used for residential and small-acreage property maintenance. The internal combustion powertrain is noisy, produces toxic exhaust fumes near operator breathing zones, requires frequent maintenance (fuel filters, oil changes, glow plugs), and is difficult to start in cold weather.
+
+### Purpose
+Convert the donor diesel tractor into a battery-electric powertrain, establishing clean, quiet, and low-maintenance operation for routine yard and property tasks.
+
+### Objectives
+- Eliminate diesel fuel storage, exhaust emissions, and engine maintenance.
+- Provide sufficient torque and runtime for residential mowing, hauling, and light loader work.
+- Support simple overnight charging from standard domestic electrical outlets.
+
+### Success Criteria
+- Operates continuously for a minimum of 3.5 hours on a single charge during moderate mowing.
+- Retains existing implements (mower deck, front loader) with full mechanical functionality.
+- Recharges from empty to 100% state-of-charge within 8 hours on a standard 120V 15A household circuit.
+
+### Scope
+- **In scope:** Direct-fit electric motor, motor controller, lithium battery pack, onboard AC charger, battery management system (BMS), high-voltage safety interlocks, operator telemetry display.
+- **Out of scope:** Structural modifications to tractor chassis, hydraulic pump redesign, paint or cosmetic bodywork, autonomous self-driving capabilities.
+
+### Users & Stakeholders
+- **Primary Operator:** Property owner / hobby farmer operating the machine for weekly yard maintenance.
+- **Maintenance Personnel:** Owner or local electric-vehicle technician performing annual safety checks and isolation.
+
+### Key Constraints & Assumptions
+- All new powertrain components must fit entirely within the existing engine bay and chassis envelope.
+- Donor hydraulic systems and PTO mechanical interfaces must be preserved.
+- Standard 120V AC household electrical service is assumed available at the storage location.
 
 ### System-Level Capabilities
 The system as a whole provides the following top-level functional capabilities:
@@ -69,15 +97,24 @@ Before drafting the final CONOPS, use fs_read to inspect any reference documents
 
 MANDATORY DOCUMENT STRUCTURE (MANDATORY - DO NOT DEVIATE):
 The CONOPS document MUST follow this exact 6-section markdown structure:
-1. **## 1. Executive Summary & User Intent**
+1. **## 1. Project Overview & Charter**
+   Must include the following structured subsections in order:
+   - \`### Background & Problem\`
+   - \`### Purpose\`
+   - \`### Objectives\`
+   - \`### Success Criteria\`
+   - \`### Scope\` (with **In scope** and **Out of scope** bullet points)
+   - \`### Users & Stakeholders\`
+   - \`### Key Constraints & Assumptions\`
+   - \`### System-Level Capabilities\` (top-level functional capabilities; 3-5 bullet points)
 2. **## 2. Operational Environment & Operating Location**
 3. **## 3. Operational Use Cases & System Modes** (Mode 1: Normal Work, Mode 2: Auxiliary/Implement, Mode 3: Recharging, Mode 4: Limp-Home/Contingency, Mode 5: Emergency Isolation)
 4. **## 4. System Boundaries & High-Level Interfaces**
 5. **## 5. Safety, Environmental & Community Considerations**
 6. **## 6. Open Questions & Items for Clarification**
 
-SYSTEM-LEVEL CAPABILITIES SECTION (MANDATORY ADDITION TO SECTION 1):
-After the Executive Summary in Section 1, add a subsection titled "### System-Level Capabilities" that lists the high-level functional capabilities of the entire system in 3-5 bullet points. These are NOT per-subsystem — they are the top-level things the system as a whole does. Examples:
+SYSTEM-LEVEL CAPABILITIES SECTION (MANDATORY AT END OF SECTION 1):
+The final subsection of Section 1 must be titled "### System-Level Capabilities" that lists the high-level functional capabilities of the entire system in 3-5 bullet points. These are NOT per-subsystem — they are the top-level things the system as a whole does. Examples:
 - "Electric traction and propulsion via a direct motor-to-transmission swap"
 - "Onboard recharging from a standard 120V AC household outlet"
 - "PTO-driven auxiliary implements (front loader, mower deck)"
@@ -95,13 +132,14 @@ CRITICAL FORMAT RULES:
 - DO NOT add meta-commentary tags like "(user-stated, Q1)" or "(See Section X)" in the document body.
 - DO NOT add a changelog, version history, or traceability table section.
 - DO NOT embed numeric requirement thresholds (those belong in the Requirements phase).
+- DO NOT invent financial figures or budget lines in the charter (costing belongs to the BOM phase).
 - Use clean plain-text descriptions only. DO NOT use LaTeX math formatting.
 - Include a \`## Design Decisions\` section listing any significant choices made, alternatives considered, and rationale.
 - You MUST write the final draft to docs/CONOPS.md via the fs_write tool. Do NOT respond with only a summary — write the actual document to disk.`,
   allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
   requiresCritic: true,
   criticRubric: `Evaluate the CONOPS against these engineering criteria:
-1. Clean 6-Section Structure: Does the document follow the exact 6-section format (including Section 6 Open Questions) without meta-commentary, changelog, or traceability table sections?
+1. Clean 6-Section Structure & Charter: Does the document follow the exact 6-section format (including Section 1 Charter subsections: Background & Problem, Purpose, Objectives, Success Criteria, Scope, Users & Stakeholders, Key Constraints & Assumptions, System-Level Capabilities, and Section 6 Open Questions) without meta-commentary, changelog, budget speculation, or traceability table sections?
 2. Section 6 Open Questions: Does the document list genuinely unresolved questions in Section 6 rather than silently assuming answers?
 3. High-Level Operational Clarity: Does the document define operating location, climate/environmental conditions, daily use cases, and operational modes without premature part numbers or numeric requirement tolerances?
 4. User Intent Grounding: Is the document strictly grounded in user answers rather than hallucinated fictional projects or unrequested hardware?

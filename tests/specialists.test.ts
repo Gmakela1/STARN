@@ -33,8 +33,8 @@ describe('Specialist Packages & RTM', () => {
     // Story-based intake
     expect(conops!.systemPrompt).toContain('ADAPTIVE STORY-BASED INTAKE INTERVIEW');
     expect(conops!.systemPrompt).toContain('Walk me through how you envision using this');
-    // Clean 5-section structure
-    expect(conops!.systemPrompt).toContain('## 1. Executive Summary & User Intent');
+    // Clean 5-section structure + Charter
+    expect(conops!.systemPrompt).toContain('## 1. Project Overview & Charter');
     expect(conops!.systemPrompt).toContain('## 5. Safety, Environmental & Community Considerations');
     // Section 6 Open Questions
     expect(conops!.systemPrompt).toContain('## 6. Open Questions & Items for Clarification');
