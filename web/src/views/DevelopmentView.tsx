@@ -13,7 +13,9 @@ import {
   User,
   TriangleAlert,
   Upload,
-  Paperclip
+  Paperclip,
+  ChevronDown,
+  Check
 } from 'lucide-react';
 import { api } from '../api/client';
 import { DocData, ProjectInfo, RoadmapPhase } from '../types/api';
@@ -43,7 +45,7 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
     const text = prompt.trim();
     if (!text || busy) return;
     setPrompt('');
-    await sendTurn(text);
+    await sendTurn(text, { activePhase: selectedPhase });
     await refreshDoc();
     await onProjectChanged();
   };
@@ -51,7 +53,21 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
   // --- Document panel state ---
   const [roadmap, setRoadmap] = useState<RoadmapPhase[]>([]);
   const [selectedPhase, setSelectedPhase] = useState<string>('');
+  const [docDropdownOpen, setDocDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState<DocData | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDocDropdownOpen(false);
+      }
+    };
+    if (docDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [docDropdownOpen]);
   const [docError, setDocError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -139,6 +155,29 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
   };
 
   const selectedPhaseInfo = roadmap.find(p => p.id === selectedPhase);
+
+  const renderStatusPill = (phase?: RoadmapPhase) => {
+    if (!phase) return null;
+    if (phase.status === 'COMPLETED') {
+      return (
+        <span className="rounded bg-emerald-950/80 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-300 border border-emerald-800 shrink-0">
+          Completed
+        </span>
+      );
+    }
+    if (phase.status === 'IN_PROGRESS' || phase.status === 'PENDING_REVIEW') {
+      return (
+        <span className="rounded bg-sky-950/80 px-2 py-0.5 font-mono text-[10px] font-semibold text-sky-300 border border-sky-800 shrink-0">
+          In Work
+        </span>
+      );
+    }
+    return (
+      <span className="rounded bg-slate-800 px-2 py-0.5 font-mono text-[10px] font-medium text-slate-400 border border-slate-700 shrink-0">
+        Not Drafted
+      </span>
+    );
+  };
 
   return (
     <div className="grid h-full grid-cols-1 lg:grid-cols-2">
@@ -270,32 +309,64 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
       <section className="hidden min-h-0 flex-col lg:flex" aria-label="Document workspace">
         <header className="flex items-center gap-2 border-b border-slate-800 bg-slate-900/40 px-3 py-2">
           <FileText className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
-          <select
-            value={selectedPhase}
-            onChange={e => { setEditing(false); setSelectedPhase(e.target.value); }}
-            aria-label="Select document phase"
-            className="min-h-[40px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-slate-200 focus:border-sky-600 focus:outline-none"
-          >
-            {roadmap.map(p => (
-              <option key={p.id} value={p.id} className="bg-slate-900 text-slate-200">
-                {p.name}{p.docExists ? '' : ' (not drafted)'}
-              </option>
-            ))}
-          </select>
 
-          {doc && (
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                doc.status === 'approved'
-                  ? 'bg-emerald-950/70 text-emerald-300'
-                  : doc.status === 'rejected'
-                    ? 'bg-rose-950/70 text-rose-300'
-                    : 'bg-amber-950/70 text-amber-300'
-              }`}
+          {/* Custom Document Selector Popover */}
+          <div ref={dropdownRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setDocDropdownOpen(v => !v)}
+              aria-haspopup="listbox"
+              aria-expanded={docDropdownOpen}
+              className="flex min-h-[40px] items-center gap-2.5 rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm font-medium text-slate-100 hover:bg-slate-900 transition-colors cursor-pointer"
             >
-              {doc.status.toUpperCase()}
-            </span>
-          )}
+              <span className="truncate max-w-[180px] sm:max-w-[240px]">
+                {selectedPhaseInfo ? selectedPhaseInfo.name : 'Select Document'}
+              </span>
+              {renderStatusPill(selectedPhaseInfo)}
+              <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${docDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {docDropdownOpen && (
+              <div
+                role="listbox"
+                className="absolute left-0 top-full z-50 mt-1 max-h-80 w-80 sm:w-96 overflow-y-auto rounded-xl border border-slate-700 bg-slate-950 p-1.5 shadow-2xl space-y-1"
+              >
+                {roadmap.map((p, idx) => {
+                  const isSelected = p.id === selectedPhase;
+                  return (
+                    <div
+                      key={p.id}
+                      role="option"
+                      aria-selected={isSelected}
+                      onClick={async () => {
+                        setEditing(false);
+                        setSelectedPhase(p.id);
+                        setDocDropdownOpen(false);
+                        try {
+                          await api.setActivePhase(p.id);
+                          await onProjectChanged();
+                        } catch {}
+                      }}
+                      className={`flex min-h-[44px] cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 text-xs transition-colors ${
+                        isSelected
+                          ? 'bg-sky-950/70 text-sky-200 border border-sky-800/60 font-semibold'
+                          : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="font-mono text-slate-500 text-[10px] w-4">{idx + 1}.</span>
+                        <span className="truncate">{p.name}</span>
+                      </div>
+                      <div className="shrink-0 flex items-center gap-1.5">
+                        {renderStatusPill(p)}
+                        {isSelected && <Check className="h-3.5 w-3.5 text-sky-400" />}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           <div className="ml-auto flex items-center gap-1.5">
             <button

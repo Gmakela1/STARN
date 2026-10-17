@@ -68,7 +68,7 @@ export function useTurnStream() {
     }
   }, [appendEntry]);
 
-  const sendTurn = useCallback(async (prompt: string, options?: { silentUserEntry?: boolean }) => {
+  const sendTurn = useCallback(async (prompt: string, options?: { silentUserEntry?: boolean; activePhase?: string }) => {
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
@@ -83,7 +83,10 @@ export function useTurnStream() {
       const res = await fetch('/api/turns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
+        body: JSON.stringify({
+          prompt,
+          activePhase: options?.activePhase
+        })
       });
 
       const contentType = res.headers.get('content-type') ?? '';

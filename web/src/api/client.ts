@@ -38,6 +38,10 @@ export const api = {
   fetchDashboard: () => call<DashboardData>('GET', '/api/dashboard'),
   fetchRoadmap: () => call<RoadmapPhase[]>('GET', '/api/roadmap'),
 
+  // Workflow & Active Phase
+  setActivePhase: (phaseId: string) =>
+    call<{ activePhase: string }>('POST', '/api/workflow/active-phase', { phaseId }),
+
   // Documents
   fetchDoc: (phaseId: string) => call<DocData>('GET', `/api/docs/${encodeURIComponent(phaseId)}`),
   saveDoc: (phaseId: string, content: string) =>
