@@ -31,7 +31,8 @@ import {
   promptProjectSelection,
   promptUserQuery,
   promptModelForProvider,
-  promptModelsMenu
+  promptModelsMenu,
+  promptSwitchProject
 } from './cli/prompts.js';
 import { runHumanCheckpoint, handleCriticFailure } from './cli/checkpoint.js';
 import { runDocumentViewer, resolveDocTarget } from './cli/doc-viewer.js';
@@ -41,6 +42,7 @@ import { setCriticLogger } from './core/critic.js';
 import { attachAbortListener } from './util/abort-input.js';
 import { ORDERED_WORKFLOW_PHASES, resolveArtifactPaths } from './workspace/state.js';
 import { Logger } from './util/logger.js';
+import { ProjectContext } from './workspace/project-context.js';
 import { ServerSessionManager } from './server/session.js';
 import { startWebServer } from './server/server.js';
 import {
@@ -123,9 +125,15 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(chalk.green(`\nWorking in Project: ${chalk.bold(currentProjectRecord.name)}`));
-  console.log(chalk.dim(`Directory: ${currentProjectRecord.path}`));
-  const startupConops = path.join(currentProjectRecord.path, 'docs', 'CONOPS.md');
+  const projectContext = new ProjectContext(projectRegistry, currentProjectRecord);
+  projectContext.onSwitch(() => {
+    setClassifierLogger(projectContext.logger);
+    setCriticLogger(projectContext.logger);
+  });
+
+  console.log(chalk.green(`\nWorking in Project: ${chalk.bold(projectContext.record.name)}`));
+  console.log(chalk.dim(`Directory: ${projectContext.path}`));
+  const startupConops = path.join(projectContext.path, 'docs', 'CONOPS.md');
   if (fs.existsSync(startupConops)) {
     try {
       const purpose = extractConopsOverview(fs.readFileSync(startupConops, 'utf-8'));
@@ -136,13 +144,9 @@ async function main() {
   }
   console.log(chalk.dim(formatAssignments(config.assignments, config.providers) + '\n'));
 
-  const stateManager = new ProjectStateManager(currentProjectRecord.path);
-  const currentState = stateManager.getOrCreateState(currentProjectRecord.id, currentProjectRecord.name);
-
   // Per-project file logger (writes to <project>/.starn/logs/starn-<date>.log)
-  const logger = new Logger(path.join(currentProjectRecord.path, '.starn'));
-  setClassifierLogger(logger);
-  setCriticLogger(logger);
+  setClassifierLogger(projectContext.logger);
+  setCriticLogger(projectContext.logger);
 
   // Graceful SIGINT: state is already persisted per-turn; just acknowledge and exit
   process.on('SIGINT', () => {
@@ -151,17 +155,17 @@ async function main() {
   });
 
   // Show Project Roadmap Banner
-  console.log(formatWorkflowRoadmap(currentState, currentProjectRecord.path));
+  console.log(formatWorkflowRoadmap(projectContext.stateManager.getState(), projectContext.path));
 
   // Voice transcription always uses OpenRouter.
   const voiceClient = new OpenRouterClient({
     apiKey,
     siteUrl: config.siteUrl,
     appName: config.appName,
-    logger
+    logger: projectContext.logger
   });
   const buildRoleClients = () =>
-    createRoleClients({ apiKey, providers: config.providers, assignments: config.assignments, siteUrl: config.siteUrl, appName: config.appName, logger });
+    createRoleClients({ apiKey, providers: config.providers, assignments: config.assignments, siteUrl: config.siteUrl, appName: config.appName, logger: projectContext.logger });
   let roleClients = buildRoleClients();
 
   /** Persists provider/assignment changes (from web Settings or /models) and keeps legacy mirrors in sync. */
@@ -186,8 +190,8 @@ async function main() {
     const port = portArgIdx !== -1 ? Number(process.argv[portArgIdx + 1]) || 3000 : 3000;
 
     const session = new ServerSessionManager({
-      projectPath: currentProjectRecord.path,
-      stateManager,
+      projectPath: projectContext.path,
+      stateManager: projectContext.stateManager,
       apiKey,
       providers: config.providers,
       assignments: config.assignments,
@@ -197,12 +201,13 @@ async function main() {
       specialistRegistry,
       compressionThreshold: config.compressionThreshold,
       keepRecentTokens: config.keepRecentTokens,
-      logger
+      logger: projectContext.logger
     });
 
     const started = await startWebServer({
-      projectPath: currentProjectRecord.path,
-      stateManager,
+      projectPath: projectContext.path,
+      stateManager: projectContext.stateManager,
+      context: projectContext,
       session,
       port,
       onSettingsSaved: persistModelSettings
@@ -221,7 +226,7 @@ async function main() {
 
   while (true) {
     const sessionTokens = estimateTokens(sessionMessages);
-    printSectionHeader(`Active Session [Phase: ${stateManager.getState().workflow?.activePhase?.toUpperCase() || 'CONOPS'}] ${formatContextGauge(sessionTokens, config.compressionThreshold, config.compactionModel)}`);
+    printSectionHeader(`Active Session [Phase: ${projectContext.stateManager.getState().workflow?.activePhase?.toUpperCase() || 'CONOPS'}] ${formatContextGauge(sessionTokens, config.compressionThreshold, config.compactionModel)}`);
     const userPrompt = await promptUserQuery(voiceClient);
 
     let currentPrompt = userPrompt;
@@ -258,8 +263,8 @@ async function main() {
     if (currentPrompt.trim().toLowerCase() === '/web' || currentPrompt.trim().toLowerCase() === '/browser') {
       const port = Number(process.env.STARN_PORT || 3000);
       const session = new ServerSessionManager({
-        projectPath: currentProjectRecord.path,
-        stateManager,
+        projectPath: projectContext.path,
+        stateManager: projectContext.stateManager,
         apiKey,
         providers: config.providers,
         assignments: config.assignments,
@@ -269,13 +274,14 @@ async function main() {
         specialistRegistry,
         compressionThreshold: config.compressionThreshold,
         keepRecentTokens: config.keepRecentTokens,
-        logger
+        logger: projectContext.logger
       });
       session.setSessionMessages(sessionMessages);
 
       const started = await startWebServer({
-        projectPath: currentProjectRecord.path,
-        stateManager,
+        projectPath: projectContext.path,
+        stateManager: projectContext.stateManager,
+        context: projectContext,
         session,
         port,
         onSettingsSaved: persistModelSettings
@@ -292,8 +298,8 @@ async function main() {
 
     // /briefing: 2-page executive briefing summary
     if (currentPrompt.trim().toLowerCase() === '/briefing' || currentPrompt.trim().toLowerCase() === '/summary' || currentPrompt.trim().toLowerCase() === '/report') {
-      const state = stateManager.getState();
-      const conopsPath = path.join(currentProjectRecord.path, 'docs', 'CONOPS.md');
+      const state = projectContext.stateManager.getState();
+      const conopsPath = path.join(projectContext.path, 'docs', 'CONOPS.md');
       let conopsSummary: string | undefined;
       let charter: CharterSection[] | undefined;
       if (fs.existsSync(conopsPath)) {
@@ -304,7 +310,7 @@ async function main() {
         } catch {}
       }
 
-      const bomPath = path.join(currentProjectRecord.path, 'docs', 'BOM.md');
+      const bomPath = path.join(projectContext.path, 'docs', 'BOM.md');
       let financials = { totalEstimated: 0, totalActual: 0, netVariance: 0 };
       if (fs.existsSync(bomPath)) {
         try {
@@ -314,7 +320,7 @@ async function main() {
         } catch {}
       }
 
-      const wiDir = path.join(currentProjectRecord.path, 'docs', 'work_instructions');
+      const wiDir = path.join(projectContext.path, 'docs', 'work_instructions');
       const openIssues: Array<{ title: string; type: string }> = [];
       if (fs.existsSync(wiDir)) {
         for (const file of fs.readdirSync(wiDir).filter(f => f.endsWith('.md'))) {
@@ -328,7 +334,7 @@ async function main() {
         }
       }
       for (const def of ORDERED_WORKFLOW_PHASES) {
-        const docPaths = resolveArtifactPaths(currentProjectRecord.path, def.artifactPath);
+        const docPaths = resolveArtifactPaths(projectContext.path, def.artifactPath);
         for (const p of docPaths) {
           const qCount = countOpenQuestions(p);
           if (qCount > 0) {
@@ -352,7 +358,7 @@ async function main() {
       });
 
       const briefingData: BriefingData = {
-        projectName: currentProjectRecord.name,
+        projectName: projectContext.record.name,
         activePhase: state.workflow?.activePhase || 'conops',
         conopsSummary,
         charter,
@@ -365,7 +371,7 @@ async function main() {
       console.log('\n' + plainText + '\n');
 
       const mdText = formatExecutiveBriefingMarkdown(briefingData);
-      const briefingFilePath = path.join(currentProjectRecord.path, 'docs', 'EXECUTIVE_BRIEFING.md');
+      const briefingFilePath = path.join(projectContext.path, 'docs', 'EXECUTIVE_BRIEFING.md');
       fs.writeFileSync(briefingFilePath, mdText, 'utf-8');
       console.log(chalk.green(`✔ Saved 2-page executive briefing to docs/EXECUTIVE_BRIEFING.md\n`));
       continue;
@@ -373,25 +379,46 @@ async function main() {
 
     // /charter: display project overview and charter subsections
     if (currentPrompt.trim().toLowerCase() === '/charter') {
-      const conopsPath = path.join(currentProjectRecord.path, 'docs', 'CONOPS.md');
+      const conopsPath = path.join(projectContext.path, 'docs', 'CONOPS.md');
       let charter: CharterSection[] = [];
       if (fs.existsSync(conopsPath)) {
         try {
           charter = extractConopsCharter(fs.readFileSync(conopsPath, 'utf-8'));
         } catch {}
       }
-      console.log('\n' + formatCharterPlain(charter, currentProjectRecord.name) + '\n');
+      console.log('\n' + formatCharterPlain(charter, projectContext.record.name) + '\n');
       continue;
     }
 
     const lowered = currentPrompt.trim().toLowerCase();
 
+    // /project: switch to a different project or browse filesystem
+    if (lowered === '/project') {
+      const chosen = await promptSwitchProject(
+        projectRegistry.listProjects(),
+        projectContext.record.id
+      );
+      if (chosen) {
+        if (chosen.projectId) {
+          const p = projectRegistry.listProjects().find(rec => rec.id === chosen.projectId);
+          if (p) projectContext.switchTo(p);
+        } else if (chosen.path) {
+          projectContext.switchToPath(chosen.path);
+        }
+        sessionMessages = [];
+        console.log(chalk.green(`\n✔ Switched to project: ${chalk.bold(projectContext.record.name)}`));
+        console.log(chalk.dim(`Directory: ${projectContext.path}\n`));
+        console.log(formatWorkflowRoadmap(projectContext.stateManager.getState(), projectContext.path));
+      }
+      continue;
+    }
+
     // /view: inspect any deliverable in read-only mode (no LLM, 0 tokens)
     if (lowered === '/view' || lowered.startsWith('/view ')) {
       const arg = currentPrompt.trim().slice('/view'.length).trim();
       await runDocumentViewer({
-        projectPath: currentProjectRecord.path,
-        stateManager,
+        projectPath: projectContext.path,
+        stateManager: projectContext.stateManager,
         targetArg: arg || undefined
       });
       continue;
@@ -405,17 +432,17 @@ async function main() {
         console.log(chalk.yellow(`\n⚠ Please specify which document to approve (e.g. /approve conops, /approve 1).\n`));
         continue;
       }
-      const approveRes = stateManager.manualApproveArtifact(phase.id);
+      const approveRes = projectContext.stateManager.manualApproveArtifact(phase.id);
       if (!approveRes.success) {
         console.log(chalk.red(`\n✖ ${approveRes.error}\n`));
         continue;
       }
-      const nextPhase = stateManager.advanceToNextPhase();
+      const nextPhase = projectContext.stateManager.advanceToNextPhase();
       console.log(chalk.green(`\n✔ Manually approved deliverable: [${phase.name}]`));
       if (nextPhase) {
         console.log(chalk.cyan(`★ Workflow Advanced: Current active phase is now [${nextPhase.toUpperCase()}].`));
       }
-      console.log(formatWorkflowRoadmap(stateManager.getState(), currentProjectRecord.path));
+      console.log(formatWorkflowRoadmap(projectContext.stateManager.getState(), projectContext.path));
       continue;
     }
 
@@ -428,28 +455,28 @@ async function main() {
         console.log(chalk.yellow(`\n⚠ Please specify which document to revert to draft (e.g. /draft conops, /draft 1).\n`));
         continue;
       }
-      stateManager.revertArtifactToDraft(phase.id);
+      projectContext.stateManager.revertArtifactToDraft(phase.id);
       console.log(chalk.cyan(`\n↺ Reverted [${phase.name}] to draft. Downstream phases re-locked.`));
       console.log(chalk.dim("You'll get an impact report when you re-approve."));
-      console.log(formatWorkflowRoadmap(stateManager.getState(), currentProjectRecord.path));
+      console.log(formatWorkflowRoadmap(projectContext.stateManager.getState(), projectContext.path));
       continue;
     }
 
     // Pre-turn: if the active phase's document has open questions, collect answers NOW
     // and feed them to the specialist so the LLM integrates them into the document body.
     // This must happen before executeTurn — not after — so the LLM sees the answers.
-    const isQuickCommand = ['/models', '/plan', '/roadmap', '/status', '/help', '/questions', '/charter', '/briefing', '/summary', '/report', '/web', '/browser'].includes(lowered)
+    const isQuickCommand = ['/models', '/plan', '/roadmap', '/status', '/help', '/questions', '/charter', '/project', '/briefing', '/summary', '/report', '/web', '/browser'].includes(lowered)
       || lowered.startsWith('/goto')
       || lowered.startsWith('/view')
       || lowered.startsWith('/approve')
       || lowered.startsWith('/draft')
       || lowered.startsWith('/revert')
       || lowered.startsWith('/voice');
-    const activePhaseNow = stateManager.getState().workflow?.activePhase || 'conops';
+    const activePhaseNow = projectContext.stateManager.getState().workflow?.activePhase || 'conops';
     const activePhaseDef = ORDERED_WORKFLOW_PHASES.find(p => p.id === activePhaseNow);
 
     if (activePhaseDef && !isQuickCommand) {
-      const docPaths = resolveArtifactPaths(currentProjectRecord.path, activePhaseDef.artifactPath);
+      const docPaths = resolveArtifactPaths(projectContext.path, activePhaseDef.artifactPath);
       const docWithQuestions = docPaths.find(docPath => countOpenQuestions(docPath) > 0);
       if (docWithQuestions) {
         const collected = await collectOpenQuestions({
@@ -480,8 +507,8 @@ async function main() {
       try {
         const result = await CoreRunner.executeTurn({
           userPrompt: currentPrompt,
-          projectPath: currentProjectRecord.path,
-          stateManager,
+          projectPath: projectContext.path,
+          stateManager: projectContext.stateManager,
           client: roleClients.drafting.client,
           model: roleClients.drafting.model,
           draftingProviderName: roleClients.drafting.providerName,
@@ -496,7 +523,7 @@ async function main() {
           sessionMessages,
           compressionThreshold: config.compressionThreshold,
           keepRecentTokens: config.keepRecentTokens,
-          logger,
+          logger: projectContext.logger,
           signal: abortController.signal,
           formatters: { formatWorkflowRoadmap, formatHelp, formatOpenQuestionsReport },
           onStatusUpdate: status => {
@@ -528,10 +555,10 @@ async function main() {
             default: false
           });
           if (confirmed) {
-            stateManager.revertArtifactToDraft(artifactId);
+            projectContext.stateManager.revertArtifactToDraft(artifactId);
             console.log(chalk.cyan(`\n↺ Reverted ${artifactId} to draft. Downstream phases re-locked.`));
             console.log(chalk.dim("You'll get an impact report when you re-approve."));
-            console.log(formatWorkflowRoadmap(stateManager.getState(), currentProjectRecord.path));
+            console.log(formatWorkflowRoadmap(projectContext.stateManager.getState(), projectContext.path));
           }
           continue; // re-prompt
         }
@@ -564,8 +591,8 @@ async function main() {
             specialistName: result.specialistName,
             output: result.output,
             criticResult: result.criticResult,
-            projectPath: currentProjectRecord.path,
-            stateManager,
+            projectPath: projectContext.path,
+            stateManager: projectContext.stateManager,
             client: roleClients.drafting.client,
             model: roleClients.drafting.model,
             voiceClient,
@@ -576,10 +603,10 @@ async function main() {
             currentPrompt = checkpoint.feedback;
           } else if (checkpoint.action === 'accept') {
             // If approved deliverable, check if we can advance to next phase
-            const nextPhase = stateManager.advanceToNextPhase();
+            const nextPhase = projectContext.stateManager.advanceToNextPhase();
             if (nextPhase) {
               console.log(chalk.cyan(`\n★ Workflow Updated: Advanced to next phase [${nextPhase.toUpperCase()}].`));
-              console.log(formatWorkflowRoadmap(stateManager.getState(), currentProjectRecord.path));
+              console.log(formatWorkflowRoadmap(projectContext.stateManager.getState(), projectContext.path));
             }
             turnActive = false;
           } else {
@@ -593,7 +620,7 @@ async function main() {
       } catch (err: any) {
         spinner.fail(`Execution failed: ${err.message || String(err)}`);
         detachAbort();
-        logger?.error(`Turn error: ${err.message || String(err)}`);
+        projectContext.logger.error(`Turn error: ${err.message || String(err)}`);
         turnActive = false;
       }
     }

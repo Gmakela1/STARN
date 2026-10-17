@@ -1,3 +1,5 @@
+import os from 'node:os';
+import path from 'node:path';
 import { select, input, confirm, password, search, Separator } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { ModelOption } from '../openrouter/models.js';
@@ -8,7 +10,8 @@ import { OpenRouterClient } from '../openrouter/client.js';
 import { Assignments, MODEL_ROLES, ModelRole, OPENROUTER_PROVIDER_ID, ProviderConfig } from '../config.js';
 import { allProviders, createProviderClient } from '../models/role-clients.js';
 import { listProviderModels, probeToolCalling } from '../models/provider-models.js';
-import { assignedRolesFor, formatAssignments, validateProviderInput } from './model-settings.js';
+import { assignedRolesFor, formatAssignments, validateProviderInput, buildProjectChoices } from './model-settings.js';
+import { listFolders } from '../workspace/folder-browser.js';
 
 export async function promptApiKey(): Promise<string> {
   const key = await password({
@@ -275,4 +278,76 @@ export async function promptModelsMenu(
     assignments[role] = { providerId, model };
     changed = true;
   }
+}
+
+export async function promptSwitchProject(
+  existingProjects: ProjectRecord[],
+  activeId: string | null
+): Promise<{ projectId?: string; path?: string } | null> {
+  const choices = buildProjectChoices(existingProjects, activeId);
+
+  const selected = await select({
+    message: 'Select project to work on:',
+    choices,
+    default: activeId || undefined
+  });
+
+  if (selected === 'CANCEL') {
+    return null;
+  }
+
+  if (selected === 'BROWSE') {
+    let currentDir = process.cwd();
+    while (true) {
+      let listing;
+      try {
+        listing = listFolders(currentDir);
+      } catch (err: any) {
+        console.log(chalk.red(`Cannot open ${currentDir}: ${err.message}`));
+        currentDir = os.homedir();
+        continue;
+      }
+
+      const folderChoices: Array<{ name: string; value: string }> = [
+        { name: `✔ [Use this directory] ${currentDir}`, value: 'USE_CURRENT' }
+      ];
+
+      if (listing.parentPath) {
+        folderChoices.push({ name: `.. (Up to ${path.basename(listing.parentPath) || listing.parentPath})`, value: 'UP' });
+      }
+
+      for (const f of listing.folders) {
+        folderChoices.push({
+          name: `${f.name}${f.isProject ? ' [STARN Project]' : ''}`,
+          value: f.path
+        });
+      }
+
+      folderChoices.push({ name: '✏ Type or paste a path...', value: 'TYPE_PATH' });
+      folderChoices.push({ name: '✖ Cancel', value: 'CANCEL' });
+
+      const choice = await select({
+        message: `Browse: ${currentDir}`,
+        choices: folderChoices
+      });
+
+      if (choice === 'CANCEL') return null;
+      if (choice === 'USE_CURRENT') return { path: currentDir };
+      if (choice === 'UP' && listing.parentPath) {
+        currentDir = listing.parentPath;
+        continue;
+      }
+      if (choice === 'TYPE_PATH') {
+        const typed = await input({
+          message: 'Directory path:',
+          validate: v => (v.trim() ? true : 'Path cannot be empty')
+        });
+        return { path: typed.trim() };
+      }
+      // Navigated into subfolder
+      currentDir = choice;
+    }
+  }
+
+  return { projectId: selected };
 }

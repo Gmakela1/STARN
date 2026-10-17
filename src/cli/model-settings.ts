@@ -1,4 +1,5 @@
 import { Assignments, MODEL_ROLES, ModelRole, OPENROUTER_PROVIDER_ID, ProviderConfig } from '../config.js';
+import { ProjectRecord } from '../workspace/types.js';
 
 const providerName = (id: string, providers: ProviderConfig[]) =>
   id === OPENROUTER_PROVIDER_ID ? 'OpenRouter' : providers.find(p => p.id === id)?.name ?? id;
@@ -23,4 +24,19 @@ export function validateProviderInput(name: string, baseUrl: string): true | str
   if (!name.trim()) return 'Provider needs a name';
   if (!/^https?:\/\//i.test(baseUrl.trim())) return 'Base URL must start with http:// or https://';
   return true;
+}
+
+export function buildProjectChoices(
+  projects: ProjectRecord[],
+  activeId: string | null
+): Array<{ name: string; value: string }> {
+  const choices = projects.map(p => ({
+    name: `${p.name} (${p.path})${p.id === activeId ? ' [Active]' : ''}`,
+    value: p.id
+  }));
+
+  choices.push({ name: '📁 Browse filesystem...', value: 'BROWSE' });
+  choices.push({ name: '✖ Cancel', value: 'CANCEL' });
+
+  return choices;
 }
