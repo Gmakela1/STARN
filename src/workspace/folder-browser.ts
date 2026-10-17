@@ -33,14 +33,33 @@ export function listFolders(targetDir: string, query?: string): FolderListing {
   const parent = path.dirname(resolved);
   const parentPath = parent === resolved ? null : parent;
 
-  const entries = fs.readdirSync(resolved, { withFileTypes: true });
-  const folders: FolderEntry[] = [];
+  let entries: fs.Dirent[] = [];
+  try {
+    entries = fs.readdirSync(resolved, { withFileTypes: true });
+  } catch (err: any) {
+    if (err.code === 'EPERM' || err.code === 'EACCES') {
+      return {
+        currentPath: resolved,
+        parentPath,
+        folders: []
+      };
+    }
+    throw err;
+  }
 
+  const folders: FolderEntry[] = [];
   const lowerQuery = query ? query.trim().toLowerCase() : null;
 
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    try {
+      if (!entry.isDirectory()) continue;
+    } catch {
+      continue;
+    }
+
     if (entry.name.startsWith('.')) continue;
+    if (entry.name.startsWith('$')) continue;
+    if (entry.name.toLowerCase() === 'system volume information') continue;
     if (entry.name === 'node_modules' || entry.name === 'dist') continue;
 
     if (lowerQuery && !entry.name.toLowerCase().includes(lowerQuery)) {
@@ -48,7 +67,12 @@ export function listFolders(targetDir: string, query?: string): FolderListing {
     }
 
     const folderPath = path.join(resolved, entry.name);
-    const isProject = fs.existsSync(path.join(folderPath, '.starn'));
+    let isProject = false;
+    try {
+      isProject = fs.existsSync(path.join(folderPath, '.starn'));
+    } catch {
+      isProject = false;
+    }
 
     folders.push({
       name: entry.name,

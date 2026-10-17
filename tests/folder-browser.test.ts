@@ -13,6 +13,8 @@ describe('listFolders', () => {
     fs.mkdirSync(path.join(tmpDir, 'beta', '.starn'), { recursive: true });
     fs.mkdirSync(path.join(tmpDir, '.hidden'));
     fs.mkdirSync(path.join(tmpDir, 'node_modules'));
+    fs.mkdirSync(path.join(tmpDir, '$Recycle.Bin'));
+    fs.mkdirSync(path.join(tmpDir, 'System Volume Information'));
     fs.writeFileSync(path.join(tmpDir, 'file.txt'), 'hello');
   });
 
@@ -32,6 +34,12 @@ describe('listFolders', () => {
   it('filters folders by case-insensitive query', () => {
     const listing = listFolders(tmpDir, 'bet');
     expect(listing.folders.map(f => f.name)).toEqual(['beta']);
+  });
+
+  it('skips Windows system and trash directories', () => {
+    const listing = listFolders(tmpDir);
+    expect(listing.folders.some(f => f.name.startsWith('$'))).toBe(false);
+    expect(listing.folders.some(f => f.name.toLowerCase() === 'system volume information')).toBe(false);
   });
 
   it('throws on non-existent or file path', () => {
