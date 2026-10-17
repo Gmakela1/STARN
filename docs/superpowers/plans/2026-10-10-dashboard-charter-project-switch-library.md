@@ -49,7 +49,7 @@
   export function extractConopsOverview(markdown: string): string | null;
   ```
 
-- [ ] **Step 1: Write the failing tests in `tests/conops-overview.test.ts`**
+- [x] **Step 1: Write the failing tests in `tests/conops-overview.test.ts`**
 
 ```ts
 import { extractConopsCharter, extractConopsOverview } from '../src/core/conops-overview.js';
@@ -84,12 +84,12 @@ describe('extractConopsCharter', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `npx vitest run tests/conops-overview.test.ts`
 Expected: FAIL with `extractConopsCharter is not a function`.
 
-- [ ] **Step 3: Implement `extractConopsCharter` and update `extractConopsOverview` in `src/core/conops-overview.ts`**
+- [x] **Step 3: Implement `extractConopsCharter` and update `extractConopsOverview` in `src/core/conops-overview.ts`**
 
 Implement:
 - Define `export interface CharterSection { heading: string; body: string; }`.
@@ -100,19 +100,19 @@ Implement:
 - Otherwise add `{ heading: title, body: body.trim() }`.
 - Update `extractConopsOverview`: if intro prose exists, return it; otherwise return the body of the `Purpose` section (case-insensitive); otherwise return the first charter section's body; otherwise `null`.
 
-- [ ] **Step 4: Update CONOPS prompt, secret sauce, and rubric in `src/specialists/packages/conops/index.ts`**
+- [x] **Step 4: Update CONOPS prompt, secret sauce, and rubric in `src/specialists/packages/conops/index.ts`**
 
 - Update Section 1 title: `## 1. Project Overview & Charter`.
 - Update prompt mandatory structure to require the 7 `###` subsections in order before `### System-Level Capabilities`.
 - Update `conopsSecretSauce` to include the 7 subsections with realistic tractor conversion content, keeping `### System-Level Capabilities` at the end of Section 1.
 - Update critic rubric criterion 1 to check for the charter subsections.
 
-- [ ] **Step 5: Run tests to verify pass**
+- [x] **Step 5: Run tests to verify pass**
 
 Run: `npx vitest run tests/conops-overview.test.ts tests/specialists.test.ts`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/core/conops-overview.ts src/specialists/packages/conops/index.ts tests/conops-overview.test.ts
@@ -139,7 +139,7 @@ git commit -m "feat(conops): charter subsections in prompt and headless extracto
   export function formatCharterPlain(charter: CharterSection[], projectName: string): string;
   ```
 
-- [ ] **Step 1: Write the failing tests in `tests/snake-layout.test.ts` and `tests/briefing-formatter.test.ts`**
+- [x] **Step 1: Write the failing tests in `tests/snake-layout.test.ts` and `tests/briefing-formatter.test.ts`**
 
 In `tests/snake-layout.test.ts`:
 ```ts
@@ -165,16 +165,16 @@ describe('layoutSnakeRows', () => {
 
 In `tests/briefing-formatter.test.ts`, add test that `BriefingData.charter` renders subsections in Page 1, followed by `── Page 2 ──` containing Financials first.
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run: `npx vitest run tests/snake-layout.test.ts tests/briefing-formatter.test.ts`
 Expected: FAIL with `layoutSnakeRows is not a function`.
 
-- [ ] **Step 3: Implement `layoutSnakeRows` in `src/core/formatters.ts`**
+- [x] **Step 3: Implement `layoutSnakeRows` in `src/core/formatters.ts`**
 
 Pure function: slice `0..totalCount` into chunks of `perRow`. Even rows are `'ltr'`, odd rows are `'rtl'`.
 
-- [ ] **Step 4: Update `src/core/briefing-formatter.ts`**
+- [x] **Step 4: Update `src/core/briefing-formatter.ts`**
 
 - Add `charter?: CharterSection[]` to `BriefingData`.
 - In `formatExecutiveBriefingPlain`:
@@ -183,12 +183,12 @@ Pure function: slice `0..totalCount` into chunks of `perRow`. Even rows are `'lt
   - Section 2 is `2. FINANCIAL & PROCUREMENT ROLLUP` (moved to top of Page 2).
   - Section 3 is Milestone Status, Section 4 is Critical Risks & Open Defects.
 
-- [ ] **Step 5: Implement `formatCharterPlain` in `src/cli/ui.ts` and update `/plan` snake rendering**
+- [x] **Step 5: Implement `formatCharterPlain` in `src/cli/ui.ts` and update `/plan` snake rendering**
 
 - `formatCharterPlain`: wraps each subsection in a clean boxen/card with cyan title.
 - In `formatWorkflowRoadmap`: check `(process.stdout.columns ?? 80) >= 100`. If so, use `layoutSnakeRows` to render 4 cards per row joined by `──▶` (ltr) and `◀──` (rtl), with `│\n▼` row-end connectors. If `< 100`, fall back to the existing vertical list.
 
-- [ ] **Step 6: Wire `/charter` and updated `/briefing` in `src/index.ts`**
+- [x] **Step 6: Wire `/charter` and updated `/briefing` in `src/index.ts`**
 
 - Read `CONOPS.md` and call `extractConopsCharter`.
 - `/charter`: print `formatCharterPlain(charter, currentProjectRecord.name)`.
@@ -196,12 +196,12 @@ Pure function: slice `0..totalCount` into chunks of `perRow`. Even rows are `'lt
 - Add `/charter` to quick commands list and help text in `src/cli/ui.ts` and `src/core/formatters.ts`.
 - Update startup banner: if CONOPS exists, print the Purpose line under the project directory.
 
-- [ ] **Step 7: Run tests to verify pass**
+- [x] **Step 7: Run tests to verify pass**
 
 Run: `npx vitest run tests/snake-layout.test.ts tests/briefing-formatter.test.ts`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/core/briefing-formatter.ts src/core/formatters.ts src/cli/ui.ts src/index.ts tests/
@@ -218,7 +218,7 @@ git commit -m "feat(cli): /charter command, briefing page-2 reorder, and /plan s
 **Interfaces:**
 - Consumes: `RoadmapPhase[]`
 
-- [ ] **Step 1: Inspect and design grid structure for `TreasureMapRoadmap.tsx`**
+- [x] **Step 1: Inspect and design grid structure for `TreasureMapRoadmap.tsx`**
 
 On `lg` screens, layout 4 cards per row with horizontal SVG connectors between them:
 - Row 1 (phases 1-4, LTR): Card 1 `→` Card 2 `→` Card 3 `→` Card 4. Right-edge downward arrow `↓` to Row 2.
@@ -226,7 +226,7 @@ On `lg` screens, layout 4 cards per row with horizontal SVG connectors between t
 - Row 3 (phases 9-12, LTR): Card 9 `→` Card 10 `→` Card 11 `→` Card 12. Right-edge downward arrow `↓` to Row 4.
 - Row 4 (phase 13, RTL alignment): Card 13 placed under Card 12.
 
-- [ ] **Step 2: Replace absolute connectors with inline SVG arrow cells**
+- [x] **Step 2: Replace absolute connectors with inline SVG arrow cells**
 
 - Create helper component `<ConnectorArrow dir="right" | "left" | "down" active={boolean} />`.
   - When `active` (source phase is `COMPLETED`), stroke is `text-emerald-500` solid.
@@ -235,12 +235,12 @@ On `lg` screens, layout 4 cards per row with horizontal SVG connectors between t
 - Use CSS grid: `grid grid-cols-[1fr_24px_1fr_24px_1fr_24px_1fr]` on `lg` screens.
 - Below `lg`, collapse to a vertical stack with downward connector arrows between cards.
 
-- [ ] **Step 3: Verify frontend build**
+- [x] **Step 3: Verify frontend build**
 
 Run: `npm --prefix web run build`
 Expected: Build succeeds with 0 errors.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add web/src/components/TreasureMapRoadmap.tsx
@@ -264,29 +264,29 @@ git commit -m "feat(web): snake roadmap with visible horizontal and vertical SVG
 - Consumes: `extractConopsCharter` (from Task 1)
 - Produces: `ProjectInfoResponse.charter: CharterSection[]`
 
-- [ ] **Step 1: Write failing test in `tests/server-api.test.ts`**
+- [x] **Step 1: Write failing test in `tests/server-api.test.ts`**
 
 Add test: `GET /api/project` returns `charter: CharterSection[]` when `docs/CONOPS.md` has subsections.
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `npx vitest run tests/server-api.test.ts`
 Expected: FAIL (charter property undefined).
 
-- [ ] **Step 3: Update `src/server/types.ts` and `src/server/router.ts`**
+- [x] **Step 3: Update `src/server/types.ts` and `src/server/router.ts`**
 
 - In `src/server/types.ts`: add `export interface CharterSection { heading: string; body: string; }` and add `charter: CharterSection[];` to `ProjectInfoResponse`.
 - In `src/server/router.ts`: in `buildProjectInfo`, read `docs/CONOPS.md`, run `extractConopsCharter(content)`, and attach to the response. If file is missing, return `charter: []`.
 - Mirror in `web/src/types/api.ts`.
 
-- [ ] **Step 4: Update `web/src/views/DashboardView.tsx`**
+- [x] **Step 4: Update `web/src/views/DashboardView.tsx`**
 
 - Remove `max-w-2xl` from the project overview card container.
 - Place the header (badges, title, and the "Export 2-Page Executive Briefing" button) in a full-width header bar.
 - If `project.charter.length > 0`, render the charter as a two-column grid (`grid grid-cols-1 md:grid-cols-2 gap-4 mt-4`). Each card has a subtle slate border/bg, uppercase heading in sky-400, and rendered markdown text using `<Markdown content={section.body} />`.
 - If `project.charter.length === 0`, fall back to existing summary text.
 
-- [ ] **Step 5: Fix `web/src/components/ExecutiveBriefingModal.tsx` and `web/src/index.css`**
+- [x] **Step 5: Fix `web/src/components/ExecutiveBriefingModal.tsx` and `web/src/index.css`**
 
 - In `ExecutiveBriefingModal.tsx`:
   - Page 1: Full-width Project Overview & Charter. Render `project.charter` in a 2-column grid. Remove the Financial & Procurement Rollup from Page 1 entirely.
@@ -296,12 +296,12 @@ Expected: FAIL (charter property undefined).
   - Ensure `.briefing-page` has `break-inside: avoid;`.
   - Add `.briefing-page:nth-of-type(2) { break-before: page !important; page-break-before: always !important; }`.
 
-- [ ] **Step 6: Run tests and web build**
+- [x] **Step 6: Run tests and web build**
 
 Run: `npx vitest run tests/server-api.test.ts && npm --prefix web run build`
 Expected: All pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/server/ web/src/ tests/server-api.test.ts
@@ -345,7 +345,7 @@ git commit -m "feat(web): full-width charter subsections on dashboard and unclip
   }
   ```
 
-- [ ] **Step 1: Write the failing tests in `tests/folder-browser.test.ts`**
+- [x] **Step 1: Write the failing tests in `tests/folder-browser.test.ts`**
 
 ```ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -389,16 +389,16 @@ describe('listFolders', () => {
 });
 ```
 
-- [ ] **Step 2: Write failing tests in `tests/project-context.test.ts`**
+- [x] **Step 2: Write failing tests in `tests/project-context.test.ts`**
 
 Test: initial context has record, path, stateManager; `switchTo` updates record and path, builds fresh `stateManager` and `logger`, and fires `onSwitch` listener.
 
-- [ ] **Step 3: Run tests to verify failure**
+- [x] **Step 3: Run tests to verify failure**
 
 Run: `npx vitest run tests/folder-browser.test.ts tests/project-context.test.ts`
 Expected: FAIL (modules not found).
 
-- [ ] **Step 4: Implement `src/workspace/folder-browser.ts`**
+- [x] **Step 4: Implement `src/workspace/folder-browser.ts`**
 
 Implement `listFolders(targetDir: string, query?: string): FolderListing`:
 - Resolve absolute path. Throw if `!fs.existsSync(resolved)` or `!fs.statSync(resolved).isDirectory()`.
@@ -409,7 +409,7 @@ Implement `listFolders(targetDir: string, query?: string): FolderListing`:
 - Filter by `query` if present (case-insensitive substring).
 - Sort alphabetically by name.
 
-- [ ] **Step 5: Implement `src/workspace/project-context.ts`**
+- [x] **Step 5: Implement `src/workspace/project-context.ts`**
 
 Implement `ProjectContext`:
 - Store `registry`, current `_record`, `_stateManager`, `_logger`, and a set of `listeners`.
@@ -423,12 +423,12 @@ Implement `ProjectContext`:
   - Finds or registers project via `registry.registerProject(name ?? path.basename(targetPath), targetPath)`.
   - Calls `switchTo(record)` and returns `record`.
 
-- [ ] **Step 6: Run tests to verify pass**
+- [x] **Step 6: Run tests to verify pass**
 
 Run: `npx vitest run tests/folder-browser.test.ts tests/project-context.test.ts`
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/workspace/folder-browser.ts src/workspace/project-context.ts tests/folder-browser.test.ts tests/project-context.test.ts
@@ -459,7 +459,7 @@ git commit -m "feat(workspace): headless folder browser and ProjectContext"
   - `GET /api/fs/folders?path=&q=`
   - `POST /api/projects/switch`
 
-- [ ] **Step 1: Write failing tests in `tests/server-project-switch.test.ts`**
+- [x] **Step 1: Write failing tests in `tests/server-project-switch.test.ts`**
 
 ```ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -530,19 +530,19 @@ describe('Server project switching API', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `npx vitest run tests/server-project-switch.test.ts`
 Expected: FAIL (routes 404).
 
-- [ ] **Step 3: Update `ServerSessionManager` in `src/server/session.ts`**
+- [x] **Step 3: Update `ServerSessionManager` in `src/server/session.ts`**
 
 - Add `switchProject(newPath: string, newStateManager: ProjectStateManager, newLogger?: Logger): void`:
   - Throws if `this.busy` or `this.pending`.
   - Clears `this.sessionMessages = []`.
   - Updates `this.deps.projectPath = newPath`, `this.deps.stateManager = newStateManager`, `this.deps.logger = newLogger`.
 
-- [ ] **Step 4: Wire routes in `src/server/router.ts`**
+- [x] **Step 4: Wire routes in `src/server/router.ts`**
 
 - In `handleApiRequest`: at the start, resolve `const activePath = deps.context ? deps.context.path : deps.projectPath;` and `const activeStateManager = deps.context ? deps.context.stateManager : deps.stateManager;`. Use these throughout `handleApiRequest`.
 - Add `GET /api/projects`: return `{ projects: registry.listProjects(), activeId: context.record.id }`.
@@ -554,12 +554,12 @@ Expected: FAIL (routes 404).
   - If `deps.session`, call `deps.session.switchProject(context.path, context.stateManager, context.logger)`.
   - Return `ok(res, buildProjectInfo(deps))`.
 
-- [ ] **Step 5: Run tests to verify pass**
+- [x] **Step 5: Run tests to verify pass**
 
 Run: `npx vitest run tests/server-project-switch.test.ts`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/server/ tests/server-project-switch.test.ts
@@ -579,7 +579,7 @@ git commit -m "feat(server): project switching and folder browsing endpoints"
 **Interfaces:**
 - Consumes: `/api/projects`, `/api/fs/folders`, `/api/projects/switch`
 
-- [ ] **Step 1: Update API client and types in `web/src/`**
+- [x] **Step 1: Update API client and types in `web/src/`**
 
 - In `web/src/types/api.ts`:
   ```ts
@@ -593,7 +593,7 @@ git commit -m "feat(server): project switching and folder browsing endpoints"
   - `browseFolders: (path?: string, q?: string) => call<FolderListingResponse>('GET', ...)`
   - `switchProject: (body: { projectId?: string; path?: string }) => call<ProjectInfo>('POST', '/api/projects/switch', body)`
 
-- [ ] **Step 2: Add Project switching card to `web/src/views/SettingsView.tsx`**
+- [x] **Step 2: Add Project switching card to `web/src/views/SettingsView.tsx`**
 
 Place at the top of the Settings page:
 - "Active Project" card:
@@ -607,19 +607,19 @@ Place at the top of the Settings page:
     - "Use this folder" button.
   - While busy, switching is disabled with a tooltip explaining why.
 
-- [ ] **Step 3: AppShell remount on project switch**
+- [x] **Step 3: AppShell remount on project switch**
 
 In `web/src/layouts/AppShell.tsx`:
 - Maintain a `projectRevision` state counter.
 - Pass `onProjectSwitched={() => { setProjectRevision(r => r + 1); void refreshProject(); }}` to `SettingsView`.
 - Key the view container with `projectRevision` so when the active project changes, all views unmount and reload fresh data for the new project.
 
-- [ ] **Step 4: Build web bundle and verify**
+- [x] **Step 4: Build web bundle and verify**
 
 Run: `npm --prefix web run build`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/
@@ -640,23 +640,23 @@ git commit -m "feat(web): project picker and folder browser in settings with vie
 **Interfaces:**
 - Consumes: `ProjectContext`, `listFolders`
 
-- [ ] **Step 1: Write unit tests in `tests/cli-project.test.ts`**
+- [x] **Step 1: Write unit tests in `tests/cli-project.test.ts`**
 
 Test helper logic for the interactive project prompt and folder navigator options.
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `npx vitest run tests/cli-project.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `promptSwitchProject` in `src/cli/prompts.ts`**
+- [x] **Step 3: Implement `promptSwitchProject` in `src/cli/prompts.ts`**
 
 Implement interactive prompt using `@inquirer/prompts`:
 - Choice between known projects and "📁 Browse filesystem...".
 - If "Browse": loop displaying current folder, `.. (Up)`, subfolders, and "✓ Select this folder". Uses `listFolders`.
 - Returns `{ action: 'switch'; projectId?: string; path?: string } | null`.
 
-- [ ] **Step 4: Integrate `ProjectContext` in `src/index.ts`**
+- [x] **Step 4: Integrate `ProjectContext` in `src/index.ts`**
 
 - Construct `const projectContext = new ProjectContext(projectRegistry, currentProjectRecord)`.
 - Replace hardcoded `currentProjectRecord` and `stateManager` references in the loop with `projectContext.record` and `projectContext.stateManager`.
@@ -668,12 +668,12 @@ Implement interactive prompt using `@inquirer/prompts`:
   - Clear `sessionMessages = []`.
   - Print confirmation and print `/plan`.
 
-- [ ] **Step 5: Run tests and typecheck**
+- [x] **Step 5: Run tests and typecheck**
 
 Run: `npx tsc --noEmit && npx vitest run`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/cli/prompts.ts src/index.ts src/cli/ui.ts src/core/formatters.ts tests/cli-project.test.ts
@@ -723,7 +723,7 @@ git commit -m "feat(cli): /project command with interactive folder browser and P
   ): void;
   ```
 
-- [ ] **Step 1: Write failing tests in `tests/project-files.test.ts`**
+- [x] **Step 1: Write failing tests in `tests/project-files.test.ts`**
 
 ```ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -784,12 +784,12 @@ describe('Project files: examples and references', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `npx vitest run tests/project-files.test.ts`
 Expected: FAIL (module not found).
 
-- [ ] **Step 3: Implement `src/workspace/project-files.ts`**
+- [x] **Step 3: Implement `src/workspace/project-files.ts`**
 
 - Implement guards: `path.basename(filename) === filename`, no path traversal, check size ≤ 10MB.
 - `saveExample`: allowed `.md`, `.txt`, `.pdf`. For `.pdf`, call `extractTextFromPdf` (from `src/tools/handlers/pdf-extractor.js`). If extracted text is empty, throw error. Save to `<project>/examples/<specialistId>/<name>.pdf.md`. Deduplicate names with `-2`, `-3`.
@@ -797,17 +797,17 @@ Expected: FAIL (module not found).
 - `listLibrary`: readdir on `reference/` and `examples/<specialistId>/`, return name, size, modified ISO string.
 - `removeLibraryFile`: resolve file path within project root, throw if missing or outside root, delete via `fs.unlinkSync`.
 
-- [ ] **Step 4: Update critic runner and `example-reader` to load `.txt` examples**
+- [x] **Step 4: Update critic runner and `example-reader` to load `.txt` examples**
 
 - In `src/core/runner.ts` (around line 450): change check `f.endsWith('.md')` to `f.endsWith('.md') || f.endsWith('.txt')`.
 - In `src/tools/handlers/example-reader.ts` (around line 30): change check `f.endsWith('.md')` to `f.endsWith('.md') || f.endsWith('.txt')`.
 
-- [ ] **Step 5: Run tests to verify pass**
+- [x] **Step 5: Run tests to verify pass**
 
 Run: `npx vitest run tests/project-files.test.ts`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/workspace/project-files.ts src/core/runner.ts src/tools/handlers/example-reader.ts tests/project-files.test.ts
@@ -832,7 +832,7 @@ git commit -m "feat(workspace): headless project-files manager and support .txt 
   - `DELETE /api/library/references/:name`
   - `DELETE /api/library/examples/:specialistId/:name`
 
-- [ ] **Step 1: Write failing tests in `tests/server-library.test.ts`**
+- [x] **Step 1: Write failing tests in `tests/server-library.test.ts`**
 
 Test:
 - `POST /api/examples/conops` saves file and returns `{ path, filename }`.
@@ -841,12 +841,12 @@ Test:
 - `DELETE /api/library/references/:name` removes file.
 - Non-existent specialist returns 404. Invalid file type returns 400. File > 10MB returns 413.
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `npx vitest run tests/server-library.test.ts`
 Expected: FAIL (routes 404).
 
-- [ ] **Step 3: Implement endpoints in `src/server/router.ts`**
+- [x] **Step 3: Implement endpoints in `src/server/router.ts`**
 
 - Handle `POST /api/examples/:specialistId`: read JSON `{ filename, contentBase64 }`. Convert base64 to Buffer. Verify specialist exists via `specialistRegistry`. Call `saveExample`. Return 200 `{ path, filename }`.
 - Handle `POST /api/references`: read JSON `{ filename, contentBase64 }`. Call `saveReference`. Return 200 `{ path, filename }`.
@@ -854,12 +854,12 @@ Expected: FAIL (routes 404).
 - Handle `DELETE /api/library/references/:name`: call `removeLibraryFile`. Return 200 `{ success: true }`.
 - Handle `DELETE /api/library/examples/:specialistId/:name`: call `removeLibraryFile`. Return 200 `{ success: true }`.
 
-- [ ] **Step 4: Run tests to verify pass**
+- [x] **Step 4: Run tests to verify pass**
 
 Run: `npx vitest run tests/server-library.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/server/router.ts tests/server-library.test.ts
@@ -881,32 +881,32 @@ git commit -m "feat(server): library list, upload, and delete endpoints"
 - Consumes: `saveExample`, `saveReference`, `listLibrary`, `removeLibraryFile`
 - Produces: CLI commands `/example <path>`, `/reference <path>`, `/library`
 
-- [ ] **Step 1: Write failing tests in `tests/cli-library.test.ts`**
+- [x] **Step 1: Write failing tests in `tests/cli-library.test.ts`**
 
 Test argument parsing for `/example` and `/reference` supporting quoted strings (`/example "my file.pdf"`).
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `npx vitest run tests/cli-library.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement CLI handlers in `src/cli/library-commands.ts`**
+- [x] **Step 3: Implement CLI handlers in `src/cli/library-commands.ts`**
 
 - `handleExampleCommand(projectPath, activePhase, arg)`: reads source file from local disk, calls `saveExample`. Prints success with the saved path.
 - `handleReferenceCommand(projectPath, arg)`: reads source file, calls `saveReference`. Prints success.
 - `handleLibraryCommand(projectPath)`: prints formatted table of references and examples by specialist. Offers interactive remove prompt.
 
-- [ ] **Step 4: Wire in `src/index.ts`**
+- [x] **Step 4: Wire in `src/index.ts`**
 
 - Dispatch `/example`, `/reference`, `/library` commands in the command loop.
 - Add commands to `/help` list.
 
-- [ ] **Step 5: Run tests and typecheck**
+- [x] **Step 5: Run tests and typecheck**
 
 Run: `npx tsc --noEmit && npx vitest run`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/cli/library-commands.ts src/index.ts src/cli/ui.ts src/core/formatters.ts tests/cli-library.test.ts
@@ -927,7 +927,7 @@ git commit -m "feat(cli): /example, /reference, and /library commands"
 **Interfaces:**
 - Consumes: `/api/examples/:specialistId`, `/api/references`, `/api/library`
 
-- [ ] **Step 1: Update web API client in `web/src/api/client.ts`**
+- [x] **Step 1: Update web API client in `web/src/api/client.ts`**
 
 Add:
 - `uploadExample: (specialistId: string, filename: string, contentBase64: string) => ...`
@@ -936,32 +936,32 @@ Add:
 - `deleteReference: (name: string) => call<void>('DELETE', ...)`
 - `deleteExample: (specialistId: string, name: string) => call<void>('DELETE', ...)`
 
-- [ ] **Step 2: Add Example Drop Zone to `web/src/views/DevelopmentView.tsx`**
+- [x] **Step 2: Add Example Drop Zone to `web/src/views/DevelopmentView.tsx`**
 
 In the right-hand document panel:
 - Add collapsible/compact card: "Quality Examples for {selectedPhase}".
 - Drag-and-drop zone + file picker button (`.md, .txt, .pdf`).
 - On drop/select: convert file to base64 via `FileReader`, call `api.uploadExample`. Show success badge with new filename or error toast. Disabled while `busy`.
 
-- [ ] **Step 3: Create `web/src/views/LibraryView.tsx`**
+- [x] **Step 3: Create `web/src/views/LibraryView.tsx`**
 
 - Tab layout:
   - Top section: "Reference Documents" drop zone + list table (name, size, modified, delete button).
   - Bottom section: "Specialist Quality Examples" grouped by specialist. Shows custom examples with delete buttons.
 - Accessible: all drop zones have hidden `<input type="file">` triggered by a 44px button; keyboard operable; delete buttons require confirmation.
 
-- [ ] **Step 4: Add Library tab to `web/src/layouts/AppShell.tsx`**
+- [x] **Step 4: Add Library tab to `web/src/layouts/AppShell.tsx`**
 
 - Add `{ id: 'library', label: 'Library', icon: Library }` to `TABS` between Work Instructions and Digital Twin.
 - Render `<LibraryView />` when active.
 
-- [ ] **Step 5: Build web bundle and measure contrast**
+- [x] **Step 5: Build web bundle and measure contrast**
 
 Run: `npm --prefix web run build`
 Expected: PASS.
 Verify contrast of newly introduced text elements ≥ 4.5:1.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/
@@ -976,7 +976,7 @@ git commit -m "feat(web): development example drop zone and library management t
 - Modify: `docs/superpowers/TODO.md`
 - Modify: `docs/superpowers/plans/2026-10-10-dashboard-charter-project-switch-library.md`
 
-- [ ] **Step 1: Full verification suite**
+- [x] **Step 1: Full verification suite**
 
 Run:
 ```bash
@@ -986,7 +986,7 @@ npm --prefix web run build
 ```
 Expected: 0 type errors, 100% tests passing, clean web build.
 
-- [ ] **Step 2: Check architectural decoupling boundaries**
+- [x] **Step 2: Check architectural decoupling boundaries**
 
 Verify no forbidden imports:
 ```bash
@@ -995,11 +995,11 @@ grep -rn "from '../server" src/core src/workspace src/models src/tools
 ```
 Expected: 0 matches.
 
-- [ ] **Step 3: Update plan and TODO documentation**
+- [x] **Step 3: Update plan and TODO documentation**
 
 Mark all tasks complete in `docs/superpowers/TODO.md` and the plan file.
 
-- [ ] **Step 4: Push to origin/master**
+- [x] **Step 4: Push to origin/master**
 
 ```bash
 git push origin master
