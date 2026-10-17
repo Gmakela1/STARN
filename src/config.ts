@@ -11,6 +11,14 @@ export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 export type ModelRole = 'drafting' | 'critic' | 'classifier' | 'compaction';
 export const MODEL_ROLES: ModelRole[] = ['drafting', 'critic', 'classifier', 'compaction'];
 
+export type SearchProvider = 'openrouter' | 'tavily' | 'brave';
+
+export interface SearchConfig {
+  provider?: SearchProvider;
+  tavilyApiKey?: string;
+  braveApiKey?: string;
+}
+
 /** A user-configured OpenAI-compatible provider. The built-in OpenRouter provider is never stored here. */
 export interface ProviderConfig {
   id: string;
@@ -40,6 +48,7 @@ export interface StarnConfig {
   globalDir: string;
   providers: ProviderConfig[];
   assignments: Assignments;
+  search?: SearchConfig;
 }
 
 export interface UserConfigFile {
@@ -52,6 +61,7 @@ export interface UserConfigFile {
   appName?: string;
   providers?: ProviderConfig[];
   assignments?: Partial<Assignments>;
+  search?: SearchConfig;
 }
 
 const DEFAULT_MODEL = 'anthropic/claude-3.5-sonnet';
@@ -158,6 +168,13 @@ export function loadConfig(customGlobalDir?: string): StarnConfig {
   const providers = Array.isArray(fileConfig.providers) ? fileConfig.providers : [];
   const assignments = resolveAssignments(fileConfig);
   validateAssignments(assignments, providers);
+
+  const search: SearchConfig = {
+    provider: (fileConfig.search?.provider || (process.env.STARN_SEARCH_PROVIDER as SearchProvider) || 'openrouter'),
+    tavilyApiKey: fileConfig.search?.tavilyApiKey || process.env.TAVILY_API_KEY || '',
+    braveApiKey: fileConfig.search?.braveApiKey || process.env.BRAVE_API_KEY || ''
+  };
+
   const compactionConfigured = Boolean(
     fileConfig.compactionModel || fileConfig.assignments?.compaction || process.env.STARN_COMPACT_MODEL
   );
@@ -176,6 +193,7 @@ export function loadConfig(customGlobalDir?: string): StarnConfig {
     appName,
     globalDir,
     providers,
-    assignments
+    assignments,
+    search
   };
 }
