@@ -11,18 +11,22 @@ export type SwitchListener = (newRecord: ProjectRecord) => void;
  * and logger. Supports switching projects at runtime and notifies listeners.
  */
 export class ProjectContext {
-  private registry: ProjectRegistry;
+  private _registry: ProjectRegistry;
   private _record: ProjectRecord;
   private _stateManager: ProjectStateManager;
   private _logger: Logger;
   private listeners: Set<SwitchListener> = new Set();
 
   constructor(registry: ProjectRegistry, initialRecord: ProjectRecord) {
-    this.registry = registry;
+    this._registry = registry;
     this._record = initialRecord;
     this._stateManager = new ProjectStateManager(initialRecord.path);
     this._stateManager.getOrCreateState(initialRecord.id, initialRecord.name);
     this._logger = new Logger(path.join(initialRecord.path, '.starn'));
+  }
+
+  get registry(): ProjectRegistry {
+    return this._registry;
   }
 
   get record(): ProjectRecord {
@@ -48,7 +52,7 @@ export class ProjectContext {
    */
   switchTo(record: ProjectRecord): void {
     this._record = record;
-    this.registry.setActiveProject(record.id);
+    this._registry.setActiveProject(record.id);
 
     this._stateManager = new ProjectStateManager(record.path);
     this._stateManager.getOrCreateState(record.id, record.name);
@@ -69,7 +73,7 @@ export class ProjectContext {
   switchToPath(targetPath: string, name?: string): ProjectRecord {
     const resolved = path.resolve(targetPath);
     const projectName = name?.trim() || path.basename(resolved);
-    const record = this.registry.registerProject(projectName, resolved);
+    const record = this._registry.registerProject(projectName, resolved);
     this.switchTo(record);
     return record;
   }

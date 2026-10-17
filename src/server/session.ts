@@ -158,6 +158,27 @@ export class ServerSessionManager {
     return this.pending;
   }
 
+  /**
+   * Switches the active project in the session.
+   * Throws if an agent turn is busy or a checkpoint is pending.
+   * Clears session messages and updates project path, state manager, and logger.
+   */
+  switchProject(newPath: string, newStateManager: ProjectStateManager, newLogger?: Logger): void {
+    if (this.busy) {
+      throw new Error('Cannot switch projects while an agent turn is running.');
+    }
+    if (this.pending) {
+      throw new Error('Cannot switch projects while a review is waiting.');
+    }
+    this.sessionMessages = [];
+    this.deps.projectPath = newPath;
+    this.deps.stateManager = newStateManager;
+    if (newLogger) {
+      this.deps.logger = newLogger;
+    }
+    this.roleClients = this.buildRoleClients();
+  }
+
   /** Aborts the in-flight turn, if any. Returns true when something was aborted. */
   abortActiveTurn(): boolean {
     if (!this.activeAbort) return false;

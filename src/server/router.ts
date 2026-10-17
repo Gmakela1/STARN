@@ -1,7 +1,10 @@
 import http from 'node:http';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { ProjectStateManager, ORDERED_WORKFLOW_PHASES, resolveArtifactPaths, resolvePhaseRef } from '../workspace/state.js';
+import { ProjectContext } from '../workspace/project-context.js';
+import { listFolders } from '../workspace/folder-browser.js';
 import { countOpenQuestions, parseOpenQuestionsFromContent } from '../core/open-questions-parser.js';
 import { createVersionBackup } from '../util/version-backup.js';
 import { parseBomDocument, updateBomRow, BomItemUpdate } from './parsers/bom-parser.js';
@@ -25,6 +28,7 @@ import {
 export interface RouterDeps {
   projectPath: string;
   stateManager: ProjectStateManager;
+  context?: ProjectContext;
   session?: ServerSessionManager;
   /** Static assets directory (built web UI). Optional. */
   webDistPath?: string;
@@ -299,13 +303,80 @@ function buildIssuePrompt(issue: ProjectIssue): string {
 export async function handleApiRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  deps: RouterDeps
+  rawDeps: RouterDeps
 ): Promise<void> {
+  const deps: RouterDeps = {
+    ...rawDeps,
+    projectPath: rawDeps.context ? rawDeps.context.path : rawDeps.projectPath,
+    stateManager: rawDeps.context ? rawDeps.context.stateManager : rawDeps.stateManager
+  };
+
   const url = new URL(req.url ?? '/', 'http://localhost');
   const segments = url.pathname.split('/').filter(Boolean); // ['api', ...]
   const method = (req.method ?? 'GET').toUpperCase();
 
   try {
+    // --- Projects & Filesystem Browsing ---------------------------------------
+    if (method === 'GET' && url.pathname === '/api/projects') {
+      if (!rawDeps.context) {
+        return ok(res, {
+          projects: [{ id: 'current', name: path.basename(deps.projectPath), path: deps.projectPath }],
+          activeId: 'current'
+        });
+      }
+      return ok(res, {
+        projects: rawDeps.context.registry.listProjects(),
+        activeId: rawDeps.context.record.id
+      });
+    }
+
+    if (method === 'GET' && url.pathname === '/api/fs/folders') {
+      const targetDir = url.searchParams.get('path') || os.homedir();
+      const q = url.searchParams.get('q') || undefined;
+      try {
+        const listing = listFolders(targetDir, q);
+        return ok(res, listing);
+      } catch (err: any) {
+        return fail(res, 400, err?.message ?? 'Failed to list folders');
+      }
+    }
+
+    if (method === 'POST' && url.pathname === '/api/projects/switch') {
+      if (!rawDeps.context) return fail(res, 501, 'Project switching not configured on server');
+      if (rawDeps.session?.busy || rawDeps.session?.getPendingCheckpoint()) {
+        return fail(res, 409, 'Cannot switch projects while an agent turn is running or pending review.');
+      }
+      const body = await readJsonBody(req);
+      const projectId = body.projectId ? String(body.projectId).trim() : undefined;
+      const targetPath = body.path ? String(body.path).trim() : undefined;
+
+      if (!projectId && !targetPath) {
+        return fail(res, 400, 'Either projectId or path is required');
+      }
+
+      try {
+        if (projectId) {
+          const project = rawDeps.context.registry.listProjects().find(p => p.id === projectId);
+          if (!project) return fail(res, 404, `Project with id "${projectId}" not found`);
+          rawDeps.context.switchTo(project);
+        } else if (targetPath) {
+          if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isDirectory()) {
+            return fail(res, 400, `Directory does not exist or is not a folder: ${targetPath}`);
+          }
+          rawDeps.context.switchToPath(targetPath);
+        }
+        if (rawDeps.session) {
+          rawDeps.session.switchProject(rawDeps.context.path, rawDeps.context.stateManager, rawDeps.context.logger);
+        }
+        return ok(res, buildProjectInfo({
+          ...rawDeps,
+          projectPath: rawDeps.context.path,
+          stateManager: rawDeps.context.stateManager
+        }));
+      } catch (err: any) {
+        return fail(res, 400, err?.message ?? 'Failed to switch project');
+      }
+    }
     // --- Project & dashboard -------------------------------------------------
     if (method === 'GET' && url.pathname === '/api/project') {
       return ok(res, buildProjectInfo(deps));
