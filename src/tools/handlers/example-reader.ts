@@ -25,7 +25,7 @@ export const exampleReaderHandler: ToolHandler = {
     if (fs.existsSync(customExamplesDir)) {
       const files = fs.readdirSync(customExamplesDir);
       for (const f of files) {
-        if (f.endsWith('.md')) {
+        if (f.endsWith('.md') || f.endsWith('.txt')) {
           const content = fs.readFileSync(path.join(customExamplesDir, f), 'utf-8');
           results.push(`### Custom User Example (${f}):\n${content}`);
         }

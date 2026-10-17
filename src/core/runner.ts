@@ -450,7 +450,7 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
         const userExDir = path.join(projectPath, 'examples', specialist.id);
         if (fs.existsSync(userExDir)) {
           for (const f of fs.readdirSync(userExDir)) {
-            if (f.endsWith('.md')) {
+            if (f.endsWith('.md') || f.endsWith('.txt')) {
               customExamples.push(fs.readFileSync(path.join(userExDir, f), 'utf-8'));
             }
           }
