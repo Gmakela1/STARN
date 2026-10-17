@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   PackageSearch,
   Wrench,
+  FolderArchive,
   MessageSquareWarning,
   Box,
   Settings as SettingsIcon,
@@ -19,6 +20,7 @@ import PartsView from '../views/PartsView';
 import WorkInstructionsView from '../views/WorkInstructionsView';
 import IssuesAndQuestionsView from '../views/IssuesAndQuestionsView';
 import DigitalTwinView from '../views/DigitalTwinView';
+import LibraryView from '../views/LibraryView';
 import SettingsView from '../views/SettingsView';
 
 export type TabId =
@@ -27,6 +29,7 @@ export type TabId =
   | 'issues'
   | 'parts'
   | 'work'
+  | 'library'
   | 'twin'
   | 'settings';
 
@@ -36,6 +39,7 @@ const TABS: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard }> = 
   { id: 'issues', label: 'Questions & Issues', icon: MessageSquareWarning },
   { id: 'parts', label: 'Parts', icon: PackageSearch },
   { id: 'work', label: 'Work Instructions', icon: Wrench },
+  { id: 'library', label: 'Library', icon: FolderArchive },
   { id: 'twin', label: 'Digital Twin', icon: Box },
   { id: 'settings', label: 'Settings', icon: SettingsIcon }
 ];
@@ -151,6 +155,7 @@ export default function AppShell() {
         )}
         {tab === 'parts' && <PartsView />}
         {tab === 'work' && <WorkInstructionsView />}
+        {tab === 'library' && <LibraryView />}
         {tab === 'twin' && <DigitalTwinView />}
         {tab === 'settings' && (
           <SettingsView

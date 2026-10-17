@@ -11,6 +11,7 @@ import {
   ProjectIssue,
   ProjectsResponse,
   FolderListingResponse,
+  LibraryListing,
   RoadmapPhase,
   Settings,
   SettingsUpdate,
@@ -92,6 +93,38 @@ export const api = {
     call<{ models: string[] }>('GET', `/api/providers/${encodeURIComponent(id)}/models`),
   probeProvider: (id: string, model: string) =>
     call<{ ok: boolean; detail: string }>('POST', `/api/providers/${encodeURIComponent(id)}/probe`, { model }),
+
+  // Library & File Uploads
+  uploadExample: async (specialistId: string, filename: string, file: Blob): Promise<{ path: string; filename: string }> => {
+    const buffer = await file.arrayBuffer();
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return call<{ path: string; filename: string }>('POST', `/api/examples/${encodeURIComponent(specialistId)}`, {
+      filename,
+      contentBase64: btoa(binary)
+    });
+  },
+  uploadReference: async (filename: string, file: Blob): Promise<{ path: string; filename: string }> => {
+    const buffer = await file.arrayBuffer();
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return call<{ path: string; filename: string }>('POST', '/api/references', {
+      filename,
+      contentBase64: btoa(binary)
+    });
+  },
+  fetchLibrary: () => call<LibraryListing>('GET', '/api/library'),
+  deleteReference: (name: string) => call<{ success: boolean }>('DELETE', `/api/library/references/${encodeURIComponent(name)}`),
+  deleteExample: (specialistId: string, name: string) =>
+    call<{ success: boolean }>('DELETE', `/api/library/examples/${encodeURIComponent(specialistId)}/${encodeURIComponent(name)}`),
 
   // Projects & Filesystem
   fetchProjects: () => call<ProjectsResponse>('GET', '/api/projects'),

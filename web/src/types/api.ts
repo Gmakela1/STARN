@@ -60,6 +60,17 @@ export interface FolderListingResponse {
   folders: FolderEntry[];
 }
 
+export interface LibraryFileEntry {
+  name: string;
+  size: number;
+  modified: string;
+}
+
+export interface LibraryListing {
+  references: LibraryFileEntry[];
+  examples: Record<string, LibraryFileEntry[]>;
+}
+
 export interface ProjectInfo {
   id: string;
   name: string;

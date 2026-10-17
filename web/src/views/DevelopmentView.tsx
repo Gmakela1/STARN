@@ -11,7 +11,9 @@ import {
   RefreshCw,
   Bot,
   User,
-  TriangleAlert
+  TriangleAlert,
+  Upload,
+  Paperclip
 } from 'lucide-react';
 import { api } from '../api/client';
 import { DocData, ProjectInfo, RoadmapPhase } from '../types/api';
@@ -56,6 +58,26 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
   const [saving, setSaving] = useState(false);
   const [approving, setApproving] = useState(false);
   const [docNotice, setDocNotice] = useState<string | null>(null);
+
+  // Quality example upload state
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
+  const [uploadingExample, setUploadingExample] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (file: File) => {
+    if (!selectedPhase || busy) return;
+    setUploadingExample(true);
+    setUploadNotice(null);
+    try {
+      const res = await api.uploadExample(selectedPhase, file.name, file);
+      setUploadNotice(`✔ Uploaded quality example: ${res.filename}`);
+      setTimeout(() => setUploadNotice(null), 5000);
+    } catch (err: any) {
+      setUploadNotice(`✖ Upload failed: ${err?.message ?? 'Unknown error'}`);
+    } finally {
+      setUploadingExample(false);
+    }
+  };
 
   const loadRoadmap = useCallback(async () => {
     try {
@@ -322,6 +344,52 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
             )}
           </div>
         </header>
+
+        {/* Quality example drop zone */}
+        <div
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => {
+            e.preventDefault();
+            const file = e.dataTransfer.files?.[0];
+            if (file) void handleFileUpload(file);
+          }}
+          className="flex items-center justify-between border-b border-slate-800/80 bg-slate-950/40 px-3 py-1.5 text-xs text-slate-400"
+        >
+          <div className="flex items-center gap-2 truncate">
+            <Upload className="h-3.5 w-3.5 text-sky-400 shrink-0" />
+            <span className="truncate">
+              Drop example for <strong className="text-slate-200">{selectedPhaseInfo?.name ?? 'phase'}</strong> (.md, .txt, .pdf)
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".md,.txt,.pdf"
+              className="hidden"
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (file) void handleFileUpload(file);
+                e.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingExample || busy}
+              className="flex min-h-[32px] items-center gap-1 rounded border border-slate-700 bg-slate-900 px-2.5 py-0.5 text-[11px] font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-40"
+            >
+              {uploadingExample ? <Loader2 className="h-3 w-3 animate-spin" /> : <Paperclip className="h-3 w-3" />}
+              Choose file
+            </button>
+          </div>
+        </div>
+
+        {uploadNotice && (
+          <p className={`border-b px-4 py-1.5 text-xs ${uploadNotice.startsWith('✔') ? 'border-emerald-900/60 bg-emerald-950/40 text-emerald-300' : 'border-rose-900/60 bg-rose-950/40 text-rose-300'}`}>
+            {uploadNotice}
+          </p>
+        )}
 
         {docNotice && (
           <p className="border-b border-emerald-900/60 bg-emerald-950/40 px-4 py-1.5 text-xs text-emerald-300" role="status">
