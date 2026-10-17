@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   CircleCheck,
   CircleDot,
@@ -16,9 +17,68 @@ interface TreasureMapRoadmapProps {
 /** Template paths (e.g. {GATE}, {NUM}) show their folder instead of the raw pattern. */
 const displayPath = (p: string) => (p.includes('{') ? p.slice(0, p.lastIndexOf('/') + 1) : p);
 
+interface ConnectorArrowProps {
+  dir: 'right' | 'left' | 'down';
+  active: boolean;
+}
+
+const ConnectorArrow: React.FC<ConnectorArrowProps> = ({ dir, active }) => {
+  const colorClass = active ? 'text-emerald-400' : 'text-slate-700';
+
+  if (dir === 'right') {
+    return (
+      <div className={`flex items-center justify-center ${colorClass}`} aria-hidden="true">
+        <svg
+          className="h-5 w-5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M5 12h14M13 6l6 6-6 6" strokeDasharray={active ? undefined : '3 3'} />
+        </svg>
+      </div>
+    );
+  }
+
+  if (dir === 'left') {
+    return (
+      <div className={`flex items-center justify-center ${colorClass}`} aria-hidden="true">
+        <svg
+          className="h-5 w-5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M19 12H5M11 6l-6 6 6 6" strokeDasharray={active ? undefined : '3 3'} />
+        </svg>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`flex items-center justify-center ${colorClass}`} aria-hidden="true">
+      <svg
+        className="h-6 w-6"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M12 5v14M6 13l6 6 6-6" strokeDasharray={active ? undefined : '3 3'} />
+      </svg>
+    </div>
+  );
+};
+
 export default function TreasureMapRoadmap({ roadmap }: TreasureMapRoadmapProps) {
-  // Rows of 4 in natural (DOM/reading) order. Row 2 is reversed visually on
-  // lg screens only (4 columns) to form the serpentine; narrower layouts stay sequential.
   const row1 = roadmap.slice(0, 4);
   const row2 = roadmap.slice(4, 8);
   const row3 = roadmap.slice(8, 12);
@@ -89,10 +149,11 @@ export default function TreasureMapRoadmap({ roadmap }: TreasureMapRoadmapProps)
 
         {/* Phase Details */}
         <div className="mt-2.5">
-          <h4 className="text-sm font-bold text-slate-100">
-            {phase.name}
-          </h4>
-          <p className="mt-0.5 font-mono text-[11px] text-slate-400 truncate" title={phase.artifactPath}>
+          <h4 className="text-sm font-bold text-slate-100">{phase.name}</h4>
+          <p
+            className="mt-0.5 font-mono text-[11px] text-slate-400 truncate"
+            title={phase.artifactPath}
+          >
             {displayPath(phase.artifactPath)}
           </p>
         </div>
@@ -126,48 +187,84 @@ export default function TreasureMapRoadmap({ roadmap }: TreasureMapRoadmapProps)
           <h3 className="text-base font-bold text-white flex items-center gap-2">
             Program Roadmap
           </h3>
-          <p className="text-xs text-slate-400">
-            Each approved deliverable unlocks the next phase.
-          </p>
+          <p className="text-xs text-slate-400">Each approved deliverable unlocks the next phase.</p>
         </div>
       </div>
 
-      <div className="space-y-6">
-        {/* ROW 1: 1 -> 4 (Left to Right) */}
-        <div className="relative">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {row1.map((p, i) => renderStation(p, i + 1))}
-          </div>
-          {/* Connector down-right to row 2 on desktop */}
-          <div className="hidden lg:block absolute -bottom-5 right-12 h-6 w-12 border-r-2 border-b-2 border-dashed border-sky-500/60 rounded-br-xl" />
-        </div>
-
-        {/* ROW 2: 8 <- 5 (Right to Left) */}
-        <div className="relative">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {row2.map((p, i) => (
-              <div key={p.id} className={['lg:order-4', 'lg:order-3', 'lg:order-2', 'lg:order-1'][i]}>
-                {renderStation(p, 5 + i)}
+      {/* Mobile / Tablet vertical view (< lg) */}
+      <div className="lg:hidden space-y-3">
+        {roadmap.map((p, idx) => (
+          <React.Fragment key={p.id}>
+            {renderStation(p, idx + 1)}
+            {idx < roadmap.length - 1 && (
+              <div className="flex justify-center py-1">
+                <ConnectorArrow dir="down" active={p.status === 'COMPLETED'} />
               </div>
-            ))}
-          </div>
-          {/* Connector down-left to row 3 on desktop */}
-          <div className="hidden lg:block absolute -bottom-5 left-12 h-6 w-12 border-l-2 border-b-2 border-dashed border-sky-500/60 rounded-bl-xl" />
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+
+      {/* Desktop Serpentine Grid (lg+) */}
+      <div className="hidden lg:block space-y-3">
+        {/* ROW 1: 1 -> 4 */}
+        <div className="grid grid-cols-[1fr_24px_1fr_24px_1fr_24px_1fr] items-center">
+          {row1[0] && renderStation(row1[0], 1)}
+          <ConnectorArrow dir="right" active={row1[0]?.status === 'COMPLETED'} />
+          {row1[1] && renderStation(row1[1], 2)}
+          <ConnectorArrow dir="right" active={row1[1]?.status === 'COMPLETED'} />
+          {row1[2] && renderStation(row1[2], 3)}
+          <ConnectorArrow dir="right" active={row1[2]?.status === 'COMPLETED'} />
+          {row1[3] && renderStation(row1[3], 4)}
         </div>
 
-        {/* ROW 3: 9 -> 12 (Left to Right) */}
-        <div className="relative">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {row3.map((p, i) => renderStation(p, 9 + i))}
+        {/* Row 1 -> Row 2 Connector (Right edge, under pos 4 / over pos 5) */}
+        <div className="grid grid-cols-[1fr_24px_1fr_24px_1fr_24px_1fr] py-1">
+          <div className="col-start-7 flex justify-center">
+            <ConnectorArrow dir="down" active={row1[3]?.status === 'COMPLETED'} />
           </div>
-          {/* Connector down-right to row 4 on desktop */}
-          <div className="hidden lg:block absolute -bottom-5 right-12 h-6 w-12 border-r-2 border-b-2 border-dashed border-sky-500/60 rounded-br-xl" />
         </div>
 
-        {/* ROW 4: 13 Final Station */}
-        <div className="flex justify-end">
-          <div className="w-full sm:w-1/2 lg:w-1/4">
-            {row4.map(p => renderStation(p, 13))}
+        {/* ROW 2: 8 <- 5 (Card 8 in col 1, Card 5 in col 7) */}
+        <div className="grid grid-cols-[1fr_24px_1fr_24px_1fr_24px_1fr] items-center">
+          {row2[3] && renderStation(row2[3], 8)}
+          <ConnectorArrow dir="left" active={row2[2]?.status === 'COMPLETED'} />
+          {row2[2] && renderStation(row2[2], 7)}
+          <ConnectorArrow dir="left" active={row2[1]?.status === 'COMPLETED'} />
+          {row2[1] && renderStation(row2[1], 6)}
+          <ConnectorArrow dir="left" active={row2[0]?.status === 'COMPLETED'} />
+          {row2[0] && renderStation(row2[0], 5)}
+        </div>
+
+        {/* Row 2 -> Row 3 Connector (Left edge, under pos 8 / over pos 9) */}
+        <div className="grid grid-cols-[1fr_24px_1fr_24px_1fr_24px_1fr] py-1">
+          <div className="col-start-1 flex justify-center">
+            <ConnectorArrow dir="down" active={row2[3]?.status === 'COMPLETED'} />
+          </div>
+        </div>
+
+        {/* ROW 3: 9 -> 12 */}
+        <div className="grid grid-cols-[1fr_24px_1fr_24px_1fr_24px_1fr] items-center">
+          {row3[0] && renderStation(row3[0], 9)}
+          <ConnectorArrow dir="right" active={row3[0]?.status === 'COMPLETED'} />
+          {row3[1] && renderStation(row3[1], 10)}
+          <ConnectorArrow dir="right" active={row3[1]?.status === 'COMPLETED'} />
+          {row3[2] && renderStation(row3[2], 11)}
+          <ConnectorArrow dir="right" active={row3[2]?.status === 'COMPLETED'} />
+          {row3[3] && renderStation(row3[3], 12)}
+        </div>
+
+        {/* Row 3 -> Row 4 Connector (Right edge, under pos 12 / over pos 13) */}
+        <div className="grid grid-cols-[1fr_24px_1fr_24px_1fr_24px_1fr] py-1">
+          <div className="col-start-7 flex justify-center">
+            <ConnectorArrow dir="down" active={row3[3]?.status === 'COMPLETED'} />
+          </div>
+        </div>
+
+        {/* ROW 4: 13 Final Station (in col 7) */}
+        <div className="grid grid-cols-[1fr_24px_1fr_24px_1fr_24px_1fr] items-center">
+          <div className="col-start-7">
+            {row4[0] && renderStation(row4[0], 13)}
           </div>
         </div>
       </div>
