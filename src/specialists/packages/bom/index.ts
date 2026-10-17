@@ -13,7 +13,7 @@ const bomSecretSauce = `# Bill of Materials (BOM) & Procurement Tracker: Electri
 | **SS04-01** | Gigavac GX14B 500A Main Contactor | SS-04 | 1 | [link] | #GV-01 | Received | $85.00 | $85.00 | $85.00 | $0.00 |
 | **SS07-03** | 1/2" JIC to SAE -08 Hydraulic Fitting | SS-07 | 4 | [link] | #H-102 | Identified | $8.50 | $34.00 | — | — |
 
-*Allowed Statuses:* \`Identified\` | \`Ordered\` | \`Shipped\` | \`Received\` | \`Bench Tested\`
+*Allowed Statuses:* \`Identified\` | \`Ordered\` | \`Shipped\` | \`Received\` | \`Bench Tested\` | \`Consumed\`
 
 ## 2. Financial & Procurement Rollup
 - **Total Estimated Budget:** $3,334.00
@@ -54,9 +54,20 @@ Your mission is to generate the Two-Tier Bill of Materials:
 2. **Tier 2 (Candidate Trade Study & Alternatives Table):** Written to \`docs/TRADE_STUDY.md\` evaluating candidate parts against system requirements, lead times, and compatibility.
 
 DISCOVERY, PLANNING & EXECUTION WORKFLOW (MANDATORY):
-1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/REQUIREMENTS.md, docs/ICD.md, and docs/ARCHITECTURE.md to understand the requirements, interface parameters, and subsystem boundaries. Do not guess what was written.
+1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/REQUIREMENTS.md, docs/ICD.md, and docs/ARCHITECTURE.md to understand the system requirements, electrical interfaces, and subsystem boundaries. Do not guess what was written.
 2. **Explicit Running Plan:** Formulate and state a brief running plan outlining which subsystems you will source parts for and in what order.
-3. **Execution & Traceability:** Author the Two-Tier deliverables, grounding every selected and candidate part in the requirements it satisfies.
+
+DISCIPLINE: GROCERY LIST FIRST, SOURCING SECOND (MANDATORY):
+Follow this two-stage discipline strictly so all engineering requirements are covered before shopping:
+
+- **Stage 1: Generate the Detailed Grocery List in docs/BOM.md (MANDATORY):**
+  1. Complete Framework Ledger: Before performing web searches, compile the exhaustive master grocery list into \`docs/BOM.md\` covering all subsystems.
+  2. Every required component (motors, controllers, battery pack, contactors, precharge, wiring, fittings, brackets, fasteners, gauges) must have an \`Item #\`, required technical specifications, exact required integer \`Qty\`, estimated baseline unit cost, and \`Status: Identified\`.
+
+- **Stage 2: Web Sourcing & Trade Study in docs/TRADE_STUDY.md (MANDATORY):**
+  1. Systematic Sourcing: For each subsystem and critical item on the grocery list, use the \`web_search\` and \`web_fetch\` tools to find real, currently manufactured parts that meet the required specifications.
+  2. Trade Study Comparison: In \`docs/TRADE_STUDY.md\`, compare candidate components against the requirements with explicit compliance marks (\`✅\`/\`⚠️\`/\`❌\`), lead times, pricing, and live vendor/datasheet links.
+  3. Promote Winning Selections: Update \`docs/BOM.md\` with the selected manufacturer, exact part number, live sourcing URL, verified market price, and long-lead order flags (★ or ★★). Recalibrate the \`## Financial & Procurement Rollup\`.
 
 TIER 1 STRUCTURE (docs/BOM.md) (MANDATORY):
 1. **Master Procurement & Inventory Ledger:**
@@ -67,7 +78,7 @@ TIER 1 STRUCTURE (docs/BOM.md) (MANDATORY):
    - \`Qty\` — Quantity required (integer count, e.g. \`1\`, \`4\`)
    - \`Source / URL\` — \`[link]\` placeholder or vendor URL
    - \`Order & Tracking #\` — Order # and carrier tracking info (or \`—\` if not yet ordered)
-   - \`Status\` — One of: \`Identified\` | \`Ordered\` | \`Shipped\` | \`Received\` | \`Bench Tested\`
+   - \`Status\` — One of: \`Identified\` | \`Ordered\` | \`Shipped\` | \`Received\` | \`Bench Tested\` | \`Consumed\`
    - \`Est. Unit\` — Estimated unit price
    - \`Est. Total\` — Estimated total (\`Qty\` × \`Est. Unit\`)
    - \`Actual Total\` — Actual committed total (or \`—\` if pending)
@@ -89,6 +100,7 @@ For each subsystem:
 CRITICAL RULES:
 - The \`Qty\` column in docs/BOM.md is MANDATORY.
 - The \`## Financial & Procurement Rollup\` in docs/BOM.md is MANDATORY.
+- Use \`web_search\` and \`web_fetch\` to find genuine components, realistic prices, and verified lead times.
 - Do NOT silently downgrade requirements to make a part fit — flag discrepancies as open questions.
 - Write docs/BOM.md using \`fs_write\` (or \`fs_edit\` if updating an existing draft).
 - Write docs/TRADE_STUDY.md using \`fs_write\`.
@@ -96,7 +108,7 @@ CRITICAL RULES:
 OPEN QUESTIONS SECTION (MANDATORY in docs/BOM.md):
 - Include a \`## Open Questions\` section listing ANY genuinely unresolved decisions. Format each as a numbered item: **Q1. <title>.** <details>, followed by **Why it matters:**.
 - If nothing is unresolved, omit the section.`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader', 'web_search', 'web_fetch'],
   requiresCritic: true,
   criticRubric: `Evaluate the Bill of Materials (BOM):
 1. Two-Tier Completeness: Does docs/BOM.md provide the master procurement ledger with Qty, status, URLs, and pricing?
