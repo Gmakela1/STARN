@@ -40,6 +40,7 @@ import { collectOpenQuestions, countOpenQuestions } from './cli/section6-resolve
 import { setClassifierLogger } from './core/classifier.js';
 import { setCriticLogger } from './core/critic.js';
 import { attachAbortListener } from './util/abort-input.js';
+import { createVersionBackup } from './util/version-backup.js';
 import { ORDERED_WORKFLOW_PHASES, resolveArtifactPaths } from './workspace/state.js';
 import { Logger } from './util/logger.js';
 import { ProjectContext } from './workspace/project-context.js';
@@ -57,6 +58,9 @@ import {
   handleReferenceCommand,
   handleLibraryCommand
 } from './cli/library-commands.js';
+import { formatPartsTable, parsePartsUpdateArgs, formatTradeStudySummary } from './cli/parts-commands.js';
+import { updateBomItemInMarkdown } from './server/parsers/bom-updater.js';
+import { parseTradeStudyDocument } from './server/parsers/trade-study-parser.js';
 
 async function main() {
   const isWebMode = process.argv.includes('--web');
@@ -488,10 +492,60 @@ async function main() {
       continue;
     }
 
+    // /parts: view or update procurement ledger
+    if (lowered === '/parts' || lowered.startsWith('/parts update')) {
+      const bomPath = path.join(projectContext.path, 'docs', 'BOM.md');
+      if (!fs.existsSync(bomPath)) {
+        console.log(chalk.yellow('\nNo BOM found in docs/BOM.md. Run the BOM specialist to generate the procurement ledger.\n'));
+        continue;
+      }
+
+      if (lowered.startsWith('/parts update')) {
+        const updateArgs = currentPrompt.trim().slice('/parts update'.length);
+        const parsed = parsePartsUpdateArgs(updateArgs);
+        if (!parsed.itemId) {
+          console.log(chalk.yellow('\nUsage: /parts update <itemId> [status] [actualCost] [tracking]\nExample: /parts update SS01-01 Ordered 895.00 #ORD-9821\n'));
+          continue;
+        }
+
+        try {
+          const content = fs.readFileSync(bomPath, 'utf-8');
+          const updated = updateBomItemInMarkdown(content, parsed.itemId, parsed);
+          createVersionBackup(projectContext.path, bomPath);
+          fs.writeFileSync(bomPath, updated, 'utf-8');
+          console.log(chalk.green(`\n✓ Successfully updated BOM item ${parsed.itemId}.\n`));
+          const bomData = parseBomDocument(updated);
+          console.log(formatPartsTable(bomData));
+        } catch (err: any) {
+          console.log(chalk.red(`\nUpdate failed: ${err.message}\n`));
+        }
+        continue;
+      }
+
+      const content = fs.readFileSync(bomPath, 'utf-8');
+      const bomData = parseBomDocument(content);
+      console.log('\n' + formatPartsTable(bomData) + '\n');
+      continue;
+    }
+
+    // /trade-study: view candidate trade studies
+    if (lowered === '/trade-study') {
+      const tradePath = path.join(projectContext.path, 'docs', 'TRADE_STUDY.md');
+      if (!fs.existsSync(tradePath)) {
+        console.log(chalk.yellow('\nNo candidate trade study found in docs/TRADE_STUDY.md. Run the BOM specialist to generate candidate evaluations.\n'));
+        continue;
+      }
+      const content = fs.readFileSync(tradePath, 'utf-8');
+      const studies = parseTradeStudyDocument(content);
+      console.log('\n' + formatTradeStudySummary(studies) + '\n');
+      continue;
+    }
+
     // Pre-turn: if the active phase's document has open questions, collect answers NOW
     // and feed them to the specialist so the LLM integrates them into the document body.
     // This must happen before executeTurn — not after — so the LLM sees the answers.
-    const isQuickCommand = ['/models', '/plan', '/roadmap', '/status', '/help', '/questions', '/charter', '/project', '/library', '/briefing', '/summary', '/report', '/web', '/browser'].includes(lowered)
+    const isQuickCommand = ['/models', '/plan', '/roadmap', '/status', '/help', '/questions', '/charter', '/project', '/library', '/parts', '/trade-study', '/briefing', '/summary', '/report', '/web', '/browser'].includes(lowered)
+      || lowered.startsWith('/parts')
       || lowered.startsWith('/goto')
       || lowered.startsWith('/view')
       || lowered.startsWith('/approve')

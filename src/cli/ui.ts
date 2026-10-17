@@ -377,6 +377,8 @@ export function formatHelp(): string {
     ['/example <file>', 'Add a quality example (.md, .txt, .pdf) for the active phase'],
     ['/reference <file>', 'Add a reference document (datasheet, spec) to reference/'],
     ['/library', 'List and manage reference documents and quality examples'],
+    ['/parts [update]', 'View procurement ledger and carrier tracking, or update item status'],
+    ['/trade-study', 'View candidate component comparison tables from docs/TRADE_STUDY.md'],
     ['/briefing', 'Generate 2-page executive summary and save to docs/'],
     ['/web', 'Launch browser UI and hand off session to HTTP server'],
     ['/voice', 'Record your next prompt by voice (type in the prompt input)']
