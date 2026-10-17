@@ -395,6 +395,17 @@ export async function handleApiRequest(
       return ok(res, buildRoadmap(deps));
     }
 
+    if (method === 'POST' && url.pathname === '/api/workflow/active-phase') {
+      const body = await readJsonBody(req);
+      const phaseId = String(body.phaseId ?? '').trim().toLowerCase();
+      const valid = ORDERED_WORKFLOW_PHASES.some(p => p.id === phaseId);
+      if (!valid) {
+        return fail(res, 400, `Invalid phaseId: "${phaseId}". Expected one of: ${ORDERED_WORKFLOW_PHASES.map(p => p.id).join(', ')}`);
+      }
+      deps.stateManager.setActivePhase(phaseId);
+      return ok(res, { activePhase: phaseId });
+    }
+
     if (method === 'GET' && url.pathname === '/api/dashboard') {
       const state = deps.stateManager.getState();
       const roadmap = buildRoadmap(deps);
@@ -428,6 +439,13 @@ export async function handleApiRequest(
       const body = await readJsonBody(req);
       const prompt = String(body.prompt ?? '').trim();
       if (!prompt) return fail(res, 400, 'Missing "prompt"');
+
+      if (body.activePhase) {
+        const targetPhase = String(body.activePhase).trim().toLowerCase();
+        if (ORDERED_WORKFLOW_PHASES.some(p => p.id === targetPhase)) {
+          deps.stateManager.setActivePhase(targetPhase);
+        }
+      }
 
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',

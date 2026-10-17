@@ -201,6 +201,7 @@ Classify the user's request into EXACTLY ONE of the following specialist IDs:
 
 Active Project Workflow Phase: "${activePhase || 'conops'}"
 ${historySlice ? `Recent conversation (oldest→newest):\n${historySlice}\n` : ''}${lastActiveSpecialistId ? `Last active specialist: "${lastActiveSpecialistId}". If the user's message is a short reply answering a question the last specialist asked, route to that specialist. If the user is changing topics or requesting a different deliverable, route to the appropriate specialist.\n` : ''}IMPORTANT RULES:
+- The user is currently viewing the active document for phase "${activePhase || 'conops'}". If their request asks to draft, update, edit, or work on "this document", "the document", or gives instructions without explicitly naming another deliverable, route to "${activePhase || 'conops'}".
 - If the user is providing edits, revisions, corrections, or feedback about an existing document, route to the Active Workflow Phase specialist.
 - Only return "general" for purely informational queries.
 - Only return an authoring specialist if the user intends to CREATE, REVISE, or UPDATE a formal document.
