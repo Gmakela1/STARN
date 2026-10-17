@@ -7,7 +7,7 @@
     "starn": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm --prefix web run build",
     "prestart": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
