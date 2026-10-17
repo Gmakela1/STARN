@@ -13,6 +13,7 @@ import { api } from '../api/client';
 import { DashboardData } from '../types/api';
 import TreasureMapRoadmap from '../components/TreasureMapRoadmap';
 import ExecutiveBriefingModal from '../components/ExecutiveBriefingModal';
+import Markdown from '../components/Markdown';
 
 const money = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -67,34 +68,22 @@ export default function DashboardView() {
   return (
     <div className="h-full overflow-y-auto p-4 lg:p-6 bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-6xl space-y-6">
-        {/* Project Overview / White Paper Card */}
-        <section aria-label="Project overview" className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 backdrop-blur-sm">
+        {/* Project Overview / Charter Card */}
+        <section aria-label="Project overview and charter" className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 backdrop-blur-sm">
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-1.5 max-w-2xl">
+            <div className="space-y-1.5 flex-1 min-w-[280px]">
               <div className="flex items-center gap-2">
                 <span className="rounded bg-sky-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-sky-300 border border-sky-500/30">
-                  SYSTEM OVERVIEW
+                  SYSTEM OVERVIEW &amp; CHARTER
                 </span>
                 <span className="rounded bg-slate-800 px-2 py-0.5 font-mono text-[11px] text-slate-300">
                   Gate: [{project.activePhase.toUpperCase()}]
                 </span>
               </div>
               <h1 className="text-2xl font-black text-white tracking-tight">{project.name}</h1>
-              {project.summarySource === 'none' ? (
-                <p className="text-sm text-slate-400">
-                  No overview yet. Start the CONOPS intake in Development to define the project.
-                </p>
-              ) : (
-                <>
-                  <p className="whitespace-pre-line text-sm leading-relaxed text-slate-200">{project.summary}</p>
-                  {project.summarySource === 'intake' && (
-                    <p className="text-xs text-amber-300">Charter pending: showing your intake answer until the CONOPS is drafted.</p>
-                  )}
-                </>
-              )}
             </div>
 
-            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
+            <div className="flex items-center gap-3">
               <button
                 id="export-briefing-btn"
                 onClick={() => setShowBriefingModal(true)}
@@ -105,6 +94,37 @@ export default function DashboardView() {
               </button>
             </div>
           </div>
+
+          {/* Body: Charter Subsections Grid (if present), or Fallback Prose */}
+          {project.charter && project.charter.length > 0 ? (
+            <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-800/80 pt-4">
+              {project.charter.map((section, idx) => (
+                <div key={idx} className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-4">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-sky-400 mb-1.5">
+                    {section.heading}
+                  </h2>
+                  <div className="text-sm leading-relaxed text-slate-200">
+                    <Markdown content={section.body} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4 pt-3 border-t border-slate-800/80">
+              {project.summarySource === 'none' ? (
+                <p className="text-sm text-slate-400">
+                  No overview yet. Start the CONOPS intake in Development to define the project.
+                </p>
+              ) : (
+                <>
+                  <p className="whitespace-pre-line text-sm leading-relaxed text-slate-200">{project.summary}</p>
+                  {project.summarySource === 'intake' && (
+                    <p className="text-xs text-amber-300 mt-2">Charter pending: showing your intake answer until the CONOPS is drafted.</p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </section>
 
         {/* Financial rollup cards */}

@@ -32,12 +32,18 @@ export interface BomItem {
 
 export const BOM_STATUSES = ['Identified', 'Ordered', 'Shipped', 'Received', 'Bench Tested'] as const;
 
+export interface CharterSection {
+  heading: string;
+  body: string;
+}
+
 export interface ProjectInfo {
   id: string;
   name: string;
   activePhase: string;
   summary: string;
   summarySource: 'conops' | 'intake' | 'none';
+  charter?: CharterSection[];
   openQuestionsCount: number;
   openRisksCount: number;
   models: {

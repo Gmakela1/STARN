@@ -113,12 +113,17 @@ body,
   .briefing-page {
     page-break-after: always !important;
     break-after: page !important;
+    break-inside: avoid !important;
     min-height: 9.8in;
     box-sizing: border-box;
     background: #ffffff !important;
     color: #0f172a !important;
     padding: 0 !important;
     margin-bottom: 0 !important;
+  }
+  .briefing-page:nth-of-type(2) {
+    break-before: page !important;
+    page-break-before: always !important;
   }
   .briefing-page:last-child {
     page-break-after: avoid !important;

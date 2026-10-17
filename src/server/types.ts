@@ -1,8 +1,11 @@
 import type { Assignments } from '../config.js';
 import { CriticResult } from '../core/critic.js';
+import { CharterSection } from '../core/conops-overview.js';
 import { BomFinancials, BomItem } from './parsers/bom-parser.js';
 import { ParsedWorkInstruction } from './parsers/actions-parser.js';
 import { ProjectIssue } from './parsers/issues-parser.js';
+
+export type { CharterSection };
 
 /** Uniform JSON envelope returned by every /api endpoint. */
 export interface ApiEnvelope<T> {
@@ -18,6 +21,7 @@ export interface ProjectInfoResponse {
   /** Human-readable overview: CONOPS Section 1 prose, else intake answer, else empty. */
   summary: string;
   summarySource: 'conops' | 'intake' | 'none';
+  charter: CharterSection[];
   openQuestionsCount: number;
   openRisksCount: number;
   models: {

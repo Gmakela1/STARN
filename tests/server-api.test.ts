@@ -109,6 +109,19 @@ describe('HTTP Server API', () => {
     expect(json.data.activePhase).toBeDefined();
     expect(json.data.financials.totalEstimated).toBe(929);
     expect(json.data.financials.totalActual).toBe(920);
+    expect(Array.isArray(json.data.charter)).toBe(true);
+  });
+
+  it('GET /api/project returns structured charter subsections when CONOPS has them', async () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'docs', 'CONOPS.md'),
+      '# CONOPS\n\n## 1. Project Overview & Charter\n\n### Purpose\nClean electric yard tractor.\n\n### Objectives\n- Zero emissions\n'
+    );
+    const { json } = await request(server, 'GET', '/api/project');
+    expect(json.data.charter).toEqual([
+      { heading: 'Purpose', body: 'Clean electric yard tractor.' },
+      { heading: 'Objectives', body: '- Zero emissions' }
+    ]);
   });
 
   it('GET /api/project summary comes from CONOPS Section 1 when present', async () => {

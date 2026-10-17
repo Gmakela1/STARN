@@ -58,10 +58,10 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
       {/* Document Body (Rendered as 2 letter pages) */}
       <div className="flex-1 p-4 md:p-8 flex flex-col items-center gap-8 briefing-modal-content">
         {/* ================================================================= */}
-        {/* PAGE 1: EXECUTIVE SUMMARY, FINANCIALS, SUBSYSTEM MATRIX           */}
+        {/* PAGE 1: EXECUTIVE SUMMARY & PROJECT CHARTER                       */}
         {/* ================================================================= */}
-        <section className="briefing-page w-full max-w-[8.5in] min-h-[10.2in] max-h-[10.8in] bg-white text-slate-900 p-8 md:p-10 shadow-2xl rounded-sm flex flex-col justify-between overflow-hidden">
-          <div className="space-y-5">
+        <section className="briefing-page w-full max-w-[8.5in] min-h-[10.2in] bg-white text-slate-900 p-8 md:p-10 shadow-2xl rounded-sm flex flex-col justify-between">
+          <div className="space-y-4">
             {/* Header */}
             <div className="border-b-2 border-slate-900 pb-3">
               <div className="flex items-start justify-between">
@@ -82,54 +82,30 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
               </div>
             </div>
 
-            {/* 1. Executive Summary */}
-            <div className="space-y-2">
+            {/* 1. Project Overview & Charter */}
+            <div className="space-y-2.5">
               <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b border-slate-200 pb-1">
-                1. Project Overview
+                1. Project Overview &amp; Charter
               </h2>
-              <p className="whitespace-pre-line text-xs leading-relaxed text-slate-700">
-                {project.summary || 'Project overview pending: CONOPS has not been drafted.'}
-              </p>
+              {project.charter && project.charter.length > 0 ? (
+                <div className="grid grid-cols-2 gap-2.5">
+                  {project.charter.map((s, idx) => (
+                    <div key={idx} className="rounded border border-slate-200 bg-slate-50/60 p-2.5">
+                      <h3 className="text-[10px] font-black uppercase tracking-wider text-sky-900 border-b border-slate-200 pb-0.5 mb-1">
+                        {s.heading}
+                      </h3>
+                      <p className="whitespace-pre-line text-[11px] leading-relaxed text-slate-700">
+                        {s.body}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="whitespace-pre-line text-xs leading-relaxed text-slate-700">
+                  {project.summary || 'Project overview pending: CONOPS has not been drafted.'}
+                </p>
+              )}
             </div>
-
-            {/* 2. Financial & Procurement Rollup */}
-            <div className="space-y-2">
-              <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b border-slate-200 pb-1">
-                2. Financial & Procurement Rollup
-              </h2>
-              <div className="grid grid-cols-4 gap-3 text-center">
-                <div className="rounded border border-slate-200 bg-slate-50 p-2.5">
-                  <div className="text-[10px] font-semibold uppercase text-slate-500">Estimated Budget</div>
-                  <div className="mt-1 font-mono text-base font-black text-slate-900">
-                    {money(fin.totalEstimated)}
-                  </div>
-                </div>
-                <div className="rounded border border-slate-200 bg-slate-50 p-2.5">
-                  <div className="text-[10px] font-semibold uppercase text-slate-500">Committed Spend</div>
-                  <div className="mt-1 font-mono text-base font-black text-slate-900">
-                    {money(fin.totalActual)}
-                  </div>
-                </div>
-                <div className="rounded border border-slate-200 bg-slate-50 p-2.5">
-                  <div className="text-[10px] font-semibold uppercase text-slate-500">Net Variance</div>
-                  <div
-                    className={`mt-1 font-mono text-base font-black ${
-                      fin.netVariance > 0 ? 'text-rose-700' : 'text-emerald-700'
-                    }`}
-                  >
-                    {fin.netVariance > 0 ? '+' : ''}
-                    {money(fin.netVariance)}
-                  </div>
-                </div>
-                <div className="rounded border border-slate-200 bg-slate-50 p-2.5">
-                  <div className="text-[10px] font-semibold uppercase text-slate-500">Procured Progress</div>
-                  <div className="mt-1 font-mono text-base font-black text-slate-900">
-                    {Math.round(fin.procurementProgressPercent)}%
-                  </div>
-                </div>
-              </div>
-            </div>
-
           </div>
 
           {/* Page 1 Footer */}
@@ -140,22 +116,60 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
         </section>
 
         {/* ================================================================= */}
-        {/* PAGE 2: LINEAR PHASE-GATE FLOWCHART, AUDIT MATRIX, DEFECTS        */}
+        {/* PAGE 2: FINANCIAL ROLLUP, PHASE-GATE FLOWCHART, AUDIT, DEFECTS    */}
         {/* ================================================================= */}
-        <section className="briefing-page w-full max-w-[8.5in] min-h-[10.2in] max-h-[10.8in] bg-white text-slate-900 p-8 md:p-10 shadow-2xl rounded-sm flex flex-col justify-between overflow-hidden">
-          <div className="space-y-5">
+        <section className="briefing-page w-full max-w-[8.5in] min-h-[10.2in] bg-white text-slate-900 p-8 md:p-10 shadow-2xl rounded-sm flex flex-col justify-between">
+          <div className="space-y-4">
             {/* Header */}
             <div className="border-b-2 border-slate-900 pb-2">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-black uppercase tracking-tight text-slate-900">
-                  Phase-Gate Audit & Execution Governance
+                  Phase-Gate Audit &amp; Execution Governance
                 </h2>
                 <span className="font-mono text-[10px] text-slate-500">Document Ref: STARN-BRF-001</span>
               </div>
             </div>
 
+            {/* 2. Financial & Procurement Rollup (Starts immediately on Page 2) */}
+            <div className="space-y-1.5">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b border-slate-200 pb-1">
+                2. Financial &amp; Procurement Rollup
+              </h3>
+              <div className="grid grid-cols-4 gap-3 text-center">
+                <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                  <div className="text-[10px] font-semibold uppercase text-slate-500">Estimated Budget</div>
+                  <div className="mt-0.5 font-mono text-base font-black text-slate-900">
+                    {money(fin.totalEstimated)}
+                  </div>
+                </div>
+                <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                  <div className="text-[10px] font-semibold uppercase text-slate-500">Committed Spend</div>
+                  <div className="mt-0.5 font-mono text-base font-black text-slate-900">
+                    {money(fin.totalActual)}
+                  </div>
+                </div>
+                <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                  <div className="text-[10px] font-semibold uppercase text-slate-500">Net Variance</div>
+                  <div
+                    className={`mt-0.5 font-mono text-base font-black ${
+                      fin.netVariance > 0 ? 'text-rose-700' : 'text-emerald-700'
+                    }`}
+                  >
+                    {fin.netVariance > 0 ? '+' : ''}
+                    {money(fin.netVariance)}
+                  </div>
+                </div>
+                <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                  <div className="text-[10px] font-semibold uppercase text-slate-500">Procured Progress</div>
+                  <div className="mt-0.5 font-mono text-base font-black text-slate-900">
+                    {Math.round(fin.procurementProgressPercent)}%
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* 3. Phase-Gate Flowchart */}
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b border-slate-200 pb-1">
                 3. Phase-Gate Flowchart
               </h3>

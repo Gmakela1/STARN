@@ -5,7 +5,7 @@ import { ProjectStateManager, ORDERED_WORKFLOW_PHASES, resolveArtifactPaths, res
 import { countOpenQuestions, parseOpenQuestionsFromContent } from '../core/open-questions-parser.js';
 import { createVersionBackup } from '../util/version-backup.js';
 import { parseBomDocument, updateBomRow, BomItemUpdate } from './parsers/bom-parser.js';
-import { extractConopsOverview } from '../core/conops-overview.js';
+import { extractConopsOverview, extractConopsCharter, CharterSection } from '../core/conops-overview.js';
 import { OPENROUTER_PROVIDER_ID, ProviderConfig } from '../config.js';
 import { allProviders } from '../models/role-clients.js';
 import { listProviderModels, probeToolCalling } from '../models/provider-models.js';
@@ -158,11 +158,21 @@ function buildProjectInfo(deps: RouterDeps): ProjectInfoResponse {
       openQuestionsCount += countOpenQuestions(docPath);
     }
   }
+
+  const conopsPath = path.join(deps.projectPath, 'docs', 'CONOPS.md');
+  let charter: CharterSection[] = [];
+  if (fs.existsSync(conopsPath)) {
+    try {
+      charter = extractConopsCharter(fs.readFileSync(conopsPath, 'utf-8'));
+    } catch {}
+  }
+
   return {
     id: state.projectId,
     name: state.name,
     activePhase: state.workflow?.activePhase || 'conops',
     ...buildSummary(deps.projectPath, state.intake?.answers?.projectName),
+    charter,
     openQuestionsCount,
     openRisksCount: (state.openRisks || []).length,
     models: {
