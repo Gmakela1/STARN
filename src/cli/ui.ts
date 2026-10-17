@@ -374,6 +374,9 @@ export function formatHelp(): string {
     ['/compact-model', 'Select the model used for session compaction'],
     ['/charter', 'Display project overview and charter subsections'],
     ['/project', 'Switch to a different project or browse folders'],
+    ['/example <file>', 'Add a quality example (.md, .txt, .pdf) for the active phase'],
+    ['/reference <file>', 'Add a reference document (datasheet, spec) to reference/'],
+    ['/library', 'List and manage reference documents and quality examples'],
     ['/briefing', 'Generate 2-page executive summary and save to docs/'],
     ['/web', 'Launch browser UI and hand off session to HTTP server'],
     ['/voice', 'Record your next prompt by voice (type in the prompt input)']

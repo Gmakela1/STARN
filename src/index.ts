@@ -52,6 +52,11 @@ import {
 } from './core/briefing-formatter.js';
 import { extractConopsCharter, extractConopsOverview, CharterSection } from './core/conops-overview.js';
 import { parseBomDocument } from './server/parsers/bom-parser.js';
+import {
+  handleExampleCommand,
+  handleReferenceCommand,
+  handleLibraryCommand
+} from './cli/library-commands.js';
 
 async function main() {
   const isWebMode = process.argv.includes('--web');
@@ -462,15 +467,38 @@ async function main() {
       continue;
     }
 
+    // /example: add a quality example for the active phase
+    if (lowered === '/example' || lowered.startsWith('/example ')) {
+      const arg = currentPrompt.trim().slice('/example'.length).trim();
+      const activePhase = projectContext.stateManager.getState().workflow?.activePhase || 'conops';
+      await handleExampleCommand(projectContext.path, activePhase, arg);
+      continue;
+    }
+
+    // /reference: add a reference document to reference/
+    if (lowered === '/reference' || lowered.startsWith('/reference ')) {
+      const arg = currentPrompt.trim().slice('/reference'.length).trim();
+      await handleReferenceCommand(projectContext.path, arg);
+      continue;
+    }
+
+    // /library: list and manage reference documents and quality examples
+    if (lowered === '/library') {
+      await handleLibraryCommand(projectContext.path);
+      continue;
+    }
+
     // Pre-turn: if the active phase's document has open questions, collect answers NOW
     // and feed them to the specialist so the LLM integrates them into the document body.
     // This must happen before executeTurn — not after — so the LLM sees the answers.
-    const isQuickCommand = ['/models', '/plan', '/roadmap', '/status', '/help', '/questions', '/charter', '/project', '/briefing', '/summary', '/report', '/web', '/browser'].includes(lowered)
+    const isQuickCommand = ['/models', '/plan', '/roadmap', '/status', '/help', '/questions', '/charter', '/project', '/library', '/briefing', '/summary', '/report', '/web', '/browser'].includes(lowered)
       || lowered.startsWith('/goto')
       || lowered.startsWith('/view')
       || lowered.startsWith('/approve')
       || lowered.startsWith('/draft')
       || lowered.startsWith('/revert')
+      || lowered.startsWith('/example')
+      || lowered.startsWith('/reference')
       || lowered.startsWith('/voice');
     const activePhaseNow = projectContext.stateManager.getState().workflow?.activePhase || 'conops';
     const activePhaseDef = ORDERED_WORKFLOW_PHASES.find(p => p.id === activePhaseNow);
