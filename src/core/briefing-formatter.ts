@@ -1,7 +1,10 @@
+import { CharterSection } from './conops-overview.js';
+
 export interface BriefingData {
   projectName: string;
   activePhase: string;
   conopsSummary?: string;
+  charter?: CharterSection[];
   financials: {
     totalEstimated: number;
     totalActual: number;
@@ -24,6 +27,8 @@ const money = (n: number) =>
 
 /**
  * Headless plain-text briefing formatter for terminal display.
+ * Page 1 contains Project Overview & Charter.
+ * Page 2 begins with Financial & Procurement Rollup, followed by Governance & Status.
  */
 export function formatExecutiveBriefingPlain(data: BriefingData): string {
   const divider = '='.repeat(68);
@@ -35,20 +40,40 @@ export function formatExecutiveBriefingPlain(data: BriefingData): string {
     `Active Phase Gate: [${data.activePhase.toUpperCase()}] | Generated: ${new Date().toLocaleDateString()}`,
     divider,
     '',
-    '1. SYSTEM & OPERATIONAL OVERVIEW',
-    subDivider,
-    data.conopsSummary ? data.conopsSummary : 'System scope established per approved program baseline.',
-    '',
-    '2. FINANCIAL & PROCUREMENT ROLLUP',
-    subDivider,
-    `Total Estimated Budget:      ${money(data.financials.totalEstimated)}`,
-    `Actual Committed Spend:      ${money(data.financials.totalActual)}`,
-    `Net Budget Variance:         ${data.financials.netVariance > 0 ? '+' : ''}${money(data.financials.netVariance)}`,
-    '',
-    '3. PHASE-GATE MILESTONE STATUS',
+    '1. PROJECT OVERVIEW & CHARTER',
     subDivider
   ];
 
+  if (data.charter && data.charter.length > 0) {
+    for (const section of data.charter) {
+      lines.push(`[${section.heading}]`);
+      for (const line of section.body.split('\n')) {
+        lines.push(`  ${line}`);
+      }
+      lines.push('');
+    }
+  } else {
+    lines.push(
+      data.conopsSummary ? data.conopsSummary : 'System scope established per approved program baseline.'
+    );
+    lines.push('');
+  }
+
+  // Page 2 Boundary
+  lines.push('');
+  lines.push('=== PAGE 2: EXECUTION GOVERNANCE & FINANCIALS ===');
+  lines.push('');
+  lines.push('2. FINANCIAL & PROCUREMENT ROLLUP');
+  lines.push(subDivider);
+  lines.push(`Total Estimated Budget:      ${money(data.financials.totalEstimated)}`);
+  lines.push(`Actual Committed Spend:      ${money(data.financials.totalActual)}`);
+  lines.push(
+    `Net Budget Variance:         ${data.financials.netVariance > 0 ? '+' : ''}${money(data.financials.netVariance)}`
+  );
+  lines.push('');
+
+  lines.push('3. PHASE-GATE MILESTONE STATUS');
+  lines.push(subDivider);
   for (let i = 0; i < data.phases.length; i++) {
     const p = data.phases[i];
     const score = p.criticScore !== undefined ? ` [Score: ${p.criticScore.toFixed(1)}]` : '';
@@ -81,20 +106,35 @@ export function formatExecutiveBriefingMarkdown(data: BriefingData): string {
     `**Generated:** ${new Date().toISOString().split('T')[0]}  `,
     `**Program Baseline:** STARN AI Engineering Management`,
     '',
-    '## Executive Summary & Intent',
-    data.conopsSummary ? data.conopsSummary : 'System scope established per approved program baseline.',
-    '',
-    '## Financial Rollup',
-    '| Metric | Amount |',
-    '| :--- | :--- |',
-    `| Total Estimated Budget | **${money(data.financials.totalEstimated)}** |`,
-    `| Total Actual Committed Spend | **${money(data.financials.totalActual)}** |`,
-    `| Net Variance | **${data.financials.netVariance > 0 ? '+' : ''}${money(data.financials.netVariance)}** |`,
-    '',
-    '## Phase-Gate Milestone Status',
-    '| # | Milestone Phase | Status | Critic Review Score |',
-    '| :---: | :--- | :---: | :---: |'
+    '## 1. Project Overview & Charter'
   ];
+
+  if (data.charter && data.charter.length > 0) {
+    for (const section of data.charter) {
+      lines.push(`### ${section.heading}`);
+      lines.push(section.body);
+      lines.push('');
+    }
+  } else {
+    lines.push(
+      data.conopsSummary ? data.conopsSummary : 'System scope established per approved program baseline.'
+    );
+    lines.push('');
+  }
+
+  lines.push('## 2. Financial & Procurement Rollup');
+  lines.push('| Metric | Amount |');
+  lines.push('| :--- | :--- |');
+  lines.push(`| Total Estimated Budget | **${money(data.financials.totalEstimated)}** |`);
+  lines.push(`| Total Actual Committed Spend | **${money(data.financials.totalActual)}** |`);
+  lines.push(
+    `| Net Variance | **${data.financials.netVariance > 0 ? '+' : ''}${money(data.financials.netVariance)}** |`
+  );
+  lines.push('');
+
+  lines.push('## 3. Phase-Gate Milestone Status');
+  lines.push('| # | Milestone Phase | Status | Critic Review Score |');
+  lines.push('| :---: | :--- | :---: | :---: |');
 
   for (let i = 0; i < data.phases.length; i++) {
     const p = data.phases[i];
@@ -103,7 +143,7 @@ export function formatExecutiveBriefingMarkdown(data: BriefingData): string {
   }
 
   lines.push('');
-  lines.push('## Hardware Non-Conformances & Open Items');
+  lines.push('## 4. Hardware Non-Conformances & Open Items');
   if (data.openIssues.length === 0) {
     lines.push('No open non-conformances or critical unresolved items.');
   } else {

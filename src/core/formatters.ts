@@ -83,6 +83,8 @@ export function formatHelpPlain(): string {
     ['/compact', 'Summarize older session messages now (free up context)'],
     ['/models', 'Manage providers (OpenRouter, Ollama, LM Studio) and per-role model assignments'],
     ['/compact-model', 'Select the model used for session compaction'],
+    ['/charter', 'Display project overview and charter subsections'],
+    ['/briefing', 'Generate 2-page executive summary and save to docs/'],
     ['/voice', 'Record your next prompt by voice (type in the prompt input)']
   ];
 
@@ -138,3 +140,30 @@ export const headlessFormatters: TurnFormatters = {
   formatHelp: formatHelpPlain,
   formatOpenQuestionsReport: formatOpenQuestionsReportPlain
 };
+
+/**
+ * Pure layout helper for serpentine / snake flows.
+ * Splits `totalCount` items into rows of `perRow` items, alternating LTR and RTL.
+ */
+export function layoutSnakeRows(
+  totalCount: number,
+  perRow: number
+): Array<{ indices: number[]; direction: 'ltr' | 'rtl' }> {
+  const rows: Array<{ indices: number[]; direction: 'ltr' | 'rtl' }> = [];
+  let current = 0;
+  let rowIndex = 0;
+
+  while (current < totalCount) {
+    const chunk: number[] = [];
+    for (let i = 0; i < perRow && current < totalCount; i++) {
+      chunk.push(current);
+      current++;
+    }
+    const direction: 'ltr' | 'rtl' = rowIndex % 2 === 0 ? 'ltr' : 'rtl';
+    rows.push({ indices: chunk, direction });
+    rowIndex++;
+  }
+
+  return rows;
+}
+

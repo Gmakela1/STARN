@@ -22,6 +22,7 @@ import {
   formatWorkflowRoadmap,
   formatHelp,
   formatOpenQuestionsReport,
+  formatCharterPlain,
   printSectionHeader
 } from './cli/ui.js';import { confirm } from '@inquirer/prompts';
 import {
@@ -47,7 +48,7 @@ import {
   formatExecutiveBriefingPlain,
   formatExecutiveBriefingMarkdown
 } from './core/briefing-formatter.js';
-import { extractConopsOverview } from './core/conops-overview.js';
+import { extractConopsCharter, extractConopsOverview, CharterSection } from './core/conops-overview.js';
 import { parseBomDocument } from './server/parsers/bom-parser.js';
 
 async function main() {
@@ -124,6 +125,15 @@ async function main() {
 
   console.log(chalk.green(`\nWorking in Project: ${chalk.bold(currentProjectRecord.name)}`));
   console.log(chalk.dim(`Directory: ${currentProjectRecord.path}`));
+  const startupConops = path.join(currentProjectRecord.path, 'docs', 'CONOPS.md');
+  if (fs.existsSync(startupConops)) {
+    try {
+      const purpose = extractConopsOverview(fs.readFileSync(startupConops, 'utf-8'));
+      if (purpose) {
+        console.log(chalk.cyan(`Purpose: ${purpose.split('\n')[0]}`));
+      }
+    } catch {}
+  }
   console.log(chalk.dim(formatAssignments(config.assignments, config.providers) + '\n'));
 
   const stateManager = new ProjectStateManager(currentProjectRecord.path);
@@ -285,9 +295,12 @@ async function main() {
       const state = stateManager.getState();
       const conopsPath = path.join(currentProjectRecord.path, 'docs', 'CONOPS.md');
       let conopsSummary: string | undefined;
+      let charter: CharterSection[] | undefined;
       if (fs.existsSync(conopsPath)) {
         try {
-          conopsSummary = extractConopsOverview(fs.readFileSync(conopsPath, 'utf-8')) ?? undefined;
+          const raw = fs.readFileSync(conopsPath, 'utf-8');
+          charter = extractConopsCharter(raw);
+          conopsSummary = extractConopsOverview(raw) ?? undefined;
         } catch {}
       }
 
@@ -342,6 +355,7 @@ async function main() {
         projectName: currentProjectRecord.name,
         activePhase: state.workflow?.activePhase || 'conops',
         conopsSummary,
+        charter,
         financials,
         phases,
         openIssues
@@ -354,6 +368,19 @@ async function main() {
       const briefingFilePath = path.join(currentProjectRecord.path, 'docs', 'EXECUTIVE_BRIEFING.md');
       fs.writeFileSync(briefingFilePath, mdText, 'utf-8');
       console.log(chalk.green(`✔ Saved 2-page executive briefing to docs/EXECUTIVE_BRIEFING.md\n`));
+      continue;
+    }
+
+    // /charter: display project overview and charter subsections
+    if (currentPrompt.trim().toLowerCase() === '/charter') {
+      const conopsPath = path.join(currentProjectRecord.path, 'docs', 'CONOPS.md');
+      let charter: CharterSection[] = [];
+      if (fs.existsSync(conopsPath)) {
+        try {
+          charter = extractConopsCharter(fs.readFileSync(conopsPath, 'utf-8'));
+        } catch {}
+      }
+      console.log('\n' + formatCharterPlain(charter, currentProjectRecord.name) + '\n');
       continue;
     }
 
@@ -411,7 +438,7 @@ async function main() {
     // Pre-turn: if the active phase's document has open questions, collect answers NOW
     // and feed them to the specialist so the LLM integrates them into the document body.
     // This must happen before executeTurn — not after — so the LLM sees the answers.
-    const isQuickCommand = ['/models', '/plan', '/roadmap', '/status', '/help', '/questions', '/briefing', '/summary', '/report', '/web', '/browser'].includes(lowered)
+    const isQuickCommand = ['/models', '/plan', '/roadmap', '/status', '/help', '/questions', '/charter', '/briefing', '/summary', '/report', '/web', '/browser'].includes(lowered)
       || lowered.startsWith('/goto')
       || lowered.startsWith('/view')
       || lowered.startsWith('/approve')

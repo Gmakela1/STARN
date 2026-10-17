@@ -7,6 +7,8 @@ import { ModelOption } from '../openrouter/models.js';
 import { ProjectState } from '../workspace/types.js';
 import { ORDERED_WORKFLOW_PHASES, resolveArtifactPaths } from '../workspace/state.js';
 import { countOpenQuestions, parseOpenQuestionsFromContent } from './section6-resolver.js';
+import { CharterSection } from '../core/conops-overview.js';
+import { layoutSnakeRows } from '../core/formatters.js';
 
 function formatTokenCount(tokens: number): string {
   if (tokens >= 1000) return `${Math.round(tokens / 1000)}k`;
@@ -224,58 +226,128 @@ export function formatDocumentPreview(content: string, title: string): string {
   });
 }
 
+export function formatCharterPlain(charter: CharterSection[], projectName: string): string {
+  let out = `${chalk.bold.cyan('PROJECT CHARTER & OVERVIEW')}\n`;
+  out += `${chalk.dim(`Project: ${projectName}`)}\n\n`;
+
+  if (charter.length === 0) {
+    out += chalk.yellow('No charter drafted yet. Run CONOPS intake to establish the charter.\n');
+  } else {
+    for (const section of charter) {
+      out += `${chalk.bold.white(`▶ ${section.heading.toUpperCase()}`)}\n`;
+      const lines = section.body.split('\n');
+      for (const line of lines) {
+        out += `  ${chalk.dim(line)}\n`;
+      }
+      out += '\n';
+    }
+  }
+
+  return boxen(out.trimEnd(), {
+    padding: 1,
+    margin: { top: 1, bottom: 1, left: 0, right: 0 },
+    borderStyle: 'round',
+    borderColor: 'cyan'
+  });
+}
+
 export function formatWorkflowRoadmap(state: ProjectState, projectPath?: string): string {
   const activePhase = state.workflow?.activePhase || 'conops';
   const phases = state.workflow?.phases || {};
+  const isWide = (process.stdout?.columns ?? 80) >= 100;
 
   let out = `${chalk.bold.cyan('STARN PROJECT WORKFLOW ROADMAP')}\n`;
   out += `${chalk.dim(`Project: ${state.name} | Active Phase: ${activePhase.toUpperCase()}`)}\n\n`;
 
-  for (let i = 0; i < ORDERED_WORKFLOW_PHASES.length; i++) {
-    const phaseDef = ORDERED_WORKFLOW_PHASES[i];
-    const info = phases[phaseDef.id] || { status: 'pending', artifactPath: phaseDef.artifactPath };
-    const num = `[${i + 1}]`;
-    const namePadded = phaseDef.name.padEnd(36);
+  if (isWide) {
+    const stationCards = ORDERED_WORKFLOW_PHASES.map((phaseDef, i) => {
+      const info = phases[phaseDef.id] || { status: 'pending' };
+      const num = (i + 1).toString().padStart(2, '0');
+      const shortName = phaseDef.id.toUpperCase().slice(0, 8).padEnd(8);
+      const isActive = activePhase === phaseDef.id;
 
-    const isActive = activePhase === phaseDef.id;
+      let dot = chalk.dim('○');
+      if (info.status === 'approved') dot = chalk.green('●');
+      else if (isActive) dot = chalk.bold.cyan('►');
+      else if (info.status === 'locked') dot = chalk.yellow('🔒');
 
-    // Scan the doc on disk (if projectPath given): drafted? open questions?
-    let docExists = false;
-    let openQuestions = 0;
-    if (projectPath) {
-      const docPaths = resolveArtifactPaths(projectPath, phaseDef.artifactPath);
-      for (const p of docPaths) {
-        openQuestions += countOpenQuestions(p);
-        try {
-          if (fs.existsSync(p) && fs.readFileSync(p, 'utf-8').trim().length > 0) {
-            docExists = true;
-          }
-        } catch {
-          // unreadable — treat as missing
+      const text = `[${num}] ${shortName} ${dot}`;
+      return isActive ? chalk.bgHex('#1f2937')(text) : text;
+    });
+
+    const rows = layoutSnakeRows(ORDERED_WORKFLOW_PHASES.length, 4);
+    for (let r = 0; r < rows.length; r++) {
+      const { indices, direction } = rows[r];
+      if (direction === 'ltr') {
+        const line = indices.map(idx => stationCards[idx]).join(chalk.dim(' ──▶ '));
+        out += `  ${line}\n`;
+        if (r < rows.length - 1) {
+          out += chalk.dim('                                                                 │\n');
+          out += chalk.dim('                                                                 ▼\n');
+        }
+      } else {
+        // reversed visually for rtl
+        const reversed = [...indices].reverse();
+        const line = reversed.map(idx => stationCards[idx]).join(chalk.dim(' ◀── '));
+        if (indices.length < 4) {
+          // indent to align under the rightmost position
+          const padding = ' '.repeat((4 - indices.length) * 22);
+          out += `  ${padding}${line}\n`;
+        } else {
+          out += `  ${line}\n`;
+        }
+        if (r < rows.length - 1) {
+          out += chalk.dim('  │\n');
+          out += chalk.dim('  ▼\n');
         }
       }
     }
+  } else {
+    for (let i = 0; i < ORDERED_WORKFLOW_PHASES.length; i++) {
+      const phaseDef = ORDERED_WORKFLOW_PHASES[i];
+      const info = phases[phaseDef.id] || { status: 'pending', artifactPath: phaseDef.artifactPath };
+      const num = `[${i + 1}]`;
+      const namePadded = phaseDef.name.padEnd(36);
 
-    let statusLabel = '';
-    if (info.status === 'approved') {
-      statusLabel = chalk.green('● APPROVED   ') + chalk.dim(`(${phaseDef.artifactPath})`);
-    } else if (docExists) {
-      statusLabel = chalk.magenta('◐ DRAFTED    ') + chalk.dim(`(${phaseDef.artifactPath})`);
-      if (isActive) statusLabel += chalk.bold.cyan(' — Active Target');
-    } else if (isActive) {
-      statusLabel = chalk.bold.cyan('► IN PROGRESS') + chalk.white(' (Active Target)');
-    } else if (info.status === 'locked') {
-      statusLabel = chalk.yellow('🔒 LOCKED    ') + chalk.dim(`(Requires Prerequisite)`);
-    } else {
-      statusLabel = chalk.dim('○ PENDING');
+      const isActive = activePhase === phaseDef.id;
+
+      let docExists = false;
+      let openQuestions = 0;
+      if (projectPath) {
+        const docPaths = resolveArtifactPaths(projectPath, phaseDef.artifactPath);
+        for (const p of docPaths) {
+          openQuestions += countOpenQuestions(p);
+          try {
+            if (fs.existsSync(p) && fs.readFileSync(p, 'utf-8').trim().length > 0) {
+              docExists = true;
+            }
+          } catch {
+            // unreadable — treat as missing
+          }
+        }
+      }
+
+      let statusLabel = '';
+      if (info.status === 'approved') {
+        statusLabel = chalk.green('● APPROVED   ') + chalk.dim(`(${phaseDef.artifactPath})`);
+      } else if (docExists) {
+        statusLabel = chalk.magenta('◐ DRAFTED    ') + chalk.dim(`(${phaseDef.artifactPath})`);
+        if (isActive) statusLabel += chalk.bold.cyan(' — Active Target');
+      } else if (isActive) {
+        statusLabel = chalk.bold.cyan('► IN PROGRESS') + chalk.white(' (Active Target)');
+      } else if (info.status === 'locked') {
+        statusLabel = chalk.yellow('🔒 LOCKED    ') + chalk.dim(`(Requires Prerequisite)`);
+      } else {
+        statusLabel = chalk.dim('○ PENDING');
+      }
+
+      if (openQuestions > 0) {
+        statusLabel += chalk.yellow(`  ⚠ ${openQuestions} OPEN QUESTION${openQuestions === 1 ? '' : 'S'}`);
+      }
+
+      const row = `${chalk.bold(num)} ${namePadded} ${statusLabel}`;
+      out += (isActive ? chalk.bgHex('#1f2937')(row) : row) + '\n';
     }
-
-    if (openQuestions > 0) {
-      statusLabel += chalk.yellow(`  ⚠ ${openQuestions} OPEN QUESTION${openQuestions === 1 ? '' : 'S'}`);
-    }
-
-    const row = `${chalk.bold(num)} ${namePadded} ${statusLabel}`;
-    out += (isActive ? chalk.bgHex('#1f2937')(row) : row) + '\n';
   }
 
   out += `\n${chalk.dim('Commands: /plan (roadmap) | /questions (list open questions) | /goto <phase> (switch phase) | /help (all commands)')}`;
@@ -300,6 +372,7 @@ export function formatHelp(): string {
     ['/compact', 'Summarize older session messages now (free up context)'],
     ['/models', 'Manage providers (OpenRouter, Ollama, LM Studio) and per-role model assignments'],
     ['/compact-model', 'Select the model used for session compaction'],
+    ['/charter', 'Display project overview and charter subsections'],
     ['/briefing', 'Generate 2-page executive summary and save to docs/'],
     ['/web', 'Launch browser UI and hand off session to HTTP server'],
     ['/voice', 'Record your next prompt by voice (type in the prompt input)']
