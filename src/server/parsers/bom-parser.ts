@@ -26,7 +26,7 @@ export interface BomFinancials {
   procurementProgressPercent: number;
 }
 
-export const BOM_STATUSES = ['Identified', 'Ordered', 'Shipped', 'Received', 'Bench Tested'] as const;
+export const BOM_STATUSES = ['Identified', 'Ordered', 'Shipped', 'Received', 'Bench Tested', 'Consumed'] as const;
 
 function parseMoney(cell: string): number | null {
   const cleaned = cell.replace(/[*`]/g, '').trim();
@@ -40,7 +40,7 @@ function parseMoney(cell: string): number | null {
 function splitRow(line: string): string[] {
   // Strip leading/trailing pipe then split on unescaped pipes.
   const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
-  return trimmed.split('|').map(c => c.trim());
+  return trimmed.split(/(?<!\\)\|/).map(c => c.trim());
 }
 
 function isSeparatorRow(cells: string[]): boolean {
