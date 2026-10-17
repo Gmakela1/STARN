@@ -9,6 +9,8 @@ import {
   PendingCheckpoint,
   ProjectInfo,
   ProjectIssue,
+  ProjectsResponse,
+  FolderListingResponse,
   RoadmapPhase,
   Settings,
   SettingsUpdate,
@@ -89,5 +91,17 @@ export const api = {
   listProviderModels: (id: string) =>
     call<{ models: string[] }>('GET', `/api/providers/${encodeURIComponent(id)}/models`),
   probeProvider: (id: string, model: string) =>
-    call<{ ok: boolean; detail: string }>('POST', `/api/providers/${encodeURIComponent(id)}/probe`, { model })
+    call<{ ok: boolean; detail: string }>('POST', `/api/providers/${encodeURIComponent(id)}/probe`, { model }),
+
+  // Projects & Filesystem
+  fetchProjects: () => call<ProjectsResponse>('GET', '/api/projects'),
+  browseFolders: (dirPath?: string, q?: string) => {
+    const params = new URLSearchParams();
+    if (dirPath) params.set('path', dirPath);
+    if (q) params.set('q', q);
+    const query = params.toString();
+    return call<FolderListingResponse>('GET', `/api/fs/folders${query ? `?${query}` : ''}`);
+  },
+  switchProject: (body: { projectId?: string; path?: string }) =>
+    call<ProjectInfo>('POST', '/api/projects/switch', body)
 };

@@ -1,10 +1,31 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Save, Settings2, FolderOpen, Network, Plus, Trash2, PlugZap } from 'lucide-react';
+import {
+  Loader2,
+  Save,
+  Settings2,
+  FolderOpen,
+  Folder,
+  Network,
+  Plus,
+  Trash2,
+  PlugZap,
+  ChevronUp,
+  Search,
+  ArrowRight
+} from 'lucide-react';
 import { api } from '../api/client';
-import { Assignments, ModelRole, ProviderInput, Settings } from '../types/api';
+import {
+  Assignments,
+  ModelRole,
+  ProviderInput,
+  Settings,
+  ProjectRecord,
+  FolderEntry
+} from '../types/api';
 
 export interface SettingsViewProps {
   onSaved: () => Promise<void> | void;
+  onProjectSwitched?: () => Promise<void> | void;
 }
 
 const ROLES: Array<{ role: ModelRole; label: string; note?: string }> = [
@@ -25,7 +46,7 @@ const inputClass =
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'provider';
 
-export default function SettingsView({ onSaved }: SettingsViewProps) {
+export default function SettingsView({ onSaved, onProjectSwitched }: SettingsViewProps) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [providers, setProviders] = useState<ProviderDraft[]>([]);
   const [assignments, setAssignments] = useState<Assignments | null>(null);
@@ -36,6 +57,64 @@ export default function SettingsView({ onSaved }: SettingsViewProps) {
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Project switching state
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string>('');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [switchingProject, setSwitchingProject] = useState(false);
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [browsePath, setBrowsePath] = useState<string>('');
+  const [parentBrowsePath, setParentBrowsePath] = useState<string | null>(null);
+  const [folders, setFolders] = useState<FolderEntry[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [customPathInput, setCustomPathInput] = useState('');
+  const [browsingLoading, setBrowsingLoading] = useState(false);
+
+  const loadProjects = async () => {
+    try {
+      const res = await api.fetchProjects();
+      setProjects(res.projects);
+      setActiveProjectId(res.activeId);
+      setSelectedProjectId(res.activeId);
+    } catch {
+      // ignore
+    }
+  };
+
+  const loadFolders = async (targetPath?: string, q?: string) => {
+    setBrowsingLoading(true);
+    try {
+      const res = await api.browseFolders(targetPath, q);
+      setBrowsePath(res.currentPath);
+      setParentBrowsePath(res.parentPath);
+      setFolders(res.folders);
+      setCustomPathInput(res.currentPath);
+    } catch (err: any) {
+      setError(err?.message ?? 'Failed to browse directory');
+    } finally {
+      setBrowsingLoading(false);
+    }
+  };
+
+  const handleSwitchProject = async (opts: { projectId?: string; path?: string }) => {
+    setSwitchingProject(true);
+    setError(null);
+    try {
+      await api.switchProject(opts);
+      await loadProjects();
+      const updatedSettings = await api.fetchSettings();
+      load(updatedSettings);
+      setNotice('Switched active project successfully.');
+      if (onProjectSwitched) {
+        await onProjectSwitched();
+      }
+    } catch (err: any) {
+      setError(err?.message ?? 'Failed to switch project');
+    } finally {
+      setSwitchingProject(false);
+    }
+  };
+
   const load = (s: Settings) => {
     setSettings(s);
     setProviders(s.providers.map(p => ({ ...p, apiKey: undefined })));
@@ -44,6 +123,7 @@ export default function SettingsView({ onSaved }: SettingsViewProps) {
 
   useEffect(() => {
     api.fetchSettings().then(load).catch(err => setError(err?.message ?? 'Failed to load settings'));
+    void loadProjects();
   }, []);
 
   const fetchModels = async (providerId: string) => {
@@ -147,6 +227,133 @@ export default function SettingsView({ onSaved }: SettingsViewProps) {
         {notice && (
           <p className="rounded-lg border border-emerald-900 bg-emerald-950/50 px-3 py-2 text-sm text-emerald-200" role="status">{notice}</p>
         )}
+
+        {/* Project Switcher Card */}
+        <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4" aria-labelledby="project-heading">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="project-heading" className="text-sm font-bold text-slate-200">Active Project</h2>
+            <button
+              type="button"
+              onClick={() => {
+                setBrowseOpen(v => !v);
+                if (!browseOpen && !browsePath) void loadFolders(settings?.projectPath);
+              }}
+              className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-slate-700 px-3 text-sm text-slate-200 hover:bg-slate-800"
+            >
+              <FolderOpen className="h-4 w-4 text-sky-400" aria-hidden />
+              {browseOpen ? 'Hide folder browser' : 'Browse folders…'}
+            </button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+            <div>
+              <label htmlFor="known-project-select" className="text-xs font-medium text-slate-300">
+                Known projects
+              </label>
+              <select
+                id="known-project-select"
+                value={selectedProjectId}
+                onChange={e => setSelectedProjectId(e.target.value)}
+                className={inputClass}
+              >
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} — {p.path}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={() => handleSwitchProject({ projectId: selectedProjectId })}
+                disabled={switchingProject || selectedProjectId === activeProjectId}
+                className="flex min-h-[44px] w-full sm:w-auto items-center justify-center gap-1.5 rounded-lg bg-sky-700 px-4 text-sm font-semibold text-white hover:bg-sky-600 disabled:opacity-50"
+              >
+                {switchingProject ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                Switch
+              </button>
+            </div>
+          </div>
+
+          {/* Expandable filesystem browser panel */}
+          {browseOpen && (
+            <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-3.5 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-mono text-xs text-slate-300 break-all">{browsePath}</span>
+                {parentBrowsePath && (
+                  <button
+                    type="button"
+                    onClick={() => void loadFolders(parentBrowsePath)}
+                    className="flex min-h-[44px] items-center gap-1 rounded border border-slate-700 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800"
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" /> Up
+                  </button>
+                )}
+              </div>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
+                <input
+                  type="text"
+                  placeholder="Filter folders..."
+                  value={searchQuery}
+                  onChange={e => {
+                    setSearchQuery(e.target.value);
+                    void loadFolders(browsePath, e.target.value);
+                  }}
+                  className="min-h-[44px] w-full rounded-lg border border-slate-700 bg-slate-900 pl-9 pr-3 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="max-h-56 overflow-y-auto space-y-1 divide-y divide-slate-800/40">
+                {browsingLoading ? (
+                  <div className="py-4 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading folders…
+                  </div>
+                ) : folders.length === 0 ? (
+                  <p className="py-2 text-center text-xs text-slate-500">No subdirectories found.</p>
+                ) : (
+                  folders.map(f => (
+                    <div
+                      key={f.path}
+                      onClick={() => void loadFolders(f.path)}
+                      className="flex min-h-[44px] cursor-pointer items-center justify-between gap-2 rounded px-2 hover:bg-slate-900 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <Folder className="h-4 w-4 text-sky-400 shrink-0" />
+                        <span className="text-sm text-slate-200 truncate">{f.name}</span>
+                      </div>
+                      {f.isProject && (
+                        <span className="rounded bg-sky-950 px-2 py-0.5 font-mono text-[10px] font-bold text-sky-300 border border-sky-800">
+                          STARN Project
+                        </span>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="border-t border-slate-800 pt-3 flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={customPathInput}
+                  onChange={e => setCustomPathInput(e.target.value)}
+                  placeholder="Paste or type path..."
+                  className="min-h-[44px] flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100 font-mono placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleSwitchProject({ path: customPathInput })}
+                  disabled={switchingProject || !customPathInput.trim()}
+                  className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-sky-700 px-4 text-sm font-semibold text-white hover:bg-sky-600 disabled:opacity-50"
+                >
+                  Use this folder
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
 
         {/* Providers */}
         <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4" aria-labelledby="providers-heading">

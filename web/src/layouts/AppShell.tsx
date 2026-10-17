@@ -44,6 +44,7 @@ export default function AppShell() {
   const [tab, setTab] = useState<TabId>('dashboard');
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [connected, setConnected] = useState(true);
+  const [projectRevision, setProjectRevision] = useState(0);
   const turnStream = useTurnStream();
 
   const refreshProject = async () => {
@@ -135,7 +136,7 @@ export default function AppShell() {
       </nav>
 
       {/* Active view */}
-      <main className="min-h-0 flex-1 overflow-hidden">
+      <main key={projectRevision} className="min-h-0 flex-1 overflow-hidden">
         {tab === 'dashboard' && <DashboardView />}
         {tab === 'development' && (
           <DevelopmentView turnStream={turnStream} project={project} onProjectChanged={refreshProject} />
@@ -151,7 +152,15 @@ export default function AppShell() {
         {tab === 'parts' && <PartsView />}
         {tab === 'work' && <WorkInstructionsView />}
         {tab === 'twin' && <DigitalTwinView />}
-        {tab === 'settings' && <SettingsView onSaved={refreshProject} />}
+        {tab === 'settings' && (
+          <SettingsView
+            onSaved={refreshProject}
+            onProjectSwitched={async () => {
+              setProjectRevision(r => r + 1);
+              await refreshProject();
+            }}
+          />
+        )}
       </main>
     </div>
   );

@@ -37,6 +37,29 @@ export interface CharterSection {
   body: string;
 }
 
+export interface ProjectRecord {
+  id: string;
+  name: string;
+  path: string;
+}
+
+export interface ProjectsResponse {
+  projects: ProjectRecord[];
+  activeId: string;
+}
+
+export interface FolderEntry {
+  name: string;
+  path: string;
+  isProject: boolean;
+}
+
+export interface FolderListingResponse {
+  currentPath: string;
+  parentPath: string | null;
+  folders: FolderEntry[];
+}
+
 export interface ProjectInfo {
   id: string;
   name: string;
