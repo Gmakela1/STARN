@@ -7,6 +7,8 @@ import { fsListHandler } from './handlers/fs-list.js';
 import { stateReadHandler } from './handlers/state-read.js';
 import { stateUpdateHandler } from './handlers/state-update.js';
 import { exampleReaderHandler } from './handlers/example-reader.js';
+import { webSearchHandler } from './handlers/web-search.js';
+import { webFetchHandler } from './handlers/web-fetch.js';
 
 export class ToolRegistry {
   private handlers: Map<string, ToolHandler> = new Map();
@@ -19,6 +21,8 @@ export class ToolRegistry {
     this.register(stateReadHandler);
     this.register(stateUpdateHandler);
     this.register(exampleReaderHandler);
+    this.register(webSearchHandler);
+    this.register(webFetchHandler);
   }
 
   public register(handler: ToolHandler): void {

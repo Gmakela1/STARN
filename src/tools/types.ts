@@ -1,11 +1,13 @@
 import { ToolDefinition } from '../openrouter/types.js';
 import { ProjectStateManager } from '../workspace/state.js';
+import { SearchClient } from './search/types.js';
 
 export interface ToolExecutionContext {
   projectPath: string;
   stateManager: ProjectStateManager;
   builtinExamplesDir?: string;
   editLog?: EditEntry[];
+  searchClient?: SearchClient;
 }
 
 export interface ToolExecutionResponse {
