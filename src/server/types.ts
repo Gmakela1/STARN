@@ -86,11 +86,18 @@ export interface ProviderView {
   builtIn: boolean;
 }
 
+export interface SearchSettingsResponse {
+  provider: 'openrouter' | 'tavily' | 'brave';
+  hasTavilyKey: boolean;
+  hasBraveKey: boolean;
+}
+
 export interface SettingsResponse {
   providers: ProviderView[];
   assignments: Assignments;
   port: number;
   projectPath: string;
+  search?: SearchSettingsResponse;
   /** Present when the drafting assignment changed: tool-calling probe result. */
   probe?: { ok: boolean; detail: string };
 }

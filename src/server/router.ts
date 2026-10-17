@@ -7,9 +7,11 @@ import { ProjectContext } from '../workspace/project-context.js';
 import { listFolders } from '../workspace/folder-browser.js';
 import { countOpenQuestions, parseOpenQuestionsFromContent } from '../core/open-questions-parser.js';
 import { createVersionBackup } from '../util/version-backup.js';
-import { parseBomDocument, updateBomRow, BomItemUpdate } from './parsers/bom-parser.js';
+import { parseBomDocument } from './parsers/bom-parser.js';
+import { updateBomItemInMarkdown, BomItemPatch } from './parsers/bom-updater.js';
 import { extractConopsOverview, extractConopsCharter, CharterSection } from '../core/conops-overview.js';
-import { OPENROUTER_PROVIDER_ID, ProviderConfig } from '../config.js';
+import { OPENROUTER_PROVIDER_ID, ProviderConfig, SearchProvider, loadConfig, saveUserConfig } from '../config.js';
+import { createSearchClient } from '../tools/search/search-client.js';
 import { allProviders } from '../models/role-clients.js';
 import { listProviderModels, probeToolCalling } from '../models/provider-models.js';
 import { fetchLiveOpenRouterModels } from '../openrouter/models.js';
@@ -30,7 +32,8 @@ import {
   ProjectInfoResponse,
   RoadmapPhaseResponse,
   ActionSummaryResponse,
-  SettingsResponse
+  SettingsResponse,
+  SearchSettingsResponse
 } from './types.js';
 
 export interface RouterDeps {
@@ -144,11 +147,22 @@ function buildSettings(deps: RouterDeps): SettingsResponse {
         builtIn: p.id === OPENROUTER_PROVIDER_ID
       }))
     : [];
+  let search: SearchSettingsResponse | undefined;
+  try {
+    const config = loadConfig();
+    search = {
+      provider: config.search?.provider || 'openrouter',
+      hasTavilyKey: Boolean(config.search?.tavilyApiKey),
+      hasBraveKey: Boolean(config.search?.braveApiKey)
+    };
+  } catch {}
+
   return {
     providers,
     assignments: session ? session.assignments : ({} as SettingsResponse['assignments']),
     port: deps.port ?? 3000,
-    projectPath: deps.projectPath
+    projectPath: deps.projectPath,
+    search
   };
 }
 
@@ -557,13 +571,16 @@ export async function handleApiRequest(
       const content = safeReadFile(bomPath);
       if (!content) return fail(res, 404, 'docs/BOM.md not found');
       const body = await readJsonBody(req);
-      const updates: BomItemUpdate = {};
+      const updates: BomItemPatch = {};
       if (body.qty !== undefined) updates.qty = Number(body.qty);
       if (body.tracking !== undefined) updates.tracking = String(body.tracking);
       if (body.status !== undefined) updates.status = String(body.status);
       if (body.actualTotal !== undefined) updates.actualTotal = body.actualTotal === null ? null : Number(body.actualTotal);
+      if (body.description !== undefined) updates.description = String(body.description);
+      if (body.source !== undefined) updates.source = String(body.source);
+      if (body.estUnit !== undefined) updates.estUnit = body.estUnit === null ? null : Number(body.estUnit);
       try {
-        const updated = updateBomRow(content, decodeURIComponent(segments[3]), updates);
+        const updated = updateBomItemInMarkdown(content, decodeURIComponent(segments[3]), updates);
         createVersionBackup(deps.projectPath, bomPath);
         fs.writeFileSync(bomPath, updated, 'utf-8');
         return ok(res, parseBomDocument(updated));
@@ -731,6 +748,73 @@ export async function handleApiRequest(
     }
 
     // --- Settings ---------------------------------------------------------------
+    if (method === 'GET' && url.pathname === '/api/settings/search') {
+      const cfg = loadConfig();
+      return ok(res, {
+        provider: cfg.search?.provider || 'openrouter',
+        hasTavilyKey: Boolean(cfg.search?.tavilyApiKey),
+        hasBraveKey: Boolean(cfg.search?.braveApiKey)
+      });
+    }
+
+    if (method === 'POST' && url.pathname === '/api/settings/search') {
+      const body = await readJsonBody(req);
+      const existingConfig = loadConfig();
+      const existingSearch = existingConfig.search || {};
+
+      const newProvider = (body.provider as SearchProvider) || existingSearch.provider || 'openrouter';
+      const newTavily = body.tavilyApiKey !== undefined ? String(body.tavilyApiKey) : existingSearch.tavilyApiKey;
+      const newBrave = body.braveApiKey !== undefined ? String(body.braveApiKey) : existingSearch.braveApiKey;
+
+      saveUserConfig({
+        search: {
+          provider: newProvider,
+          tavilyApiKey: newTavily,
+          braveApiKey: newBrave
+        }
+      });
+
+      const updatedConfig = loadConfig();
+      return ok(res, {
+        provider: updatedConfig.search?.provider || 'openrouter',
+        hasTavilyKey: Boolean(updatedConfig.search?.tavilyApiKey),
+        hasBraveKey: Boolean(updatedConfig.search?.braveApiKey)
+      });
+    }
+
+    if (method === 'POST' && url.pathname === '/api/settings/search/probe') {
+      const body = await readJsonBody(req);
+      const provider = (body.provider as SearchProvider) || 'openrouter';
+      const apiKey = body.apiKey !== undefined ? String(body.apiKey) : undefined;
+
+      const start = Date.now();
+      try {
+        const cfg = loadConfig();
+        const probeConfig = {
+          ...cfg,
+          search: {
+            provider,
+            tavilyApiKey: provider === 'tavily' ? (apiKey || cfg.search?.tavilyApiKey) : cfg.search?.tavilyApiKey,
+            braveApiKey: provider === 'brave' ? (apiKey || cfg.search?.braveApiKey) : cfg.search?.braveApiKey
+          }
+        };
+        const client = createSearchClient(probeConfig);
+        await client.search('hardware test probe', 1);
+        return ok(res, {
+          success: true,
+          provider,
+          latencyMs: Date.now() - start
+        });
+      } catch (err: any) {
+        return ok(res, {
+          success: false,
+          provider,
+          latencyMs: Date.now() - start,
+          error: err?.message || String(err)
+        });
+      }
+    }
+
     if (method === 'GET' && url.pathname === '/api/settings') {
       return ok(res, buildSettings(deps));
     }
