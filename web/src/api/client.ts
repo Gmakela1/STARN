@@ -15,6 +15,8 @@ import {
   RoadmapPhase,
   Settings,
   SettingsUpdate,
+  SearchSettings,
+  SearchProvider,
   SubsystemTradeStudy,
   WorkInstruction
 } from '../types/api';
@@ -52,7 +54,7 @@ export const api = {
   // BOM & Trade Studies
   fetchBom: () => call<BomData>('GET', '/api/bom'),
   fetchTradeStudy: () => call<SubsystemTradeStudy[]>('GET', '/api/trade-study'),
-  updateBomItem: (itemId: string, updates: Partial<Pick<BomItem, 'qty' | 'tracking' | 'status' | 'actualTotal'>>) =>
+  updateBomItem: (itemId: string, updates: Partial<BomItem>) =>
     call<BomData>('PATCH', `/api/bom/items/${encodeURIComponent(itemId)}`, updates),
 
   // Actions / work instructions
@@ -93,6 +95,11 @@ export const api = {
   // Settings
   fetchSettings: () => call<Settings>('GET', '/api/settings'),
   saveSettings: (update: SettingsUpdate) => call<Settings>('PUT', '/api/settings', update),
+  fetchSearchSettings: () => call<SearchSettings>('GET', '/api/settings/search'),
+  saveSearchSettings: (updates: { provider?: SearchProvider; tavilyApiKey?: string; braveApiKey?: string }) =>
+    call<SearchSettings>('POST', '/api/settings/search', updates),
+  probeSearchProvider: (body: { provider?: SearchProvider; apiKey?: string }) =>
+    call<{ success: boolean; provider: string; latencyMs: number; error?: string }>('POST', '/api/settings/search/probe', body),
   listProviderModels: (id: string) =>
     call<{ models: string[] }>('GET', `/api/providers/${encodeURIComponent(id)}/models`),
   probeProvider: (id: string, model: string) =>

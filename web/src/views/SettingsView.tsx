@@ -11,7 +11,8 @@ import {
   PlugZap,
   ChevronUp,
   Search,
-  ArrowRight
+  ArrowRight,
+  Globe
 } from 'lucide-react';
 import { api } from '../api/client';
 import {
@@ -20,7 +21,8 @@ import {
   ProviderInput,
   Settings,
   ProjectRecord,
-  FolderEntry
+  FolderEntry,
+  SearchProvider
 } from '../types/api';
 
 export interface SettingsViewProps {
@@ -69,6 +71,16 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
   const [searchQuery, setSearchQuery] = useState('');
   const [customPathInput, setCustomPathInput] = useState('');
   const [browsingLoading, setBrowsingLoading] = useState(false);
+
+  // Search settings state
+  const [searchProvider, setSearchProvider] = useState<SearchProvider>('openrouter');
+  const [tavilyKey, setTavilyKey] = useState<string>('');
+  const [braveKey, setBraveKey] = useState<string>('');
+  const [hasTavilyKey, setHasTavilyKey] = useState<boolean>(false);
+  const [hasBraveKey, setHasBraveKey] = useState<boolean>(false);
+  const [searchProbeResult, setSearchProbeResult] = useState<{ success: boolean; latencyMs?: number; error?: string } | null>(null);
+  const [probingSearch, setProbingSearch] = useState<boolean>(false);
+  const [savingSearch, setSavingSearch] = useState<boolean>(false);
 
   const loadProjects = async () => {
     try {
@@ -124,7 +136,53 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
   useEffect(() => {
     api.fetchSettings().then(load).catch(err => setError(err?.message ?? 'Failed to load settings'));
     void loadProjects();
+    void loadSearch();
   }, []);
+
+  const loadSearch = async () => {
+    try {
+      const res = await api.fetchSearchSettings();
+      setSearchProvider(res.provider);
+      setHasTavilyKey(res.hasTavilyKey);
+      setHasBraveKey(res.hasBraveKey);
+    } catch {}
+  };
+
+  const handleSaveSearch = async () => {
+    setSavingSearch(true);
+    try {
+      const res = await api.saveSearchSettings({
+        provider: searchProvider,
+        tavilyApiKey: tavilyKey || undefined,
+        braveApiKey: braveKey || undefined
+      });
+      setSearchProvider(res.provider);
+      setHasTavilyKey(res.hasTavilyKey);
+      setHasBraveKey(res.hasBraveKey);
+      setNotice('Search provider settings saved');
+      setTimeout(() => setNotice(null), 3000);
+    } catch (err: any) {
+      setError(err?.message ?? 'Failed to save search settings');
+    } finally {
+      setSavingSearch(false);
+    }
+  };
+
+  const handleProbeSearch = async () => {
+    setProbingSearch(true);
+    setSearchProbeResult(null);
+    try {
+      const res = await api.probeSearchProvider({
+        provider: searchProvider,
+        apiKey: searchProvider === 'tavily' ? tavilyKey : searchProvider === 'brave' ? braveKey : undefined
+      });
+      setSearchProbeResult({ success: res.success, latencyMs: res.latencyMs, error: res.error });
+    } catch (err: any) {
+      setSearchProbeResult({ success: false, error: err?.message ?? 'Probe failed' });
+    } finally {
+      setProbingSearch(false);
+    }
+  };
 
   const fetchModels = async (providerId: string) => {
     setTesting(providerId);
@@ -521,6 +579,144 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
           </button>
           <p className="text-xs text-slate-400">Saving the drafting role runs a quick tool-calling check.</p>
         </div>
+
+        {/* Web Search & Hardware Sourcing */}
+        <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+          <div className="flex items-center gap-2">
+            <Globe className="h-4 w-4 text-sky-400" />
+            <h2 className="text-sm font-bold text-slate-200">Web Search & Hardware Sourcing</h2>
+          </div>
+          <p className="text-xs text-slate-400">
+            Enables the BOM specialist to search the internet for component datasheets, prices, and vendor links.
+          </p>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <label className={`flex cursor-pointer flex-col rounded-lg border p-3 transition-colors ${
+              searchProvider === 'openrouter' ? 'border-sky-500 bg-sky-950/30' : 'border-slate-800 bg-slate-950 hover:border-slate-700'
+            }`}>
+              <div className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="searchProvider"
+                  value="openrouter"
+                  checked={searchProvider === 'openrouter'}
+                  onChange={() => setSearchProvider('openrouter')}
+                  className="accent-sky-500"
+                />
+                <span className="text-xs font-semibold text-slate-200">OpenRouter (Built-in)</span>
+              </div>
+              <span className="mt-1 text-[11px] text-slate-400">
+                Zero configuration. Uses OpenRouter server tool and credits.
+              </span>
+            </label>
+
+            <label className={`flex cursor-pointer flex-col rounded-lg border p-3 transition-colors ${
+              searchProvider === 'tavily' ? 'border-sky-500 bg-sky-950/30' : 'border-slate-800 bg-slate-950 hover:border-slate-700'
+            }`}>
+              <div className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="searchProvider"
+                  value="tavily"
+                  checked={searchProvider === 'tavily'}
+                  onChange={() => setSearchProvider('tavily')}
+                  className="accent-sky-500"
+                />
+                <span className="text-xs font-semibold text-slate-200">Tavily Search</span>
+              </div>
+              <span className="mt-1 text-[11px] text-slate-400">
+                Recommended for LLMs. Clean spec extraction (1,000 free/mo).
+              </span>
+            </label>
+
+            <label className={`flex cursor-pointer flex-col rounded-lg border p-3 transition-colors ${
+              searchProvider === 'brave' ? 'border-sky-500 bg-sky-950/30' : 'border-slate-800 bg-slate-950 hover:border-slate-700'
+            }`}>
+              <div className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="searchProvider"
+                  value="brave"
+                  checked={searchProvider === 'brave'}
+                  onChange={() => setSearchProvider('brave')}
+                  className="accent-sky-500"
+                />
+                <span className="text-xs font-semibold text-slate-200">Brave Search</span>
+              </div>
+              <span className="mt-1 text-[11px] text-slate-400">
+                Fast, private web search API.
+              </span>
+            </label>
+          </div>
+
+          {searchProvider === 'tavily' && (
+            <div className="space-y-1.5 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-200">Tavily API Key</span>
+                {hasTavilyKey && (
+                  <span className="rounded bg-emerald-950 px-2 py-0.5 text-[10px] font-medium text-emerald-300 border border-emerald-800">
+                    Stored on server
+                  </span>
+                )}
+              </div>
+              <input
+                type="password"
+                placeholder={hasTavilyKey ? '••••••••  (Leave blank to keep stored key)' : 'tvly-...'}
+                value={tavilyKey}
+                onChange={e => setTavilyKey(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+          )}
+
+          {searchProvider === 'brave' && (
+            <div className="space-y-1.5 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-200">Brave Search API Key</span>
+                {hasBraveKey && (
+                  <span className="rounded bg-emerald-950 px-2 py-0.5 text-[10px] font-medium text-emerald-300 border border-emerald-800">
+                    Stored on server
+                  </span>
+                )}
+              </div>
+              <input
+                type="password"
+                placeholder={hasBraveKey ? '••••••••  (Leave blank to keep stored key)' : 'BSA...'}
+                value={braveKey}
+                onChange={e => setBraveKey(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <button
+              onClick={() => void handleSaveSearch()}
+              disabled={savingSearch}
+              className="flex min-h-[44px] items-center gap-2 rounded-lg bg-sky-700 px-4 text-xs font-semibold text-white transition hover:bg-sky-600 disabled:opacity-50 cursor-pointer"
+            >
+              {savingSearch ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save Search Settings
+            </button>
+
+            <button
+              onClick={() => void handleProbeSearch()}
+              disabled={probingSearch}
+              className="flex min-h-[44px] items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 text-xs font-semibold text-slate-200 transition hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+            >
+              {probingSearch ? <Loader2 className="h-4 w-4 animate-spin text-sky-400" /> : <PlugZap className="h-4 w-4" />}
+              Test Connection
+            </button>
+
+            {searchProbeResult && (
+              <span className={`text-xs ${searchProbeResult.success ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {searchProbeResult.success
+                  ? `✓ Connected (${searchProbeResult.latencyMs}ms)`
+                  : `✗ Connection failed: ${searchProbeResult.error}`}
+              </span>
+            )}
+          </div>
+        </section>
 
         {settings && (
           <section className="space-y-2.5 rounded-xl border border-slate-800 bg-slate-900/40 p-4">

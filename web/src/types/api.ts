@@ -30,7 +30,7 @@ export interface BomItem {
   variance: number | null;
 }
 
-export const BOM_STATUSES = ['Identified', 'Ordered', 'Shipped', 'Received', 'Bench Tested'] as const;
+export const BOM_STATUSES = ['Identified', 'Ordered', 'Shipped', 'Received', 'Bench Tested', 'Consumed'] as const;
 
 export interface CharterSection {
   heading: string;
@@ -229,11 +229,20 @@ export interface ProviderInput {
   apiKey?: string;
 }
 
+export type SearchProvider = 'openrouter' | 'tavily' | 'brave';
+
+export interface SearchSettings {
+  provider: SearchProvider;
+  hasTavilyKey: boolean;
+  hasBraveKey: boolean;
+}
+
 export interface Settings {
   providers: ProviderView[];
   assignments: Assignments;
   port: number;
   projectPath: string;
+  search?: SearchSettings;
   probe?: { ok: boolean; detail: string };
 }
 

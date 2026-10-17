@@ -31,8 +31,20 @@ const STATUS_TONE: Record<string, string> = {
   Ordered: 'bg-sky-950/80 text-sky-300 border border-sky-800/40',
   Shipped: 'bg-indigo-950/80 text-indigo-300 border border-indigo-800/40',
   Received: 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/40',
-  'Bench Tested': 'bg-teal-950/80 text-teal-200 border border-teal-700/50'
+  'Bench Tested': 'bg-teal-950/80 text-teal-200 border border-teal-700/50',
+  Consumed: 'bg-purple-950/80 text-purple-300 border border-purple-800/40'
 };
+
+function getTrackingUrl(tracking: string): string | null {
+  const clean = tracking.trim().replace(/^#/, '');
+  if (!clean || clean === '—' || clean === '-') return null;
+  if (/^https?:\/\//i.test(clean)) return clean;
+  if (/^1Z[0-9A-Z]{16}$/i.test(clean)) return `https://www.ups.com/track?tracknum=${encodeURIComponent(clean)}`;
+  if (/^\d{12}$|^\d{15}$/i.test(clean)) return `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(clean)}`;
+  if (/^9\d{19,21}$/i.test(clean)) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(clean)}`;
+  if (/^\d{10}$/i.test(clean)) return `https://www.dhl.com/en/express/tracking.html?AWB=${encodeURIComponent(clean)}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(clean + ' tracking')}`;
+}
 
 interface EditState {
   itemId: string;
@@ -579,8 +591,26 @@ export default function PartsView() {
                                 placeholder="Tracking / Order #"
                                 className="w-full rounded border border-sky-500 bg-slate-950 px-2 py-1 font-mono text-xs text-white"
                               />
+                            ) : item.tracking && item.tracking !== '—' ? (
+                              (() => {
+                                const tUrl = getTrackingUrl(item.tracking);
+                                return tUrl ? (
+                                  <a
+                                    href={tUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 hover:underline"
+                                    title="Track package"
+                                  >
+                                    <span>{item.tracking}</span>
+                                    <ExternalLink className="h-3 w-3 shrink-0" />
+                                  </a>
+                                ) : (
+                                  <span>{item.tracking}</span>
+                                );
+                              })()
                             ) : (
-                              <span>{item.tracking || '—'}</span>
+                              <span>—</span>
                             )}
                           </td>
 
