@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ToolHandler, ToolExecutionContext, ToolExecutionResponse } from '../types.js';
 import { extractTextFromPdf } from './pdf-extractor.js';
+import { extractTextFromDocx } from '../document-extractors/docx-extractor.js';
+import { formatCsvAsTable } from '../document-extractors/csv-extractor.js';
 
 export const fsReadHandler: ToolHandler = {
   name: 'fs_read',
@@ -9,7 +11,7 @@ export const fsReadHandler: ToolHandler = {
     type: 'function',
     function: {
       name: 'fs_read',
-      description: 'Read the contents of a file in the project folder. Supports .md, .txt, .json, .csv, .pdf, and other text-based formats. For PDFs, text content is automatically extracted.',
+      description: 'Read the contents of a file in the project folder. Supports .md, .txt, .json, .csv, .docx, .pdf, and other formats. For PDFs and DOCX files, text is automatically extracted. For CSV files, clean tabular markdown is generated.',
       parameters: {
         type: 'object',
         properties: {
@@ -47,7 +49,40 @@ export const fsReadHandler: ToolHandler = {
       }
     }
 
-    // For text-based files (.md, .txt, .json, .csv, etc.)
+    if (ext === '.docx') {
+      try {
+        const text = await extractTextFromDocx(target);
+        const fileName = path.basename(target);
+        return {
+          success: true,
+          result: `[DOCX Document: ${fileName}]\n${'='.repeat(60)}\n${text}\n${'='.repeat(60)}\n`
+        };
+      } catch (err: any) {
+        return {
+          success: true,
+          result: `[DOCX: ${path.basename(target)}]\nNote: Could not extract text from this DOCX. Error: ${err.message || 'Unknown'}`
+        };
+      }
+    }
+
+    if (ext === '.csv') {
+      try {
+        const raw = fs.readFileSync(target, 'utf-8');
+        const table = formatCsvAsTable(raw);
+        const fileName = path.basename(target);
+        return {
+          success: true,
+          result: `[Tabular CSV: ${fileName}]\n${'='.repeat(60)}\n${table}\n${'='.repeat(60)}\n`
+        };
+      } catch (err: any) {
+        return {
+          success: false,
+          error: `Could not parse CSV: ${err.message || 'Unknown error'}`
+        };
+      }
+    }
+
+    // For standard text-based files (.md, .txt, .json, etc.)
     try {
       const content = fs.readFileSync(target, 'utf-8');
       return { success: true, result: content };
