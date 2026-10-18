@@ -8,4 +8,4 @@
 6. [x] Development tab: drop files as quality examples for the current document.
 7. [x] Reference documents drop area (separate from Development).
 
-Then: [x] sub-project 3 (Parts pipeline), sub-project 4 (remaining charter/roadmap work).
+Then: [x] sub-project 3 (Parts pipeline), sub-project 4 (Skill-Inspired Specialist & Tool Enhancements: multi-format docx/csv ingestion, grounded research for Architecture/ICD, physical safety/defense-in-depth critic rubrics, and combinatorial test matrices).

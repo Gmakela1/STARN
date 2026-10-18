@@ -8,11 +8,11 @@ describe('BOM Specialist Sourcing & Grocery List Discipline', () => {
     expect(bomPackage.allowedTools).toContain('web_fetch');
   });
 
-  it('restricts web_search and web_fetch from non-BOM specialists', () => {
+  it('restricts web_search and web_fetch from non-research specialists', () => {
     const registry = new SpecialistRegistry();
-    const nonBomSpecialists = ['conops', 'architecture', 'requirements', 'milestones', 'risk-register'];
+    const nonResearchSpecialists = ['conops', 'requirements', 'milestones', 'risk-register'];
 
-    for (const specId of nonBomSpecialists) {
+    for (const specId of nonResearchSpecialists) {
       const pkg = registry.get(specId);
       expect(pkg).toBeDefined();
       expect(pkg!.allowedTools).not.toContain('web_search');
