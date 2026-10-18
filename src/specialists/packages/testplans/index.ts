@@ -114,6 +114,14 @@ The following test tooling was cataloged during collaborative intake with the pr
 - **Step-by-Step Procedure:**
   1. Operate tractor continuously for 120 minutes doing mixed mowing and towing under >30°C ambient.
   2. Log motor casing, controller heatsink, and battery enclosure temperatures every 15 minutes.
+- **Combinatorial Test Matrix (Ambient Temp × Battery SOC × Mechanical Draw):**
+  | Test Config | Ambient Temp | Battery SOC | Mechanical Draw | Expected Thermal Rise | Max Component Temp | Voltage Drop Limit | Pass/Fail |
+  |---|---|---|---|---|---|---|---|
+  | TC-01 (Baseline) | 25°C (Shop Ambient) | 100% | 5 kW (Mower Idle/Transport) | < 10°C / 30 min | < 55°C | < 1.5 VDC | ☐ / ☐ |
+  | TC-02 (Nominal Load) | 30°C (Field Ambient) | 80% | 12 kW (Continuous Mowing) | < 20°C / 30 min | < 70°C | < 3.0 VDC | ☐ / ☐ |
+  | TC-03 (High Temp & Heavy Load) | >35°C (Florida Sun) | 50% | 18 kW (Dense Brush Cut) | < 30°C / 30 min | < 80°C | < 4.5 VDC | ☐ / ☐ |
+  | TC-04 (Depleted SOC & Peak Draw) | 32°C (Field Ambient) | 20% | 20 kW (Heavy Incline Towing) | < 35°C / 30 min | < 85°C | < 5.5 VDC | ☐ / ☐ |
+  | TC-05 (Boundary Thermal Margin) | >38°C (Peak Heat) | 15% | 22 kW (Peak Hydraulic Lift + Tow) | < 40°C / 30 min | < 90°C (Derate Guard) | < 6.5 VDC | ☐ / ☐ |
 - **Pass / Fail Acceptance Threshold:** 120 minutes continuous runtime completed with 0 thermal derating alarms; motor casing < 85°C.`;
 
 export const testplansPackage: SpecialistPackage = {
@@ -149,7 +157,14 @@ For each milestone phase, provide structured test procedures that verify subsyst
   | Parameter | Expected | Actual | Pass/Fail |
   |---|---|---|---|
   | [parameter name] | [threshold] | ___ | ☐ / ☐ |
+- **Combinatorial Test Matrix (if applicable):** For multi-variable subsystems, include a discrete matrix table covering parameter interactions.
 - **System-level tests:** Tests not tied to a specific build step must be labeled "Not tied to a specific build step — run after all [GATE] steps complete" and carry no Build Sequence Reference field.
+
+COMBINATORIAL TEST MATRICES & PARAMETER INTERACTIONS (MANDATORY FOR MULTI-VARIABLE SUBSYSTEMS):
+Procedures that depend on multiple operating variables (e.g., ambient temperature × battery SOC × mechanical draw) must define a combinatorial test matrix table specifying discrete test points covering boundary combinations and failure modes.
+- Identify subsystems where multiple stress factors intersect (e.g., thermal conditions, battery state-of-charge, peak mechanical load, electrical voltage drops).
+- Define combinatorial or pairwise test configurations (4–6 discrete test points) exercising nominal, extreme, and edge-case boundary conditions rather than isolated single-point tests.
+- Specify quantitative expected outcomes for each interaction state (thermal rise rate, maximum component temperature, permissible voltage drop).
 
 CRITICAL RULES:
 - Procedures must be physically realistic and tailored to the builder's actual shop environment.
@@ -163,6 +178,7 @@ CRITICAL RULES:
 3. Milestone Traceability: Are test procedures structured under TP-MVP-xx, TP-IOC-xx, and TP-FOC-xx matching the approved Milestones?
 4. Step-by-Step Clarity: Are safety precautions and step-by-step instructions clear, numbered, and actionable?
 5. Objective Thresholds: Are pass/fail acceptance criteria quantitative and unambiguous?
-6. Plain-Text Units: Is the document free of raw LaTeX math strings?`,
+6. Plain-Text Units: Is the document free of raw LaTeX math strings?
+7. Combinatorial Test Coverage: For complex subsystems with multiple operating variables (e.g. load, temperature, speed, voltage), does the test plan include combinatorial or pairwise test matrix tables covering boundary interactions rather than single-point tests?`,
   secretSauceExamples: [testplansSecretSauce]
 };
