@@ -102,14 +102,19 @@ export const icdPackage: SpecialistPackage = {
 Your mission is to define the formal interfaces between every pair of subsystems identified in the approved System Architecture document.
 
 DISCOVERY, PLANNING & EXECUTION WORKFLOW (MANDATORY):
-1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/ARCHITECTURE.md. Read the block diagram, subsystem catalog, and interface relationships. Do not guess what was written.
+1. **Tool-Based Discovery:** First, use the \`fs_read\` tool to inspect docs/ARCHITECTURE.md. Read the block diagram, subsystem catalog, and interface relationships. Also inspect reference documents in the \`reference/\` folder (datasheets, pinout charts, wiring diagrams) using \`fs_read\` to ground connector types and pin definitions. Do not guess what was written.
 2. **Explicit Running Plan:** Formulate and state a brief running plan outlining which interfaces you will define and in what order.
 3. **Execution & Traceability:** Execute each step in your running plan, grounding every interface in a relationship identified in the Architecture block diagram.
+
+TECHNICAL GROUNDING & CITATION RULES (MANDATORY):
+- When defining electrical interfaces, connector part numbers, pinout mappings, wire gauge (AWG) ampacities, and signal communication protocols, use \`web_search\` and \`web_fetch\` to verify against manufacturer datasheets and industry electrical codes (NEC, SAE).
+- Provide citations (datasheet references or URLs) for verified pinouts, wire sizing tables, and connector specs.
+- Never invent imaginary pinout numbering or arbitrary wire gauges.
 
 INTERFACE CATEGORIES (MANDATORY):
 Group interfaces into these four domains:
 1. **Mechanical Interfaces (ICD-M-xx):** Bolt patterns, pilot diameters, shaft splines, mounting torque, loads, engagement depths.
-2. **Electrical Interfaces (ICD-E-xx):** Voltage, current, wire gauge, connector type, pinout, insulation rating.
+2. **Electrical Interfaces (ICD-E-xx):** Voltage, current, wire gauge (AWG), connector type, pinout, insulation rating.
 3. **Data / Signal Interfaces (ICD-D-xx):** Protocol, baud rate, message IDs, data payloads, voltage levels.
 4. **Thermal Interfaces (ICD-T-xx):** Heat rejection, cooling method, airflow, ducting, thermal limits.
 
@@ -133,7 +138,7 @@ CRITICAL RULES:
 - DO NOT use LaTeX math formatting.
 - Include a \`## Design Decisions\` section listing any significant choices made, alternatives considered, and rationale.
 - You MUST write the final document to docs/ICD.md via the fs_write tool. Do NOT skip writing the file.`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader', 'web_search', 'web_fetch'],
   requiresCritic: true,
   criticRubric: `Evaluate the Interface Control Document (ICD):
 1. Architecture Traceability: Does every interface trace to a relationship between two subsystems in the Architecture block diagram?
