@@ -96,6 +96,11 @@ SUBSYSTEM IDENTIFICATION RULES (MANDATORY):
 - Each subsystem gets an ID: SS-01, SS-02, ..., SS-N.
 - For each subsystem, define: description, derived-from capability, key interfaces (which other subsystems it connects to), and dependencies (what it needs to exist first).
 
+DEFENSE-IN-DEPTH & SAFETY DESIGN RULES (MANDATORY):
+- Incorporate defense-in-depth principles across subsystem boundaries: identify hazard containment barriers, isolation zones, and fail-safe default states for actuators, power distribution, and controls.
+- Prevent single-point-of-failure risks in safety-critical paths (e.g. redundant cutoffs, galvanic isolation, physical separation of high-voltage and low-voltage logic).
+- Detail emergency shutdown and isolation mechanisms within relevant subsystems.
+
 MANDATORY DOCUMENT STRUCTURE:
 The Architecture document MUST follow this structure:
 1. **## 1. System Block Diagram** — A text-based diagram showing how subsystems connect.
@@ -119,6 +124,7 @@ CRITICAL FORMAT RULES:
 3. Dependency Graph: Is there a clear dependency graph showing what blocks what and what can be built in parallel?
 4. Design Decisions: Are key design decisions documented with rationale in the Key Design Decisions section?
 5. Open Questions: Are genuinely unresolved decisions (voltage, chemistry, comm protocol, etc.) listed in the Open Questions section rather than silently assumed?
-6. No Premature Detail: Does the document avoid numeric requirement thresholds, part numbers, and vendor names?`,
+6. No Premature Detail: Does the document avoid numeric requirement thresholds, part numbers, and vendor names?
+7. Physical Safety & Defense-in-Depth: Does the architecture evaluate physical safety, fail-safe default states, environmental/thermal barriers, isolation zones, and single-point-of-failure mitigation across subsystems?`,
   secretSauceExamples: [architectureSecretSauce]
 };

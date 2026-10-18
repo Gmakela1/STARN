@@ -118,6 +118,10 @@ Group interfaces into these four domains:
 3. **Data / Signal Interfaces (ICD-D-xx):** Protocol, baud rate, message IDs, data payloads, voltage levels.
 4. **Thermal Interfaces (ICD-T-xx):** Heat rejection, cooling method, airflow, ducting, thermal limits.
 
+INTERFACE SAFETY & OVERCURRENT PROTECTION RULES (MANDATORY):
+- Specify physical interface protection across electrical and signal connections: fusing and overcurrent protection, wire gauge ampacity margins, reverse polarity protection, shielding against EMI and mechanical chafing, and galvanic or physical isolation barriers.
+- For high-power circuits, document emergency disconnect points, precharge/contactor arrangements, and isolation barrier requirements.
+
 MANDATORY DOCUMENT STRUCTURE:
 1. **## 1. Mechanical Interfaces** — ICD-M-01, ICD-M-02...
 2. **## 2. Electrical Interfaces** — ICD-E-01, ICD-E-02...
@@ -145,6 +149,7 @@ CRITICAL RULES:
 2. Domain Coverage: Are interfaces organized into all four domains (mechanical, electrical, data, thermal)?
 3. Parameter Completeness: Are the right parameters defined for each interface type (bolt patterns for mechanical, voltage/current for electrical, baud rate/protocol for data)?
 4. Open Item Flagging: Are genuinely unknown parameters flagged as open items rather than silently assumed?
-5. Plain-Text Units: Is the document free of raw LaTeX math strings?`,
+5. Plain-Text Units: Is the document free of raw LaTeX math strings?
+6. Interface Safety & Overcurrent Protection: Does the ICD define adequate physical interface protection including fusing/overcurrent protection, wire gauge ampacity specifications, reverse polarity protection, shielding, and isolation barriers?`,
   secretSauceExamples: [icdSecretSauce]
 };

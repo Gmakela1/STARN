@@ -38,6 +38,13 @@ OUTPUT FORMAT (docs/RISK_REGISTER.md):
 |---|---|---|---|---|---|---|
 ...
 
+DEFENSE-IN-DEPTH MITIGATION RULES (MANDATORY):
+- For high-severity hazards (e.g. electrical shock, fire, kinetic injury), mitigations MUST provide multi-layer defense-in-depth:
+  1. Prevention: Design-level prevention to stop hazard occurrence (derating, insulation, sensors).
+  2. Containment: Physical barriers or containment to limit damage if failure occurs (enclosures, blast/fire barriers, shields).
+  3. Emergency Cutoff / Shutdown: Rapid isolation and emergency shutdown paths (E-stop, fusing, contactor drops, fail-safe defaults).
+- Avoid relying on a single barrier for critical hazards.
+
 CRITICAL RULES:
 - Each risk must trace back to a real document section — the "Source" column must reference an actual section in an actual document.
 - Use "IF [trigger] THEN [consequence]" format for the Risk column.
@@ -52,6 +59,7 @@ CRITICAL RULES:
 2. If/Then Format: Do all risks use the "IF [trigger] THEN [consequence]" format?
 3. Phase Impact: Are phase impacts (MVC, IOC, FOC) correctly assigned?
 4. User-Contributed: Are user-contributed risks clearly separated from auto-generated ones?
-5. Plain-Text: Is the document free of LaTeX or raw JSON?`,
+5. Plain-Text: Is the document free of LaTeX or raw JSON?
+6. Defense-in-Depth Mitigations: Do high-severity hazards and critical risks specify multi-layered defense-in-depth mitigations (covering prevention, containment, and emergency cutoff/shutdown) instead of relying on single points of failure?`,
   secretSauceExamples: [riskRegisterSecretSauce]
 };
