@@ -6,21 +6,41 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background-color: #020617; /* slate-950 */
-  color: #f1f5f9; /* slate-100 */
+  background-color: #0b0f17;
+  color: #f8fafc;
+}
+
+/* Subtle warm dot-matrix CAD grid background */
+.bg-cad-grid {
+  background-color: #0b0f17;
+  background-image: radial-gradient(rgba(56, 189, 248, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* High-precision telemetry typography */
+.font-telemetry {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+
+/* Accessible high-contrast focus rings */
+*:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #0b0f17, 0 0 0 4px #06b6d4;
 }
 
 /* Thin dark scrollbars */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #334155 transparent;
+  scrollbar-color: #1e293b transparent;
 }
 *::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 *::-webkit-scrollbar-thumb {
-  background-color: #334155;
+  background-color: #1e293b;
   border-radius: 4px;
 }
 *::-webkit-scrollbar-track {
@@ -31,6 +51,7 @@ body,
 .doc-prose {
   line-height: 1.65;
   font-size: 0.875rem;
+  color: #e2e8f0;
 }
 .doc-prose h1,
 .doc-prose h2,
@@ -38,6 +59,7 @@ body,
   font-weight: 700;
   color: #f8fafc;
   margin: 1em 0 0.4em;
+  padding-bottom: 0.2em;
 }
 .doc-prose h1 {
   font-size: 1.25rem;
@@ -58,13 +80,13 @@ body,
 }
 .doc-prose th,
 .doc-prose td {
-  border: 1px solid #334155;
+  border: 1px solid rgba(148, 163, 184, 0.14);
   padding: 0.35em 0.6em;
   text-align: left;
   font-size: 0.8rem;
 }
 .doc-prose th {
-  background: #0f172a;
+  background: #111827;
   color: #cbd5e1;
 }
 
