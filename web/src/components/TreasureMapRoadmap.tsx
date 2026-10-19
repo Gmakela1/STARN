@@ -12,6 +12,8 @@ import { RoadmapPhase } from '../types/api';
 
 interface TreasureMapRoadmapProps {
   roadmap: RoadmapPhase[];
+  onSelectPhase?: (phaseId: string) => void;
+  hideHeader?: boolean;
 }
 
 /** Template paths (e.g. {GATE}, {NUM}) show their folder instead of the raw pattern. */
@@ -78,7 +80,7 @@ const ConnectorArrow: React.FC<ConnectorArrowProps> = ({ dir, active }) => {
   );
 };
 
-export default function TreasureMapRoadmap({ roadmap }: TreasureMapRoadmapProps) {
+export default function TreasureMapRoadmap({ roadmap, onSelectPhase, hideHeader }: TreasureMapRoadmapProps) {
   const row1 = roadmap.slice(0, 4);
   const row2 = roadmap.slice(4, 8);
   const row3 = roadmap.slice(8, 12);
@@ -104,10 +106,32 @@ export default function TreasureMapRoadmap({ roadmap }: TreasureMapRoadmapProps)
       ringClass = 'bg-amber-500/20 text-amber-300 border-amber-500/50';
     }
 
+    const isClickable = Boolean(onSelectPhase);
+    const interactiveProps = isClickable
+      ? {
+          role: 'button' as const,
+          tabIndex: 0,
+          onClick: () => onSelectPhase?.(phase.id),
+          onKeyDown: (e: React.KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onSelectPhase?.(phase.id);
+            }
+          },
+          'aria-label': `Open ${phase.name} in Studio`,
+          title: `Open ${phase.name} in Studio`
+        }
+      : {};
+
     return (
       <div
         key={phase.id}
-        className={`relative flex h-full flex-col justify-between rounded-xl border p-3.5 ${borderClass}`}
+        {...interactiveProps}
+        className={`group relative flex h-full flex-col justify-between rounded-xl border p-3.5 transition-all ${borderClass} ${
+          isClickable
+            ? 'cursor-pointer hover:border-cyan-400 hover:shadow-lg hover:shadow-cyan-950/40 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400'
+            : ''
+        }`}
       >
         <div className="flex items-start justify-between gap-2">
           {/* Station Number Ring */}
@@ -149,7 +173,7 @@ export default function TreasureMapRoadmap({ roadmap }: TreasureMapRoadmapProps)
 
         {/* Phase Details */}
         <div className="mt-2.5">
-          <h4 className="text-sm font-bold text-slate-100">{phase.name}</h4>
+          <h4 className="text-sm font-bold text-slate-100 group-hover:text-cyan-300 transition-colors">{phase.name}</h4>
           <p
             className="mt-0.5 font-mono text-[11px] text-slate-400 truncate"
             title={phase.artifactPath}
@@ -182,14 +206,16 @@ export default function TreasureMapRoadmap({ roadmap }: TreasureMapRoadmapProps)
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 backdrop-blur-sm">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h3 className="text-base font-bold text-white flex items-center gap-2">
-            Program Roadmap
-          </h3>
-          <p className="text-xs text-slate-400">Each approved deliverable unlocks the next phase.</p>
+      {!hideHeader && (
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              Program Roadmap
+            </h3>
+            <p className="text-xs text-slate-400">Each approved deliverable unlocks the next phase.</p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Mobile / Tablet vertical view (< lg) */}
       <div className="lg:hidden space-y-3">

@@ -28,9 +28,15 @@ export interface DevelopmentViewProps {
   turnStream: ReturnType<typeof useTurnStream>;
   project: ProjectInfo | null;
   onProjectChanged: () => Promise<void> | void;
+  initialPhase?: string;
 }
 
-export default function DevelopmentView({ turnStream, project, onProjectChanged }: DevelopmentViewProps) {
+export default function DevelopmentView({
+  turnStream,
+  project,
+  onProjectChanged,
+  initialPhase
+}: DevelopmentViewProps) {
   const { entries, busy, status, toolActivity, checkpoint, sendTurn, abortTurn, clearCheckpoint, appendEntry } = turnStream;
 
   // --- Chat state ---
@@ -52,7 +58,13 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
 
   // --- Document panel state ---
   const [roadmap, setRoadmap] = useState<RoadmapPhase[]>([]);
-  const [selectedPhase, setSelectedPhase] = useState<string>('');
+  const [selectedPhase, setSelectedPhase] = useState<string>(initialPhase || '');
+
+  useEffect(() => {
+    if (initialPhase) {
+      setSelectedPhase(initialPhase);
+    }
+  }, [initialPhase]);
   const [docDropdownOpen, setDocDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState<DocData | null>(null);
@@ -99,14 +111,14 @@ export default function DevelopmentView({ turnStream, project, onProjectChanged 
     try {
       const phases = await api.fetchRoadmap();
       setRoadmap(phases);
-      if (!selectedPhase) {
+      if (!selectedPhase && !initialPhase) {
         const firstWithDoc = phases.find(p => p.docExists) ?? phases[0];
         if (firstWithDoc) setSelectedPhase(firstWithDoc.id);
       }
     } catch {
       // header already shows reconnect badge
     }
-  }, [selectedPhase]);
+  }, [selectedPhase, initialPhase]);
 
   const refreshDoc = useCallback(async () => {
     if (!selectedPhase) return;
