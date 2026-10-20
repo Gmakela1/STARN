@@ -278,11 +278,14 @@ export default function PartsView() {
           <div className="space-y-6 max-w-6xl mx-auto">
             {tradeStudies.length === 0 ? (
               <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-8 text-center">
-                <Layers className="mx-auto h-12 w-12 text-slate-600 mb-3" />
-                <h3 className="text-base font-semibold text-slate-200">No Candidate Trade Studies Found</h3>
-                <p className="mt-1 text-sm text-slate-400 max-w-md mx-auto">
-                  Trade studies evaluate component candidates against system requirements before selection. Drafted in{' '}
-                  <code className="text-sky-300">docs/TRADE_STUDY.md</code>.
+                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-500/30 bg-cyan-950/50">
+                  <Layers className="h-7 w-7 text-cyan-400" />
+                </div>
+                <h3 className="text-base font-semibold text-slate-100">No component options compared yet</h3>
+                <p className="mt-1 text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
+                  The AI compares candidate parts (like different motors or batteries) against your
+                  project requirements before picking the best one. Ask it to{' '}
+                  <span className="font-medium text-cyan-300">"compare options for the motor"</span> in the Studio.
                 </p>
               </div>
             ) : (
@@ -420,10 +423,13 @@ export default function PartsView() {
             {/* Engineering BOM Table */}
             {!bomData || visibleBomItems.length === 0 ? (
               <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-8 text-center">
-                <FileSpreadsheet className="mx-auto h-12 w-12 text-slate-600 mb-3" />
-                <p className="text-sm text-slate-300 font-semibold">No BOM items found.</p>
-                <p className="text-xs text-slate-500 mt-1">
-                  Drafted in <code className="text-sky-300">docs/BOM.md</code> by the BOM Specialist.
+                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-500/30 bg-cyan-950/50">
+                  <FileSpreadsheet className="h-7 w-7 text-cyan-400" />
+                </div>
+                <p className="text-sm text-slate-100 font-semibold">Your shopping list isn't ready yet</p>
+                <p className="text-xs text-slate-400 mt-1.5 max-w-md mx-auto leading-relaxed">
+                  The AI drafts the full parts list — exact parts, quantities, and costs — after the
+                  design is approved. Ask it to <span className="font-medium text-cyan-300">"draft the BOM"</span> in the Studio.
                 </p>
               </div>
             ) : (
@@ -517,8 +523,14 @@ export default function PartsView() {
             {/* Interactive Logistics Table */}
             {!bomData || visibleBomItems.length === 0 ? (
               <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-8 text-center">
-                <Truck className="mx-auto h-12 w-12 text-slate-600 mb-3" />
-                <p className="text-sm text-slate-300 font-semibold">No parts found.</p>
+                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-500/30 bg-cyan-950/50">
+                  <Truck className="h-7 w-7 text-cyan-400" />
+                </div>
+                <p className="text-sm text-slate-100 font-semibold">Nothing tracked for shipping yet</p>
+                <p className="text-xs text-slate-400 mt-1.5 max-w-md mx-auto leading-relaxed">
+                  Once your shopping list exists, ordered parts show up here with shipping status,
+                  tracking numbers, and final costs.
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-slate-800">
