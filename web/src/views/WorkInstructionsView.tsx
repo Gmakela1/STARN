@@ -35,6 +35,7 @@ export default function WorkInstructionsView() {
   const [uploading, setUploading] = useState(false);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
+  const [shopMode, setShopMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadList = async () => {
@@ -200,6 +201,20 @@ export default function WorkInstructionsView() {
                 <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${WI_STATUS_TONE[detail.status.toUpperCase()] ?? 'bg-slate-800 text-slate-300'}`}>
                   {detail.status}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => setShopMode(v => !v)}
+                  className={`ml-auto flex min-h-[44px] items-center gap-2 rounded-lg border px-4 text-sm font-semibold transition ${
+                    shopMode
+                      ? 'border-cyan-500/60 bg-cyan-600 text-white shadow-md shadow-cyan-950/40 hover:bg-cyan-500'
+                      : 'border-cyan-700/70 bg-cyan-950/50 text-cyan-300 hover:bg-cyan-900/60'
+                  }`}
+                  aria-pressed={shopMode}
+                  title={shopMode ? 'Switch back to Desktop view' : 'Switch to high-contrast Shop Floor Mode'}
+                >
+                  <Wrench className="h-4 w-4" aria-hidden />
+                  {shopMode ? 'Shop Mode ON' : 'Shop Floor Mode'}
+                </button>
               </div>
               <p className="mt-1 flex flex-wrap gap-3 text-xs text-slate-400">
                 <span>Gate: <span className="font-semibold text-slate-300">{detail.milestoneGate || '—'}</span></span>
@@ -247,10 +262,12 @@ export default function WorkInstructionsView() {
                       role="checkbox"
                       aria-checked={step.checked}
                       aria-label={`${step.label}: ${step.text}`}
-                      className={`mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border-2 transition ${
+                      className={`mt-0.5 flex shrink-0 items-center justify-center rounded-lg border-2 transition ${
+                        shopMode ? 'h-16 w-16' : 'h-11 w-11'
+                      } ${
                         step.checked
-                          ? 'border-emerald-600 bg-emerald-900/50 text-emerald-300'
-                          : 'border-slate-600 bg-slate-950 text-transparent hover:border-sky-500'
+                          ? 'border-emerald-500 bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
+                          : 'border-slate-500 bg-slate-950 text-transparent hover:border-cyan-400'
                       }`}
                     >
                       {togglingIndex === step.index ? (
@@ -260,7 +277,7 @@ export default function WorkInstructionsView() {
                       )}
                     </button>
                     <div className="min-w-0 flex-1 pt-1">
-                      <p className={`text-sm leading-relaxed ${step.checked ? 'text-slate-500 line-through decoration-slate-700' : 'text-slate-200'}`}>
+                      <p className={`${shopMode ? 'text-base font-medium leading-relaxed' : 'text-sm leading-relaxed'} ${step.checked ? 'text-slate-500 line-through decoration-slate-700' : 'text-slate-200'}`}>
                         <span className="font-semibold">{step.label}:</span> {step.text}
                       </p>
                       {step.gated && (
