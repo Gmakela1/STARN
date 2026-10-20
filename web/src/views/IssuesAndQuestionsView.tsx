@@ -6,7 +6,7 @@ import {
   MessageCircleQuestion,
   Bot,
   Image as ImageIcon,
-  PartyPopper
+  CheckCircle2
 } from 'lucide-react';
 import { api } from '../api/client';
 import { IssuesSummary, ProjectIssue } from '../types/api';
@@ -80,12 +80,14 @@ export default function IssuesAndQuestionsView({ onPushToAgent }: IssuesAndQuest
         )}
 
         {summary && summary.issues.length === 0 && (
-          <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/40 p-10 text-center">
-            <PartyPopper className="h-10 w-10 text-emerald-500" aria-hidden />
-            <p className="text-sm font-medium text-slate-200">All clear</p>
-            <p className="max-w-sm text-xs leading-relaxed text-slate-500">
-              No open hardware non-conformances and no unresolved builder questions anywhere in the
-              program documents.
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-emerald-800/40 bg-emerald-950/20 p-10 text-center">
+            <div className="flex items-center gap-2 rounded-full border border-emerald-600/40 bg-emerald-900/40 px-4 py-1.5 font-mono text-xs font-bold uppercase tracking-wider text-emerald-300 shadow-md shadow-emerald-950/40">
+              <CheckCircle2 className="h-4 w-4" aria-hidden /> System nominal
+            </div>
+            <p className="text-sm font-medium text-slate-200">No open defects or unresolved questions</p>
+            <p className="max-w-sm text-xs leading-relaxed text-slate-400">
+              The project documents are clear and consistent. Flag any problem on the shop floor
+              and it will appear here for the AI to help resolve.
             </p>
           </div>
         )}
