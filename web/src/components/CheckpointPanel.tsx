@@ -40,11 +40,15 @@ export default function CheckpointPanel({ checkpoint, onResolved, onRevisionRequ
 
   return (
     <aside
-      className="rounded-xl border border-sky-800/70 bg-sky-950/30 p-3 shadow-lg shadow-sky-950/40"
+      className="rounded-xl border border-cyan-700/60 bg-gradient-to-br from-cyan-950/60 to-slate-950/80 p-3 shadow-lg shadow-cyan-950/40"
       aria-label="Pending human checkpoint"
     >
-      <p className="text-xs font-bold uppercase tracking-wider text-sky-300">
-        Checkpoint — {checkpoint.specialistName} draft awaiting review
+      <p className="text-xs font-bold uppercase tracking-wider text-cyan-300">
+        ◈ Checkpoint — {checkpoint.specialistName} draft awaiting your review
+      </p>
+      <p className="mt-0.5 text-[11px] leading-relaxed text-slate-400">
+        Review the draft below, then approve it, request changes, or discard it. Nothing is
+        saved to the project until you approve.
       </p>
 
       {checkpoint.criticResult && (
@@ -95,7 +99,7 @@ export default function CheckpointPanel({ checkpoint, onResolved, onRevisionRequ
           <button
             onClick={() => void decide('approve')}
             disabled={submitting !== null}
-            className="flex min-h-[44px] items-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-40"
+            className="flex min-h-[44px] items-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white shadow-md shadow-emerald-950/40 transition hover:bg-emerald-500 disabled:opacity-40"
           >
             {submitting === 'approve' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <CheckCircle2 className="h-4 w-4" aria-hidden />}
             Approve & record
