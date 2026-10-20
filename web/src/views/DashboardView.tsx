@@ -87,7 +87,7 @@ export default function DashboardView() {
               <button
                 id="export-briefing-btn"
                 onClick={() => setShowBriefingModal(true)}
-                className="flex min-h-[44px] items-center gap-2 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 px-4 text-xs font-bold text-white shadow-md hover:from-sky-500 hover:to-indigo-500 transition-all cursor-pointer"
+                className="flex min-h-[44px] items-center gap-2 rounded-xl bg-cyan-600 px-4 text-xs font-bold text-white shadow-md hover:bg-cyan-500 transition-all cursor-pointer"
               >
                 <FileText className="h-4 w-4" />
                 Export 2-Page Executive Briefing

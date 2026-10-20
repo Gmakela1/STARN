@@ -19,6 +19,23 @@ interface TreasureMapRoadmapProps {
 /** Template paths (e.g. {GATE}, {NUM}) show their folder instead of the raw pattern. */
 const displayPath = (p: string) => (p.includes('{') ? p.slice(0, p.lastIndexOf('/') + 1) : p);
 
+/** Plain-English friendly subtitles so non-technical makers understand each phase. */
+const PHASE_SUBTITLES: Record<string, string> = {
+  conops: 'User Intent & Project Charter',
+  architecture: 'Subsystem Layout & Flow',
+  icd: 'Wiring, Pinouts & Interfaces',
+  capabilities: 'What the Machine Must Do',
+  requirements: 'Engineering Performance Specs',
+  bom: 'Shopping List & Hardware Specs',
+  rtm: 'Traceability & Verification Matrix',
+  milestones: 'Phase Gates (MVP, IOC, FOC)',
+  'risk-register': 'Safety Hazards & Mitigations',
+  'build-sequence': 'High-Level Assembly Order',
+  'work-instructions': 'Step-by-Step Hands-On Shop Guides',
+  testplans: 'Shop Verification Procedures',
+  sow: 'Statement of Work & Contractor Scope'
+};
+
 interface ConnectorArrowProps {
   dir: 'right' | 'left' | 'down';
   active: boolean;
@@ -174,6 +191,9 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase, hideHeader 
         {/* Phase Details */}
         <div className="mt-2.5">
           <h4 className="text-sm font-bold text-slate-100 group-hover:text-cyan-300 transition-colors">{phase.name}</h4>
+          <p className="text-[10px] font-medium text-cyan-300/80 leading-tight truncate">
+            {PHASE_SUBTITLES[phase.id] || 'Milestone Deliverable'}
+          </p>
           <p
             className="mt-0.5 font-mono text-[11px] text-slate-400 truncate"
             title={phase.artifactPath}
