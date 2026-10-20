@@ -198,14 +198,17 @@ export default function DevelopmentView({
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
           {entries.length === 0 && !busy && (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-              <Bot className="h-10 w-10 text-slate-700" aria-hidden />
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-500/30 bg-cyan-950/50">
+                <Bot className="h-7 w-7 text-cyan-400" aria-hidden />
+              </div>
               <div>
-                <p className="text-sm font-medium text-slate-300">
-                  {project ? `Working on ${project.name}` : 'Agent ready'}
+                <p className="text-sm font-medium text-slate-200">
+                  {project ? `Let's build ${project.name}` : 'Engineering Studio ready'}
                 </p>
-                <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-500">
-                  Ask for any deliverable — “draft the CONOPS”, “update the BOM”, “write the work
-                  instruction for ACTION-03” — or just ask questions about the project.
+                <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-400">
+                  Tell the AI in plain words what you want next — “draft the shopping list”,
+                  “check electrical safety”, or “write the step-by-step guide for ACTION-03”.
+                  It will research, draft, and ask for your approval before saving.
                 </p>
               </div>
             </div>
@@ -228,7 +231,13 @@ export default function DevelopmentView({
                 ) : entry.role === 'system' ? (
                   <><TriangleAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden /> System</>
                 ) : (
-                  <><Bot className="h-3.5 w-3.5 text-sky-400" aria-hidden /> {entry.specialistName ?? 'Agent'}{entry.aborted ? ' · aborted' : ''}</>
+                  <>
+                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-cyan-500/20 ring-1 ring-cyan-500/40">
+                      <Bot className="h-2.5 w-2.5 text-cyan-300" aria-hidden />
+                    </span>
+                    <span className="text-cyan-300">{entry.specialistName ?? 'AI Studio'}</span>
+                    {entry.aborted && <span className="text-rose-400 normal-case">· aborted</span>}
+                  </>
                 )}
               </header>
               <Markdown content={entry.text} />
@@ -241,12 +250,13 @@ export default function DevelopmentView({
           ))}
 
           {busy && (
-            <div className="flex items-center gap-2.5 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-400" role="status">
-              <Loader2 className="h-4 w-4 animate-spin text-sky-400" aria-hidden />
-              <span>{status ?? 'Working…'}</span>
+            <div className="flex items-center gap-2.5 rounded-xl border border-cyan-800/60 bg-cyan-950/40 p-3 text-xs text-cyan-200" role="status">
+              <Loader2 className="h-4 w-4 animate-spin text-cyan-400" aria-hidden />
+              <span className="font-semibold">{status ?? 'AI is working…'}</span>
               {toolActivity && (
-                <span className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[11px] text-slate-300">
-                  {toolActivity}
+                <span className="flex min-w-0 items-center gap-1.5 rounded-lg border border-cyan-700/50 bg-slate-950/60 px-2.5 py-1 text-[11px] text-cyan-100">
+                  <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-cyan-400" aria-hidden />
+                  <span className="truncate">{toolActivity}</span>
                 </span>
               )}
             </div>
