@@ -1,7 +1,7 @@
 # Document Transcription via OpenRouter Vision Models — Design
 
 **Date:** 2026-10-21
-**Status:** For review (builder check pending)
+**Status:** Implemented (see plan 2026-10-21-document-transcription-implementation.md)
 **Owner:** STARN project
 
 ## Intent & Why
@@ -248,20 +248,26 @@ nothing in transcription output is fetched (no auto-load, no auto-follow).
 
 ## Acceptance Criteria
 
-1. `npm test` green (existing 69 files/384 tests + new tests; `tsc --noEmit`).
-2. Web build clean (`npm --prefix web run build`).
+1. `npm test` green (existing 69 files/384 tests + new tests; `tsc --noEmit`). — DONE: 74 files / 406 tests green.
+2. Web build clean (`npm --prefix web run build`). — DONE.
 3. Live acceptance on the electric tractor project:
    - `ME1115 Rev A.pdf` and `BLDC Controller Example.pdf` transcribe to real
-     readable content via `fs_read` (no empty sentinel).
+     readable content via `fs_read` (no empty sentinel). — DONE 2026-10-21:
+     ME1115 → 3181 chars in 7.3s (motor dims, 8-pin Metri-Pack 150 connector
+     table, nameplate, revision history, notes incl. NTN6006 bearing + RLS
+     RMB29AC01SS1 encoder); BLDC Controller → 377 chars in 1.7s (PIC24FJ64GA004
+     + DRV8301 circuit description). Both returned via gemini-2.5-flash.
 4. New unit tests: vision extractor page budget/join format, doc_transcribe
    path-traversal guard + missing-transcriber error, content-part type round
    trip through client, role migration (existing configs gain transcriber default
-   without manual edit).
-5. `core-decoupling` still passes (no core → cli imports).
-6. Settings UI + CLI list 5 roles.
+   without manual edit). — DONE (tests/openrouter-content-parts, config-transcriber,
+   vision-extractor, doc-transcribe-handler, fs-read-scanned).
+5. `core-decoupling` still passes (no core → cli imports). — DONE.
+6. Settings UI + CLI list 5 roles. — DONE (web ROLES array, CLI auto via MODEL_ROLES).
 7. Toggle behavior tests: transcription OFF → doc_transcribe not registered,
    `context.transcriber` empty, fs_read returns sentinel; ON → normal. Env
-   override + config persistence round-trip.
+   override + config persistence round-trip. — DONE (config-transcriber toggle
+   tests; registry gated by constructor; runner gated by allowedTools).
 
 ## To Be Confirmed After Research
 
