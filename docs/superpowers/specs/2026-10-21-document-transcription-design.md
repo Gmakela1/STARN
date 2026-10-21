@@ -206,10 +206,14 @@ is not vision-capable or the server is down, the tool returns a clear error
 **"Recommended" affordance.** In the model picker, `google/gemini-2.5-flash` is
 marked `Recommended` (research-verified best low-cost document reader); on
 local providers the picker can't enumerate models authoritatively, so the UI
-shows a short helper line with suggested local vision models
-(`llama3.2-vision`, `qwen2.5vl`) instead of a hard-coded list. A one-line cost
+shows a short helper line with the suggested local vision model
+(`qwen2.5vl:7b` — verified best local doc reader on tight VRAM; alternatives
+`minicpm-v:8b`, `qwen3-vl:8b`) instead of a hard-coded list. A one-line cost
 note per option keeps the choice honest for non-super-technical users
-(e.g. "~$0.0005/page — 25-page manual ≈ $0.05").
+(e.g. "~$0.0005/page — 25-page manual ≈ $0.05" vs "local: $0/token —
+electricity + VRAM"). The model field is a text input with provider-specific
+placeholder suggestions, not a hard dropdown (local catalogs change; GGUF
+identifiers vary).
 
 ### 6. Cost guardrails (defaults)
 
@@ -266,6 +270,32 @@ nothing in transcription output is fetched (no auto-load, no auto-follow).
 - Whether Ollama's OpenAI-compat endpoint accepts `image_url` parts (fallback
   design point: if not, local support documents the Ollama native API path or
   recommends LM Studio for vision).
+
+## Research Resolution (confirmed 2026-10-21)
+
+- **Ollama OpenAI-compat endpoint ACCEPTS `image_url` base64 data URIs**
+  (`data:image/jpeg|jpg|png|webp;base64,…`) — vision is a documented feature of
+  `POST /v1/chat/completions`, and HTTP(S) image URLs are REJECTED, so STARN
+  must always send base64 (it already does). Ollama ignores the apiKey field;
+  any non-empty string satisfies client SDKs. (docs.ollama.com/api/openai-compatibility,
+  github.com/ollama/ollama PR #5208.)
+- **LM Studio OpenAI-compat serves text + images**; apiKey optional (placeholder
+  `lm-studio` works); vision GGUF models need an `mmproj` file, curated in the
+  `lmstudio-ai/vision-models-gguf` HF collection. Vision support is
+  build/version-dependent — test the chosen GGUF in LM Studio before wiring.
+- **Settings helper line (local providers):** recommended local vision model =
+  `qwen2.5vl:7b` (6GB download, ~7–8GB VRAM, 125K ctx, OCRBench 864 / DocVQA
+  95.7 / ChartQA 87.3, multilingual, Apache-2.0). Runner-up for tight VRAM:
+  `minicpm-v:8b` (5.5GB). `llama3.2-vision:11b` is English-only for image+text
+  — not recommended as default for manuals with labels/diagrams, but fine as an
+  option. Ollama's newer `qwen3-vl:8b` is the current vision flagship (newer
+  release) and an acceptable alternative.
+- **Settings UX guidance:** model field = text input with provider-specific
+  placeholder suggestions (not a hard dropdown — local catalogs change, GGUF
+  identifiers vary); apiKey optional for local providers (required only for
+  cloud/baseUrl providers). Cost display: OpenRouter options show
+  per-1M-token prices (gemini-2.5-flash $0.30/$2.50; qwen2.5-vl-72b $0.80/$1.00;
+  gpt-4.1-mini $0.40/$1.60); local shows "$0/token — electricity + VRAM".
 
 ## Files Touched (initial scope)
 
