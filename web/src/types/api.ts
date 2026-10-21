@@ -203,7 +203,7 @@ export interface SubsystemTradeStudy {
   rationale: string;
 }
 
-export type ModelRole = 'drafting' | 'critic' | 'classifier' | 'compaction';
+export type ModelRole = 'drafting' | 'critic' | 'classifier' | 'compaction' | 'transcriber';
 
 export interface RoleAssignment {
   providerId: string;

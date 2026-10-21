@@ -8,8 +8,9 @@ dotenv.config();
 export const OPENROUTER_PROVIDER_ID = 'openrouter';
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
-export type ModelRole = 'drafting' | 'critic' | 'classifier' | 'compaction';
-export const MODEL_ROLES: ModelRole[] = ['drafting', 'critic', 'classifier', 'compaction'];
+export type ModelRole = 'drafting' | 'critic' | 'classifier' | 'compaction' | 'transcriber';
+export const MODEL_ROLES: ModelRole[] = ['drafting', 'critic', 'classifier', 'compaction', 'transcriber'];
+export const DEFAULT_TRANSCRIBER_MODEL = 'google/gemini-2.5-flash';
 
 export type SearchProvider = 'openrouter' | 'tavily' | 'brave';
 
@@ -48,6 +49,7 @@ export interface StarnConfig {
   globalDir: string;
   providers: ProviderConfig[];
   assignments: Assignments;
+  transcriptionEnabled: boolean;
   search?: SearchConfig;
 }
 
@@ -61,6 +63,7 @@ export interface UserConfigFile {
   appName?: string;
   providers?: ProviderConfig[];
   assignments?: Partial<Assignments>;
+  transcription?: { enabled?: boolean };
   search?: SearchConfig;
 }
 
@@ -84,7 +87,8 @@ export function resolveAssignments(file: UserConfigFile, env: NodeJS.ProcessEnv 
     drafting: pick('drafting', legacyDefault),
     critic: pick('critic', legacyDefault),
     classifier: pick('classifier', legacyDefault),
-    compaction: pick('compaction', legacyCompaction)
+    compaction: pick('compaction', legacyCompaction),
+    transcriber: pick('transcriber', DEFAULT_TRANSCRIBER_MODEL)
   };
 
   const envModel = env.STARN_MODEL || env.OPENROUTER_MODEL;
@@ -97,6 +101,20 @@ export function resolveAssignments(file: UserConfigFile, env: NodeJS.ProcessEnv 
     a.compaction.model = env.STARN_COMPACT_MODEL;
   }
   return a;
+}
+
+/**
+ * Master toggle for scanned-document transcription. Env override wins over the
+ * config file; default is enabled.
+ */
+export function transcriptionEnabled(file: UserConfigFile, env: NodeJS.ProcessEnv = process.env): boolean {
+  const envVal = env.STARN_TRANSCRIPTION_ENABLED;
+  if (envVal !== undefined) {
+    const v = envVal.trim().toLowerCase();
+    if (v === '0' || v === 'false' || v === 'off' || v === 'no') return false;
+    if (v === '1' || v === 'true' || v === 'on' || v === 'yes') return true;
+  }
+  return file.transcription?.enabled !== false;
 }
 
 /** Throws when any role references a provider that is neither built-in nor configured. */
@@ -194,6 +212,7 @@ export function loadConfig(customGlobalDir?: string): StarnConfig {
     globalDir,
     providers,
     assignments,
+    transcriptionEnabled: transcriptionEnabled(fileConfig),
     search
   };
 }

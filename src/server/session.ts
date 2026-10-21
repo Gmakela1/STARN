@@ -318,6 +318,7 @@ function cloneAssignments(a: Assignments): Assignments {
     drafting: { ...a.drafting },
     critic: { ...a.critic },
     classifier: { ...a.classifier },
-    compaction: { ...a.compaction }
+    compaction: { ...a.compaction },
+    transcriber: { ...a.transcriber }
   };
 }

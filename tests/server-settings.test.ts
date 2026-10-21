@@ -9,7 +9,7 @@ import { ServerSessionManager } from '../src/server/session.js';
 import { ProjectStateManager } from '../src/workspace/state.js';
 import { ToolRegistry } from '../src/tools/registry.js';
 import { SpecialistRegistry } from '../src/specialists/registry.js';
-import { Assignments, ProviderConfig } from '../src/config.js';
+import { Assignments, ProviderConfig, DEFAULT_TRANSCRIBER_MODEL } from '../src/config.js';
 import { ChatClient } from '../src/openrouter/types.js';
 
 async function request(server: http.Server, method: string, urlPath: string, body?: unknown) {
@@ -39,7 +39,8 @@ describe('settings + providers API', () => {
     drafting: { providerId: 'openrouter', model: 'a/m' },
     critic: { providerId: 'lm', model: 'crit' },
     classifier: { providerId: 'openrouter', model: 'a/m' },
-    compaction: { providerId: 'openrouter', model: 'a/m' }
+    compaction: { providerId: 'openrouter', model: 'a/m' },
+    transcriber: { providerId: 'openrouter', model: DEFAULT_TRANSCRIBER_MODEL }
   };
 
   beforeEach(async () => {
