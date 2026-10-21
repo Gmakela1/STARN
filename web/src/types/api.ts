@@ -240,6 +240,7 @@ export interface SearchSettings {
 export interface Settings {
   providers: ProviderView[];
   assignments: Assignments;
+  transcriptionEnabled: boolean;
   port: number;
   projectPath: string;
   search?: SearchSettings;
@@ -249,6 +250,7 @@ export interface Settings {
 export interface SettingsUpdate {
   providers?: ProviderInput[];
   assignments?: Partial<Assignments>;
+  transcriptionEnabled?: boolean;
 }
 
 export interface CheckpointDecisionResult {

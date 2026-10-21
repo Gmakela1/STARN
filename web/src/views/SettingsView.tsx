@@ -34,7 +34,8 @@ const ROLES: Array<{ role: ModelRole; label: string; note?: string }> = [
   { role: 'drafting', label: 'Drafting', note: 'Writes every deliverable and runs intake. Needs tool calling.' },
   { role: 'critic', label: 'Critic', note: 'The critic gates every deliverable; assign your strongest model.' },
   { role: 'classifier', label: 'Classifier', note: 'Routes each request to a specialist. A small fast model is fine.' },
-  { role: 'compaction', label: 'Compaction', note: 'Summarizes long sessions.' }
+  { role: 'compaction', label: 'Compaction', note: 'Summarizes long sessions.' },
+  { role: 'transcriber', label: 'Transcriber', note: 'Reads scanned PDFs (manuals, datasheets). Recommended: gemini-2.5-flash (low cost). Local: qwen2.5vl:7b.' }
 ];
 
 /** Editable provider row. `apiKey` undefined = keep stored key. */
@@ -58,6 +59,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
   const [notice, setNotice] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [transcriptionEnabled, setTranscriptionEnabled] = useState(true);
 
   // Project switching state
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
@@ -131,6 +133,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
     setSettings(s);
     setProviders(s.providers.map(p => ({ ...p, apiKey: undefined })));
     setAssignments(s.assignments);
+    setTranscriptionEnabled(s.transcriptionEnabled ?? true);
   };
 
   useEffect(() => {
@@ -245,7 +248,8 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
             baseUrl: p.baseUrl.trim(),
             ...(p.apiKey !== undefined ? { apiKey: p.apiKey } : {})
           })),
-        assignments
+        assignments,
+        transcriptionEnabled
       });
       load(updated);
       if (updated.probe && !updated.probe.ok) {
@@ -507,6 +511,28 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
               );
             })}
           </ul>
+        </section>
+
+        {/* Document Transcription */}
+        <section aria-labelledby="transcription-heading" className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 id="transcription-heading" className="text-sm font-bold text-slate-200">Document Transcription</h2>
+              <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                When on, scanned PDFs without text (manuals, datasheets) are read by the Transcriber model. Cost: ~$0.0005/page on the
+                recommended model — a 25-page manual ≈ $0.05. Local models (Ollama / LM Studio) cost $0/token.
+              </p>
+            </div>
+            <button
+              role="switch"
+              aria-checked={transcriptionEnabled}
+              onClick={() => setTranscriptionEnabled(v => !v)}
+              className={`relative flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${transcriptionEnabled ? 'bg-cyan-600' : 'bg-slate-700'}`}
+              aria-label="Toggle document transcription"
+            >
+              <span className={`absolute h-5 w-5 rounded-full bg-white transition-transform ${transcriptionEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
         </section>
 
         {/* Assignments */}

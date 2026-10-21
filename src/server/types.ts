@@ -95,6 +95,7 @@ export interface SearchSettingsResponse {
 export interface SettingsResponse {
   providers: ProviderView[];
   assignments: Assignments;
+  transcriptionEnabled: boolean;
   port: number;
   projectPath: string;
   search?: SearchSettingsResponse;

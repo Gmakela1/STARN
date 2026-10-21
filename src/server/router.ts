@@ -45,7 +45,7 @@ export interface RouterDeps {
   /** Static assets directory (built web UI). Optional. */
   webDistPath?: string;
   /** Called when settings are saved, so the host can persist them. */
-  onSettingsSaved?: (settings: { providers: ProviderConfig[]; assignments: SettingsResponse['assignments'] }) => void;
+  onSettingsSaved?: (settings: { providers: ProviderConfig[]; assignments: SettingsResponse['assignments']; transcriptionEnabled?: boolean }) => void;
   port?: number;
 }
 
@@ -157,12 +157,18 @@ function buildSettings(deps: RouterDeps): SettingsResponse {
     };
   } catch {}
 
+  let transcriptionEnabled = true;
+  try {
+    transcriptionEnabled = loadConfig().transcriptionEnabled;
+  } catch {}
+
   return {
     providers,
     assignments: session ? session.assignments : ({} as SettingsResponse['assignments']),
     port: deps.port ?? 3000,
     projectPath: deps.projectPath,
-    search
+    search,
+    transcriptionEnabled
   };
 }
 
@@ -843,7 +849,11 @@ export async function handleApiRequest(
         return fail(res, 400, err?.message ?? 'Invalid settings');
       }
 
-      deps.onSettingsSaved?.({ providers: session.providers, assignments: session.assignments });
+      deps.onSettingsSaved?.({
+        providers: session.providers,
+        assignments: session.assignments,
+        transcriptionEnabled: typeof body.transcriptionEnabled === 'boolean' ? body.transcriptionEnabled : undefined
+      });
 
       const response: SettingsResponse = buildSettings(deps);
       const drafting = session.assignments.drafting;

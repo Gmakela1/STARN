@@ -184,10 +184,19 @@ async function main() {
     roleClients = buildRoleClients();
     config.defaultModel = s.assignments.drafting.model;
     config.compactionModel = s.assignments.compaction.model;
+    const transcriptionEnabled =
+      typeof (s as any).transcriptionEnabled === 'boolean' ? (s as any).transcriptionEnabled : config.transcriptionEnabled;
     saveUserConfig(
-      { providers: s.providers, assignments: s.assignments, defaultModel: s.assignments.drafting.model, compactionModel: s.assignments.compaction.model },
+      {
+        providers: s.providers,
+        assignments: s.assignments,
+        defaultModel: s.assignments.drafting.model,
+        compactionModel: s.assignments.compaction.model,
+        transcription: { enabled: transcriptionEnabled }
+      },
       config.globalDir
     );
+    config.transcriptionEnabled = transcriptionEnabled;
   };
 
   const toolRegistry = new ToolRegistry({ transcriptionEnabled: config.transcriptionEnabled });
