@@ -7,22 +7,27 @@ import {
   PackageCheck,
   Loader2,
   RefreshCw,
-  FileText
+  FileText,
+  Compass,
+  MapPin,
+  ArrowRight,
+  ChevronDown
 } from 'lucide-react';
 import { api } from '../api/client';
 import { DashboardData } from '../types/api';
-import TreasureMapRoadmap from '../components/TreasureMapRoadmap';
 import ExecutiveBriefingModal from '../components/ExecutiveBriefingModal';
 import Markdown from '../components/Markdown';
+import { PHASE_SUBTITLES } from '../components/roadmapMeta';
 
 const money = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
-export default function DashboardView() {
+export default function DashboardView({ onNavigate }: { onNavigate?: (tab: string) => void }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showBriefingModal, setShowBriefingModal] = useState(false);
+  const [showFullSummary, setShowFullSummary] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -64,6 +69,20 @@ export default function DashboardView() {
   const { project, roadmap, issues } = data;
   const fin = project.financials;
   const varianceOver = fin.netVariance > 0;
+  const activePhaseId = project.activePhase;
+  const completed = roadmap.filter(p => p.status === 'COMPLETED').length;
+  const activePhase = roadmap.find(p => p.id === activePhaseId)
+    ?? roadmap.find(p => p.status === 'IN_PROGRESS')
+    ?? roadmap[0];
+  const activeIdx = roadmap.indexOf(activePhase);
+  const nextMilestone = roadmap[Math.min(activeIdx + 1, roadmap.length - 1)];
+
+  const extractLede = (text: string): string => {
+    const trimmed = text.trim();
+    const match = trimmed.match(/^([^.!?]*[.!?])\s/);
+    if (match && match[1].length >= 40) return match[1];
+    return trimmed.length > 140 ? trimmed.slice(0, trimmed.lastIndexOf(' ', 140)) + '…' : trimmed;
+  };
 
   return (
     <div className="h-full overflow-y-auto p-4 lg:p-6 bg-slate-950 text-slate-100">
@@ -116,12 +135,36 @@ export default function DashboardView() {
                   No overview yet. Start the CONOPS intake in Development to define the project.
                 </p>
               ) : (
-                <>
-                  <p className="whitespace-pre-line text-sm leading-relaxed text-slate-200">{project.summary}</p>
+                <div className="space-y-2">
+                  <p className="text-base md:text-lg font-bold text-white leading-snug max-w-prose">
+                    {extractLede(project.summary)}
+                  </p>
+                  <button
+                    onClick={() => setShowFullSummary(!showFullSummary)}
+                    className="flex min-h-[44px] items-center gap-1.5 text-xs font-mono font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
+                    aria-expanded={showFullSummary}
+                    aria-controls="charter-full-text"
+                  >
+                    <ChevronDown
+                      className={`h-3.5 w-3.5 transition-transform ${showFullSummary ? 'rotate-180' : ''}`}
+                      aria-hidden
+                    />
+                    {showFullSummary ? 'Collapse full charter' : 'Read full charter'}
+                  </button>
+                  <div
+                    id="charter-full-text"
+                    className={`overflow-hidden transition-all duration-300 ${
+                      showFullSummary ? 'max-h-[999px]' : 'max-h-0'
+                    }`}
+                  >
+                    <p className="whitespace-pre-line text-sm leading-relaxed text-slate-200">
+                      {project.summary}
+                    </p>
+                  </div>
                   {project.summarySource === 'intake' && (
                     <p className="text-xs text-amber-300 mt-2">Charter pending: showing your intake answer until the CONOPS is drafted.</p>
                   )}
-                </>
+                </div>
               )}
             </div>
           )}
@@ -161,9 +204,64 @@ export default function DashboardView() {
           </div>
         </section>
 
-        {/* Serpentine Treasure Map Roadmap */}
-        <section aria-label="Milestone trail">
-          <TreasureMapRoadmap roadmap={roadmap} />
+        {/* Compact build progress — replaces full TreasureMapRoadmap */}
+        <section aria-label="Build progress" className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 backdrop-blur-sm">
+          <div
+            className="flex items-center gap-[2px]"
+            role="progressbar"
+            aria-valuenow={completed}
+            aria-valuemin={0}
+            aria-valuemax={roadmap.length}
+            aria-label={`${completed} of ${roadmap.length} milestones complete`}
+          >
+            {roadmap.slice(0, 13).map(p => (
+              <span
+                key={p.id}
+                title={`${p.name} — ${p.status}`}
+                className={`h-1.5 flex-1 rounded-full transition-colors ${
+                  p.status === 'COMPLETED'
+                    ? 'bg-emerald-500'
+                    : p.status === 'IN_PROGRESS'
+                      ? 'bg-cyan-500 motion-safe:animate-pulse'
+                      : p.status === 'PENDING_REVIEW'
+                        ? 'bg-amber-500'
+                        : 'bg-slate-800'
+                }`}
+              />
+            ))}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="hidden sm:flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                <Compass className="h-4 w-4" aria-hidden />
+              </span>
+              <div className="min-w-0">
+                <p className="font-mono text-[11px] font-bold text-slate-400">
+                  PHASE {completed + 1} OF 13 · GATE [{activePhaseId.toUpperCase()}]
+                </p>
+                {nextMilestone && (
+                  <p className="mt-0.5 truncate text-sm text-slate-200">
+                    <span className="font-bold text-cyan-300">
+                      Next: {nextMilestone.name}
+                    </span>
+                    <span className="hidden md:inline text-slate-400">
+                      {' '}— {PHASE_SUBTITLES[nextMilestone.id] || 'Milestone Deliverable'}
+                    </span>
+                  </p>
+                )}
+              </div>
+            </div>
+            {onNavigate && (
+              <button
+                onClick={() => onNavigate('roadmap')}
+                className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors min-h-[44px]"
+              >
+                <MapPin className="h-3.5 w-3.5" aria-hidden />
+                Full Roadmap
+                <ArrowRight className="h-3 w-3" aria-hidden />
+              </button>
+            )}
+          </div>
         </section>
 
         {/* Issues snapshot */}

@@ -332,7 +332,7 @@ export default function AppShell() {
 
       {/* Active Hub View */}
       <main key={projectRevision} className="min-h-0 flex-1 overflow-hidden">
-        {tab === 'dashboard' && <DashboardView />}
+        {tab === 'dashboard' && <DashboardView onNavigate={(t) => setTab(t as TabId)} />}
 
         {tab === 'roadmap' && <RoadmapView onSelectPhase={handleSelectPhase} />}
 
