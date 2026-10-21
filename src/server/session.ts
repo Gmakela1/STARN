@@ -27,6 +27,8 @@ export interface SessionDeps {
   compressionThreshold?: number;
   keepRecentTokens?: number;
   logger?: Logger;
+  /** Master toggle for scanned-document transcription (default true). */
+  transcriptionEnabled?: boolean;
 }
 
 export interface PendingCheckpoint {
@@ -211,6 +213,9 @@ export class ServerSessionManager {
         classifierModel: this.roleClients.classifier.model,
         compactionClient: this.roleClients.compaction.client,
         compactionModel: this.roleClients.compaction.model,
+        transcriberClient: this.roleClients.transcriber?.client,
+        transcriberModel: this.roleClients.transcriber?.model,
+        transcriptionEnabled: this.deps.transcriptionEnabled,
         toolRegistry: this.deps.toolRegistry,
         specialistRegistry: this.deps.specialistRegistry,
         sessionMessages: this.sessionMessages,

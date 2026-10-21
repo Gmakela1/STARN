@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createRoleClients, allProviders } from '../src/models/role-clients.js';
-import { Assignments, ProviderConfig } from '../src/config.js';
+import { Assignments, ProviderConfig, DEFAULT_TRANSCRIBER_MODEL } from '../src/config.js';
 import { ChatClient } from '../src/openrouter/types.js';
 
 const ollama: ProviderConfig = { id: 'ollama', name: 'Ollama', baseUrl: 'http://localhost:11434/v1' };
@@ -8,7 +8,8 @@ const assignments: Assignments = {
   drafting: { providerId: 'openrouter', model: 'a/m' },
   critic: { providerId: 'openrouter', model: 'b/m' },
   classifier: { providerId: 'ollama', model: 'qwen' },
-  compaction: { providerId: 'ollama', model: 'llama' }
+  compaction: { providerId: 'ollama', model: 'llama' },
+  transcriber: { providerId: 'openrouter', model: DEFAULT_TRANSCRIBER_MODEL }
 };
 
 describe('createRoleClients', () => {

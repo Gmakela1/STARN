@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHttpServer } from '../src/server/server.js';
+import { DEFAULT_TRANSCRIBER_MODEL } from '../src/config.js';
 import { ProjectRegistry } from '../src/workspace/registry.js';
 import { ProjectContext } from '../src/workspace/project-context.js';
 import { ServerSessionManager } from '../src/server/session.js';
@@ -48,7 +49,8 @@ describe('Server project switching API', () => {
         drafting: { providerId: 'openrouter', model: 'm' },
         critic: { providerId: 'openrouter', model: 'm' },
         classifier: { providerId: 'openrouter', model: 'm' },
-        compaction: { providerId: 'openrouter', model: 'm' }
+        compaction: { providerId: 'openrouter', model: 'm' },
+        transcriber: { providerId: 'openrouter', model: DEFAULT_TRANSCRIBER_MODEL }
       },
       clientFactory: () => ({} as any),
       toolRegistry: new ToolRegistry(),

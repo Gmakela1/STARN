@@ -1,25 +1,27 @@
 import { describe, it, expect } from 'vitest';
 import { formatAssignments, assignedRolesFor, needsOpenRouterKey } from '../src/cli/model-settings.js';
-import { Assignments, ProviderConfig } from '../src/config.js';
+import { Assignments, ProviderConfig, DEFAULT_TRANSCRIBER_MODEL } from '../src/config.js';
 
 const ollama: ProviderConfig = { id: 'ollama', name: 'Ollama', baseUrl: 'http://localhost:11434/v1' };
 const mixed: Assignments = {
   drafting: { providerId: 'openrouter', model: 'a/m' },
   critic: { providerId: 'ollama', model: 'qwen' },
   classifier: { providerId: 'ollama', model: 'qwen' },
-  compaction: { providerId: 'openrouter', model: 'c/m' }
+  compaction: { providerId: 'openrouter', model: 'c/m' },
+  transcriber: { providerId: 'openrouter', model: DEFAULT_TRANSCRIBER_MODEL }
 };
 const allLocal: Assignments = {
   drafting: { providerId: 'ollama', model: 'q' },
   critic: { providerId: 'ollama', model: 'q' },
   classifier: { providerId: 'ollama', model: 'q' },
-  compaction: { providerId: 'ollama', model: 'q' }
+  compaction: { providerId: 'ollama', model: 'q' },
+  transcriber: { providerId: 'ollama', model: DEFAULT_TRANSCRIBER_MODEL }
 };
 
 describe('CLI model settings helpers', () => {
   it('formatAssignments prints one line per role', () => {
     expect(formatAssignments(mixed, [ollama])).toBe(
-      ['drafting · OpenRouter · a/m', 'critic · Ollama · qwen', 'classifier · Ollama · qwen', 'compaction · OpenRouter · c/m'].join('\n')
+      ['drafting · OpenRouter · a/m', 'critic · Ollama · qwen', 'classifier · Ollama · qwen', 'compaction · OpenRouter · c/m', 'transcriber · OpenRouter · google/gemini-2.5-flash'].join('\n')
     );
   });
 

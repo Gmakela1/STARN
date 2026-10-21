@@ -210,7 +210,8 @@ async function main() {
       specialistRegistry,
       compressionThreshold: config.compressionThreshold,
       keepRecentTokens: config.keepRecentTokens,
-      logger: projectContext.logger
+      logger: projectContext.logger,
+      transcriptionEnabled: config.transcriptionEnabled
     });
 
     const started = await startWebServer({
@@ -600,6 +601,9 @@ async function main() {
           classifierModel: roleClients.classifier.model,
           compactionClient: roleClients.compaction.client,
           compactionModel: roleClients.compaction.model,
+          transcriberClient: roleClients.transcriber.client,
+          transcriberModel: roleClients.transcriber.model,
+          transcriptionEnabled: config.transcriptionEnabled,
           toolRegistry,
           specialistRegistry,
           sessionMessages,

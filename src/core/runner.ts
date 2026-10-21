@@ -33,6 +33,10 @@ export interface TurnOptions {
   specialistRegistry: SpecialistRegistry;
   sessionMessages?: ChatMessage[];
   compactionModel?: string;
+  transcriberClient?: ChatClient;
+  transcriberModel?: string;
+  /** Master toggle for scanned-document transcription (default true). */
+  transcriptionEnabled?: boolean;
   compressionThreshold?: number;
   keepRecentTokens?: number;
   logger?: Logger;
@@ -309,7 +313,18 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     onStatusUpdate?.(`Executing specialist: ${specialist.name}...`);
     const enhancedSystemPrompt = `${specialist.systemPrompt}\n\n${discovery.discoveryText}${existingBaselineText}${SHARED_EDIT_INSTRUCTIONS}`;
 
-    const context: ToolExecutionContext = { projectPath, stateManager, editLog: [] as EditEntry[] };
+    const transcriptionOn = options.transcriptionEnabled !== false;
+    const transcriberGated =
+      transcriptionOn && options.transcriberClient && specialist.allowedTools.includes('doc_transcribe');
+    const context: ToolExecutionContext = {
+      projectPath,
+      stateManager,
+      editLog: [] as EditEntry[],
+      signal: options.signal,
+      transcriber: transcriberGated
+        ? { client: options.transcriberClient!, model: options.transcriberModel ?? '' }
+        : undefined
+    };
     // Snapshot the target doc's mtime before the agent loop runs, so we can detect
     // whether the model modified it this turn (via fs_edit or fs_write). Filesystem
     // mtime granularity can lag Date.now(), so we compare against this snapshot.

@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
+import { DEFAULT_TRANSCRIBER_MODEL } from '../src/config.js';
 import { createHttpServer } from '../src/server/server.js';
 import { ServerSessionManager } from '../src/server/session.js';
 import { ProjectStateManager } from '../src/workspace/state.js';
@@ -85,7 +86,8 @@ describe('HTTP Server API', () => {
         drafting: { providerId: 'openrouter', model: 'test-model' },
         critic: { providerId: 'openrouter', model: 'test-model' },
         classifier: { providerId: 'openrouter', model: 'test-model' },
-        compaction: { providerId: 'openrouter', model: 'test-model' }
+        compaction: { providerId: 'openrouter', model: 'test-model' },
+        transcriber: { providerId: 'openrouter', model: DEFAULT_TRANSCRIBER_MODEL }
       },
       clientFactory: () => mockClient,
       toolRegistry: new ToolRegistry(),

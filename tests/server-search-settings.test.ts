@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createHttpServer } from '../src/server/server.js';
+import { DEFAULT_TRANSCRIBER_MODEL } from '../src/config.js';
 import { ProjectStateManager } from '../src/workspace/state.js';
 import { ServerSessionManager } from '../src/server/session.js';
 import { ToolRegistry } from '../src/tools/registry.js';
@@ -60,7 +61,8 @@ describe('Server Search Settings & Probe API', () => {
         drafting: { providerId: 'openrouter', model: 'test-model' },
         critic: { providerId: 'openrouter', model: 'test-model' },
         classifier: { providerId: 'openrouter', model: 'test-model' },
-        compaction: { providerId: 'openrouter', model: 'test-model' }
+        compaction: { providerId: 'openrouter', model: 'test-model' },
+        transcriber: { providerId: 'openrouter', model: DEFAULT_TRANSCRIBER_MODEL }
       },
       clientFactory: () => new OpenRouterClient({ apiKey: 'mock' }),
       toolRegistry: new ToolRegistry(),
