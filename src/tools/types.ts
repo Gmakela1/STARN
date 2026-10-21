@@ -1,4 +1,4 @@
-import { ToolDefinition } from '../openrouter/types.js';
+import { ChatClient, ToolDefinition } from '../openrouter/types.js';
 import { ProjectStateManager } from '../workspace/state.js';
 import { SearchClient } from './search/types.js';
 
@@ -8,6 +8,10 @@ export interface ToolExecutionContext {
   builtinExamplesDir?: string;
   editLog?: EditEntry[];
   searchClient?: SearchClient;
+  /** Vision-transcription client+model; present only when the active specialist allows doc_transcribe AND transcription is enabled. */
+  transcriber?: { client: ChatClient; model: string };
+  /** Abort signal from the running turn, so tool handlers can be cancelled mid-work. */
+  signal?: AbortSignal;
 }
 
 export interface ToolExecutionResponse {

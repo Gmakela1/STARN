@@ -118,7 +118,7 @@ CRITICAL RULES:
 - All photos/media MUST reference the single flat \`artifacts/\` repository.
 - Avoid vague hand-waving (e.g. "tighten bolts as needed"). State exact torque values, socket sizes, and lubricants.
 - You MUST write the document via \`fs_write\` (or \`fs_edit\` if updating).`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader', 'doc_transcribe'],
   requiresCritic: true,
   criticRubric: `Evaluate the Work Instruction:
 1. Granular Action Checklist: Are steps sequential, unambiguous, and physical, specifying exact tool sizes, chemicals, and torque specs?

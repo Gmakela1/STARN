@@ -136,7 +136,7 @@ CRITICAL FORMAT RULES:
 - Use clean plain-text descriptions only. DO NOT use LaTeX math formatting.
 - Include a \`## Design Decisions\` section listing any significant choices made, alternatives considered, and rationale.
 - You MUST write the final draft to docs/CONOPS.md via the fs_write tool. Do NOT respond with only a summary — write the actual document to disk.`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader', 'doc_transcribe'],
   requiresCritic: true,
   criticRubric: `Evaluate the CONOPS against these engineering criteria:
 1. Clean 6-Section Structure & Charter: Does the document follow the exact 6-section format (including Section 1 Charter subsections: Background & Problem, Purpose, Objectives, Success Criteria, Scope, Users & Stakeholders, Key Constraints & Assumptions, System-Level Capabilities, and Section 6 Open Questions) without meta-commentary, changelog, budget speculation, or traceability table sections?

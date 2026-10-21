@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ToolHandler, ToolExecutionContext, ToolExecutionResponse } from '../types.js';
 import { extractTextFromPdf } from './pdf-extractor.js';
+import { extractTextFromScannedPdf } from '../document-extractors/vision-extractor.js';
 import { extractTextFromDocx } from '../document-extractors/docx-extractor.js';
 import { formatCsvAsTable } from '../document-extractors/csv-extractor.js';
 
@@ -37,6 +38,23 @@ export const fsReadHandler: ToolHandler = {
       try {
         const text = await extractTextFromPdf(target);
         const fileName = path.basename(target);
+        if (text.includes('No extractable text found') && context.transcriber) {
+          try {
+            const scanned = await extractTextFromScannedPdf(target, context.transcriber, {
+              maxPages: 25,
+              signal: context.signal
+            });
+            return {
+              success: true,
+              result: `[PDF: ${fileName} — scanned; transcribed via vision model (first 25 pages)]\n${scanned}\n`
+            };
+          } catch (visionErr: any) {
+            return {
+              success: true,
+              result: `[PDF: ${fileName}]\nNote: Could not extract text from this PDF (vision transcription also failed). Error: ${visionErr?.message || 'Unknown'}`
+            };
+          }
+        }
         return {
           success: true,
           result: `[PDF Text Extraction: ${fileName}]\n${'='.repeat(60)}\n${text}\n${'='.repeat(60)}\n`

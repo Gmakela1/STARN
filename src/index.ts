@@ -190,7 +190,7 @@ async function main() {
     );
   };
 
-  const toolRegistry = new ToolRegistry();
+  const toolRegistry = new ToolRegistry({ transcriptionEnabled: config.transcriptionEnabled });
   const specialistRegistry = new SpecialistRegistry();
 
   // --- Web mode: serve the HTTP adapter + React UI instead of the terminal loop ---

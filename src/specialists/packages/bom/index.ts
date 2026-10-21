@@ -108,7 +108,7 @@ CRITICAL RULES:
 OPEN QUESTIONS SECTION (MANDATORY in docs/BOM.md):
 - Include a \`## Open Questions\` section listing ANY genuinely unresolved decisions. Format each as a numbered item: **Q1. <title>.** <details>, followed by **Why it matters:**.
 - If nothing is unresolved, omit the section.`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader', 'web_search', 'web_fetch'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader', 'web_search', 'web_fetch', 'doc_transcribe'],
   requiresCritic: true,
   criticRubric: `Evaluate the Bill of Materials (BOM):
 1. Two-Tier Completeness: Does docs/BOM.md provide the master procurement ledger with Qty, status, URLs, and pricing?

@@ -73,7 +73,7 @@ CRITICAL RULES:
 - Each action must trace to real upstream requirements and components.
 - Use \`→ VERIFY: TP-XXX\` markers for stopping points.
 - You MUST write the final document to docs/build_sequences/BUILD_SEQUENCE_{GATE}.md via the \`fs_write\` tool. Do NOT skip writing the file.`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader', 'doc_transcribe'],
   requiresCritic: true,
   criticRubric: `Evaluate the Build Sequence:
 1. Master Action Table: Does the document feature a Master Action Table with Action #, Target Subsystem, Prerequisite Actions, and links to docs/work_instructions/?

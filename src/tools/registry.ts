@@ -9,11 +9,17 @@ import { stateUpdateHandler } from './handlers/state-update.js';
 import { exampleReaderHandler } from './handlers/example-reader.js';
 import { webSearchHandler } from './handlers/web-search.js';
 import { webFetchHandler } from './handlers/web-fetch.js';
+import { docTranscribeHandler } from './handlers/doc-transcribe.js';
+
+export interface ToolRegistryOptions {
+  /** When false, document transcription tools are not registered at all. */
+  transcriptionEnabled?: boolean;
+}
 
 export class ToolRegistry {
   private handlers: Map<string, ToolHandler> = new Map();
 
-  constructor() {
+  constructor(options: ToolRegistryOptions = {}) {
     this.register(fsReadHandler);
     this.register(fsWriteHandler);
     this.register(fsEditHandler);
@@ -23,6 +29,9 @@ export class ToolRegistry {
     this.register(exampleReaderHandler);
     this.register(webSearchHandler);
     this.register(webFetchHandler);
+    if (options.transcriptionEnabled !== false) {
+      this.register(docTranscribeHandler);
+    }
   }
 
   public register(handler: ToolHandler): void {
