@@ -31,6 +31,42 @@ import CheckpointPanel from '../components/CheckpointPanel';
 import QuestionBar from '../components/QuestionBar';
 import AutopilotHud from '../components/AutopilotHud';
 
+/** Render a tool call as a short human-readable action instead of raw JSON. */
+function formatToolCall(tool: string, args: unknown): string {
+  const a = (args ?? {}) as Record<string, unknown>;
+  const path = typeof a.path === 'string' ? a.path : typeof a.file === 'string' ? a.file : '';
+  const dir = typeof a.dir === 'string' ? a.dir : '';
+  const query = typeof a.query === 'string' ? a.query : typeof a.q === 'string' ? a.q : '';
+  const url = typeof a.url === 'string' ? a.url : '';
+  const shorten = (s: string) => (s.length > 60 ? s.slice(0, 57) + '…' : s);
+  switch (tool) {
+    case 'fs_read':
+      return path ? `📖 Reading ${shorten(path)}` : '📖 Reading file';
+    case 'fs_list':
+      return dir ? `🗂 Listing ${shorten(dir)}` : '🗂 Listing directory';
+    case 'fs_write':
+      return path ? `✍️ Writing ${shorten(path)}` : '✍️ Writing file';
+    case 'fs_edit':
+      return path ? `🖊 Editing ${shorten(path)}` : '🖊 Editing file';
+    case 'state_read':
+      return '📋 Reading project state';
+    case 'state_update':
+      return '💾 Updating project state';
+    case 'example_reader':
+    case 'examples_list':
+      return '⭐ Checking quality examples';
+    case 'pdf_extract':
+    case 'doc_transcribe':
+      return path ? `🖨 Transcribing ${shorten(path)}` : '🖨 Transcribing document';
+    case 'web_search':
+      return query ? `🔎 Searching: ${shorten(query)}` : '🔎 Searching web';
+    case 'web_fetch':
+      return url ? `🌐 Fetching ${shorten(url)}` : '🌐 Fetching URL';
+    default:
+      return `🛠 ${tool}`;
+  }
+}
+
 export interface DevelopmentViewProps {
   turnStream: ReturnType<typeof useTurnStream>;
   project: ProjectInfo | null;
@@ -61,8 +97,8 @@ export default function DevelopmentView({
       // Live status updates (discovery, drafting, critic progress)
       appendEntry({ role: 'system', text: `🔍 ${ev.message}` });
     } else if (ev.kind === 'tool_call') {
-      // Tool call notifications
-      appendEntry({ role: 'system', text: `🛠 ${ev.tool}${ev.args ? ': ' + JSON.stringify(ev.args).slice(0, 80) : ''}` });
+      // Tool call notifications (human-readable)
+      appendEntry({ role: 'system', text: formatToolCall(ev.tool, ev.args) });
     }
   }, [appendEntry]);
 
