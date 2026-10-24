@@ -12,7 +12,8 @@ import {
   ChevronUp,
   Search,
   ArrowRight,
-  Globe
+  Globe,
+  Bot
 } from 'lucide-react';
 import { api } from '../api/client';
 import {
@@ -60,6 +61,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [transcriptionEnabled, setTranscriptionEnabled] = useState(true);
+  const [autopilotEnabled, setAutopilotEnabled] = useState(true);
 
   // Project switching state
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
@@ -134,6 +136,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
     setProviders(s.providers.map(p => ({ ...p, apiKey: undefined })));
     setAssignments(s.assignments);
     setTranscriptionEnabled(s.transcriptionEnabled ?? true);
+    setAutopilotEnabled(s.autopilotEnabled ?? true);
   };
 
   useEffect(() => {
@@ -249,7 +252,8 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
             ...(p.apiKey !== undefined ? { apiKey: p.apiKey } : {})
           })),
         assignments,
-        transcriptionEnabled
+        transcriptionEnabled,
+        autopilotEnabled
       });
       load(updated);
       if (updated.probe && !updated.probe.ok) {
@@ -741,6 +745,31 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                   : `✗ Connection failed: ${searchProbeResult.error}`}
               </span>
             )}
+          </div>
+        </section>
+
+        {/* Autopilot */}
+        <section aria-labelledby="autopilot-heading" className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+          <div className="flex items-center gap-2">
+            <Bot className="h-4 w-4 text-cyan-400" />
+            <h2 id="autopilot-heading" className="text-sm font-bold text-slate-200">Autopilot</h2>
+          </div>
+          <p className="text-xs text-slate-400">AI auto-drafts all 13 documents end-to-end with minimal human interference.</p>
+          <div className="flex items-start justify-between gap-4 mt-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-200">Master Autopilot Toggle</p>
+              <p className="mt-1 text-xs text-slate-400">When enabled, the specialist chain auto-runs on project creation or phase transitions.</p>
+            </div>
+            <button role="switch" aria-checked={autopilotEnabled} onClick={() => setAutopilotEnabled(v => !v)}
+              className={`relative flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${autopilotEnabled ? 'bg-cyan-600' : 'bg-slate-700'}`}
+              aria-label="Toggle autopilot">
+              <span className={`absolute h-5 w-5 rounded-full bg-white transition-transform ${autopilotEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+          {/* Deferred token-budget slot */}
+          <div className="mt-3 rounded-lg border border-dashed border-slate-700 bg-slate-950/40 p-4 opacity-40 pointer-events-none">
+            <p className="text-xs font-semibold text-slate-400">Per-doc token budget &amp; model-based cost estimate</p>
+            <p className="mt-1 text-[11px] text-slate-500">Coming in a future release.</p>
           </div>
         </section>
 

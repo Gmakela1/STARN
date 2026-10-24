@@ -17,7 +17,7 @@ import { allProviders } from '../models/role-clients.js';
 import { listProviderModels, probeToolCalling } from '../models/provider-models.js';
 import { fetchLiveOpenRouterModels } from '../openrouter/models.js';
 import { parseTradeStudyDocument } from './parsers/trade-study-parser.js';
-import { parseWorkInstruction, toggleWorkInstructionStep, ParsedWorkInstruction } from './parsers/actions-parser.js';
+import { parseWorkInstruction, toggleWorkInstructionStep, postStepComment, toggleStepFlag, ParsedWorkInstruction } from './parsers/actions-parser.js';
 import { addPortalItem, listPortalItems, dismissPortalItem } from '../core/question-portal.js';
 import { applyAnswer } from '../core/answer-applier.js';
 import { autopilotEnabled as configAutopilotEnabled } from '../config.js';
@@ -1067,23 +1067,16 @@ export async function handleApiRequest(
       if (!Number.isInteger(stepId) || stepId < 0) return fail(res, 400, 'stepId must be a non-negative integer');
       if (!text) return fail(res, 400, 'text is required');
 
-      // Store comment in state (stepAnnotations[stepId].comments[])
-      const state = deps.stateManager.getState();
-      if (!state.workflow) {
-        // Initialize a mutable annotations store on the workflow state
-        (state as any).stepAnnotations = (state as any).stepAnnotations || {};
+      // Persist the comment into the work instruction's annotations block
+      try {
+        const updated = postStepComment(found.content, stepId, text);
+        createVersionBackup(deps.projectPath, found.filePath);
+        fs.writeFileSync(found.filePath, updated, 'utf-8');
+        const persisted = parseWorkInstruction(updated);
+        return ok(res, { comments: persisted.stepAnnotations?.[String(stepId)]?.comments ?? [] });
+      } catch (err: any) {
+        return fail(res, 400, err?.message ?? 'Comment failed');
       }
-      const annotations = ((state as any).stepAnnotations = (state as any).stepAnnotations || {});
-      if (!annotations[stepId]) {
-        annotations[stepId] = { comments: [], flagged: false };
-      }
-      annotations[stepId].comments.push({
-        text,
-        createdAt: new Date().toISOString()
-      });
-      deps.stateManager.saveState(state);
-
-      return ok(res, { comments: annotations[stepId].comments });
     }
 
     if (segments[1] === 'actions' && segments.length === 4 && segments[3] === 'flags' && method === 'POST') {
@@ -1108,15 +1101,15 @@ export async function handleApiRequest(
         });
       }
 
-      // Store flag in state
-      const state = deps.stateManager.getState();
-      const annotations = ((state as any).stepAnnotations = (state as any).stepAnnotations || {});
-      if (!annotations[stepId]) {
-        annotations[stepId] = { comments: [], flagged: false };
+      // Persist the flag into the work instruction's annotations block
+      try {
+        const updated = toggleStepFlag(found.content, stepId, flagged);
+        createVersionBackup(deps.projectPath, found.filePath);
+        fs.writeFileSync(found.filePath, updated, 'utf-8');
+        return ok(res, { flagged, stepId });
+      } catch (err: any) {
+        return fail(res, 400, err?.message ?? 'Flag update failed');
       }
-      annotations[stepId].flagged = flagged;
-      deps.stateManager.saveState(state);
-      return ok(res, { flagged, stepId });
     }
 
     return fail(res, 404, `Unknown API route: ${method} ${url.pathname}`);

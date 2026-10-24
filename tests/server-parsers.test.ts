@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseBomDocument, updateBomRow } from '../src/server/parsers/bom-parser.js';
-import { parseWorkInstruction, toggleWorkInstructionStep } from '../src/server/parsers/actions-parser.js';
+import { parseWorkInstruction, toggleWorkInstructionStep, postStepComment, toggleStepFlag } from '../src/server/parsers/actions-parser.js';
 import { aggregateProjectIssues } from '../src/server/parsers/issues-parser.js';
 
 const BOM_MD = `# Bill of Materials
@@ -138,6 +138,52 @@ describe('actions-parser', () => {
 
   it('throws on out-of-range step index', () => {
     expect(() => toggleWorkInstructionStep(WI_MD, 9, true)).toThrow(/out of range/i);
+  });
+});
+
+describe('actions-parser step annotations', () => {
+  it('exposes empty stepAnnotations when none are stored', () => {
+    const wi = parseWorkInstruction(WI_MD);
+    expect(wi.stepAnnotations).toEqual({});
+  });
+
+  it('postStepComment appends comments that survive read-write-read', () => {
+    const annotated = postStepComment(WI_MD, 1, 'Check torque spec');
+    const parsed = parseWorkInstruction(annotated);
+    expect(parsed.stepAnnotations?.['1']?.comments).toHaveLength(1);
+    expect(parsed.stepAnnotations?.['1']?.comments?.[0].text).toBe('Check torque spec');
+    expect(parsed.stepAnnotations?.['1']?.flagged).toBeUndefined();
+
+    const again = postStepComment(annotated, 1, 'Use a torque wrench');
+    const parsed2 = parseWorkInstruction(again);
+    expect(parsed2.stepAnnotations?.['1']?.comments).toHaveLength(2);
+    expect(parsed2.steps[1].checked).toBe(false);
+  });
+
+  it('toggleStepFlag sets and clears the flag across read-write-read', () => {
+    const flagged = toggleStepFlag(WI_MD, 0, true);
+    expect(parseWorkInstruction(flagged).stepAnnotations?.['0']?.flagged).toBe(true);
+
+    const cleared = toggleStepFlag(flagged, 0, false);
+    const final = parseWorkInstruction(cleared);
+    expect(final.stepAnnotations?.['0']?.flagged).toBe(false);
+    expect(final.steps).toHaveLength(3);
+    expect(final.stepAnnotations?.['1']).toBeUndefined();
+  });
+
+  it('preserves step annotations when toggling a checklist step', () => {
+    const annotated = postStepComment(WI_MD, 1, 'Verify torque');
+    const toggled = toggleWorkInstructionStep(annotated, 1, true);
+    expect(parseWorkInstruction(toggled).steps[1].checked).toBe(true);
+    expect(parseWorkInstruction(toggled).stepAnnotations?.['1']?.comments?.[0].text).toBe('Verify torque');
+  });
+
+  it('postStepComment throws on out-of-range step index', () => {
+    expect(() => postStepComment(WI_MD, 9, 'x')).toThrow(/out of range/i);
+  });
+
+  it('toggleStepFlag throws on out-of-range step index', () => {
+    expect(() => toggleStepFlag(WI_MD, 9, true)).toThrow(/out of range/i);
   });
 });
 

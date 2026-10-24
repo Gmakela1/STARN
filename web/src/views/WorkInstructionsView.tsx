@@ -8,10 +8,12 @@ import {
   TriangleAlert,
   CheckCircle2,
   Paperclip,
+  MessageSquare,
+  Flag,
   Image as ImageIcon
 } from 'lucide-react';
 import { api } from '../api/client';
-import { WorkInstruction } from '../types/api';
+import { StepComment, WorkInstruction } from '../types/api';
 import Markdown from '../components/Markdown';
 
 const WI_STATUS_TONE: Record<string, string> = {
@@ -36,6 +38,9 @@ export default function WorkInstructionsView() {
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
   const [shopMode, setShopMode] = useState(false);
+  const [stepAnnotations, setStepAnnotations] = useState<Record<number, { comments?: StepComment[]; flagged?: boolean }>>({});
+  const [openComments, setOpenComments] = useState<number | null>(null);
+  const [commentDraft, setCommentDraft] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadList = async () => {
@@ -64,6 +69,24 @@ export default function WorkInstructionsView() {
     if (selectedId) void loadDetail(selectedId);
   }, [selectedId]);
 
+  // Hydrate per-step annotations whenever the selected action changes.
+  useEffect(() => {
+    if (!detail) return;
+    const map: Record<number, { comments?: StepComment[]; flagged?: boolean }> = {};
+    if (detail.stepAnnotations) {
+      for (const [stepId, entry] of Object.entries(detail.stepAnnotations)) {
+        const num = Number(stepId);
+        if (Number.isInteger(num)) {
+          map[num] = { comments: entry.comments ?? [], flagged: !!entry.flagged };
+        }
+      }
+    }
+    setStepAnnotations(map);
+    setOpenComments(null);
+    setCommentDraft('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.actionId]);
+
   const toggleStep = async (stepIndex: number, checked: boolean) => {
     if (!detail) return;
     setTogglingIndex(stepIndex);
@@ -81,6 +104,40 @@ export default function WorkInstructionsView() {
       void loadDetail(detail.actionId); // rollback to disk truth
     } finally {
       setTogglingIndex(null);
+    }
+  };
+
+  const toggleComments = (stepIdx: number) => {
+    setOpenComments(prev => (prev === stepIdx ? null : stepIdx));
+    setCommentDraft('');
+  };
+
+  const handleFlag = async (stepIdx: number) => {
+    if (!detail) return;
+    const next = !(stepAnnotations[stepIdx]?.flagged ?? false);
+    // Optimistic update, then reconcile with server truth. Rollback on error.
+    setStepAnnotations(cur => ({ ...cur, [stepIdx]: { ...(cur[stepIdx] ?? { comments: [], flagged: false }), flagged: next } }));
+    try {
+      await api.toggleActionFlag(detail.actionId, stepIdx, next);
+    } catch (err: any) {
+      setError(err?.message ?? 'Flag update failed');
+      setStepAnnotations(cur => ({ ...cur, [stepIdx]: { ...(cur[stepIdx] ?? { comments: [], flagged: false }), flagged: !next } }));
+    }
+  };
+
+  const submitComment = async (stepIdx: number) => {
+    const text = commentDraft.trim();
+    if (!text || !detail) return;
+    const before = stepAnnotations[stepIdx]?.comments ?? [];
+    const comment: StepComment = { text, at: new Date().toISOString() };
+    // Optimistic update, then reconcile with server truth. Rollback on error.
+    setStepAnnotations(cur => ({ ...cur, [stepIdx]: { ...(cur[stepIdx] ?? { comments: [], flagged: false }), comments: [...before, comment] } }));
+    setCommentDraft('');
+    try {
+      await api.postActionComment(detail.actionId, stepIdx, text);
+    } catch (err: any) {
+      setError(err?.message ?? 'Comment failed');
+      setStepAnnotations(cur => ({ ...cur, [stepIdx]: { ...(cur[stepIdx] ?? { comments: [], flagged: false }), comments: before } }));
     }
   };
 
@@ -254,40 +311,105 @@ export default function WorkInstructionsView() {
                 </span>
               </header>
               <ol className="divide-y divide-slate-800/70">
-                {detail.steps.map(step => (
-                  <li key={step.index} className="flex items-start gap-3 px-4 py-3">
-                    <button
-                      onClick={() => void toggleStep(step.index, !step.checked)}
-                      disabled={togglingIndex !== null}
-                      role="checkbox"
-                      aria-checked={step.checked}
-                      aria-label={`${step.label}: ${step.text}`}
-                      className={`mt-0.5 flex shrink-0 items-center justify-center rounded-lg border-2 transition ${
-                        shopMode ? 'h-16 w-16' : 'h-11 w-11'
-                      } ${
-                        step.checked
-                          ? 'border-emerald-500 bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
-                          : 'border-slate-500 bg-slate-950 text-transparent hover:border-cyan-400'
-                      }`}
-                    >
-                      {togglingIndex === step.index ? (
-                        <Loader2 className="h-5 w-5 animate-spin text-sky-400" aria-hidden />
-                      ) : (
-                        <CheckCircle2 className="h-5 w-5" aria-hidden />
-                      )}
-                    </button>
-                    <div className="min-w-0 flex-1 pt-1">
-                      <p className={`${shopMode ? 'text-base font-medium leading-relaxed' : 'text-sm leading-relaxed'} ${step.checked ? 'text-slate-500 line-through decoration-slate-700' : 'text-slate-200'}`}>
-                        <span className="font-semibold">{step.label}:</span> {step.text}
-                      </p>
-                      {step.gated && (
-                        <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-indigo-800 bg-indigo-950/60 px-2 py-0.5 text-[11px] font-semibold text-indigo-300">
-                          <FlaskConical className="h-3 w-3" aria-hidden /> Gated verification test
-                        </span>
-                      )}
-                    </div>
-                  </li>
-                ))}
+                {detail.steps.map((step, stepIdx) => {
+                  const stepComments = stepAnnotations[stepIdx]?.comments ?? [];
+                  const stepFlagged = stepAnnotations[stepIdx]?.flagged ?? false;
+                  return (
+                    <li key={step.index} className="flex items-start gap-3 px-4 py-3">
+                      <button
+                        onClick={() => void toggleStep(step.index, !step.checked)}
+                        disabled={togglingIndex !== null}
+                        role="checkbox"
+                        aria-checked={step.checked}
+                        aria-label={`${step.label}: ${step.text}`}
+                        className={`mt-0.5 flex shrink-0 items-center justify-center rounded-lg border-2 transition ${
+                          shopMode ? 'h-16 w-16' : 'h-11 w-11'
+                        } ${
+                          step.checked
+                            ? 'border-emerald-500 bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
+                            : 'border-slate-500 bg-slate-950 text-transparent hover:border-cyan-400'
+                        }`}
+                      >
+                        {togglingIndex === step.index ? (
+                          <Loader2 className="h-5 w-5 animate-spin text-sky-400" aria-hidden />
+                        ) : (
+                          <CheckCircle2 className="h-5 w-5" aria-hidden />
+                        )}
+                      </button>
+                      {/* Shop-floor comment + flag affordances */}
+                      <div className="flex flex-col items-center gap-1 pt-0.5">
+                        <button
+                          onClick={() => toggleComments(stepIdx)}
+                          className="text-xs text-slate-500 hover:text-cyan-400 transition-colors p-1"
+                          aria-label={`${stepComments.length} comments`}
+                          aria-expanded={openComments === stepIdx}
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          {stepComments.length > 0 && <span className="ml-0.5">{stepComments.length}</span>}
+                        </button>
+                        <button
+                          onClick={() => handleFlag(stepIdx)}
+                          aria-pressed={stepFlagged}
+                          aria-label={stepFlagged ? 'Clear shop floor flag' : 'Flag this step'}
+                          className={`p-1 rounded transition-colors ${stepFlagged ? 'text-rose-400 bg-rose-950/40' : 'text-slate-600 hover:text-slate-400'}`}
+                        >
+                          <Flag className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <div className="min-w-0 flex-1 pt-1">
+                        <p className={`${shopMode ? 'text-base font-medium leading-relaxed' : 'text-sm leading-relaxed'} ${step.checked ? 'text-slate-500 line-through decoration-slate-700' : 'text-slate-200'}`}>
+                          <span className="font-semibold">{step.label}:</span> {step.text}
+                        </p>
+                        {step.gated && (
+                          <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-indigo-800 bg-indigo-950/60 px-2 py-0.5 text-[11px] font-semibold text-indigo-300">
+                            <FlaskConical className="h-3 w-3" aria-hidden /> Gated verification test
+                          </span>
+                        )}
+                        {openComments === stepIdx && (
+                          <div className="mt-2 rounded-lg bg-slate-900/60 p-2">
+                            {stepComments.length === 0 ? (
+                              <p className="text-xs text-slate-500">No comments yet.</p>
+                            ) : (
+                              <ul className="space-y-2">
+                                {stepComments.slice(0, 3).map((c, i) => (
+                                  <li key={`${c.at}-${i}`}>
+                                    <p className="text-xs text-slate-200">{c.text}</p>
+                                    <p className="mt-0.5 text-[10px] text-slate-500">
+                                      {c.author ? `${c.author} · ` : ''}{new Date(c.at).toLocaleString()}
+                                    </p>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                            {stepComments.length > 3 && (
+                              <p className="mt-1 text-[11px] text-slate-500">{stepComments.length - 3} more…</p>
+                            )}
+                            <textarea
+                              value={commentDraft}
+                              onChange={e => setCommentDraft(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault();
+                                  void submitComment(stepIdx);
+                                }
+                              }}
+                              rows={2}
+                              placeholder="Add a comment… Enter to send"
+                              className="mt-2 w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+                            />
+                            <button
+                              onClick={() => void submitComment(stepIdx)}
+                              disabled={!commentDraft.trim()}
+                              className="mt-1.5 rounded-lg bg-sky-700 px-3 py-1 text-xs font-semibold text-white transition hover:bg-sky-600 disabled:opacity-50"
+                            >
+                              Submit
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
               </ol>
             </section>
 

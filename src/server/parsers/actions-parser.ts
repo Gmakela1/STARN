@@ -23,6 +23,23 @@ export interface NonConformanceLog {
   recommendation: string;
 }
 
+export interface StepComment {
+  /** Comment body. */
+  text: string;
+  /** ISO timestamp when the comment was posted. */
+  at: string;
+  /** Optional author label (defaults to 'shop floor'). */
+  author?: string;
+}
+
+/** Per-step shop-floor annotations, keyed by 0-based step index (as string). */
+export interface StepAnnotations {
+  [stepId: string]: {
+    comments?: StepComment[];
+    flagged?: boolean;
+  };
+}
+
 export interface ParsedWorkInstruction {
   actionId: string;
   title: string;
@@ -32,6 +49,7 @@ export interface ParsedWorkInstruction {
   steps: WorkInstructionStep[];
   artifacts: string[];
   nonConformance: NonConformanceLog;
+  stepAnnotations?: StepAnnotations;
   fileName?: string;
 }
 
@@ -102,7 +120,41 @@ export function parseWorkInstruction(markdown: string, fileName?: string): Parse
     recommendation: extractLogField(logSection, 'AI Recommendation / Resolution') || extractLogField(logSection, 'AI Recommendation')
   };
 
-  return { actionId, title, status, milestoneGate, subsystem, steps, artifacts, nonConformance, fileName };
+  return { actionId, title, status, milestoneGate, subsystem, steps, artifacts, nonConformance, stepAnnotations: parseStepAnnotations(markdown), fileName };
+}
+
+/**
+ * Marker for the persisted step-annotations block. Kept as an HTML comment so
+ * markdown renderers ignore it and checklist line edits never touch it.
+ */
+const ANNOTATIONS_BLOCK_RE = /<!--\s*STARN-STEP-ANNOTATIONS\s*\n([\s\S]*?)\n\s*-->\s*$/;
+
+function parseStepAnnotations(markdown: string): StepAnnotations {
+  ANNOTATIONS_BLOCK_RE.lastIndex = 0;
+  const match = markdown.match(ANNOTATIONS_BLOCK_RE);
+  if (!match) return {};
+  try {
+    const parsed = JSON.parse(match[1].trim());
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as StepAnnotations;
+    }
+  } catch {
+    // Tolerate a malformed block; treat it as empty.
+  }
+  return {};
+}
+
+function serializeAnnotationsBlock(annotations: StepAnnotations): string {
+  return `<!-- STARN-STEP-ANNOTATIONS\n${JSON.stringify(annotations, null, 2)}\n-->`;
+}
+
+function withAnnotations(markdown: string, annotations: StepAnnotations): string {
+  const block = serializeAnnotationsBlock(annotations);
+  const existing = markdown.match(ANNOTATIONS_BLOCK_RE);
+  if (existing && existing.index !== undefined) {
+    return markdown.slice(0, existing.index).trimEnd() + '\n\n' + block + '\n';
+  }
+  return markdown.trimEnd() + '\n\n' + block + '\n';
 }
 
 /**
@@ -120,4 +172,49 @@ export function toggleWorkInstructionStep(markdown: string, stepIndex: number, c
   const line = lines[step.line];
   lines[step.line] = line.replace(/^(-\s*)\[([ xX])\]/, `$1[${checked ? 'x' : ' '}]`);
   return lines.join('\n');
+}
+
+/**
+ * Appends a shop-floor comment to a step (by index within Section 2) and
+ * returns the updated markdown with the persisted annotations block rewritten.
+ * Mirrors toggleWorkInstructionStep: pure markdown-in/markdown-out.
+ */
+export function postStepComment(markdown: string, stepId: number, text: string, author?: string): string {
+  const parsed = parseWorkInstruction(markdown);
+  const step = parsed.steps[stepId];
+  if (!step) {
+    throw new Error(`Step index ${stepId} out of range (document has ${parsed.steps.length} steps)`);
+  }
+  const annotations = parsed.stepAnnotations ?? {};
+  const key = String(stepId);
+  const entry = annotations[key] ?? {};
+  const comment: StepComment = {
+    text,
+    at: new Date().toISOString(),
+    ...(author ? { author } : {})
+  };
+  return withAnnotations(markdown, {
+    ...annotations,
+    [key]: { ...entry, comments: [...(entry.comments ?? []), comment] }
+  });
+}
+
+/**
+ * Sets or clears the shop-floor flag on a step (by index within Section 2) and
+ * returns the updated markdown with the persisted annotations block rewritten.
+ * Mirrors toggleWorkInstructionStep: pure markdown-in/markdown-out.
+ */
+export function toggleStepFlag(markdown: string, stepId: number, flagged: boolean): string {
+  const parsed = parseWorkInstruction(markdown);
+  const step = parsed.steps[stepId];
+  if (!step) {
+    throw new Error(`Step index ${stepId} out of range (document has ${parsed.steps.length} steps)`);
+  }
+  const annotations = parsed.stepAnnotations ?? {};
+  const key = String(stepId);
+  const entry = annotations[key] ?? {};
+  return withAnnotations(markdown, {
+    ...annotations,
+    [key]: { ...entry, flagged }
+  });
 }

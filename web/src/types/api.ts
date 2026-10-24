@@ -134,6 +134,19 @@ export interface NonConformanceLog {
   recommendation: string;
 }
 
+export interface StepComment {
+  text: string;
+  at: string;
+  author?: string;
+}
+
+export interface StepAnnotations {
+  [stepId: string]: {
+    comments?: StepComment[];
+    flagged?: boolean;
+  };
+}
+
 export interface WorkInstruction {
   actionId: string;
   title: string;
@@ -143,6 +156,7 @@ export interface WorkInstruction {
   steps: WorkInstructionStep[];
   artifacts: string[];
   nonConformance: NonConformanceLog;
+  stepAnnotations?: StepAnnotations;
   fileName?: string;
   filePath: string;
   content?: string;
