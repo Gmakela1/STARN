@@ -8,6 +8,7 @@ import { SHARED_EDIT_INSTRUCTIONS } from '../specialists/shared.js';
 import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { runDiscovery } from './discovery.js';
 import { classifyRequest } from './classifier.js';
+import { parseOpenQuestionsFromContent } from './open-questions-parser.js';
 import { runAgentToolLoop } from './agent-loop.js';
 import { maybeCompact } from './compaction.js';
 import { Logger } from '../util/logger.js';
@@ -44,6 +45,25 @@ export interface TurnOptions {
   onToolCall?: (tool: string, args: any) => void;
   signal?: AbortSignal;
   /**
+   * Force routing to a specific specialist, bypassing the LLM classifier.
+   * When the id is unknown to the registry, classification runs as usual.
+   */
+  forceSpecialistId?: string;
+  /**
+   * Called EXACTLY ONCE after the artifact settles (after critic auto-revisions)
+   * with open questions parsed from the final on-disk doc. Payload shape is
+   * Omit<PortalItem,'id'|'createdAt'|'updatedAt'|'status'>; the caller (e.g. the
+   * autopilot driver) adds the lifecycle fields.
+   */
+  onQuestions?: (items: Array<{
+    type: 'question';
+    severity: 'normal';
+    docPath: string;
+    title: string;
+    detail?: string;
+    source: 'autopilot';
+  }>) => void;
+  /**
    * Presentation-specific formatters for quick-command outputs. Defaults to
    * headless plain-text formatters; the terminal CLI injects chalk-styled ones.
    */
@@ -59,6 +79,8 @@ export interface TurnResult {
   requiresReview: boolean;
   sessionMessages: ChatMessage[];
   aborted?: boolean;
+  /** True when the critic loop exhausted its max attempts without passing. */
+  criticFailed?: boolean;
   /** True when the turn failed in a way the user must act on (e.g. drafting model produced no document). */
   error?: boolean;
 }
@@ -170,16 +192,29 @@ export class CoreRunner {
     }
 
     // 1. Classification (phase-aware with phase locking, with conversation history)
-    onStatusUpdate?.('Classifying request...');
-    let specialistId = await classifyRequest(
-      userPrompt,
-      options.classifierClient ?? client,
-      options.classifierModel ?? model,
-      activeWorkflowPhase,
-      sessionMessages.slice(-6),
-      CoreRunner.lastActiveSpecialistId
-    );
-    let specialist = specialistRegistry.get(specialistId) || specialistRegistry.get('general')!;
+    // forceSpecialistId short-circuits the classifier LLM entirely when the id
+    // resolves; unknown ids fall back to normal classification.
+    let specialistId: string;
+    let specialist = specialistRegistry.get('general')!;
+    const forcedSpecialist = options.forceSpecialistId
+      ? specialistRegistry.get(options.forceSpecialistId)
+      : undefined;
+    if (forcedSpecialist) {
+      specialistId = forcedSpecialist.id;
+      specialist = forcedSpecialist;
+      CoreRunner.lastActiveSpecialistId = forcedSpecialist.id;
+    } else {
+      onStatusUpdate?.('Classifying request...');
+      specialistId = await classifyRequest(
+        userPrompt,
+        options.classifierClient ?? client,
+        options.classifierModel ?? model,
+        activeWorkflowPhase,
+        sessionMessages.slice(-6),
+        CoreRunner.lastActiveSpecialistId
+      );
+      specialist = specialistRegistry.get(specialistId) || specialistRegistry.get('general')!;
+    }
 
     // 2. Prerequisite Check Gate
     const prereqIds: string[] = [];
@@ -586,6 +621,35 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
       }
     }
 
+    // Autopilot hook: after the critic loop settles (post auto-revisions), parse
+    // open questions from the FINAL on-disk artifact and notify exactly once.
+    if (options.onQuestions) {
+      let questionItems: Array<{
+        type: 'question';
+        severity: 'normal';
+        docPath: string;
+        title: string;
+        detail?: string;
+        source: 'autopilot';
+      }> = [];
+      try {
+        const artifactPath = path.join(projectPath, 'docs', `${specialist.id.toUpperCase()}.md`);
+        if (fs.existsSync(artifactPath)) {
+          const artifactContent = fs.readFileSync(artifactPath, 'utf-8');
+          questionItems = parseOpenQuestionsFromContent(artifactContent).map(title => ({
+            type: 'question' as const,
+            severity: 'normal' as const,
+            docPath: `docs/${specialist.id.toUpperCase()}.md`,
+            title,
+            source: 'autopilot' as const
+          }));
+        }
+      } catch (_e) {
+        // ignore read errors — an unreadable doc yields no questions
+      }
+      options.onQuestions(questionItems);
+    }
+
     const updatedSessionMessages: ChatMessage[] = [
       ...sessionMessages,
       { role: 'user', content: userPrompt },
@@ -620,6 +684,7 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
       criticResult,
       autoRevisionsRun,
       requiresReview: specialist.requiresCritic,
+      criticFailed: autoRevisionsRun >= 2 && !!criticResult && !criticResult.passed,
       sessionMessages: updatedSessionMessages
     };
   }
