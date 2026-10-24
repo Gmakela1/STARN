@@ -123,6 +123,98 @@ async function readJsonBody(req: http.IncomingMessage): Promise<any> {
 }
 
 // ---------------------------------------------------------------------------
+// Multipart form parser (no external dependencies)
+// ---------------------------------------------------------------------------
+
+interface MultipartFile {
+  filename: string;
+  buffer: Buffer;
+  contentType: string;
+}
+
+interface MultipartBody {
+  fields: Record<string, string>;
+  files: Record<string, MultipartFile>;
+}
+
+function parseMultipartBoundary(contentType: string): string | null {
+  const match = contentType.match(/boundary=([^;\s]+)/i);
+  return match ? match[1] : null;
+}
+
+async function readRawBody(req: http.IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks: Buffer[] = [];
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        reject(new Error('Request body too large'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+async function parseMultipartBody(req: http.IncomingMessage, boundary: string): Promise<MultipartBody> {
+  const raw = await readRawBody(req);
+  const delimiter = Buffer.from(`--${boundary}`);
+  const closing = Buffer.from(`--${boundary}--`);
+  const result: MultipartBody = { fields: {}, files: {} };
+
+  let pos = 0;
+  while (pos < raw.length) {
+    const startIdx = raw.indexOf(delimiter, pos);
+    if (startIdx === -1) break;
+    const partStart = startIdx + delimiter.length;
+
+    // Check for closing delimiter
+    if (raw.slice(partStart, partStart + 2).toString() === '--') break;
+
+    // Find next delimiter
+    const endIdx = raw.indexOf(delimiter, partStart);
+    if (endIdx === -1) break;
+
+    const part = raw.slice(partStart, endIdx);
+    pos = endIdx;
+
+    // Remove trailing \r\n before header section
+    const headerEnd = part.indexOf(Buffer.from('\r\n\r\n'));
+    if (headerEnd === -1) continue;
+
+    const headerBlock = part.subarray(0, headerEnd).toString('utf-8');
+    const bodyStart = headerEnd + 4;
+    // Strip trailing \r\n from body
+    let bodyEnd = part.length;
+    if (bodyEnd >= 2 && part[bodyEnd - 1] === 0x0a && part[bodyEnd - 2] === 0x0d) {
+      bodyEnd -= 2;
+    }
+    const partBody = part.subarray(bodyStart, bodyEnd);
+
+    // Parse Content-Disposition
+    const dispMatch = headerBlock.match(/Content-Disposition:\s*form-data;\s*name="([^"]+)"(?:;\s*filename="([^"]*)")?/i);
+    if (!dispMatch) continue;
+
+    const fieldName = dispMatch[1];
+    const filename = dispMatch[2];
+    const contentTypeMatch = headerBlock.match(/Content-Type:\s*(\S+)/i);
+    const contentType = contentTypeMatch ? contentTypeMatch[1] : 'application/octet-stream';
+
+    if (filename !== undefined) {
+      result.files[fieldName] = { filename, buffer: partBody, contentType };
+    } else {
+      result.fields[fieldName] = partBody.toString('utf-8');
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Data assembly helpers
 // ---------------------------------------------------------------------------
 
@@ -1125,6 +1217,25 @@ export async function handleApiRequest(
         return ok(res, { flagged, stepId });
       } catch (err: any) {
         return fail(res, 400, err?.message ?? 'Flag update failed');
+      }
+    }
+
+    // ── Voice transcription ───────────────────────────────────────────────
+    if (method === 'POST' && url.pathname === '/api/transcribe') {
+      if (!deps.session) return fail(res, 503, 'Agent session unavailable');
+
+      try {
+        const boundary = parseMultipartBoundary(req.headers['content-type'] ?? '');
+        if (!boundary) return fail(res, 400, 'Missing multipart boundary');
+
+        const { files } = await parseMultipartBody(req, boundary);
+        const audioFile = files['audio'];
+        if (!audioFile) return fail(res, 400, 'Missing audio field');
+
+        const text = await deps.session.transcribeAudio(audioFile.buffer, audioFile.filename);
+        return ok(res, { text });
+      } catch (err: any) {
+        return fail(res, 500, err?.message ?? 'Transcription failed');
       }
     }
 

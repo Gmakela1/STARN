@@ -17,12 +17,14 @@ import {
   ChevronDown,
   Check,
   RotateCcw,
-  X
+  X,
+  Mic
 } from 'lucide-react';
 import { api } from '../api/client';
 import { DocData, ProjectInfo, RoadmapPhase, PortalItem, AutopilotStatusResponse } from '../types/api';
 import { useTurnStream } from '../api/useTurnStream';
 import Markdown from '../components/Markdown';
+import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import CriticScorecard from '../components/CriticScorecard';
 import CheckpointPanel from '../components/CheckpointPanel';
 import QuestionBar from '../components/QuestionBar';
@@ -61,6 +63,33 @@ export default function DevelopmentView({
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [entries, status, checkpoint]);
+
+  // Voice recorder
+  const { recording, startRecording, stopRecording, error: voiceError } = useVoiceRecorder();
+
+  // Alt-hold-to-record key listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Alt' && !e.repeat && !recording) {
+        startRecording();
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Alt' && recording) {
+        stopRecording().then(text => {
+          if (text) setPrompt(prev => prev + text);
+        });
+      }
+    };
+    if (!busy && checkpoint === null) {
+      window.addEventListener('keydown', handleKeyDown);
+      window.addEventListener('keyup', handleKeyUp);
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [busy, checkpoint, recording, startRecording, stopRecording]);
 
   // S5: answer feedback — watch for answered items in portalItems
   useEffect(() => {
@@ -415,42 +444,78 @@ export default function DevelopmentView({
 
         {/* Input bar */}
         <footer className="border-t border-slate-800 bg-slate-900/60 p-3">
-          <div className="flex items-end gap-2">
-            <textarea
-              value={prompt}
-              onChange={e => setPrompt(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  void submit();
-                }
-              }}
-              rows={2}
-              disabled={busy || checkpoint !== null}
-              placeholder={checkpoint ? 'Resolve the pending checkpoint above first…' : 'Message the agent… (Enter to send, Shift+Enter for newline)'}
-              aria-label="Message the agent"
-              className="min-h-[44px] flex-1 resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-600 focus:outline-none disabled:opacity-50"
-            />
-            {busy ? (
-              <button
-                onClick={() => void abortTurn()}
-                className="flex h-[44px] w-[44px] items-center justify-center rounded-lg border border-rose-800 bg-rose-950/60 text-rose-300 transition hover:bg-rose-900/60"
-                aria-label="Abort current turn"
-                title="Abort current turn"
-              >
-                <Square className="h-4 w-4" aria-hidden />
-              </button>
-            ) : (
-              <button
-                onClick={() => void submit()}
-                disabled={!prompt.trim() || checkpoint !== null}
-                className="flex h-[44px] w-[44px] items-center justify-center rounded-lg bg-sky-600 text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="Send message"
-                title="Send message"
-              >
-                <Send className="h-4 w-4" aria-hidden />
-              </button>
+          <div className="flex flex-col gap-2">
+            {/* Recording indicator */}
+            {recording && (
+              <div className="flex items-center gap-2 rounded-md bg-rose-950/40 px-3 py-1.5 text-xs text-rose-300">
+                <span className="inline-block h-2 w-2 rounded-full bg-rose-500 motion-safe:animate-pulse" />
+                🎤 Recording… (release Alt to send)
+              </div>
             )}
+            {voiceError && (
+              <div className="rounded-md bg-rose-950/40 px-3 py-1.5 text-xs text-rose-300">
+                {voiceError}
+              </div>
+            )}
+            <div className="flex items-end gap-2">
+              <textarea
+                value={prompt}
+                onChange={e => setPrompt(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void submit();
+                  }
+                }}
+                rows={2}
+                disabled={busy || checkpoint !== null}
+                placeholder={checkpoint ? 'Resolve the pending checkpoint above first…' : 'Message the agent… (Enter to send, Shift+Enter for newline)'}
+                aria-label="Message the agent"
+                className="min-h-[44px] flex-1 resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-600 focus:outline-none disabled:opacity-50"
+              />
+              {/* Mic button */}
+              <button
+                onClick={() => {
+                  if (recording) {
+                    stopRecording().then(text => {
+                      if (text) setPrompt(prev => prev + text);
+                    });
+                  } else {
+                    startRecording();
+                  }
+                }}
+                disabled={busy || checkpoint !== null}
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                  recording
+                    ? 'bg-rose-600 text-white motion-safe:animate-pulse'
+                    : 'border border-slate-700 bg-slate-800 text-slate-400 hover:border-sky-600 hover:text-sky-400'
+                }`}
+                aria-label={recording ? 'Stop recording' : 'Record voice message'}
+                title="Click or hold Alt to record"
+              >
+                <Mic className="h-4 w-4" aria-hidden />
+              </button>
+              {busy ? (
+                <button
+                  onClick={() => void abortTurn()}
+                  className="flex h-[44px] w-[44px] items-center justify-center rounded-lg border border-rose-800 bg-rose-950/60 text-rose-300 transition hover:bg-rose-900/60"
+                  aria-label="Abort current turn"
+                  title="Abort current turn"
+                >
+                  <Square className="h-4 w-4" aria-hidden />
+                </button>
+              ) : (
+                <button
+                  onClick={() => void submit()}
+                  disabled={!prompt.trim() || checkpoint !== null}
+                  className="flex h-[44px] w-[44px] items-center justify-center rounded-lg bg-sky-600 text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="Send message"
+                  title="Send message"
+                >
+                  <Send className="h-4 w-4" aria-hidden />
+                </button>
+              )}
+            </div>
           </div>
         </footer>
       </section>

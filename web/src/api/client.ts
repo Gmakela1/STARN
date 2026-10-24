@@ -173,5 +173,21 @@ export const api = {
     return call<FolderListingResponse>('GET', `/api/fs/folders${query ? `?${query}` : ''}`);
   },
   switchProject: (body: { projectId?: string; path?: string }) =>
-    call<ProjectInfo>('POST', '/api/projects/switch', body)
+    call<ProjectInfo>('POST', '/api/projects/switch', body),
+
+  // Voice transcription
+  transcribeAudio: async (blob: Blob): Promise<string> => {
+    const formData = new FormData();
+    formData.append('audio', blob, 'recording.webm');
+    const res = await fetch('/api/transcribe', {
+      method: 'POST',
+      body: formData
+      // Content-Type intentionally unset — browser sets multipart/form-data with boundary
+    });
+    const envelope = await res.json() as ApiEnvelope<{ text: string }>;
+    if (!envelope.success) {
+      throw new Error(envelope.error ?? 'Transcription failed');
+    }
+    return envelope.data!.text;
+  }
 };

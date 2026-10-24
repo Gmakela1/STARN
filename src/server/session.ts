@@ -5,6 +5,7 @@ import { approveArtifact, parseAffectedPhaseIds } from '../core/approvals.js';
 import { CriticResult, enrichFeedbackWithCritic } from '../core/critic.js';
 import { ChatMessage } from '../openrouter/types.js';
 import { ChatClient } from '../openrouter/types.js';
+import { OpenRouterClient } from '../openrouter/client.js';
 import { Assignments, MODEL_ROLES, OPENROUTER_PROVIDER_ID, ProviderConfig, validateAssignments } from '../config.js';
 import { allProviders, createProviderClient, createRoleClients, RoleClients } from '../models/role-clients.js';
 import { ProjectStateManager } from '../workspace/state.js';
@@ -135,6 +136,16 @@ export class ServerSessionManager {
   /** Provider config (built-in OpenRouter or user) by id; undefined when unknown. */
   providerById(providerId: string): ProviderConfig | undefined {
     return allProviders(this.deps.apiKey, this.deps.providers).find(p => p.id === providerId);
+  }
+
+  /**
+   * Transcribes audio via OpenRouter Whisper using the session's API key.
+   * Creates a throwaway OpenRouterClient to call transcribeAudio.
+   */
+  async transcribeAudio(audioBuffer: Buffer, filename: string = 'recording.webm'): Promise<string> {
+    const client = new OpenRouterClient({ apiKey: this.deps.apiKey });
+    const result = await client.transcribeAudio(audioBuffer, filename);
+    return result.text;
   }
 
   /** Fresh client for a provider id (for model listing / probing); undefined when unknown. */
