@@ -349,6 +349,20 @@ git commit -m "feat(server): autopilot endpoints, portal API, SSE event stream, 
 
 ### Task 7: Web — QuestionBar, AutopilotHud, dashboard pane, client plumbing
 
+**UX SEAMLESSNESS LAYER (LOCKED — from ui-ux pass 399c3e69, live-verified on :3000; this is REQUIRED, not optional):**
+
+S1. **QuestionBar mounts OUTSIDE the chat scroll container** in DevelopmentView — sibling div between the scroll region and `<footer>`, NOT a child. Chat scroll div stays `min-h-0 flex-1 overflow-y-auto` (fixed height); QuestionBar is a static-height sibling (collapsed ~36px, expanded ≤200px with its own overflow-y). Guarantees `chatEndRef.scrollIntoView` never fights expansion (Tension 2).
+S2. **When a CheckpointPanel is visible, QuestionBar renders as a single thin `h-8` badge row only** — `opacity-60`, no expand affordance. Checkpoint is the hero; questions wait (Tension 1).
+S3. **Collapsed badge uses `border-l-2 border-amber-500`** (amber = needs input; cyan is reserved for checkpoint). New-question arrival: `animate-question-arrive` (keyframe §S10) for 3s + count increment flash `text-cyan-300`; if input focused, placeholder swaps to "New question from AI — answer to continue autopilot" for 2s.
+S4. **Parked doc = pinned sticky chat card**: full-width `border-l-2 border-rose-500 bg-rose-950/20` card at TOP of the chat pane, `position: sticky; top: 0; z-index: 10` inside the scroll area, stays until explicitly dismissed with `[Dismiss]`; contains critic explanation + "Missing requirements" list + `[Review gaps →]` opening the parked card in the QuestionBar zone + `[Resolve & Resume]` + `[Edit Manually]` (Tension 4). Also: doc selector dropdown shows `bg-rose-950/80 text-rose-300 font-bold` "Parked ✗" badge on parked docs.
+S5. **Answered card — 3-layer feedback** (Tension 3): 0ms submit spinner + card turns `bg-emerald-950/30 border-l-2 border-emerald-500` "Applying…"; ≤500ms chat system entry "✎ Answer applied to {DOC} — scanning downstream impact…" appended below the last entry; on complete, doc pane refreshes + if current doc edited, 4s banner "This document was updated from your answer." Then 8s dwell (`opacity-50` + "Resolved ✓" + RotateCcw undo) → `animate-answered-collapse` removes from flow.
+S6. **Change-impact re-draft notice**: affected downstream dots on the 13-dot rail get a 2s amber `animate-pulse` ripple after an answer applies ("Re-drafting affected docs" state).
+S7. **Progress rail IS the status locus** (5-second test): mounted in DevelopmentView doc toolbar below the doc selector, `bg-slate-900/80 border-b border-slate-800 px-3 py-1.5`; 13 dots per §Hero spec — `w-2 h-2 rounded-full`, IN_PROGRESS = `w-3 bg-cyan-500 motion-safe:animate-pulse ring-2 ring-cyan-500/40` + `text-[11px] font-bold text-cyan-300` "Drafting: {Doc}" label above; PASSED emerald, PARKED rose `ring-1 ring-rose-500/60`, queued slate; right-aligned `text-[10px] font-mono text-slate-500` status word ("Working…" / "N parked" / "Idle"). Toggle ON → rail appears (`animate-fadeIn`); OFF → `hidden`. Rail is `role="progressbar" aria-valuenow` per phase count.
+S8. **Terminology (apply everywhere — Settings, Studio, Dashboard, Shop Floor):** "Open Issues & Questions" → **"Open Actions"** (Dashboard header); "Workshop Issues & Questions" sub-tab → **"Shop Floor Flags"**; collapsed bar label → **"Needs Input"**, expanded header → **"Questions from AI"**; "Gaps" → **"Missing requirements"** in critic-park copy; "Change impact" in user-visible copy → **"Re-drafting affected docs"**; keep "Autopilot" with subtitle "AI auto-drafts all 13 documents".
+S9. **Dashboard pane with autopilot OFF** shows only shop-floor tier + CTA card "Start Autopilot to auto-draft all 13 documents."
+S10. **Add 3 keyframes to `web/src/index.css`**: `question-arrive` (300ms ease-out, transparent→cyan-0.15 bg + scale 1.05→1), `answered-collapse` (400ms ease-in forwards, opacity 1/200px→0/0 max-height+padding), `park-reveal` (250ms ease-out, translateY(-8px)+opacity 0→1). Applied to: badge on arrival, answered card after 8s dwell, parked chat card on first render.
+S11. **Visual weight rule**: exactly ONE hero element per moment — checkpoint (cyan, heavyweight) OR rail (drafting) OR badge (question arrival) OR parked card (rose, pinned). When checkpoint present, everything else is subdued.
+
 **Files:**
 - Create: `web/src/components/QuestionBar.tsx`
 - Create: `web/src/components/AutopilotHud.tsx`
@@ -373,9 +387,16 @@ git commit -m "feat(server): autopilot endpoints, portal API, SSE event stream, 
 
 - [ ] **Step 4: Dashboard action pane** per spec §7.3 — render `portalSummary.topItems` ranked 4 tiers (rose blocking / amber parked / cyan needs-input / slate shop-floor), header `Open Actions (N) · breakdown`, click-through routing (blocked/parked/q → Studio w/ question focused; shop-floor → existing issues sub-tab), "All systems nominal" empty state w/ Start Autopilot + Go to Studio.
 
-- [ ] **Step 5: Mount + verify.** Wire `useAutopilotEvents` in `AppShell.tsx`; pass state down. Verify: `npm --prefix web run build` clean; `npx tsc --noEmit` clean (web/tsconfig via the web build); `npm test` still green.
+- [ ] **Step 5: Mount + verify.** Wire `useAutopilotEvents` in `AppShell.tsx`; pass state down. Implement the seamlessness layer S1-S6, S10 (keyframes), S11 exactly as spec'd above — QuestionBar OUTSIDE scroll container; amber badge; checkpoint-subduction; sticky parked card; 3-layer answer feedback; rail ripple. Verify: `npm --prefix web run build` clean; `npx tsc --noEmit` clean (web/tsconfig via the web build); `npm test` still green.
 
-- [ ] **Step 6: Commit.**
+- [ ] **Step 6: Accept sa. (UX acceptance checks from 399c3e69):**
+  1. With checkpoint visible + 3 pending questions: checkpoint fills bottom focus zone; question badge is a thin `h-8` row, `opacity-60`, no expand affordance.
+  2. Open 5 questions in the bar → chat scroll position unchanged (bar is outside the scroll container).
+  3. Submit answer → spinner immediately, chat entry ≤2s, doc pane updates ≤8s.
+  4. 3 docs draft after a park → scroll to top, parked card pinned; Dashboard tier-1 shows it; doc dropdown shows "Parked ✗" badge.
+  5. Autopilot OFF → Dashboard pane shows only shop-floor + "Start Autopilot" CTA.
+
+- [ ] **Step 7: Commit.**
 
 ```bash
 git add web/src
@@ -385,6 +406,8 @@ git commit -m "feat(web): question bar, autopilot HUD with progress rail, ranked
 ---
 
 ### Task 8: Shop Floor — WI comments/flags + Settings autopilot card
+
+**UX layer (locked from 399c3e69):** rename sub-tab label + issues view header to "Shop Floor Flags" (S8); flag button `aria-pressed`, rose when flagged, creates portalItem 'flag' shown as tier-4 on Dashboard. Settings card per S8 copy: "Autopilot — AI auto-drafts all 13 documents."
 
 **Files:**
 - Modify: `web/src/views/WorkInstructionsView.tsx` (per-step `💬 N` comment + `🚩` flag affordances)
