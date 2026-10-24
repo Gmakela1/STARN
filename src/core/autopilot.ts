@@ -288,6 +288,17 @@ export class AutopilotDriver {
         // the turn produced a document. Intake interviews and error turns
         // that don't write an artifact must NOT silently pass.
         if (!turnResult.requiresReview) {
+          // If the turn was redirected (e.g. prerequisite gate, classifier fallback),
+          // the specialistId won't match. Surface the explanation instead of parking.
+          if (turnResult.specialistId !== phase.id) {
+            state.autopilot.lastError = `${phase.name}: ${turnResult.output?.slice(0, 200) || 'preconditions not met'}`;
+            state.autopilot.docStatus[phase.id] = 'parked';
+            state.autopilot.blocks++;
+            state.autopilot.running = false;
+            stateManager.saveState(state);
+            this.emit({ kind: 'error', message: `Phase ${phase.id} blocked: ${turnResult.output?.slice(0, 120) || 'prerequisites not met'}` });
+            return;
+          }
           const content = readDocContent(projectPath, phase.id);
           if (content !== null) {
             state.autopilot.docStatus[phase.id] = 'passed';
