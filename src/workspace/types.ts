@@ -55,6 +55,39 @@ export interface PendingRisk {
   risk: string;
 }
 
+export type PortalItemType = 'question' | 'parked' | 'flag' | 'nonconformance';
+
+export type PortalItemSeverity = 'blocking' | 'normal';
+
+export interface PortalItem {
+  id: string;
+  type: PortalItemType;
+  severity: PortalItemSeverity;
+  docPath?: string;
+  section?: string;
+  title: string;
+  detail?: string;
+  gaps?: string[];
+  threadId?: string;
+  status: 'open' | 'answered' | 'dismissed' | 'resolved';
+  answer?: string;
+  source: 'autopilot' | 'studio' | 'shop-floor';
+  createdAt: string;
+  updatedAt: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface AutopilotState {
+  running: boolean;
+  startedAt?: string;
+  stoppedAt?: string;
+  currentPhaseId?: string;
+  docStatus: Record<string, string>;
+  revisionsUsed: Record<string, number>;
+  blocks: number;
+  lastError?: string;
+}
+
 export interface ProjectState {
   projectId: string;
   name: string;
@@ -66,4 +99,6 @@ export interface ProjectState {
   openRisks: string[];
   recentActions: string[];
   pendingRisks?: PendingRisk[];
+  portalItems?: PortalItem[];
+  autopilot?: AutopilotState;
 }

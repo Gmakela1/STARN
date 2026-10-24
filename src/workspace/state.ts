@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { ProjectState, ArtifactRecord, IntakeState, WorkflowState, PendingRisk, PhaseStatus } from './types.js';
+import { ProjectState, ArtifactRecord, IntakeState, WorkflowState, PendingRisk, PhaseStatus, AutopilotState } from './types.js';
 
 export interface WorkflowPhaseDef {
   id: string;
@@ -115,6 +115,19 @@ function createDefaultWorkflow(artifacts: ArtifactRecord[] = []): WorkflowState 
   };
 }
 
+/**
+ * Returns the default Autopilot run-state used as the migration default when
+ * an older project state.json lacks the `autopilot` key.
+ */
+export function defaultAutopilotState(): AutopilotState {
+  return {
+    running: false,
+    docStatus: {},
+    revisionsUsed: {},
+    blocks: 0
+  };
+}
+
 export class ProjectStateManager {
   private projectPath: string;
   private stateFilePath: string;
@@ -164,8 +177,21 @@ export class ProjectStateManager {
     this.scaffoldProjectDirectories();
 
     if (fs.existsSync(this.stateFilePath)) {
+      // Detect pre-migration files lacking the portal/autopilot keys BEFORE
+      // getState() fills their in-memory defaults, so we can mark the state
+      // changed and persist the upgrade (mirrors migrateLegacyRisks).
+      const rawState = fs.readFileSync(this.stateFilePath, 'utf-8');
+      const rawParsed = JSON.parse(rawState) as Record<string, unknown>;
       const state = this.getState();
-      let changed = false;
+      let changed = rawParsed.portalItems == null || rawParsed.autopilot == null;
+      if (!state.portalItems) {
+        state.portalItems = [];
+        changed = true;
+      }
+      if (!state.autopilot) {
+        state.autopilot = defaultAutopilotState();
+        changed = true;
+      }
       if (!state.intake) {
         state.intake = {
           completed: state.artifacts.some(a => a.id === 'CONOPS' && a.status === 'approved'),
@@ -235,6 +261,15 @@ export class ProjectStateManager {
       parsed.workflow = createDefaultWorkflow(parsed.artifacts || []);
     }
     this.migrateLegacyRisks(parsed);
+    // Portal store + autopilot run-state migration defaults. Filled in-memory
+    // here so getState() always returns a usable shape; getOrCreateState is
+    // responsible for persisting the upgrade when it detects old files.
+    if (!parsed.portalItems) {
+      parsed.portalItems = [];
+    }
+    if (!parsed.autopilot) {
+      parsed.autopilot = defaultAutopilotState();
+    }
     return parsed;
   }
 
