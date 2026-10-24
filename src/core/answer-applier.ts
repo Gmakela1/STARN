@@ -101,6 +101,12 @@ export async function applyAnswer(
   if (!item) {
     throw new Error(`Portal item not found: ${itemId}`);
   }
+  // Freshness check: a queued answer that lands after the item was already
+  // answered/dismissed must not rewrite the portal (prevents double-apply of
+  // stale queue entries).
+  if (item.status !== 'open') {
+    throw new Error(`Portal item no longer open (${item.status})`);
+  }
   if (!item.docPath) {
     throw new Error(`Portal item ${itemId} has no docPath`);
   }

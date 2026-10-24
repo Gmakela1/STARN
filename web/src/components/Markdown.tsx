@@ -24,17 +24,24 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
     } else if (token.startsWith('*')) {
       nodes.push(<em key={key}>{token.slice(1, -1)}</em>);
     } else if (match[5] !== undefined && match[6] !== undefined) {
-      nodes.push(
-        <a
-          key={key}
-          href={match[6]}
-          target="_blank"
-          rel="noreferrer"
-          className="text-sky-400 underline decoration-sky-700 underline-offset-2 hover:text-sky-300"
-        >
-          {match[5]}
-        </a>
-      );
+      // Security: only allow http/https/mailto schemes; anything else (e.g.
+      // javascript:, data:) renders as inert plain text.
+      const href = /^https?:\/\//i.test(match[6]) || /^mailto:/i.test(match[6]) ? match[6] : undefined;
+      if (href) {
+        nodes.push(
+          <a
+            key={key}
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sky-400 underline decoration-sky-700 underline-offset-2 hover:text-sky-300"
+          >
+            {match[5]}
+          </a>
+        );
+      } else {
+        nodes.push(<span key={key}>{match[5]}</span>);
+      }
     }
     last = match.index + token.length;
   }

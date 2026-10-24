@@ -22,7 +22,12 @@ export type AutopilotLiveEvent =
   | { kind: 'status'; message: string }
   | { kind: 'tool_call'; tool: string; args: unknown }
   | { kind: 'complete'; result: { passed: string[]; parked: string[] }; reason?: 'finished' | 'stopped' }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string }
+  // Answer-queue frames (§1.1) — forwarded to consumers, never merged into status.
+  | { kind: 'answer_queued'; itemId: string; title: string }
+  | { kind: 'answer_applying'; itemId: string }
+  | { kind: 'answer_applied'; itemId: string; item: PortalItem; affectedDocs: string[] }
+  | { kind: 'answer_failed'; itemId: string; error: string };
 
 /**
  * Creates a useAutopilotEvents hook. Pass an optional onEvent callback to
@@ -90,17 +95,20 @@ export function useAutopilotEvents(onEvent?: (ev: AutopilotLiveEvent) => void): 
                 try {
                   const parsed = JSON.parse(dataLine);
                   switch (eventName) {
-                    case 'autopilot':
+                    case 'autopilot': {
+                      const st = parsed.status ?? parsed;
+                      const isAnswerFrame = typeof st?.kind === 'string' && ['answer_queued', 'answer_applying', 'answer_applied', 'answer_failed'].includes(st.kind);
+                      if (isAnswerFrame) { onEvent?.(st); break; } // answer frames: forward only, never merge into status
                       setStatus(prev => {
-                        const st = parsed.status ?? parsed;
                         // 'complete' and 'error' events mean the run finished
                         if (st.kind === 'complete' || st.kind === 'error') {
                           return { ...prev, running: false, ...st.result };
                         }
                         return { ...prev, ...st };
                       });
-                      onEvent?.(parsed.status ?? parsed);
+                      onEvent?.(st);
                       break;
+                    }
                     case 'question':
                       setPortalItems(prev => [...prev, parsed.item ?? parsed]);
                       onEvent?.({ kind: 'question', item: parsed.item ?? parsed });

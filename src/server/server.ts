@@ -63,6 +63,8 @@ export interface StartedServer {
 /**
  * Binds the server to the requested port, prints nothing (the caller owns
  * presentation), optionally opens the default browser, and returns the URLs.
+ * Binds loopback by default (127.0.0.1); set STARN_HOST to a LAN interface
+ * (e.g. 0.0.0.0) to expose the web UI explicitly.
  */
 export async function startWebServer(
   options: ServerOptions & { port?: number; openBrowserOnStart?: boolean }
@@ -72,7 +74,7 @@ export async function startWebServer(
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, '0.0.0.0', () => resolve());
+    server.listen(port, process.env.STARN_HOST || '127.0.0.1', () => resolve());
   });
 
   const urls = getLocalNetworkAddresses(port);

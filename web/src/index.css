@@ -179,6 +179,30 @@ body,
   animation: question-arrive 300ms ease-out;
 }
 
+/* AnswerDialog modal entrance (design §2.2.2.9) — 150ms ease-out, motion-reduce safe. */
+@keyframes dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.animate-dialog-in {
+  animation: dialog-in 150ms ease-out;
+}
+
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-backdrop-in {
+  animation: backdrop-in 150ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-dialog-in,
+  .animate-backdrop-in {
+    animation: none;
+  }
+}
+
 @keyframes answered-collapse {
   0% { opacity: 1; max-height: 200px; margin-bottom: 8px; }
   100% { opacity: 0; max-height: 0; margin-bottom: 0; padding: 0; }

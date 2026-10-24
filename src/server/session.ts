@@ -97,8 +97,13 @@ export class ServerSessionManager {
   /**
    * FIFO queue of portal answers that arrive while a turn is in progress. They
    * apply one at a time between phases or right after the busy turn ends.
+   * Duplicate itemIds are not appended: the pending entry's answer is replaced
+   * so the same question is never applied twice.
    */
   private answerQueue: Array<{ itemId: string; answer: string }> = [];
+  private static readonly MAX_ANSWER_QUEUE = 50;
+  private static readonly ANSWER_QUEUE_FULL_MESSAGE =
+    'Answer queue is full (50). Try again when the current turn finishes.';
 
   /** Re-entrancy guard so concurrent drain triggers never overlap.
    * Without it, runQueuedAnswers could be called from the next phase's
@@ -285,11 +290,27 @@ export class ServerSessionManager {
     if (event.kind === 'complete' || event.kind === 'error') {
       this.autopilotDriver = null;
       this.endTurn();
+      // Answers queued during the FINAL phase must still apply once the chain
+      // ends. The answerDraining re-entrancy guard keeps this drain from
+      // overlapping one already in flight (e.g. makeExecuteTurn's between-phase
+      // drain).
+      void this.runQueuedAnswers();
     }
-    // Store in ring buffer
-    this.recentEvents.push(event);
-    if (this.recentEvents.length > ServerSessionManager.MAX_RECENT_EVENTS) {
-      this.recentEvents.shift();
+    // Answer frames are point-in-time: a reconnect must not re-fire
+    // answer_applied (duplicate chat entries) or a stale answer_queued
+    // (downgrading an open chip). They still fan out live below; only the
+    // reconnect backfill ring skips them.
+    const isAnswerFrame =
+      event.kind === 'answer_queued' ||
+      event.kind === 'answer_applying' ||
+      event.kind === 'answer_applied' ||
+      event.kind === 'answer_failed';
+    if (!isAnswerFrame) {
+      // Store in ring buffer
+      this.recentEvents.push(event);
+      if (this.recentEvents.length > ServerSessionManager.MAX_RECENT_EVENTS) {
+        this.recentEvents.shift();
+      }
     }
     // Fan out to subscribers, catching individual errors
     for (const fn of this.subscribers) {
@@ -412,15 +433,44 @@ export class ServerSessionManager {
       throw new Error(`Portal item not found: ${itemId}`);
     }
 
-    this.answerQueue.push({ itemId, answer });
+    // Dedupe by itemId: a pending entry for the same question is replaced
+    // (updated answer) instead of appended, so it never applies twice.
+    const existing = this.answerQueue.find(e => e.itemId === itemId);
+    if (existing) {
+      existing.answer = answer;
+    } else {
+      if (this.answerQueue.length >= ServerSessionManager.MAX_ANSWER_QUEUE) {
+        throw new Error(ServerSessionManager.ANSWER_QUEUE_FULL_MESSAGE);
+      }
+      this.answerQueue.push({ itemId, answer });
+    }
 
     if (this.busy) {
       this.publishAnswerFrame({ kind: 'answer_queued', itemId, title: item.title });
       return { queued: true };
     }
 
-    void this.runQueuedAnswers();
+    void this.drainWithGuard();
     return { queued: false };
+  }
+
+  /**
+   * Drains the answer queue while holding the busy guard, so a concurrent
+   * POST /api/turns or /api/autopilot/start cannot slip past the busy check
+   * while an answer apply is writing state. Used from the idle queueAnswer
+   * path, where busy is known to be false. Returns immediately (no drain) if
+   * busy somehow became true in the meantime.
+   */
+  private async drainWithGuard(): Promise<void> {
+    if (this.busy) {
+      return;
+    }
+    this.beginTurn();
+    try {
+      await this.runQueuedAnswers();
+    } finally {
+      this.endTurn();
+    }
   }
 
   /**
@@ -559,9 +609,11 @@ export class ServerSessionManager {
 
       return result;
     } finally {
-      this.endTurn();
-      // Answers submitted during the human turn apply now that the bus is free.
+      // Drain queued answers while the turn's busy guard is still held so a
+      // concurrent POST /api/turns (or /api/autopilot/start) cannot pass the
+      // busy check while an answer apply is writing state.json.
       await this.runQueuedAnswers();
+      this.endTurn();
     }
   }
 

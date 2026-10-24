@@ -8,7 +8,7 @@ import {
   DocData,
   IssuesSummary,
   PendingCheckpoint,
-  PortalItem,
+  PortalAnswerResult,
   PortalListResponse,
   ProjectInfo,
   ProjectIssue,
@@ -79,7 +79,7 @@ export const api = {
     return call<PortalListResponse>('GET', `/api/portal${query}`);
   },
   submitPortalAnswer: (id: string, answer: string) =>
-    call<PortalItem>('POST', `/api/portal/${encodeURIComponent(id)}/answer`, { answer }),
+    call<PortalAnswerResult>('POST', `/api/portal/${encodeURIComponent(id)}/answer`, { answer }),
   dismissPortalItem: (id: string) =>
     call<{ success: boolean }>('POST', `/api/portal/${encodeURIComponent(id)}/dismiss`),
 

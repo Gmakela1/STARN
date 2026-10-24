@@ -95,6 +95,50 @@ function fail(res: http.ServerResponse, statusCode: number, message: string): vo
   sendJson(res, statusCode, { success: false, data: null, error: message });
 }
 
+// ---------------------------------------------------------------------------
+// Cross-origin (CSRF) guard
+// ---------------------------------------------------------------------------
+
+/** Methods that mutate state; browsers attach an Origin header to cross-site ones. */
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/** Hostname portion of a Host header like "host:port" / "127.0.0.1:port" / "[::1]:port". */
+function hostHeaderHostname(hostHeader: string): string {
+  try {
+    return new URL(`http://${hostHeader}`).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * localhost / 127.0.0.1 / [::1] are the same loopback site: the UI can be
+ * opened over any of them, so alias them to one identity before comparing.
+ */
+function isLoopbackAlias(site: string): boolean {
+  const normalized = site.replace(/^\[|\]$/g, '');
+  return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1';
+}
+
+/**
+ * True when a browser-provided Origin refers to the same site as the request
+ * Host. Unparseable or mismatched Origins are rejected (fail closed); absent
+ * Origins (curl, scripts) are allowed by the caller.
+ */
+function originMatchesHost(origin: string, hostHeader: string | undefined): boolean {
+  if (!hostHeader) return false;
+  let originSite: string;
+  try {
+    originSite = new URL(origin).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const hostSite = hostHeaderHostname(hostHeader);
+  if (!hostSite) return false;
+  if (originSite === hostSite) return true;
+  return isLoopbackAlias(originSite) && isLoopbackAlias(hostSite);
+}
+
 async function readJsonBody(req: http.IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -450,6 +494,14 @@ export async function handleApiRequest(
   const url = new URL(req.url ?? '/', 'http://localhost');
   const segments = url.pathname.split('/').filter(Boolean); // ['api', ...]
   const method = (req.method ?? 'GET').toUpperCase();
+
+  // CSRF defense: fail closed on cross-origin mutations. Browsers attach an
+  // Origin header to cross-site requests; curl and scripts omit it and remain
+  // allowed (preserving local tooling).
+  const origin = req.headers.origin;
+  if (origin !== undefined && MUTATING_METHODS.has(method) && !originMatchesHost(origin, req.headers.host)) {
+    return fail(res, 403, 'Cross-origin request rejected');
+  }
 
   try {
     // --- Projects & Filesystem Browsing ---------------------------------------
@@ -1136,24 +1188,30 @@ export async function handleApiRequest(
     if (segments[1] === 'portal' && segments.length === 4 && segments[3] === 'answer' && method === 'POST') {
       const itemId = decodeURIComponent(segments[2]);
       const body = await readJsonBody(req);
-      if (!body?.answer) return fail(res, 400, 'Missing "answer"');
+      const answerText = String(body?.answer ?? '');
+      if (!answerText.trim()) return fail(res, 400, 'Missing "answer"');
+      if (answerText.trim().length > 4096) return fail(res, 400, 'Answer too long (max 4096 chars)');
       try {
         const session = deps.session;
         if (!session) return fail(res, 503, 'No active session');
         // Queue the answer in the session. Idle → applied immediately; a turn
         // in progress → queued and applied between phases via the session's
         // answer queue (drained from makeExecuteTurn / runTurn).
-        const queued = await session.queueAnswer(itemId, String(body.answer));
+        const queued = await session.queueAnswer(itemId, answerText.trim());
         if (queued.queued) {
           sendJson(res, 202, { success: true, data: { queued: true }, error: null });
         } else {
           ok(res, { applied: true });
         }
       } catch (err: any) {
-        if (err?.message?.includes('not found') || err?.message?.includes('Invalid')) {
-          return fail(res, 404, err.message);
+        const message = err?.message ?? String(err);
+        if (message.includes('queue is full')) {
+          return fail(res, 429, message);
         }
-        return fail(res, 500, err?.message ?? 'Answer application failed');
+        if (message.includes('not found') || message.includes('Invalid')) {
+          return fail(res, 404, message);
+        }
+        return fail(res, 500, message);
       }
     }
 

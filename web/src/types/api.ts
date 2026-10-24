@@ -211,6 +211,16 @@ export interface PortalListResponse {
   items: PortalItem[];
 }
 
+/** POST /api/portal/:id/answer — 200 {applied} when idle, 202 {queued} when busy. */
+export type PortalAnswerResult = { queued: true } | { applied: true };
+
+/** Per-item answer-queue state machine (§1.2). Shared by DevelopmentView + QuestionBar. */
+export type AnswerPhase = 'queued' | 'applying' | 'applied' | 'failed';
+export interface AnswerState {
+  phase: AnswerPhase;
+  error?: string;
+}
+
 export interface DashboardData {
   project: ProjectInfo;
   roadmap: RoadmapPhase[];

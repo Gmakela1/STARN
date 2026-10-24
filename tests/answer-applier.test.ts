@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { ProjectStateManager, ORDERED_WORKFLOW_PHASES } from '../src/workspace/state.js';
-import { addPortalItem, answerPortalItem } from '../src/core/question-portal.js';
+import { addPortalItem, answerPortalItem, dismissPortalItem } from '../src/core/question-portal.js';
 import { buildUserAnswersBlock, applyAnswer, AnswerApplierDeps } from '../src/core/answer-applier.js';
 import { PortalItem } from '../src/workspace/types.js';
 import { TurnResult } from '../src/core/runner.js';
@@ -247,7 +247,7 @@ describe('applyAnswer', () => {
     expect(result.updatedItem.answer).toBe('12V nominal');
   });
 
-  it('re-applies to already-answered item (idempotent)', async () => {
+  it('re-apply to an already-answered item throws (stale rejection)', async () => {
     // First, add and answer an item
     const item = addPortalItem(stateMgr, {
       type: 'question',
@@ -265,18 +265,27 @@ describe('applyAnswer', () => {
     // Answer once
     await applyAnswer(deps, item.id, '12V nominal');
 
-    // Answer again (same answer, should still succeed)
-    executeTurnMock.mockClear();
-    runChangeImpactMock.mockClear();
-    executeTurnMock.mockResolvedValue(makeTurnResult({
-      specialistId: 'conops',
-      criticResult: { passed: true, score: 9.0, summary: 'pass', strengths: [], weaknesses: [], actionableGuidance: '' }
-    }));
+    // A queued answer that lands after the item was already applied is stale:
+    // the apply-time freshness check rejects it instead of writing twice.
+    await expect(applyAnswer(deps, item.id, '12V nominal (revised)'))
+      .rejects.toThrow('Portal item no longer open (answered)');
+  });
 
-    const result = await applyAnswer(deps, item.id, '12V nominal (revised)');
+  it('throws on a dismissed (non-open) item', async () => {
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What is the max voltage?',
+      source: 'autopilot'
+    });
+    dismissPortalItem(stateMgr, item.id);
 
-    expect(result.updatedItem.status).toBe('answered');
-    expect(result.updatedItem.answer).toBe('12V nominal (revised)');
+    const state = stateMgr.getState();
+    expect(state.portalItems.find(i => i.id === item.id)?.status).toBe('dismissed');
+
+    await expect(applyAnswer(deps, item.id, '48V'))
+      .rejects.toThrow('Portal item no longer open (dismissed)');
   });
 
   it('throws on invalid itemId', async () => {

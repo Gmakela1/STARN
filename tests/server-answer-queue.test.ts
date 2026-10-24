@@ -44,11 +44,11 @@ vi.mock('../src/core/runner.js', async (importOriginal) => {
   };
 });
 
-async function request(server: http.Server, method: string, urlPath: string, body?: unknown) {
+async function request(server: http.Server, method: string, urlPath: string, body?: unknown, extraHeaders: Record<string, string> = {}) {
   const port = (server.address() as AddressInfo).port;
   const res = await fetch(`http://127.0.0.1:${port}${urlPath}`, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...extraHeaders },
     body: body === undefined ? undefined : JSON.stringify(body)
   });
   const raw = await res.text();
@@ -328,5 +328,151 @@ describe('server answer queue', () => {
     const { status, json } = await request(server, 'POST', '/api/portal/nonexistent/answer', { answer: '48V' });
     expect(status).toBe(404);
     expect(json.error).toContain('not found');
+  });
+
+  it('g. [B1] queued answer drains when the autopilot chain publishes complete', async () => {
+    const item = addItem('Chain-end question');
+
+    (session as any).beginTurn();
+    session.queueAnswer(item.id, item.answer);
+    expect(applyAnswerMock).not.toHaveBeenCalled();
+    expect(frames.some(f => f.kind === 'answer_queued' && f.itemId === item.id)).toBe(true);
+
+    // The autopilot chain finishes normally; publish releases the busy guard
+    // and must drain answers queued during the final phase.
+    (session as any).publish({ kind: 'complete', result: { passed: [], parked: [] }, reason: 'finished' });
+
+    await vi.waitFor(() => expect(applyAnswerMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => {
+      expect(frames.some(f => f.kind === 'answer_applied' && f.itemId === item.id)).toBe(true);
+    });
+    expect(applyAnswerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ projectPath: tempDir, stateManager }),
+      item.id,
+      item.answer
+    );
+  });
+
+  it('h. [B2] busy guard stays held while an idle drain applies', async () => {
+    const item = addItem();
+    let releaseApply!: () => void;
+    const gate = new Promise<void>(r => { releaseApply = r; });
+
+    const applySpy = vi.spyOn(session as any, 'applyAnswerNow').mockImplementation(async () => {
+      await gate;
+    });
+    try {
+      const result = session.queueAnswer(item.id, item.answer);
+      expect(result).toEqual({ queued: false });
+
+      expect(applySpy).toHaveBeenCalled();
+      // Guard must be held for the whole drain: a concurrent turn start cannot
+      // slip past the busy check while an answer apply is running.
+      expect(session.busy).toBe(true);
+      expect(() => (session as any).beginTurn()).toThrow('A turn is already in progress');
+    } finally {
+      releaseApply();
+      applySpy.mockRestore();
+    }
+    await vi.waitFor(() => expect(session.busy).toBe(false));
+  });
+
+  it('i. [B3] queue caps at 50 entries; the 51st returns 429 at the router', async () => {
+    (session as any).beginTurn();
+    try {
+      for (let i = 0; i < 50; i++) {
+        const queued = addItem(`Cap question ${i}`);
+        session.queueAnswer(queued.id, queued.answer);
+      }
+
+      const fiftyFirst = addItem('Fifty-first question');
+      const { status, json } = await request(server, 'POST', `/api/portal/${fiftyFirst.id}/answer`, { answer: fiftyFirst.answer });
+      expect(status).toBe(429);
+      expect(json.error).toContain('queue is full');
+      expect(applyAnswerMock).not.toHaveBeenCalled();
+    } finally {
+      (session as any).endTurn();
+    }
+  });
+
+  it('j. [B3] same itemId queued twice replaces the pending entry (single apply)', async () => {
+    const item = addItem('Dedupe question');
+
+    (session as any).beginTurn();
+    session.queueAnswer(item.id, 'first answer');
+    session.queueAnswer(item.id, 'revised answer');
+    (session as any).endTurn();
+
+    await (session as any).runQueuedAnswers();
+
+    expect(applyAnswerMock).toHaveBeenCalledTimes(1);
+    expect(applyAnswerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ projectPath: tempDir, stateManager }),
+      item.id,
+      'revised answer'
+    );
+  });
+
+  it('k. [B3] POST /answer with an answer longer than 4096 chars returns 400', async () => {
+    const item = addItem();
+    const { status, json } = await request(server, 'POST', `/api/portal/${item.id}/answer`, { answer: 'a'.repeat(4097) });
+    expect(status).toBe(400);
+    expect(json.error).toContain('Answer too long');
+  });
+
+  it('k2. [B3] POST /answer with exactly 4096 chars applies', async () => {
+    const item = addItem();
+    const { status, json } = await request(server, 'POST', `/api/portal/${item.id}/answer`, { answer: 'a'.repeat(4096) });
+    await vi.waitFor(() => expect(applyAnswerMock).toHaveBeenCalledTimes(1));
+    expect(status).toBe(200);
+    expect(json?.data?.applied).toBe(true);
+  });
+
+  it('l. [B6] answer frames are not backfilled into recentEvents', async () => {
+    const item = addItem();
+    const recent = () => (session as any).getRecentAutopilotEvents() as any[];
+
+    (session as any).beginTurn();
+    session.queueAnswer(item.id, item.answer);
+    expect(recent().some((e: any) => e.kind === 'answer_queued')).toBe(false);
+    (session as any).endTurn();
+
+    await (session as any).runQueuedAnswers();
+    expect(recent().some((e: any) => e.kind === 'answer_applying')).toBe(false);
+    expect(recent().some((e: any) => e.kind === 'answer_applied')).toBe(false);
+    expect(recent().some((e: any) => e.kind === 'answer_failed')).toBe(false);
+
+    // Non-answer frames still land in the ring buffer for reconnect backfill.
+    (session as any).publish({ kind: 'status', message: 'still alive' });
+    expect(recent().some((e: any) => e.kind === 'status')).toBe(true);
+  });
+
+  it('m. [B4] cross-origin mutating POST is rejected with 403', async () => {
+    const item = addItem();
+    const { status, json } = await request(server, 'POST', `/api/portal/${item.id}/answer`, { answer: item.answer }, {
+      Origin: 'http://evil.example'
+    });
+    expect(status).toBe(403);
+    expect(json.error).toContain('Cross-origin request rejected');
+    expect(applyAnswerMock).not.toHaveBeenCalled();
+  });
+
+  it('n. [B4] same-origin POST (localhost alias of 127.0.0.1) passes through', async () => {
+    const item = addItem();
+    const port = (server.address() as AddressInfo).port;
+    const { status, json } = await request(server, 'POST', `/api/portal/${item.id}/answer`, { answer: item.answer }, {
+      Origin: `http://localhost:${port}`
+    });
+    await vi.waitFor(() => expect(applyAnswerMock).toHaveBeenCalledTimes(1));
+    expect(status).toBe(200);
+    expect(json?.data?.applied).toBe(true);
+  });
+
+  it('o. [B4] POST without an Origin header passes (curl / non-browser tooling)', async () => {
+    const item = addItem();
+    const { status, json } = await request(server, 'POST', `/api/portal/${item.id}/answer`, { answer: item.answer });
+    await vi.waitFor(() => expect(applyAnswerMock).toHaveBeenCalledTimes(1));
+    expect(status).toBe(200);
+    expect(json?.data?.applied).toBe(true);
   });
 });

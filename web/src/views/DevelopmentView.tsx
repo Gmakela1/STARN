@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
-import { DocData, ProjectInfo, RoadmapPhase } from '../types/api';
+import { AnswerState, DocData, ProjectInfo, RoadmapPhase } from '../types/api';
 import { useTurnStream, ChatEntry, ActivityMeta } from '../api/useTurnStream';
 import { useAutopilotEvents, AutopilotLiveEvent } from '../hooks/useAutopilotEvents';
 import Markdown from '../components/Markdown';
@@ -308,6 +308,36 @@ export default function DevelopmentView({
         });
       case 'error':
         return appendEntry({ role: 'system', text: ev.message, activity: { kind: 'error', reason: ev.message } });
+      case 'answer_queued':
+        // §1.3 — no chat entry for queue heartbeats, only the card chip.
+        setAnswerStates(prev => ({ ...prev, [ev.itemId]: { phase: 'queued' } }));
+        return;
+      case 'answer_applying':
+        setAnswerStates(prev => ({ ...prev, [ev.itemId]: { phase: 'applying' } }));
+        return;
+      case 'answer_applied': {
+        // §1.4.3 — exactly one chat entry per apply cycle, driven by this frame.
+        setAnswerStates(prev => ({ ...prev, [ev.itemId]: { phase: 'applied' } }));
+        const docPath = ev.item?.docPath;
+        const firstAffected = ev.affectedDocs?.[0];
+        let line: string;
+        if (docPath) {
+          line = `Answer applied to ${docPath.split('/').pop()} — scanning downstream docs…`;
+        } else if (firstAffected) {
+          line = `Answer applied — also updated ${firstAffected.split('/').pop()}.`;
+        } else {
+          line = 'Answer applied — incorporated into the run.';
+        }
+        return appendEntry({ role: 'system', text: line });
+      }
+      case 'answer_failed': {
+        setAnswerStates(prev => ({ ...prev, [ev.itemId]: { phase: 'failed', error: ev.error } }));
+        const title = portalItemsRef.current.find(i => i.id === ev.itemId)?.title ?? 'this question';
+        return appendEntry({
+          role: 'system',
+          text: `Couldn't apply your answer to "${title}" — ${ev.error}. Retry from the question bar.`
+        });
+      }
       default:
         return; // question/parked surface via portal + QuestionBar
     }
@@ -319,8 +349,11 @@ export default function DevelopmentView({
   const [prompt, setPrompt] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [dismissedParked, setDismissedParked] = useState<Set<string>>(new Set());
-  const [answerNotice, setAnswerNotice] = useState<string | null>(null);
-  const [docUpdateBanner, setDocUpdateBanner] = useState<string | null>(null);
+  const [answerStates, setAnswerStates] = useState<Record<string, AnswerState>>({});
+  const portalItemsRef = useRef(portalItems);
+  useEffect(() => {
+    portalItemsRef.current = portalItems;
+  }, [portalItems]);
 
   useEffect(() => {
     const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -354,21 +387,39 @@ export default function DevelopmentView({
     };
   }, [busy, checkpoint, recording, startRecording, stopRecording]);
 
-  // S5: answer feedback — watch for answered items in portalItems
+  // §1.6.5 — SSE-drop fallback: the 3s poll only fetches open items, so an
+  // answered item never appears in portalItems. When a queued/applying chip has
+  // no open item behind it, the stream likely dropped between the 202 and the
+  // terminal frame — check the answered pool directly. No chat entry from this
+  // path (the SSE answer_applied handler owns the log).
   useEffect(() => {
-    const answered = portalItems.filter(i => i.status === 'answered' && i.answer);
-    if (answered.length > 0) {
-      const latest = answered[answered.length - 1];
-      if (latest.docPath) {
-        setAnswerNotice(`✎ Answer applied to ${latest.docPath.split('/').pop()} — scanning downstream impact…`);
-        setTimeout(() => setAnswerNotice(null), 2000);
-        setTimeout(() => {
-          setDocUpdateBanner('This document was updated from your answer.');
-          setTimeout(() => setDocUpdateBanner(null), 4000);
-        }, 2500);
+    const openIds = new Set(portalItems.map(i => i.id));
+    const pendingMissing = Object.entries(answerStates)
+      .filter(([, st]) => st.phase === 'queued' || st.phase === 'applying')
+      .map(([id]) => id)
+      .filter(id => !openIds.has(id));
+    if (pendingMissing.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.fetchPortalItems({ status: 'answered' });
+        if (cancelled) return;
+        const answeredIds = new Set(res.items.filter(i => i.status === 'answered').map(i => i.id));
+        for (const id of pendingMissing) {
+          if (!answeredIds.has(id)) continue;
+          setAnswerStates(prev => {
+            const cur = prev[id];
+            if (!cur || (cur.phase !== 'queued' && cur.phase !== 'applying')) return prev;
+            return { ...prev, [id]: { phase: 'applied' } };
+          });
+        }
+      } catch {
+        // Transient failure — the 3s poll retries naturally.
       }
-    }
-  }, [portalItems]);
+    })();
+    return () => { cancelled = true; };
+  }, [portalItems, answerStates]);
 
   const submit = async () => {
     const text = prompt.trim();
@@ -462,6 +513,21 @@ export default function DevelopmentView({
       setDocError(err?.message ?? 'Document unavailable');
     }
   }, [selectedPhase, editing]);
+
+  // §1.6.4 — submit wrapper: converts either POST shape (queued/applied) and any
+  // throw into answerStates; failures log here, successes are logged exclusively
+  // by the answer_applied frame.
+  const handleQueueAnswer = useCallback(async (id: string, text: string): Promise<void> => {
+    try {
+      const res = await api.submitPortalAnswer(id, text);
+      setAnswerStates(prev => ({ ...prev, [id]: { phase: 'queued' in res ? 'queued' : 'applied' } }));
+    } catch (err) {
+      setAnswerStates(prev => ({ ...prev, [id]: { phase: 'failed', error: (err as Error).message } }));
+      appendEntry({ role: 'system', text: `Couldn't send your answer — ${(err as Error).message}.` });
+      return;
+    }
+    await refreshDoc();   // keep existing refresh behavior; a refresh failure can't flip a good submit to 'failed'
+  }, [appendEntry, refreshDoc]);
 
   useEffect(() => { void loadRoadmap(); }, [loadRoadmap]);
   useEffect(() => { void refreshDoc(); }, [refreshDoc]);
@@ -690,20 +756,8 @@ export default function DevelopmentView({
               }}
             />
           )}
-          {/* S5: answer feedback chat entry */}
-          {answerNotice && (
-            <article className="max-w-[92%] rounded-xl border border-emerald-800/60 bg-emerald-950/30 p-3">
-              <p className="text-xs text-emerald-300">{answerNotice}</p>
-            </article>
-          )}
-          {docUpdateBanner && (
-            <article className="max-w-[92%] rounded-xl border border-emerald-800/60 bg-emerald-950/40 p-3">
-              <div className="flex items-center gap-2">
-                <Check className="h-4 w-4 text-emerald-400" aria-hidden />
-                <p className="text-xs text-emerald-200">{docUpdateBanner}</p>
-              </div>
-            </article>
-          )}
+          {/* S5 answer-feedback chat entries were replaced by the typed
+              answer_applied / answer_failed frames — see handleAutopilotEvent. */}
           <div ref={chatEndRef} />
           {/* §7 — screen-reader live region for the newest activity line */}
           <div role="status" aria-live="polite" className="sr-only">
@@ -714,10 +768,8 @@ export default function DevelopmentView({
         {/* S1: QuestionBar outside scroll container, between scroll region and footer */}
         <QuestionBar
           items={portalItems}
-          onSubmit={async (id, text) => {
-            await api.submitPortalAnswer(id, text);
-            await refreshDoc();
-          }}
+          onSubmit={handleQueueAnswer}
+          answerStates={answerStates}
           onDismiss={async (id) => {
             await api.dismissPortalItem(id);
           }}
@@ -749,7 +801,6 @@ export default function DevelopmentView({
                     void submit();
                   }
                 }}
-                rows={2}
                 disabled={busy || checkpoint !== null}
                 placeholder={checkpoint ? 'Resolve the pending checkpoint above first…' : 'Message the agent… (Enter to send, Shift+Enter for newline)'}
                 aria-label="Message the agent"

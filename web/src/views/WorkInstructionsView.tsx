@@ -393,7 +393,6 @@ export default function WorkInstructionsView() {
                                   void submitComment(stepIdx);
                                 }
                               }}
-                              rows={2}
                               placeholder="Add a comment… Enter to send"
                               className="mt-2 w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
                             />
