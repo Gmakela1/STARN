@@ -20,7 +20,7 @@ import {
   X
 } from 'lucide-react';
 import { api } from '../api/client';
-import { DocData, ProjectInfo, RoadmapPhase } from '../types/api';
+import { DocData, ProjectInfo, RoadmapPhase, PortalItem, AutopilotStatusResponse } from '../types/api';
 import { useTurnStream } from '../api/useTurnStream';
 import Markdown from '../components/Markdown';
 import CriticScorecard from '../components/CriticScorecard';
@@ -33,15 +33,23 @@ export interface DevelopmentViewProps {
   project: ProjectInfo | null;
   onProjectChanged: () => Promise<void> | void;
   initialPhase?: string;
+  /** Live autopilot status from useAutopilotEvents; overrides turnStream's stale copy. */
+  autopilotStatus?: AutopilotStatusResponse | null;
+  /** Live portal items from useAutopilotEvents; overrides turnStream's stale copy. */
+  portalItems?: PortalItem[];
 }
 
 export default function DevelopmentView({
   turnStream,
   project,
   onProjectChanged,
-  initialPhase
+  initialPhase,
+  autopilotStatus: liveAutopilotStatus,
+  portalItems: livePortalItems
 }: DevelopmentViewProps) {
-  const { entries, busy, status, toolActivity, checkpoint, autopilotStatus, portalItems, sendTurn, abortTurn, clearCheckpoint, appendEntry } = turnStream;
+  const { entries, busy, status, toolActivity, checkpoint, sendTurn, abortTurn, clearCheckpoint, appendEntry } = turnStream;
+  const autopilotStatus = liveAutopilotStatus ?? (turnStream as any).autopilotStatus;
+  const portalItems: PortalItem[] = livePortalItems ?? (turnStream as any).portalItems ?? [];
 
   // --- Chat state ---
   const [prompt, setPrompt] = useState('');

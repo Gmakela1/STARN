@@ -977,8 +977,12 @@ export async function handleApiRequest(
     if (segments[1] === 'autopilot' && segments.length === 3 && segments[2] === 'resume' && method === 'POST') {
       if (!deps.session) return fail(res, 503, 'Agent session unavailable');
       const body = await readJsonBody(req);
-      deps.session.autopilotResume(body?.docId);
-      return ok(res, { status: 'resumed' });
+      try {
+        deps.session.autopilotResume(body?.docId);
+        return ok(res, { status: 'resumed' });
+      } catch (err: any) {
+        return fail(res, 409, err?.message ?? 'Failed to resume autopilot');
+      }
     }
 
     if (segments[1] === 'autopilot' && segments.length === 3 && segments[2] === 'events' && method === 'GET') {
@@ -994,13 +998,21 @@ export async function handleApiRequest(
       const recent = deps.session.getRecentAutopilotEvents();
       for (const ev of recent) {
         if (!res.writableEnded) {
-          res.write(`event: autopilot\ndata: ${JSON.stringify(ev)}\n\n`);
+          if (ev.kind === 'question') {
+            res.write(`event: question\ndata: ${JSON.stringify({ item: ev.item })}\n\n`);
+          } else {
+            res.write(`event: autopilot\ndata: ${JSON.stringify({ status: ev })}\n\n`);
+          }
         }
       }
 
       const emit = (ev: any) => {
         if (!res.writableEnded) {
-          res.write(`event: autopilot\ndata: ${JSON.stringify(ev)}\n\n`);
+          if (ev.kind === 'question') {
+            res.write(`event: question\ndata: ${JSON.stringify({ item: ev.item })}\n\n`);
+          } else {
+            res.write(`event: autopilot\ndata: ${JSON.stringify({ status: ev })}\n\n`);
+          }
         }
       };
 
@@ -1027,21 +1039,25 @@ export async function handleApiRequest(
       const body = await readJsonBody(req);
       if (!body?.answer) return fail(res, 400, 'Missing "answer"');
       try {
+        const session = deps.session;
+        if (!session) return fail(res, 503, 'No active session');
+        if (session.busy) return fail(res, 409, 'A turn is already in progress');
         const result = await applyAnswer(
           {
             stateManager: deps.stateManager,
             projectPath: deps.projectPath,
-            executeTurn: async (opts) => {
-              throw new Error('applyAnswer executeTurn not available in server context');
-            },
-            runChangeImpact: (phaseId) => deps.session?.runChangeImpactForApproval(phaseId) ?? Promise.resolve([])
+            executeTurn: session.createAnswerExecuteTurn(),
+            runChangeImpact: (phaseId) => session.runChangeImpactForApproval(phaseId) ?? Promise.resolve([])
           },
           itemId,
           String(body.answer)
         );
         return ok(res, result);
       } catch (err: any) {
-        return fail(res, 404, err?.message ?? 'Portal item not found');
+        if (err?.message?.includes('not found') || err?.message?.includes('Invalid')) {
+          return fail(res, 404, err.message);
+        }
+        return fail(res, 500, err?.message ?? 'Answer application failed');
       }
     }
 

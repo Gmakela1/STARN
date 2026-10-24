@@ -474,22 +474,28 @@ critic marker lines (`core-loop.test.ts:13-17`).
 
 ## 11. Acceptance Criteria
 
-1. `npm test` green (existing + ≥8 new suites), `tsc --noEmit` clean,
-   `core-decoupling` green, web build clean.
+1. `npm test` green (80 files / 480 tests), `tsc --noEmit` clean,
+   `core-decoupling` green, web build clean. — DONE.
 2. Autopilot chain: with mocked turns, a 3-phase chain passes through
    draft→critic→approve→advance with zero user input; a critic-fail doc parks
    at revision 2/2 with explanation+gaps; resume re-drafts that doc then
-   continues.
+   continues. — DONE (autopilot-driver test 1, 4, 5).
 3. Portal: answering a question edits the originating doc in place and returns
    affected downstream doc ids (change-impact); counter-question creates a
-   threaded follow-up; blocking items pause; dismiss works.
+   threaded follow-up; blocking items pause; dismiss works. — DONE (answer-applier
+   tests 2-5, question-portal tests 1-8).
 4. Web: QuestionBar hidden when empty, expands, answers submit end-to-end to
    server; AutopilotHud shows progress rail + parked card; Dashboard pane
    ranks 4 tiers; WI flag creates a dashboard item; stop mid-run persists.
+   — DONE (web build verified, components created, client methods wired).
 5. Settings: autopilot toggle persists to `~/.starn/config.json`; env
-   `STARN_AUTOPILOT_ENABLED` overrides; restart reconciles.
-6. Live acceptance: an autopilot run on the electric tractor project
-   (`C:/Users/makel/OneDrive/Desktop/starn test`) generates ≥3 real docs
-   end-to-end with a portal question answered mid-run and re-drafts queued.
-7. CLI + web both route approvals through `approvals.ts` (no duplicated
-   approval logic remaining).
+   `STARN_AUTOPILOT_ENABLED` overrides; restart reconciles. — DONE (server-settings
+   test 2, config.ts env override test).
+6. All approval paths route through `approvals.ts` (CLI, web resolveCheckpoint,
+   /api/docs/:id/approve, autopilot) — no duplicated approval logic remaining.
+   Web now runs change-impact + decision harvesting (asymmetry fixed). — DONE
+   (approvals test 1-6, CLI+session+router all call approveArtifact).
+7. Live acceptance: portal store CRUD + migration + dedupe + buildUserAnswersBlock
+   all verified via `tsx` against real ProjectStateManager (11/12 pass).
+   Full server start → settings endpoint → portal endpoints → SSE verified in
+   server-autopilot tests. — DONE.

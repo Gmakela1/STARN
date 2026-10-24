@@ -284,13 +284,26 @@ export class AutopilotDriver {
           return;
         }
 
-        // Non-critic specialists (e.g. change-impact): mark passed without approval
+        // Non-critic specialists (e.g. change-impact): only mark passed when
+        // the turn produced a document. Intake interviews and error turns
+        // that don't write an artifact must NOT silently pass.
         if (!turnResult.requiresReview) {
-          state.autopilot.docStatus[phase.id] = 'passed';
-          passed.push(phase.id);
+          const content = readDocContent(projectPath, phase.id);
+          if (content !== null) {
+            state.autopilot.docStatus[phase.id] = 'passed';
+            passed.push(phase.id);
+            stateManager.saveState(state);
+            this.emit({ kind: 'phase', phaseId: phase.id, status: 'passed' });
+            continue;
+          }
+          // No artifact written: park with error
+          state.autopilot.docStatus[phase.id] = 'parked';
+          state.autopilot.blocks++;
+          state.autopilot.lastError = `${phase.name}: turn produced no artifact (requires review: false, no doc written)`;
+          state.autopilot.running = false;
           stateManager.saveState(state);
-          this.emit({ kind: 'phase', phaseId: phase.id, status: 'passed' });
-          continue;
+          this.emit({ kind: 'error', message: `Phase ${phase.id} produced no document` });
+          return;
         }
 
         // Normal critic pass: approve the artifact

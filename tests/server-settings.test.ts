@@ -196,4 +196,23 @@ describe('settings + providers API', () => {
     await session.runTurn('How is it going?', () => {});
     expect(clients.lm.chatCompletion.mock.calls.some((c: any[]) => c[0].model === 'cls')).toBe(true);
   });
+
+  it('PUT autopilotEnabled round-trips in settings', async () => {
+    // Default should be true
+    const get1 = await request(server, 'GET', '/api/settings');
+    expect(get1.json.data.autopilotEnabled).toBe(true);
+
+    // Toggle off
+    const put1 = await request(server, 'PUT', '/api/settings', { autopilotEnabled: false });
+    expect(put1.status).toBe(200);
+
+    // Verify via GET
+    const get2 = await request(server, 'GET', '/api/settings');
+    expect(get2.json.data.autopilotEnabled).toBe(false);
+
+    // Toggle back on
+    await request(server, 'PUT', '/api/settings', { autopilotEnabled: true });
+    const get3 = await request(server, 'GET', '/api/settings');
+    expect(get3.json.data.autopilotEnabled).toBe(true);
+  });
 });

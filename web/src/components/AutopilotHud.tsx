@@ -13,10 +13,12 @@ export interface AutopilotHudProps {
   phaseNames?: string[];
 }
 
+// Real phase order from ORDERED_WORKFLOW_PHASES (src/workspace/state.ts).
+// Abbreviated labels for the compact 13-dot rail.
 const PHASE_LABELS = [
-  'CONOPS', 'Architecture', 'ICD', 'BOM', 'Electrical',
-  'Assembly', 'Software', 'Test Plan', 'Safety', 'Manual',
-  'Training', 'Compliance', 'Handover'
+  'CONOPS', 'Architecture', 'ICD', 'Capabilities', 'Requirements',
+  'BOM', 'RTM', 'Milestones', 'Risk', 'Build Seq',
+  'WI', 'Test Plans', 'SOW'
 ];
 
 /**

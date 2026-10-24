@@ -78,7 +78,14 @@ export function useAutopilotEvents(): AutopilotEventsState {
                   const parsed = JSON.parse(dataLine);
                   switch (eventName) {
                     case 'autopilot':
-                      setStatus(parsed.status ?? parsed);
+                      setStatus(prev => {
+                        const st = parsed.status ?? parsed;
+                        // 'complete' and 'error' events mean the run finished
+                        if (st.kind === 'complete' || st.kind === 'error') {
+                          return { ...prev, running: false, ...st.result };
+                        }
+                        return { ...prev, ...st };
+                      });
                       break;
                     case 'question':
                       setPortalItems(prev => [...prev, parsed.item ?? parsed]);

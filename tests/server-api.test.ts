@@ -280,4 +280,59 @@ describe('HTTP Server API', () => {
     expect(status).toBe(404);
     expect(json.success).toBe(false);
   });
+
+  it('GET /api/portal returns empty items list', async () => {
+    const { status, json } = await request(server, 'GET', '/api/portal');
+    expect(status).toBe(200);
+    expect(json.data.items).toEqual([]);
+  });
+
+  it('POST /api/portal/:id/answer returns 404 for unknown item', async () => {
+    const { status, json } = await request(server, 'POST', '/api/portal/nonexistent/answer', {
+      answer: 'test answer'
+    });
+    expect(status).toBe(404);
+    expect(json.error).toContain('not found');
+  });
+
+  it('POST /api/portal/:id/dismiss returns 404 for unknown item', async () => {
+    const { status, json } = await request(server, 'POST', '/api/portal/nonexistent/dismiss');
+    expect(status).toBe(404);
+    expect(json.error).toContain('not found');
+  });
+
+  it('POST /api/actions/:id/flags toggles flag', async () => {
+    const r1 = await request(server, 'POST', '/api/actions/ACTION-03/flags', {
+      stepId: 0,
+      flagged: true
+    });
+    expect(r1.status).toBe(200);
+
+    // Verify a portal item was created
+    const portal = await request(server, 'GET', '/api/portal');
+    expect(portal.json.data.items.length).toBeGreaterThanOrEqual(1);
+    expect(portal.json.data.items.some((i: any) => i.type === 'flag')).toBe(true);
+  });
+
+  it('POST /api/actions/:id/comments stores a comment', async () => {
+    const { status } = await request(server, 'POST', '/api/actions/ACTION-03/comments', {
+      stepId: 0,
+      text: 'Check torque spec'
+    });
+    expect(status).toBe(200);
+  });
+
+  it('POST /api/actions/:id/flags with flagged:false does not create portal item', async () => {
+    const portalBefore = await request(server, 'GET', '/api/portal');
+    const countBefore = portalBefore.json.data.items.length;
+
+    await request(server, 'POST', '/api/actions/ACTION-03/flags', {
+      stepId: 0,
+      flagged: false
+    });
+
+    // No new portal items should be created when unflagging
+    const portalAfter = await request(server, 'GET', '/api/portal');
+    expect(portalAfter.json.data.items.length).toBe(countBefore);
+  });
 });
