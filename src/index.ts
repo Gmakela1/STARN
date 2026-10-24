@@ -91,7 +91,8 @@ async function main() {
   }
 
   // 3. Drafting model selection (OpenRouter drafting only; local roles are managed via /models)
-  if (config.assignments.drafting.providerId === OPENROUTER_PROVIDER_ID) {
+  // Skip if already configured — the user can change via /models or /project later.
+  if (config.assignments.drafting.providerId === OPENROUTER_PROVIDER_ID && !config.defaultModel) {
     const draftingModel = await promptSelectLiveModel(availableModels, config.assignments.drafting.model);
     config.assignments.drafting.model = draftingModel;
     config.defaultModel = draftingModel;
