@@ -11,10 +11,14 @@ import {
   Compass,
   MapPin,
   ArrowRight,
-  ChevronDown
+  ChevronDown,
+  CircleAlert,
+  AlertTriangle,
+  MessageSquare,
+  Flag
 } from 'lucide-react';
 import { api } from '../api/client';
-import { DashboardData } from '../types/api';
+import { DashboardData, PortalItem } from '../types/api';
 import ExecutiveBriefingModal from '../components/ExecutiveBriefingModal';
 import Markdown from '../components/Markdown';
 import { PHASE_SUBTITLES } from '../components/roadmapMeta';
@@ -66,7 +70,7 @@ export default function DashboardView({ onNavigate }: { onNavigate?: (tab: strin
   }
 
   if (!data) return null;
-  const { project, roadmap, issues } = data;
+  const { project, roadmap } = data;
   const fin = project.financials;
   const varianceOver = fin.netVariance > 0;
   const activePhaseId = project.activePhase;
@@ -76,6 +80,95 @@ export default function DashboardView({ onNavigate }: { onNavigate?: (tab: strin
     ?? roadmap[0];
   const activeIdx = roadmap.indexOf(activePhase);
   const nextMilestone = roadmap[Math.min(activeIdx + 1, roadmap.length - 1)];
+
+  const renderActionPane = (d: DashboardData): JSX.Element => {
+    const ps = d.portalSummary;
+    const topItems = ps?.topItems ?? [];
+    const shopFloorFlags = d.issues.filter(i => i.type === 'non_conformance');
+
+    if (!ps && d.issues.length === 0) {
+      // S9: autopilot OFF → shop-floor only + CTA
+      return (
+        <div className="space-y-3 p-4">
+          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-center">
+            <p className="text-sm text-slate-300">
+              Start Autopilot to auto-draft all 13 documents.
+            </p>
+            <button
+              onClick={() => {}}
+              className="mt-3 rounded-lg bg-cyan-600 px-4 py-2 text-xs font-bold text-white hover:bg-cyan-500"
+            >
+              Start Autopilot
+            </button>
+          </div>
+          {shopFloorFlags.length > 0 && (
+            <>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 px-1">Shop Floor Flags</h3>
+              <ul className="divide-y divide-slate-800/70">
+                {shopFloorFlags.slice(0, 4).map(issue => (
+                  <li key={issue.id} className="flex items-center gap-3 px-1 py-2">
+                    <Flag className="h-3.5 w-3.5 shrink-0 text-rose-400" aria-hidden />
+                    <p className="min-w-0 flex-1 truncate text-sm text-slate-300">{issue.title}</p>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      );
+    }
+
+    // 4-tier ranking: rose blocking → amber parked → cyan needs-input → slate shop-floor
+    const blockingItems = topItems.filter((i: PortalItem) => i.severity === 'blocking' && i.status === 'open');
+    const parkedItems = topItems.filter((i: PortalItem) => i.type === 'parked' && i.status === 'open');
+    const questionItems = topItems.filter((i: PortalItem) => i.type === 'question' && i.status === 'open');
+    const flagItems = topItems.filter((i: PortalItem) => i.type === 'flag' && i.status === 'open');
+
+    const renderTier = (items: PortalItem[], icon: React.ReactNode, color: string, label: string, route?: string) => {
+      if (items.length === 0) return null;
+      return (
+        <div className="space-y-1">
+          <h3 className={`flex items-center gap-1.5 px-1 py-1 text-xs font-bold uppercase tracking-wider ${color}`}>
+            {icon}
+            {label}
+            <span className="ml-auto font-mono text-[11px] font-normal text-slate-500">{items.length}</span>
+          </h3>
+          <ul className="divide-y divide-slate-800/70">
+            {items.slice(0, 4).map(item => (
+              <li
+                key={item.id}
+                className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-slate-800/40"
+                onClick={() => {
+                  if (route && onNavigate) onNavigate(route);
+                }}
+              >
+                <p className="min-w-0 flex-1 truncate text-sm text-slate-300">{item.title}</p>
+                {item.docPath && (
+                  <span className="font-mono text-[11px] text-slate-500">
+                    {item.docPath.split('/').pop()}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    };
+
+    return (
+      <div className="space-y-2 p-2">
+        {renderTier(blockingItems, <CircleAlert className="h-3.5 w-3.5" aria-hidden />, 'text-rose-300', 'Blocking', 'development')}
+        {renderTier(parkedItems, <AlertTriangle className="h-3.5 w-3.5" aria-hidden />, 'text-rose-300', 'Parked', 'development')}
+        {renderTier(questionItems, <MessageSquare className="h-3.5 w-3.5" aria-hidden />, 'text-cyan-300', 'Needs Input', 'development')}
+        {renderTier(flagItems, <Flag className="h-3.5 w-3.5" aria-hidden />, 'text-slate-400', 'Shop Floor Flags', 'build')}
+        {topItems.length === 0 && (
+          <p className="px-4 py-6 text-center text-xs text-slate-500">
+            All systems nominal. 🎉
+          </p>
+        )}
+      </div>
+    );
+  };
 
   const extractLede = (text: string): string => {
     const trimmed = text.trim();
@@ -264,34 +357,31 @@ export default function DashboardView({ onNavigate }: { onNavigate?: (tab: strin
           </div>
         </section>
 
-        {/* Issues snapshot */}
-        <section aria-label="Open issues snapshot" className="rounded-xl border border-slate-800 bg-slate-900/40">
+        {/* S8/S9: Ranked action pane — replaces "Open Issues & Questions" */}
+        <section aria-label="Open actions" className="rounded-xl border border-slate-800 bg-slate-900/40">
           <header className="border-b border-slate-800 px-4 py-3">
-            <h2 className="text-sm font-bold text-slate-200">Open Issues & Questions</h2>
-          </header>
-          {issues.length === 0 ? (
-            <p className="px-4 py-6 text-center text-xs text-slate-500">
-              No open non-conformances or builder questions. 🎉
-            </p>
-          ) : (
-            <ul className="divide-y divide-slate-800/70">
-              {issues.slice(0, 6).map(issue => (
-                <li key={issue.id} className="flex items-center gap-3 px-4 py-2.5">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase ${
-                      issue.type === 'non_conformance'
-                        ? 'bg-rose-950/70 text-rose-300'
-                        : 'bg-amber-950/70 text-amber-300'
-                    }`}
-                  >
-                    {issue.type === 'non_conformance' ? 'Defect' : 'Question'}
+            <h2 className="text-sm font-bold text-slate-200">
+              Open Actions
+              {data.portalSummary && (() => {
+                const ps = data.portalSummary!;
+                const total = ps.blocking + ps.parked + ps.questions + ps.flags;
+                return (
+                  <span className="ml-2 text-xs font-normal text-slate-400">
+                    ({total} ·{' '}
+                    {ps.blocking > 0 && <span className="text-rose-300">{ps.blocking} blocking</span>}
+                    {ps.blocking > 0 && ps.parked > 0 && <span>, </span>}
+                    {ps.parked > 0 && <span className="text-rose-300">{ps.parked} parked</span>}
+                    {(ps.blocking > 0 || ps.parked > 0) && ps.questions > 0 && <span>, </span>}
+                    {ps.questions > 0 && <span className="text-cyan-300">{ps.questions} needs input</span>}
+                    {(ps.blocking > 0 || ps.parked > 0 || ps.questions > 0) && ps.flags > 0 && <span>, </span>}
+                    {ps.flags > 0 && <span className="text-slate-400">{ps.flags} flags</span>}
+                    )
                   </span>
-                  <p className="min-w-0 flex-1 truncate text-sm text-slate-300">{issue.title}</p>
-                  <span className="font-mono text-[11px] text-slate-500">{issue.source}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+                );
+              })()}
+            </h2>
+          </header>
+          {renderActionPane(data)}
         </section>
       </div>
 

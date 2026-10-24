@@ -165,3 +165,33 @@ body,
     border-color: #cbd5e1 !important;
   }
 }
+
+/* ========================================================================= */
+/* S10: UX Seamlessness Layer keyframes (QuestionBar, parked card, answer)    */
+/* ========================================================================= */
+@keyframes question-arrive {
+  0% { background-color: transparent; transform: scale(1); }
+  30% { background-color: rgba(6, 182, 212, 0.15); transform: scale(1.05); }
+  60% { background-color: rgba(6, 182, 212, 0.08); }
+  100% { background-color: transparent; transform: scale(1); }
+}
+.animate-question-arrive {
+  animation: question-arrive 300ms ease-out;
+}
+
+@keyframes answered-collapse {
+  0% { opacity: 1; max-height: 200px; margin-bottom: 8px; }
+  100% { opacity: 0; max-height: 0; margin-bottom: 0; padding: 0; }
+}
+.animate-answered-collapse {
+  animation: answered-collapse 400ms ease-in forwards;
+  overflow: hidden;
+}
+
+@keyframes park-reveal {
+  0% { transform: translateY(-8px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.animate-park-reveal {
+  animation: park-reveal 250ms ease-out;
+}

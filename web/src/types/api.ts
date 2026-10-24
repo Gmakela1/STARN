@@ -165,6 +165,38 @@ export interface IssuesSummary {
   openQuestionCount: number;
 }
 
+export interface PortalItem {
+  id: string;
+  type: 'question' | 'parked' | 'flag' | 'nonconformance';
+  severity: 'blocking' | 'normal';
+  docPath?: string;
+  section?: string;
+  title: string;
+  detail?: string;
+  gaps?: string[];
+  threadId?: string;
+  status: 'open' | 'answered' | 'dismissed' | 'resolved';
+  answer?: string;
+  source: 'autopilot' | 'studio' | 'shop-floor';
+  createdAt: string;
+  updatedAt: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface AutopilotStatusResponse {
+  enabled: boolean;
+  running: boolean;
+  currentPhaseId?: string;
+  docStatus: Record<string, string>;
+  blocks: number;
+  passedCount: number;
+  totalPhases: number;
+}
+
+export interface PortalListResponse {
+  items: PortalItem[];
+}
+
 export interface DashboardData {
   project: ProjectInfo;
   roadmap: RoadmapPhase[];
@@ -176,7 +208,7 @@ export interface DashboardData {
     parked: number;
     questions: number;
     flags: number;
-    topItems: any[];
+    topItems: PortalItem[];
   };
 }
 
@@ -285,5 +317,5 @@ export type TurnEvent =
       };
     }
   | { event: 'error'; data: { message: string } }
-  | { event: 'autopilot'; data: { status: { running: boolean; docStatus: Record<string, string>; blocks: number; currentPhaseId?: string; passedCount: number; totalPhases: number } } }
-  | { event: 'question'; data: { item: import('../../../src/workspace/types').PortalItem } };
+  | { event: 'autopilot'; data: { status: AutopilotStatusResponse } }
+  | { event: 'question'; data: { item: PortalItem } };

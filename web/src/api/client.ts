@@ -1,5 +1,6 @@
 import {
   ApiEnvelope,
+  AutopilotStatusResponse,
   BomData,
   BomItem,
   CheckpointDecisionResult,
@@ -7,6 +8,8 @@ import {
   DocData,
   IssuesSummary,
   PendingCheckpoint,
+  PortalItem,
+  PortalListResponse,
   ProjectInfo,
   ProjectIssue,
   ProjectsResponse,
@@ -62,6 +65,29 @@ export const api = {
   fetchAction: (actionId: string) => call<WorkInstruction>('GET', `/api/actions/${encodeURIComponent(actionId)}`),
   toggleActionStep: (actionId: string, stepIndex: number, checked: boolean) =>
     call<WorkInstruction>('PATCH', `/api/actions/${encodeURIComponent(actionId)}/checklist`, { stepIndex, checked }),
+
+  // Autopilot
+  fetchAutopilotStatus: () => call<AutopilotStatusResponse>('GET', '/api/autopilot'),
+  autopilotStart: () => call<{ success: boolean }>('POST', '/api/autopilot/start'),
+  autopilotStop: () => call<{ success: boolean }>('POST', '/api/autopilot/stop'),
+  autopilotResume: (docId?: string) =>
+    call<{ success: boolean }>('POST', '/api/autopilot/resume', docId ? { docId } : undefined),
+
+  // Portal items
+  fetchPortalItems: (params?: { status?: string; type?: string }) => {
+    const query = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : '';
+    return call<PortalListResponse>('GET', `/api/portal${query}`);
+  },
+  submitPortalAnswer: (id: string, answer: string) =>
+    call<PortalItem>('POST', `/api/portal/${encodeURIComponent(id)}/answer`, { answer }),
+  dismissPortalItem: (id: string) =>
+    call<{ success: boolean }>('POST', `/api/portal/${encodeURIComponent(id)}/dismiss`),
+
+  // Action comments & flags
+  postActionComment: (actionId: string, stepId: number, text: string) =>
+    call<{ success: boolean }>('POST', `/api/actions/${encodeURIComponent(actionId)}/comments`, { stepId, text }),
+  toggleActionFlag: (actionId: string, stepId: number, flagged: boolean) =>
+    call<{ success: boolean }>('POST', `/api/actions/${encodeURIComponent(actionId)}/flags`, { stepId, flagged }),
 
   // Issues
   fetchIssues: () => call<IssuesSummary>('GET', '/api/issues'),

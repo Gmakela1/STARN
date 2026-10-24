@@ -74,7 +74,7 @@ const HUBS: HubNav[] = [
 const BUILD_SUB_TABS: Array<{ id: BuildSubTab; label: string; icon: typeof PackageSearch }> = [
   { id: 'parts', label: 'Shopping List & BOM', icon: PackageSearch },
   { id: 'work', label: 'Work Instructions (Shop Mode)', icon: Wrench },
-  { id: 'issues', label: 'Workshop Issues & Questions', icon: MessageSquareWarning }
+  { id: 'issues', label: 'Shop Floor Flags', icon: MessageSquareWarning }
 ];
 
 const VAULT_SUB_TABS: Array<{ id: VaultSubTab; label: string; icon: typeof FolderArchive }> = [

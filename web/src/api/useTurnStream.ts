@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { CriticResult, PendingCheckpoint } from '../types/api';
+import { AutopilotStatusResponse, CriticResult, PendingCheckpoint, PortalItem } from '../types/api';
 
 export interface ChatEntry {
   id: string;
@@ -18,6 +18,8 @@ export interface TurnStreamState {
   toolActivity: string | null;
   checkpoint: PendingCheckpoint | null;
   error: string | null;
+  autopilotStatus: AutopilotStatusResponse | null;
+  portalItems: PortalItem[];
 }
 
 let idCounter = 0;
@@ -34,6 +36,8 @@ export function useTurnStream() {
   const [toolActivity, setToolActivity] = useState<string | null>(null);
   const [checkpoint, setCheckpoint] = useState<PendingCheckpoint | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [autopilotStatus, setAutopilotStatus] = useState<AutopilotStatusResponse | null>(null);
+  const [portalItems, setPortalItems] = useState<PortalItem[]>([]);
   const busyRef = useRef(false);
 
   const appendEntry = useCallback((entry: Omit<ChatEntry, 'id'>) => {
@@ -60,6 +64,12 @@ export function useTurnStream() {
           requiresReview: Boolean(data.requiresReview),
           aborted: Boolean(data.aborted)
         });
+        break;
+      case 'autopilot':
+        setAutopilotStatus(data.status as AutopilotStatusResponse);
+        break;
+      case 'question':
+        setPortalItems(prev => [...prev, data.item as PortalItem]);
         break;
       case 'error':
         setError(String(data.message ?? 'Turn failed'));
@@ -145,6 +155,6 @@ export function useTurnStream() {
   const clearCheckpoint = useCallback(() => setCheckpoint(null), []);
   const restoreCheckpoint = useCallback((cp: PendingCheckpoint) => setCheckpoint(cp), []);
 
-  const state: TurnStreamState = { entries, busy, status, toolActivity, checkpoint, error };
+  const state: TurnStreamState = { entries, busy, status, toolActivity, checkpoint, error, autopilotStatus, portalItems };
   return { ...state, sendTurn, abortTurn, clearCheckpoint, restoreCheckpoint, appendEntry };
 }

@@ -15,7 +15,9 @@ import {
   Upload,
   Paperclip,
   ChevronDown,
-  Check
+  Check,
+  RotateCcw,
+  X
 } from 'lucide-react';
 import { api } from '../api/client';
 import { DocData, ProjectInfo, RoadmapPhase } from '../types/api';
@@ -23,6 +25,8 @@ import { useTurnStream } from '../api/useTurnStream';
 import Markdown from '../components/Markdown';
 import CriticScorecard from '../components/CriticScorecard';
 import CheckpointPanel from '../components/CheckpointPanel';
+import QuestionBar from '../components/QuestionBar';
+import AutopilotHud from '../components/AutopilotHud';
 
 export interface DevelopmentViewProps {
   turnStream: ReturnType<typeof useTurnStream>;
@@ -37,15 +41,34 @@ export default function DevelopmentView({
   onProjectChanged,
   initialPhase
 }: DevelopmentViewProps) {
-  const { entries, busy, status, toolActivity, checkpoint, sendTurn, abortTurn, clearCheckpoint, appendEntry } = turnStream;
+  const { entries, busy, status, toolActivity, checkpoint, autopilotStatus, portalItems, sendTurn, abortTurn, clearCheckpoint, appendEntry } = turnStream;
 
   // --- Chat state ---
   const [prompt, setPrompt] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const [dismissedParked, setDismissedParked] = useState<Set<string>>(new Set());
+  const [answerNotice, setAnswerNotice] = useState<string | null>(null);
+  const [docUpdateBanner, setDocUpdateBanner] = useState<string | null>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [entries, status, checkpoint]);
+
+  // S5: answer feedback — watch for answered items in portalItems
+  useEffect(() => {
+    const answered = portalItems.filter(i => i.status === 'answered' && i.answer);
+    if (answered.length > 0) {
+      const latest = answered[answered.length - 1];
+      if (latest.docPath) {
+        setAnswerNotice(`✎ Answer applied to ${latest.docPath.split('/').pop()} — scanning downstream impact…`);
+        setTimeout(() => setAnswerNotice(null), 2000);
+        setTimeout(() => {
+          setDocUpdateBanner('This document was updated from your answer.');
+          setTimeout(() => setDocUpdateBanner(null), 4000);
+        }, 2500);
+      }
+    }
+  }, [portalItems]);
 
   const submit = async () => {
     const text = prompt.trim();
@@ -86,6 +109,13 @@ export default function DevelopmentView({
   const [saving, setSaving] = useState(false);
   const [approving, setApproving] = useState(false);
   const [docNotice, setDocNotice] = useState<string | null>(null);
+
+  // S4: parked items from portal
+  const parkedItems = portalItems.filter(i => i.type === 'parked' && i.status === 'open' && !dismissedParked.has(i.id));
+
+  const handleDismissParked = (id: string) => {
+    setDismissedParked(prev => new Set(prev).add(id));
+  };
 
   // Quality example upload state
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
@@ -195,7 +225,70 @@ export default function DevelopmentView({
     <div className="grid h-full grid-cols-1 lg:grid-cols-2">
       {/* ------------------------------ Chat pane ----------------------------- */}
       <section className="flex min-h-0 flex-col border-r border-slate-800" aria-label="Agent conversation">
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 relative">
+          {/* S4: sticky parked doc card */}
+          {parkedItems.length > 0 && (
+            <div className="sticky top-0 z-10 space-y-2">
+              {parkedItems.map(item => (
+                <div
+                  key={item.id}
+                  className="rounded-xl border-l-2 border-rose-500 bg-rose-950/20 p-3 animate-park-reveal shadow-lg"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-xs font-bold text-rose-200">Critic blocked — review required</span>
+                    <button
+                      onClick={() => handleDismissParked(item.id)}
+                      className="flex h-5 w-5 items-center justify-center rounded text-rose-400 hover:text-rose-200"
+                      aria-label="Dismiss"
+                    >
+                      <X className="h-3 w-3" aria-hidden />
+                    </button>
+                  </div>
+                  <p className="mt-1 text-sm font-medium text-slate-200">{item.title}</p>
+                  {item.detail && (
+                    <p className="mt-0.5 text-xs text-slate-400">{item.detail}</p>
+                  )}
+                  {item.gaps && item.gaps.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      <p className="text-[11px] font-semibold text-rose-300">Missing requirements:</p>
+                      <ul className="list-inside list-disc space-y-0.5">
+                        {item.gaps.map((gap, i) => (
+                          <li key={i} className="text-[11px] text-rose-200/70">{gap}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      onClick={() => {/* Review gaps: expand question bar */}}
+                      className="rounded border border-rose-700 bg-rose-950/60 px-2.5 py-1 text-[11px] font-medium text-rose-200 hover:bg-rose-900/60"
+                    >
+                      Review gaps →
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await api.autopilotResume(item.docPath);
+                        } catch {}
+                      }}
+                      className="rounded border border-rose-700 bg-rose-950/60 px-2.5 py-1 text-[11px] font-medium text-rose-200 hover:bg-rose-900/60"
+                    >
+                      <RotateCcw className="mr-1 inline h-3 w-3" aria-hidden />
+                      Resolve & Resume
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditing(true);
+                      }}
+                      className="rounded border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:bg-slate-800"
+                    >
+                      Edit Manually
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {entries.length === 0 && !busy && (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-500/30 bg-cyan-950/50">
@@ -282,8 +375,35 @@ export default function DevelopmentView({
               }}
             />
           )}
+          {/* S5: answer feedback chat entry */}
+          {answerNotice && (
+            <article className="max-w-[92%] rounded-xl border border-emerald-800/60 bg-emerald-950/30 p-3">
+              <p className="text-xs text-emerald-300">{answerNotice}</p>
+            </article>
+          )}
+          {docUpdateBanner && (
+            <article className="max-w-[92%] rounded-xl border border-emerald-800/60 bg-emerald-950/40 p-3">
+              <div className="flex items-center gap-2">
+                <Check className="h-4 w-4 text-emerald-400" aria-hidden />
+                <p className="text-xs text-emerald-200">{docUpdateBanner}</p>
+              </div>
+            </article>
+          )}
           <div ref={chatEndRef} />
         </div>
+
+        {/* S1: QuestionBar outside scroll container, between scroll region and footer */}
+        <QuestionBar
+          items={portalItems}
+          onSubmit={async (id, text) => {
+            await api.submitPortalAnswer(id, text);
+            await refreshDoc();
+          }}
+          onDismiss={async (id) => {
+            await api.dismissPortalItem(id);
+          }}
+          checkpointVisible={checkpoint !== null}
+        />
 
         {/* Input bar */}
         <footer className="border-t border-slate-800 bg-slate-900/60 p-3">
@@ -437,6 +557,28 @@ export default function DevelopmentView({
             )}
           </div>
         </header>
+
+        {/* S7: AutopilotHud progress rail */}
+        {autopilotStatus && (
+          <AutopilotHud
+            status={autopilotStatus}
+            onStart={async () => {
+              try { await api.autopilotStart(); } catch {}
+            }}
+            onStop={async () => {
+              try { await api.autopilotStop(); } catch {}
+            }}
+            onResume={async (docId) => {
+              try { await api.autopilotResume(docId); } catch {}
+            }}
+            parkedDocs={parkedItems.map(i => ({
+              id: i.id,
+              title: i.title,
+              docPath: i.docPath,
+              gaps: i.gaps
+            }))}
+          />
+        )}
 
         {/* Quality example drop zone */}
         <div
