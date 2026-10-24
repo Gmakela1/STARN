@@ -70,6 +70,8 @@ export class AutopilotDriver {
   private onEvent?: (ev: AutopilotEvent) => void;
   private abortController: AbortController | null = null;
   private runningPromise: Promise<void> | null = null;
+  /** Tracks phases that have already been retried (one retry per phase). */
+  private _retriedPhase: Set<string> = new Set();
 
   constructor(deps: AutopilotDeps, onEvent?: (ev: AutopilotEvent) => void) {
     this.deps = deps;
@@ -225,8 +227,8 @@ export class AutopilotDriver {
         this.emit({ kind: 'phase', phaseId: phase.id, status: 'drafting' });
 
         // Execute the turn
-        const turnResult = await executeTurn({
-          userPrompt: `Generate the ${phase.name} deliverable for this project now (autopilot run). Follow the specialist's instructions fully.`,
+        let turnResult = await executeTurn({
+          userPrompt: `Generate the ${phase.name} deliverable for this project now (autopilot run). Follow the specialist's instructions fully.\n\nIMPORTANT: You MUST write the deliverable to docs/${phase.id.toUpperCase()}.md using the fs_write tool. Your response must be the COMPLETE document content starting with a heading. Do not return commentary or summaries.`,
           forceSpecialistId: phase.id,
           signal,
           onQuestions: (items) => {
@@ -261,6 +263,32 @@ export class AutopilotDriver {
         state = this.readState();
         state.autopilot.revisionsUsed[phase.id] = turnResult.autoRevisionsRun ?? 0;
         stateManager.saveState(state);
+
+        // Retry once on error: the model may have returned commentary instead of
+        // writing the document. Re-run with a stronger instruction.
+        if (turnResult.error && !this._retriedPhase.has(phase.id)) {
+          this._retriedPhase.add(phase.id);
+          this.emit({ kind: 'status', message: `Retrying ${phase.name} with stronger output instruction…` });
+          const retryResult = await executeTurn({
+            userPrompt: `You previously failed to produce the ${phase.name} deliverable. This is a retry.\n\nCRITICAL: You MUST write the file docs/${phase.id.toUpperCase()}.md using fs_write. Your response MUST be the complete document content starting with a level-1 heading (#).\n\nDo NOT return commentary, explanations, or summaries. Only the document itself.`,
+            forceSpecialistId: phase.id,
+            signal,
+            onQuestions: (items) => {
+              for (const item of items) {
+                const portalItem = addPortalItem(stateManager, {
+                  ...item,
+                  source: 'autopilot'
+                });
+                this.emit({ kind: 'question', item: portalItem });
+              }
+            },
+            onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
+            onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args })
+          });
+          // Use the retry result instead of the original; if it still errors,
+          // fall through to the normal error/park handling below.
+          turnResult = retryResult;
+        }
 
         // Handle criticFailed (hard-stop)
         if (turnResult.criticFailed) {

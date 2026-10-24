@@ -37,6 +37,7 @@ export class SpecialistRegistry {
     this.register(workInstructionsPackage);
     this.applyOpenQuestionsRules();
     this.applyReferenceInspectionRules();
+    this.applyDocumentOutputRules();
   }
 
   /**
@@ -52,6 +53,23 @@ Before drafting, use \`fs_list\` to check whether a \`reference/\` directory exi
       if (pkg.id === 'general' || pkg.id === 'change-impact') continue;
       if (!pkg.allowedTools.includes('doc_transcribe')) continue;
       if (pkg.systemPrompt.includes('## Reference Document Inspection')) continue;
+      pkg.systemPrompt = `${pkg.systemPrompt}
+${RULE}`;
+    }
+  }
+
+  /**
+   * Appends a mandatory document output format instruction to every specialist
+   * that produces artifacts. This ensures the model writes to disk and returns
+   * the full document content, not commentary.
+   */
+  private applyDocumentOutputRules(): void {
+    const RULE = `
+## Document Output Format (MANDATORY)
+You MUST write the deliverable to the correct file path using the \`fs_write\` tool. Your text response MUST be the COMPLETE document content starting with a level-1 heading (# Title). Do NOT return commentary, summaries, placeholders, or messages like "I have drafted the document" instead of the document itself. If you use any other tools first (fs_read, state_read, etc.), you MUST still call fs_write at the end to produce the deliverable file. A document that exists only in your response text but not on disk will be treated as empty and rejected by the critic.`;
+    for (const pkg of this.specialists.values()) {
+      if (pkg.id === 'general' || pkg.id === 'change-impact') continue;
+      if (pkg.systemPrompt.includes('## Document Output Format')) continue;
       pkg.systemPrompt = `${pkg.systemPrompt}
 ${RULE}`;
     }
