@@ -566,19 +566,19 @@ export default function DevelopmentView({
           </div>
         </header>
 
-        {/* S7: AutopilotHud progress rail */}
-        {autopilotStatus && (
-          <AutopilotHud
-            status={autopilotStatus}
-            onStart={async () => {
-              try { await api.autopilotStart(); } catch {}
-            }}
-            onStop={async () => {
-              try { await api.autopilotStop(); } catch {}
-            }}
-            onResume={async (docId) => {
-              try { await api.autopilotResume(docId); } catch {}
-            }}
+        {/* S7: AutopilotHud progress rail — always visible when autopilot is enabled */}
+        <AutopilotHud
+          status={autopilotStatus}
+          enabled={autopilotStatus !== null || (turnStream as any).autopilotEnabled}
+          onStart={async () => {
+            try { await api.autopilotStart(); } catch {}
+          }}
+          onStop={async () => {
+            try { await api.autopilotStop(); } catch {}
+          }}
+          onResume={async (docId) => {
+            try { await api.autopilotResume(docId); } catch {}
+          }}
             parkedDocs={parkedItems.map(i => ({
               id: i.id,
               title: i.title,
@@ -586,7 +586,6 @@ export default function DevelopmentView({
               gaps: i.gaps
             }))}
           />
-        )}
 
         {/* Quality example drop zone */}
         <div

@@ -3,6 +3,7 @@ import { AutopilotStatusResponse } from '../types/api';
 
 export interface AutopilotHudProps {
   status: AutopilotStatusResponse | null;
+  enabled: boolean;
   onStart: () => Promise<void>;
   onStop: () => Promise<void>;
   onResume: (docId?: string) => void;
@@ -27,13 +28,17 @@ const PHASE_LABELS = [
  */
 export default function AutopilotHud({
   status,
-  onStart: _onStart,
+  enabled,
+  onStart,
   onStop,
   onResume,
   onEditDoc,
   parkedDocs = [],
   phaseNames
 }: AutopilotHudProps) {
+  // When autopilot is disabled in settings, render nothing.
+  if (!enabled) return null;
+
   const running = status?.running ?? false;
   const docStatus = status?.docStatus ?? {};
   const passedCount = status?.passedCount ?? 0;
@@ -100,10 +105,20 @@ export default function AutopilotHud({
           </span>
         )}
 
-        {/* Status word */}
-        <span className="text-[10px] font-mono text-slate-500 ml-auto shrink-0">
-          {statusWord}
-        </span>
+        {/* Status word or Start button */}
+        {running ? (
+          <span className="text-[10px] font-mono text-slate-500 ml-auto shrink-0">
+            {statusWord}
+          </span>
+        ) : (
+          <button
+            onClick={() => void onStart()}
+            className="ml-auto flex items-center gap-1 rounded-md bg-cyan-600 px-3 py-1 text-[11px] font-bold text-white transition hover:bg-cyan-500 shrink-0"
+            aria-label="Start autopilot auto-drafting"
+          >
+            Start Auto-Drafting
+          </button>
+        )}
 
         {/* Stop button */}
         {running && (
