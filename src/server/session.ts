@@ -11,6 +11,7 @@ import { ProjectStateManager } from '../workspace/state.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { SpecialistRegistry } from '../specialists/registry.js';
 import { Logger } from '../util/logger.js';
+import { AutopilotDriver, AutopilotEvent } from '../core/autopilot.js';
 
 export interface SessionDeps {
   projectPath: string;
@@ -30,6 +31,8 @@ export interface SessionDeps {
   logger?: Logger;
   /** Master toggle for scanned-document transcription (default true). */
   transcriptionEnabled?: boolean;
+  /** Master toggle for autopilot mode (default true). This is a mutable property updated by applySettings. */
+  autopilotEnabled?: boolean;
 }
 
 export interface PendingCheckpoint {
@@ -66,8 +69,20 @@ export class ServerSessionManager {
 
   private roleClients: RoleClients;
 
+  /** Subscribers for autopilot events (SSE fan-out). */
+  private subscribers: ((event: AutopilotEvent) => void)[] = [];
+
+  /** Ring buffer of recent autopilot events for SSE reconnect backfill. */
+  private recentEvents: AutopilotEvent[] = [];
+  private static readonly MAX_RECENT_EVENTS = 20;
+
+  /** Autopilot driver instance, created on start. */
+  private autopilotDriver: AutopilotDriver | null = null;
+  private autopilotController: AbortController | null = null;
+
   constructor(deps: SessionDeps) {
     this.deps = { ...deps, providers: deps.providers.map(p => ({ ...p })), assignments: cloneAssignments(deps.assignments) };
+    this._autopilotEnabled = deps.autopilotEnabled ?? true;
     this.roleClients = this.buildRoleClients();
   }
 
@@ -83,6 +98,12 @@ export class ServerSessionManager {
       },
       this.deps.clientFactory
     );
+  }
+
+  private _autopilotEnabled: boolean;
+
+  get autopilotEnabled(): boolean {
+    return this._autopilotEnabled;
   }
 
   get busy(): boolean {
@@ -130,7 +151,7 @@ export class ServerSessionManager {
    * Throws (without mutating) on: reserved/duplicate provider ids, or any role
    * referencing an unknown provider.
    */
-  applySettings(update: { providers?: ProviderConfig[]; assignments?: Partial<Assignments> }): void {
+  applySettings(update: { providers?: ProviderConfig[]; assignments?: Partial<Assignments>; autopilotEnabled?: boolean }): void {
     const providers = update.providers ? update.providers.map(p => ({ ...p })) : this.providers;
     const ids = new Set<string>();
     for (const p of providers) {
@@ -153,6 +174,9 @@ export class ServerSessionManager {
     validateAssignments(assignments, providers);
     this.deps.providers = providers;
     this.deps.assignments = assignments;
+    if (typeof update.autopilotEnabled === 'boolean') {
+      this._autopilotEnabled = update.autopilotEnabled;
+    }
     this.roleClients = this.buildRoleClients();
   }
 
@@ -182,6 +206,24 @@ export class ServerSessionManager {
     this.roleClients = this.buildRoleClients();
   }
 
+  /**
+   * Begins a turn: creates and stores an AbortController, marks busy.
+   * Throws if already busy (409 conflict).
+   */
+  private beginTurn(): AbortController {
+    if (this.busy) {
+      throw new Error('A turn is already in progress');
+    }
+    const abort = new AbortController();
+    this.activeAbort = abort;
+    return abort;
+  }
+
+  /** Ends the turn: clears the active AbortController. */
+  private endTurn(): void {
+    this.activeAbort = null;
+  }
+
   /** Aborts the in-flight turn, if any. Returns true when something was aborted. */
   abortActiveTurn(): boolean {
     if (!this.activeAbort) return false;
@@ -189,16 +231,174 @@ export class ServerSessionManager {
     return true;
   }
 
+  // ── Subscriber management for autopilot events ────────────────────────
+
+  addSubscriber(fn: (event: AutopilotEvent) => void): void {
+    this.subscribers.push(fn);
+  }
+
+  removeSubscriber(fn: (event: AutopilotEvent) => void): void {
+    const idx = this.subscribers.indexOf(fn);
+    if (idx >= 0) {
+      this.subscribers.splice(idx, 1);
+    }
+  }
+
+  private publish(event: AutopilotEvent): void {
+    // Store in ring buffer
+    this.recentEvents.push(event);
+    if (this.recentEvents.length > ServerSessionManager.MAX_RECENT_EVENTS) {
+      this.recentEvents.shift();
+    }
+    // Fan out to subscribers, catching individual errors
+    for (const fn of this.subscribers) {
+      try {
+        fn(event);
+      } catch {
+        // Subscriber error swallowed to prevent one bad subscriber from
+        // breaking the entire fan-out.
+      }
+    }
+  }
+
+  getRecentAutopilotEvents(): AutopilotEvent[] {
+    return [...this.recentEvents];
+  }
+
+  // ── Autopilot driver integration ──────────────────────────────────────
+
+  /**
+   * Starts the autopilot chain driver. Acquires the busy guard.
+   * Throws 409 if a turn is already in progress.
+   */
+  autopilotStart(): void {
+    const abort = this.beginTurn();
+    this.autopilotController = abort;
+
+    const deps = {
+      stateManager: this.deps.stateManager,
+      projectPath: this.deps.projectPath,
+      executeTurn: async (opts: {
+        userPrompt: string;
+        forceSpecialistId: string;
+        signal?: AbortSignal;
+        onQuestions?: (items: Array<{
+          type: 'question';
+          severity: 'normal';
+          docPath: string;
+          title: string;
+          detail?: string;
+          source: 'autopilot';
+        }>) => void;
+      }) => {
+        const { CoreRunner: Runner } = await import('../core/runner.js');
+        return Runner.executeTurn({
+          userPrompt: opts.userPrompt,
+          projectPath: this.deps.projectPath,
+          stateManager: this.deps.stateManager,
+          client: this.roleClients.drafting.client,
+          model: this.roleClients.drafting.model,
+          draftingProviderName: this.roleClients.drafting.providerName,
+          criticClient: this.roleClients.critic.client,
+          criticModel: this.roleClients.critic.model,
+          classifierClient: this.roleClients.classifier.client,
+          classifierModel: this.roleClients.classifier.model,
+          compactionClient: this.roleClients.compaction.client,
+          compactionModel: this.roleClients.compaction.model,
+          transcriberClient: this.roleClients.transcriber?.client,
+          transcriberModel: this.roleClients.transcriber?.model,
+          transcriptionEnabled: this.deps.transcriptionEnabled,
+          toolRegistry: this.deps.toolRegistry,
+          specialistRegistry: this.deps.specialistRegistry,
+          sessionMessages: this.sessionMessages,
+          compressionThreshold: this.deps.compressionThreshold,
+          keepRecentTokens: this.deps.keepRecentTokens,
+          logger: this.deps.logger,
+          signal: opts.signal ?? abort.signal,
+          forceSpecialistId: opts.forceSpecialistId,
+          onQuestions: opts.onQuestions
+        });
+      }
+    };
+
+    this.autopilotDriver = new AutopilotDriver(deps, (ev) => this.publish(ev));
+    this.autopilotDriver.start();
+  }
+
+  /** Stops the autopilot chain driver and releases the busy guard. */
+  autopilotStop(): void {
+    if (this.autopilotDriver) {
+      this.autopilotDriver.stop();
+      this.autopilotDriver = null;
+    }
+    this.autopilotController = null;
+    this.endTurn();
+  }
+
+  /** Resumes the autopilot from a specific doc or the first unapproved phase. */
+  autopilotResume(docId?: string): void {
+    if (!this.autopilotDriver) {
+      // Create a fresh driver if none exists
+      const abort = this.beginTurn();
+      this.autopilotController = abort;
+
+      const deps = {
+        stateManager: this.deps.stateManager,
+        projectPath: this.deps.projectPath,
+        executeTurn: async (opts: {
+          userPrompt: string;
+          forceSpecialistId: string;
+          signal?: AbortSignal;
+          onQuestions?: (items: Array<{
+            type: 'question';
+            severity: 'normal';
+            docPath: string;
+            title: string;
+            detail?: string;
+            source: 'autopilot';
+          }>) => void;
+        }) => {
+          const { CoreRunner: Runner } = await import('../core/runner.js');
+          return Runner.executeTurn({
+            userPrompt: opts.userPrompt,
+            projectPath: this.deps.projectPath,
+            stateManager: this.deps.stateManager,
+            client: this.roleClients.drafting.client,
+            model: this.roleClients.drafting.model,
+            draftingProviderName: this.roleClients.drafting.providerName,
+            criticClient: this.roleClients.critic.client,
+            criticModel: this.roleClients.critic.model,
+            classifierClient: this.roleClients.classifier.client,
+            classifierModel: this.roleClients.classifier.model,
+            compactionClient: this.roleClients.compaction.client,
+            compactionModel: this.roleClients.compaction.model,
+            transcriberClient: this.roleClients.transcriber?.client,
+            transcriberModel: this.roleClients.transcriber?.model,
+            transcriptionEnabled: this.deps.transcriptionEnabled,
+            toolRegistry: this.deps.toolRegistry,
+            specialistRegistry: this.deps.specialistRegistry,
+            sessionMessages: this.sessionMessages,
+            compressionThreshold: this.deps.compressionThreshold,
+            keepRecentTokens: this.deps.keepRecentTokens,
+            logger: this.deps.logger,
+            signal: opts.signal ?? abort.signal,
+            forceSpecialistId: opts.forceSpecialistId,
+            onQuestions: opts.onQuestions
+          });
+        }
+      };
+
+      this.autopilotDriver = new AutopilotDriver(deps, (ev) => this.publish(ev));
+    }
+    this.autopilotDriver.resume(docId);
+  }
+
   /**
    * Runs one agent turn, emitting SSE-style events through the emitter:
    * status, tool_call, checkpoint, complete, error.
    */
   async runTurn(prompt: string, emit: TurnEmitter): Promise<TurnResult> {
-    if (this.busy) {
-      throw new Error('A turn is already in progress');
-    }
-    const abort = new AbortController();
-    this.activeAbort = abort;
+    const abort = this.beginTurn();
 
     try {
       const result = await CoreRunner.executeTurn({
@@ -252,7 +452,7 @@ export class ServerSessionManager {
 
       return result;
     } finally {
-      this.activeAbort = null;
+      this.endTurn();
     }
   }
 

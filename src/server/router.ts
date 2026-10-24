@@ -18,6 +18,9 @@ import { listProviderModels, probeToolCalling } from '../models/provider-models.
 import { fetchLiveOpenRouterModels } from '../openrouter/models.js';
 import { parseTradeStudyDocument } from './parsers/trade-study-parser.js';
 import { parseWorkInstruction, toggleWorkInstructionStep, ParsedWorkInstruction } from './parsers/actions-parser.js';
+import { addPortalItem, listPortalItems, dismissPortalItem } from '../core/question-portal.js';
+import { applyAnswer } from '../core/answer-applier.js';
+import { autopilotEnabled as configAutopilotEnabled } from '../config.js';
 import { aggregateProjectIssues, OpenQuestionGroup, ProjectIssue } from './parsers/issues-parser.js';
 import { SpecialistRegistry } from '../specialists/registry.js';
 import {
@@ -46,8 +49,10 @@ export interface RouterDeps {
   /** Static assets directory (built web UI). Optional. */
   webDistPath?: string;
   /** Called when settings are saved, so the host can persist them. */
-  onSettingsSaved?: (settings: { providers: ProviderConfig[]; assignments: SettingsResponse['assignments']; transcriptionEnabled?: boolean }) => void;
+  onSettingsSaved?: (settings: { providers: ProviderConfig[]; assignments: SettingsResponse['assignments']; transcriptionEnabled?: boolean; autopilotEnabled?: boolean }) => void;
   port?: number;
+  /** Autopilot enabled toggle (from config). */
+  autopilotEnabled?: boolean;
 }
 
 const MAX_BODY_BYTES = 30 * 1024 * 1024; // 30 MB (base64 photo uploads)
@@ -163,13 +168,23 @@ function buildSettings(deps: RouterDeps): SettingsResponse {
     transcriptionEnabled = loadConfig().transcriptionEnabled;
   } catch {}
 
+  let autopilotEnabledVal = deps.autopilotEnabled ?? true;
+  if (session) {
+    autopilotEnabledVal = session.autopilotEnabled;
+  } else {
+    try {
+      autopilotEnabledVal = configAutopilotEnabled({});
+    } catch {}
+  }
+
   return {
     providers,
     assignments: session ? session.assignments : ({} as SettingsResponse['assignments']),
     port: deps.port ?? 3000,
     projectPath: deps.projectPath,
     search,
-    transcriptionEnabled
+    transcriptionEnabled,
+    autopilotEnabled: autopilotEnabledVal
   };
 }
 
@@ -443,12 +458,24 @@ export async function handleApiRequest(
               modifiedAt: stat.mtime.toISOString()
             };
           }));
+
+      // Portal summary for dashboard
+      const portalItems = state.portalItems || [];
+      const portalSummary = {
+        blocking: portalItems.filter(i => i.severity === 'blocking' && i.status === 'open').length,
+        parked: portalItems.filter(i => i.type === 'parked' && i.status === 'open').length,
+        questions: portalItems.filter(i => i.type === 'question' && i.status === 'open').length,
+        flags: portalItems.filter(i => i.type === 'flag' && i.status === 'open').length,
+        topItems: portalItems.filter(i => i.status === 'open').slice(0, 10)
+      };
+
       return ok(res, {
         project: buildProjectInfo(deps),
         roadmap,
         issues: buildIssues(deps).issues,
         recentActions: state.recentActions || [],
-        documents
+        documents,
+        portalSummary
       });
     }
 
@@ -860,15 +887,22 @@ export async function handleApiRequest(
       }
 
       try {
-        session.applySettings({ providers, assignments: body.assignments });
+        session.applySettings({
+          providers,
+          assignments: body.assignments,
+          autopilotEnabled: typeof body.autopilotEnabled === 'boolean' ? body.autopilotEnabled : undefined
+        });
       } catch (err: any) {
         return fail(res, 400, err?.message ?? 'Invalid settings');
       }
 
+      const autopilotEnabledVal = typeof body.autopilotEnabled === 'boolean' ? body.autopilotEnabled : undefined;
+
       deps.onSettingsSaved?.({
         providers: session.providers,
         assignments: session.assignments,
-        transcriptionEnabled: typeof body.transcriptionEnabled === 'boolean' ? body.transcriptionEnabled : undefined
+        transcriptionEnabled: typeof body.transcriptionEnabled === 'boolean' ? body.transcriptionEnabled : undefined,
+        autopilotEnabled: autopilotEnabledVal
       });
 
       const response: SettingsResponse = buildSettings(deps);
@@ -904,6 +938,185 @@ export async function handleApiRequest(
         const client = session.clientFor(providerId)!;
         return ok(res, await probeToolCalling(client, String(body.model ?? '')));
       }
+    }
+
+    // --- Autopilot -------------------------------------------------------------
+    if (segments[1] === 'autopilot' && segments.length === 2 && method === 'GET') {
+      const session = deps.session;
+      const state = deps.stateManager.getState();
+      const autopilotState = state.autopilot || { running: false, docStatus: {}, revisionsUsed: {}, blocks: 0 };
+      const docStatus = autopilotState.docStatus || {};
+      const passedCount = Object.values(docStatus).filter(v => v === 'passed').length;
+      return ok(res, {
+        enabled: deps.autopilotEnabled ?? true,
+        running: autopilotState.running ?? false,
+        docStatus,
+        blocks: autopilotState.blocks ?? 0,
+        currentPhaseId: autopilotState.currentPhaseId,
+        passedCount,
+        totalPhases: 13
+      });
+    }
+
+    if (segments[1] === 'autopilot' && segments.length === 3 && segments[2] === 'start' && method === 'POST') {
+      if (!deps.session) return fail(res, 503, 'Agent session unavailable');
+      try {
+        deps.session.autopilotStart();
+        return sendJson(res, 202, { success: true, data: { status: 'started' }, error: null });
+      } catch (err: any) {
+        return fail(res, 409, err?.message ?? 'Failed to start autopilot');
+      }
+    }
+
+    if (segments[1] === 'autopilot' && segments.length === 3 && segments[2] === 'stop' && method === 'POST') {
+      if (!deps.session) return fail(res, 503, 'Agent session unavailable');
+      deps.session.autopilotStop();
+      return ok(res, { status: 'stopped' });
+    }
+
+    if (segments[1] === 'autopilot' && segments.length === 3 && segments[2] === 'resume' && method === 'POST') {
+      if (!deps.session) return fail(res, 503, 'Agent session unavailable');
+      const body = await readJsonBody(req);
+      deps.session.autopilotResume(body?.docId);
+      return ok(res, { status: 'resumed' });
+    }
+
+    if (segments[1] === 'autopilot' && segments.length === 3 && segments[2] === 'events' && method === 'GET') {
+      if (!deps.session) return fail(res, 503, 'Agent session unavailable');
+
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-store',
+        'Connection': 'keep-alive'
+      });
+
+      // Backfill recent events
+      const recent = deps.session.getRecentAutopilotEvents();
+      for (const ev of recent) {
+        if (!res.writableEnded) {
+          res.write(`event: autopilot\ndata: ${JSON.stringify(ev)}\n\n`);
+        }
+      }
+
+      const emit = (ev: any) => {
+        if (!res.writableEnded) {
+          res.write(`event: autopilot\ndata: ${JSON.stringify(ev)}\n\n`);
+        }
+      };
+
+      deps.session.addSubscriber(emit);
+
+      req.on('close', () => {
+        deps.session?.removeSubscriber(emit);
+        if (!res.writableEnded) res.end();
+      });
+      return; // Keep the connection open
+    }
+
+    // --- Portal ----------------------------------------------------------------
+    if (segments[1] === 'portal' && segments.length === 2 && method === 'GET') {
+      const status = url.searchParams.get('status') as any || undefined;
+      const type = url.searchParams.get('type') as any || undefined;
+      const phaseId = url.searchParams.get('phaseId') || undefined;
+      const items = listPortalItems(deps.stateManager, { status, type, phaseId });
+      return ok(res, { items });
+    }
+
+    if (segments[1] === 'portal' && segments.length === 4 && segments[3] === 'answer' && method === 'POST') {
+      const itemId = decodeURIComponent(segments[2]);
+      const body = await readJsonBody(req);
+      if (!body?.answer) return fail(res, 400, 'Missing "answer"');
+      try {
+        const result = await applyAnswer(
+          {
+            stateManager: deps.stateManager,
+            projectPath: deps.projectPath,
+            executeTurn: async (opts) => {
+              throw new Error('applyAnswer executeTurn not available in server context');
+            },
+            runChangeImpact: (phaseId) => deps.session?.runChangeImpactForApproval(phaseId) ?? Promise.resolve([])
+          },
+          itemId,
+          String(body.answer)
+        );
+        return ok(res, result);
+      } catch (err: any) {
+        return fail(res, 404, err?.message ?? 'Portal item not found');
+      }
+    }
+
+    if (segments[1] === 'portal' && segments.length === 4 && segments[3] === 'dismiss' && method === 'POST') {
+      const itemId = decodeURIComponent(segments[2]);
+      try {
+        const item = dismissPortalItem(deps.stateManager, itemId);
+        return ok(res, { item });
+      } catch (err: any) {
+        return fail(res, 404, err?.message ?? 'Portal item not found');
+      }
+    }
+
+    // --- Action comments & flags -----------------------------------------------
+    if (segments[1] === 'actions' && segments.length === 4 && segments[3] === 'comments' && method === 'POST') {
+      const actionId = decodeURIComponent(segments[2]);
+      const found = findWorkInstructionFile(deps, actionId);
+      if (!found) return fail(res, 404, `Work instruction for ${actionId} not found`);
+
+      const body = await readJsonBody(req);
+      const stepId = Number(body.stepId);
+      const text = String(body.text ?? '').trim();
+      if (!Number.isInteger(stepId) || stepId < 0) return fail(res, 400, 'stepId must be a non-negative integer');
+      if (!text) return fail(res, 400, 'text is required');
+
+      // Store comment in state (stepAnnotations[stepId].comments[])
+      const state = deps.stateManager.getState();
+      if (!state.workflow) {
+        // Initialize a mutable annotations store on the workflow state
+        (state as any).stepAnnotations = (state as any).stepAnnotations || {};
+      }
+      const annotations = ((state as any).stepAnnotations = (state as any).stepAnnotations || {});
+      if (!annotations[stepId]) {
+        annotations[stepId] = { comments: [], flagged: false };
+      }
+      annotations[stepId].comments.push({
+        text,
+        createdAt: new Date().toISOString()
+      });
+      deps.stateManager.saveState(state);
+
+      return ok(res, { comments: annotations[stepId].comments });
+    }
+
+    if (segments[1] === 'actions' && segments.length === 4 && segments[3] === 'flags' && method === 'POST') {
+      const actionId = decodeURIComponent(segments[2]);
+      const found = findWorkInstructionFile(deps, actionId);
+      if (!found) return fail(res, 404, `Work instruction for ${actionId} not found`);
+
+      const body = await readJsonBody(req);
+      const stepId = Number(body.stepId);
+      const flagged = Boolean(body.flagged);
+      if (!Number.isInteger(stepId) || stepId < 0) return fail(res, 400, 'stepId must be a non-negative integer');
+
+      // If flagged, create a portal item first (this saves state)
+      if (flagged) {
+        addPortalItem(deps.stateManager, {
+          type: 'flag',
+          severity: 'normal',
+          docPath: found.filePath,
+          title: `Flag: ${actionId} Step ${stepId + 1}`,
+          detail: body.reason || 'Flagged on shop floor',
+          source: 'shop-floor'
+        });
+      }
+
+      // Store flag in state
+      const state = deps.stateManager.getState();
+      const annotations = ((state as any).stepAnnotations = (state as any).stepAnnotations || {});
+      if (!annotations[stepId]) {
+        annotations[stepId] = { comments: [], flagged: false };
+      }
+      annotations[stepId].flagged = flagged;
+      deps.stateManager.saveState(state);
+      return ok(res, { flagged, stepId });
     }
 
     return fail(res, 404, `Unknown API route: ${method} ${url.pathname}`);

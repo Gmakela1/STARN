@@ -171,6 +171,13 @@ export interface DashboardData {
   issues: ProjectIssue[];
   recentActions: string[];
   documents: Array<{ phaseId: string; path: string; sizeBytes: number; modifiedAt: string }>;
+  portalSummary?: {
+    blocking: number;
+    parked: number;
+    questions: number;
+    flags: number;
+    topItems: any[];
+  };
 }
 
 export interface DocData {
@@ -241,6 +248,7 @@ export interface Settings {
   providers: ProviderView[];
   assignments: Assignments;
   transcriptionEnabled: boolean;
+  autopilotEnabled: boolean;
   port: number;
   projectPath: string;
   search?: SearchSettings;
@@ -251,6 +259,7 @@ export interface SettingsUpdate {
   providers?: ProviderInput[];
   assignments?: Partial<Assignments>;
   transcriptionEnabled?: boolean;
+  autopilotEnabled?: boolean;
 }
 
 export interface CheckpointDecisionResult {
@@ -275,4 +284,6 @@ export type TurnEvent =
         aborted: boolean;
       };
     }
-  | { event: 'error'; data: { message: string } };
+  | { event: 'error'; data: { message: string } }
+  | { event: 'autopilot'; data: { status: { running: boolean; docStatus: Record<string, string>; blocks: number; currentPhaseId?: string; passedCount: number; totalPhases: number } } }
+  | { event: 'question'; data: { item: import('../../../src/workspace/types').PortalItem } };

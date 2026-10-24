@@ -49,6 +49,13 @@ export interface DashboardResponse {
   issues: ProjectIssue[];
   recentActions: string[];
   documents: Array<{ phaseId: string; path: string; sizeBytes: number; modifiedAt: string }>;
+  portalSummary?: {
+    blocking: number;
+    parked: number;
+    questions: number;
+    flags: number;
+    topItems: any[];
+  };
 }
 
 export interface BomResponse {
@@ -96,6 +103,7 @@ export interface SettingsResponse {
   providers: ProviderView[];
   assignments: Assignments;
   transcriptionEnabled: boolean;
+  autopilotEnabled: boolean;
   port: number;
   projectPath: string;
   search?: SearchSettingsResponse;

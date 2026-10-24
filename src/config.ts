@@ -50,6 +50,7 @@ export interface StarnConfig {
   providers: ProviderConfig[];
   assignments: Assignments;
   transcriptionEnabled: boolean;
+  autopilotEnabled: boolean;
   search?: SearchConfig;
 }
 
@@ -64,6 +65,7 @@ export interface UserConfigFile {
   providers?: ProviderConfig[];
   assignments?: Partial<Assignments>;
   transcription?: { enabled?: boolean };
+  autopilot?: { enabled?: boolean };
   search?: SearchConfig;
 }
 
@@ -115,6 +117,20 @@ export function transcriptionEnabled(file: UserConfigFile, env: NodeJS.ProcessEn
     if (v === '1' || v === 'true' || v === 'on' || v === 'yes') return true;
   }
   return file.transcription?.enabled !== false;
+}
+
+/**
+ * Master toggle for autopilot mode. Env override wins over the config file;
+ * default is enabled.
+ */
+export function autopilotEnabled(file: UserConfigFile, env: NodeJS.ProcessEnv = process.env): boolean {
+  const envVal = env.STARN_AUTOPILOT_ENABLED;
+  if (envVal !== undefined) {
+    const v = envVal.trim().toLowerCase();
+    if (v === '0' || v === 'false' || v === 'off' || v === 'no') return false;
+    return true;
+  }
+  return file.autopilot?.enabled !== false;
 }
 
 /** Throws when any role references a provider that is neither built-in nor configured. */
@@ -213,6 +229,7 @@ export function loadConfig(customGlobalDir?: string): StarnConfig {
     providers,
     assignments,
     transcriptionEnabled: transcriptionEnabled(fileConfig),
+    autopilotEnabled: autopilotEnabled(fileConfig),
     search
   };
 }

@@ -186,17 +186,21 @@ async function main() {
     config.compactionModel = s.assignments.compaction.model;
     const transcriptionEnabled =
       typeof (s as any).transcriptionEnabled === 'boolean' ? (s as any).transcriptionEnabled : config.transcriptionEnabled;
+    const autopilotEnabled =
+      typeof (s as any).autopilotEnabled === 'boolean' ? (s as any).autopilotEnabled : config.autopilotEnabled;
     saveUserConfig(
       {
         providers: s.providers,
         assignments: s.assignments,
         defaultModel: s.assignments.drafting.model,
         compactionModel: s.assignments.compaction.model,
-        transcription: { enabled: transcriptionEnabled }
+        transcription: { enabled: transcriptionEnabled },
+        autopilot: { enabled: autopilotEnabled }
       },
       config.globalDir
     );
     config.transcriptionEnabled = transcriptionEnabled;
+    config.autopilotEnabled = autopilotEnabled;
   };
 
   const toolRegistry = new ToolRegistry({ transcriptionEnabled: config.transcriptionEnabled });
@@ -220,7 +224,8 @@ async function main() {
       compressionThreshold: config.compressionThreshold,
       keepRecentTokens: config.keepRecentTokens,
       logger: projectContext.logger,
-      transcriptionEnabled: config.transcriptionEnabled
+      transcriptionEnabled: config.transcriptionEnabled,
+      autopilotEnabled: config.autopilotEnabled
     });
 
     const started = await startWebServer({
@@ -293,7 +298,9 @@ async function main() {
         specialistRegistry,
         compressionThreshold: config.compressionThreshold,
         keepRecentTokens: config.keepRecentTokens,
-        logger: projectContext.logger
+        logger: projectContext.logger,
+        transcriptionEnabled: config.transcriptionEnabled,
+        autopilotEnabled: config.autopilotEnabled
       });
       session.setSessionMessages(sessionMessages);
 
