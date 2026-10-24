@@ -461,10 +461,11 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
         };
       }
 
-      // Guard: even when tool calls were made, if the artifact is still empty
-      // (model made non-writing calls but returned commentary), surface an
-      // actionable error instead of sending an empty string to the critic.
-      if (!artifactForCritic || artifactForCritic.trim().length === 0) {
+      // Guard: even when tool calls were made, if the artifact isn't a valid
+      // markdown document (no heading), surface an actionable error instead of
+      // sending commentary to the critic. This catches models that return
+      // prose like "I have drafted the document..." instead of the document itself.
+      if (!artifactForCritic || !artifactForCritic.trim().startsWith('#')) {
         const reply = (finalOutput || '').trim();
         const output =
           `No document was drafted. The model returned commentary but no deliverable content. ` +

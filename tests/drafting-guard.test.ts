@@ -49,13 +49,13 @@ describe('no-document drafting guard', () => {
     expect(critic.chatCompletion).not.toHaveBeenCalled();
   });
 
-  it('does not fire when the model made tool calls (tool calling works)', async () => {
+  it('does not fire when the model made tool calls and produced a document', async () => {
     let n = 0;
     const drafting = {
       chatCompletion: vi.fn(async () =>
         n++ === 0
           ? { content: null, toolCalls: [{ id: 't1', type: 'function' as const, function: { name: 'fs_list', arguments: '{"path":"."}' } }], raw: {} }
-          : { content: 'Which climate will it operate in?', raw: {} }
+          : { content: '# CONOPS\n\n## Operational Context\n\nThis document...', raw: {} }
       )
     };
     const classifier = { chatCompletion: vi.fn(async () => ({ content: '{"specialistId":"conops"}', raw: {} })) };
