@@ -13,21 +13,31 @@ export interface AutopilotEventsState {
   dismissItem: (id: string) => Promise<void>;
 }
 
-const DEFAULT_STATUS: AutopilotStatusResponse = {
-  enabled: false,
-  running: false,
-  docStatus: {},
-  blocks: 0,
-  passedCount: 0,
-  totalPhases: 13
-};
+/** Raw events from the /api/autopilot/events SSE stream, for live chat updates. */
+export type AutopilotLiveEvent =
+  | { kind: 'phase'; phaseId: string; status: string }
+  | { kind: 'question'; item: PortalItem }
+  | { kind: 'parked'; item: PortalItem }
+  | { kind: 'complete'; result: { passed: string[]; parked: string[] } }
+  | { kind: 'error'; message: string };
 
 /**
- * SSE connection to /api/autopilot/events with auto-reconnect and 3s poll fallback.
+ * Creates a useAutopilotEvents hook. Pass an optional onEvent callback to
+ * receive raw SSE events for live UI updates (e.g. appending chat entries).
  */
-export function useAutopilotEvents(): AutopilotEventsState {
+export function useAutopilotEvents(onEvent?: (ev: AutopilotLiveEvent) => void): AutopilotEventsState {
   const [status, setStatus] = useState<AutopilotStatusResponse | null>(null);
   const [portalItems, setPortalItems] = useState<PortalItem[]>([]);
+
+  const DEFAULT_STATUS: AutopilotStatusResponse = {
+    enabled: false,
+    running: false,
+    docStatus: {},
+    blocks: 0,
+    passedCount: 0,
+    totalPhases: 13
+  };
+
   const [connected, setConnected] = useState(false);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -86,9 +96,11 @@ export function useAutopilotEvents(): AutopilotEventsState {
                         }
                         return { ...prev, ...st };
                       });
+                      onEvent?.(parsed.status ?? parsed);
                       break;
                     case 'question':
                       setPortalItems(prev => [...prev, parsed.item ?? parsed]);
+                      onEvent?.({ kind: 'question', item: parsed.item ?? parsed });
                       break;
                   }
                 } catch {

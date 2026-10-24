@@ -17,7 +17,6 @@ import {
 import { api } from '../api/client';
 import { ProjectInfo } from '../types/api';
 import { useTurnStream } from '../api/useTurnStream';
-import { useAutopilotEvents } from '../hooks/useAutopilotEvents';
 import DashboardView from '../views/DashboardView';
 import RoadmapView from '../views/RoadmapView';
 import DevelopmentView from '../views/DevelopmentView';
@@ -95,7 +94,6 @@ export default function AppShell() {
   const [connected, setConnected] = useState(true);
   const [projectRevision, setProjectRevision] = useState(0);
   const turnStream = useTurnStream();
-  const { status: autopilotStatus, portalItems } = useAutopilotEvents();
 
   const refreshProject = async () => {
     try {
@@ -344,8 +342,6 @@ export default function AppShell() {
             project={project}
             onProjectChanged={refreshProject}
             initialPhase={studioPhase}
-            autopilotStatus={autopilotStatus}
-            portalItems={portalItems}
           />
         )}
 

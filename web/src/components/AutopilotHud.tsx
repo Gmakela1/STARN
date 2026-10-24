@@ -22,6 +22,14 @@ const PHASE_LABELS = [
   'WI', 'Test Plans', 'SOW'
 ];
 
+// Real phase ids matching ORDERED_WORKFLOW_PHASES (src/workspace/state.ts).
+// These are the keys the server uses in docStatus, so the lookup must match.
+const PHASE_IDS = [
+  'conops', 'architecture', 'icd', 'capabilities', 'requirements',
+  'bom', 'rtm', 'milestones', 'risk-register', 'build-sequence',
+  'work-instructions', 'testplans', 'sow'
+];
+
 /**
  * Autopilot toggle + 13-dot progress rail + parked doc card.
  * S7: progress rail IS the status locus.
@@ -59,9 +67,9 @@ export default function AutopilotHud({
 
   const currentPhaseId = status?.currentPhaseId;
 
-  const renderDot = (phaseName: string, idx: number) => {
-    const id = phaseName.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const st = docStatus[id] ?? 'idle';
+  const renderDot = (idx: number) => {
+    const phaseId = PHASE_IDS[idx] ?? labels[idx]?.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const st = docStatus[phaseId] ?? 'idle';
     let dotClass = 'bg-slate-700';
     let ringClass = '';
     if (st === 'passed') {
@@ -76,7 +84,7 @@ export default function AutopilotHud({
     return (
       <span
         key={idx}
-        title={`${phaseName} — ${st}`}
+        title={`${labels[idx] ?? phaseId} — ${st}`}
         className={`w-2 h-2 rounded-full transition-all ${dotClass} ${ringClass}`}
       />
     );
@@ -95,13 +103,13 @@ export default function AutopilotHud({
       >
         {/* Dots */}
         <div className="flex items-center gap-[3px] flex-1 min-w-0">
-          {labels.slice(0, 13).map((name, idx) => renderDot(name, idx))}
+          {labels.slice(0, 13).map((_, idx) => renderDot(idx))}
         </div>
 
         {/* Active drafting label */}
         {currentPhaseId && docStatus[currentPhaseId] === 'drafting' && (
           <span className="text-[11px] font-bold text-cyan-300 ml-2 truncate max-w-[120px]">
-            Drafting: {labels.find(l => l.toLowerCase().replace(/[^a-z0-9]/g, '') === currentPhaseId) ?? currentPhaseId}
+            Drafting: {labels.find((_, idx) => PHASE_IDS[idx] === currentPhaseId) ?? currentPhaseId}
           </span>
         )}
 

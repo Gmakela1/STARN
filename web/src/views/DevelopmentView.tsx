@@ -21,8 +21,9 @@ import {
   Mic
 } from 'lucide-react';
 import { api } from '../api/client';
-import { DocData, ProjectInfo, RoadmapPhase, PortalItem, AutopilotStatusResponse } from '../types/api';
+import { DocData, ProjectInfo, RoadmapPhase } from '../types/api';
 import { useTurnStream } from '../api/useTurnStream';
+import { useAutopilotEvents, AutopilotLiveEvent } from '../hooks/useAutopilotEvents';
 import Markdown from '../components/Markdown';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import CriticScorecard from '../components/CriticScorecard';
@@ -35,23 +36,31 @@ export interface DevelopmentViewProps {
   project: ProjectInfo | null;
   onProjectChanged: () => Promise<void> | void;
   initialPhase?: string;
-  /** Live autopilot status from useAutopilotEvents; overrides turnStream's stale copy. */
-  autopilotStatus?: AutopilotStatusResponse | null;
-  /** Live portal items from useAutopilotEvents; overrides turnStream's stale copy. */
-  portalItems?: PortalItem[];
 }
 
 export default function DevelopmentView({
   turnStream,
   project,
   onProjectChanged,
-  initialPhase,
-  autopilotStatus: liveAutopilotStatus,
-  portalItems: livePortalItems
+  initialPhase
 }: DevelopmentViewProps) {
   const { entries, busy, status, toolActivity, checkpoint, sendTurn, abortTurn, clearCheckpoint, appendEntry } = turnStream;
-  const autopilotStatus = liveAutopilotStatus ?? (turnStream as any).autopilotStatus;
-  const portalItems: PortalItem[] = livePortalItems ?? (turnStream as any).portalItems ?? [];
+
+  // Mount autopilot event hook locally; append live events to the chat pane.
+  const handleAutopilotEvent = useCallback((ev: AutopilotLiveEvent) => {
+    if (ev.kind === 'phase') {
+      const icon = ev.status === 'passed' ? '✓' : ev.status === 'parked' ? '⚠' : '✎';
+      const label = ev.status === 'drafting' ? 'Drafting' : ev.status === 'critic' ? 'Critic review' : ev.status === 'revising' ? 'Revising' : ev.status === 'passed' ? 'Passed' : ev.status === 'parked' ? 'Parked' : ev.status;
+      appendEntry({ role: 'system', text: `${icon} Autopilot: ${label} ${ev.phaseId}` });
+    } else if (ev.kind === 'complete') {
+      const msg = `✓ Autopilot complete: ${ev.result.passed.length} passed` + (ev.result.parked.length > 0 ? `, ${ev.result.parked.length} parked` : '');
+      appendEntry({ role: 'system', text: msg });
+    } else if (ev.kind === 'error') {
+      appendEntry({ role: 'system', text: `⚠ Autopilot error: ${ev.message}` });
+    }
+  }, [appendEntry]);
+
+  const { status: autopilotStatus, portalItems } = useAutopilotEvents(handleAutopilotEvent);
 
   // --- Chat state ---
   const [prompt, setPrompt] = useState('');
