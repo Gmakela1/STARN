@@ -13,6 +13,8 @@ import { ToolRegistry } from '../tools/registry.js';
 import { SpecialistRegistry } from '../specialists/registry.js';
 import { Logger } from '../util/logger.js';
 import { AutopilotDriver, AutopilotEvent } from '../core/autopilot.js';
+import { applyAnswer } from '../core/answer-applier.js';
+import { PortalItem } from '../workspace/types.js';
 
 export interface SessionDeps {
   projectPath: string;
@@ -45,6 +47,17 @@ export interface PendingCheckpoint {
 }
 
 export type TurnEmitter = (event: string, data: unknown) => void;
+
+/**
+ * Flat SSE frames the session publishes for the question-portal answer queue.
+ * Each kind is a member of the core AutopilotEvent union, so they flow through
+ * `publish` into the `event: autopilot` stream as `{ status: ev }`.
+ */
+export type AnswerFrameEvent =
+  | { kind: 'answer_queued'; itemId: string; title: string }
+  | { kind: 'answer_applying'; itemId: string }
+  | { kind: 'answer_applied'; itemId: string; item: PortalItem; affectedDocs: string[] }
+  | { kind: 'answer_failed'; itemId: string; error: string };
 
 export type CheckpointDecision = 'approve' | 'revise' | 'discard';
 
@@ -80,6 +93,17 @@ export class ServerSessionManager {
   /** Autopilot driver instance, created on start. */
   private autopilotDriver: AutopilotDriver | null = null;
   private autopilotController: AbortController | null = null;
+
+  /**
+   * FIFO queue of portal answers that arrive while a turn is in progress. They
+   * apply one at a time between phases or right after the busy turn ends.
+   */
+  private answerQueue: Array<{ itemId: string; answer: string }> = [];
+
+  /** Re-entrancy guard so concurrent drain triggers never overlap.
+   * Without it, runQueuedAnswers could be called from the next phase's
+   * executeTurn while an immediate apply is already draining. */
+  private answerDraining = false;
 
   constructor(deps: SessionDeps) {
     this.deps = { ...deps, providers: deps.providers.map(p => ({ ...p })), assignments: cloneAssignments(deps.assignments) };
@@ -302,6 +326,9 @@ export class ServerSessionManager {
   }) => Promise<import('../core/runner.js').TurnResult> {
     return async (opts) => {
       const { CoreRunner: Runner } = await import('../core/runner.js');
+      // Answers queued during the just-finished phase apply here, so they land
+      // between phases rather than only at chain end.
+      await this.runQueuedAnswers();
       return Runner.executeTurn({
         userPrompt: opts.userPrompt,
         projectPath: this.deps.projectPath,
@@ -364,6 +391,92 @@ export class ServerSessionManager {
   createAnswerExecuteTurn(): ReturnType<ServerSessionManager['makeExecuteTurn']> {
     const abort = new AbortController();
     return this.makeExecuteTurn(abort);
+  }
+
+  // ── Question-portal answer queue ──────────────────────────────────────
+
+  /** Publishes one answer frame through the session's autopilot event bus. */
+  private publishAnswerFrame(ev: AnswerFrameEvent): void {
+    this.publish(ev);
+  }
+
+  /**
+   * Enqueues a portal answer. Busy → queued (applies after the current turn
+   * ends). Idle → drained immediately and `{ queued: false }` is returned so
+   * the caller reports `{ applied: true }`. Throws when the item is unknown,
+   * with the route's existing "Portal item not found" text.
+   */
+  queueAnswer(itemId: string, answer: string): { queued: boolean } {
+    const item = (this.deps.stateManager.getState().portalItems || []).find(i => i.id === itemId);
+    if (!item) {
+      throw new Error(`Portal item not found: ${itemId}`);
+    }
+
+    this.answerQueue.push({ itemId, answer });
+
+    if (this.busy) {
+      this.publishAnswerFrame({ kind: 'answer_queued', itemId, title: item.title });
+      return { queued: true };
+    }
+
+    void this.runQueuedAnswers();
+    return { queued: false };
+  }
+
+  /**
+   * Drains the answer queue serially. Re-entrancy-guarded so a second trigger
+   * (e.g. the next phase's executeTurn while an immediate apply is running)
+   * returns immediately instead of overlapping applies.
+   */
+  private async runQueuedAnswers(): Promise<void> {
+    if (this.answerDraining) {
+      return;
+    }
+    this.answerDraining = true;
+    try {
+      while (this.answerQueue.length > 0) {
+        const next = this.answerQueue.shift();
+        if (!next) {
+          break;
+        }
+        await this.applyAnswerNow(next.itemId, next.answer);
+      }
+    } finally {
+      this.answerDraining = false;
+    }
+  }
+
+  /**
+   * Applies one queued answer via the core answer-applier, publishing the
+   * applying/applied/failed frames around it. Never throws out: apply failures
+   * surface as `answer_failed` frames so the queue keeps draining.
+   */
+  private async applyAnswerNow(itemId: string, answer: string): Promise<void> {
+    this.publishAnswerFrame({ kind: 'answer_applying', itemId });
+    try {
+      const result = await applyAnswer(
+        {
+          stateManager: this.deps.stateManager,
+          projectPath: this.deps.projectPath,
+          executeTurn: this.createAnswerExecuteTurn(),
+          runChangeImpact: (phaseId) => this.runChangeImpactForApproval(phaseId) ?? Promise.resolve([])
+        },
+        itemId,
+        answer
+      );
+      this.publishAnswerFrame({
+        kind: 'answer_applied',
+        itemId,
+        item: result.updatedItem,
+        affectedDocs: result.affectedDocs
+      });
+    } catch (err: any) {
+      this.publishAnswerFrame({
+        kind: 'answer_failed',
+        itemId,
+        error: err?.message ?? String(err)
+      });
+    }
   }
   autopilotResume(docId?: string): void {
     // Prevent double-start: if already running, reject.
@@ -447,6 +560,8 @@ export class ServerSessionManager {
       return result;
     } finally {
       this.endTurn();
+      // Answers submitted during the human turn apply now that the bus is free.
+      await this.runQueuedAnswers();
     }
   }
 

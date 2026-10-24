@@ -16,7 +16,14 @@ export type AutopilotEvent =
   | { kind: 'status'; message: string }
   | { kind: 'tool_call'; tool: string; args: unknown }
   | { kind: 'complete'; result: { passed: string[]; parked: string[] }; reason: 'finished' | 'stopped' }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string }
+  // Question-portal answer queue frames (published by the server session through
+  // the shared event bus). The SSE writer wraps these as { status: ev } on the
+  // autopilot stream; the CLI ignores kinds it does not render.
+  | { kind: 'answer_queued'; itemId: string; title: string }
+  | { kind: 'answer_applying'; itemId: string }
+  | { kind: 'answer_applied'; itemId: string; item: PortalItem; affectedDocs: string[] }
+  | { kind: 'answer_failed'; itemId: string; error: string };
 
 export interface AutopilotDeps {
   stateManager: ProjectStateManager;

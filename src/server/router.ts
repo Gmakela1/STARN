@@ -19,7 +19,6 @@ import { fetchLiveOpenRouterModels } from '../openrouter/models.js';
 import { parseTradeStudyDocument } from './parsers/trade-study-parser.js';
 import { parseWorkInstruction, toggleWorkInstructionStep, postStepComment, toggleStepFlag, ParsedWorkInstruction } from './parsers/actions-parser.js';
 import { addPortalItem, listPortalItems, dismissPortalItem } from '../core/question-portal.js';
-import { applyAnswer } from '../core/answer-applier.js';
 import { autopilotEnabled as configAutopilotEnabled } from '../config.js';
 import { aggregateProjectIssues, OpenQuestionGroup, ProjectIssue } from './parsers/issues-parser.js';
 import { SpecialistRegistry } from '../specialists/registry.js';
@@ -1141,18 +1140,15 @@ export async function handleApiRequest(
       try {
         const session = deps.session;
         if (!session) return fail(res, 503, 'No active session');
-        if (session.busy) return fail(res, 409, 'A turn is already in progress');
-        const result = await applyAnswer(
-          {
-            stateManager: deps.stateManager,
-            projectPath: deps.projectPath,
-            executeTurn: session.createAnswerExecuteTurn(),
-            runChangeImpact: (phaseId) => session.runChangeImpactForApproval(phaseId) ?? Promise.resolve([])
-          },
-          itemId,
-          String(body.answer)
-        );
-        return ok(res, result);
+        // Queue the answer in the session. Idle → applied immediately; a turn
+        // in progress → queued and applied between phases via the session's
+        // answer queue (drained from makeExecuteTurn / runTurn).
+        const queued = await session.queueAnswer(itemId, String(body.answer));
+        if (queued.queued) {
+          sendJson(res, 202, { success: true, data: { queued: true }, error: null });
+        } else {
+          ok(res, { applied: true });
+        }
       } catch (err: any) {
         if (err?.message?.includes('not found') || err?.message?.includes('Invalid')) {
           return fail(res, 404, err.message);
