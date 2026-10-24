@@ -297,6 +297,8 @@ export class ServerSessionManager {
       detail?: string;
       source: 'autopilot';
     }>) => void;
+    onStatusUpdate?: (status: string) => void;
+    onToolCall?: (tool: string, args: unknown) => void;
   }) => Promise<import('../core/runner.js').TurnResult> {
     return async (opts) => {
       const { CoreRunner: Runner } = await import('../core/runner.js');
@@ -324,7 +326,9 @@ export class ServerSessionManager {
         logger: this.deps.logger,
         signal: opts.signal ?? abort.signal,
         forceSpecialistId: opts.forceSpecialistId,
-        onQuestions: opts.onQuestions
+        onQuestions: opts.onQuestions,
+        onStatusUpdate: opts.onStatusUpdate,
+        onToolCall: opts.onToolCall
       });
     };
   }

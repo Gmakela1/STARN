@@ -1092,6 +1092,10 @@ export async function handleApiRequest(
         if (!res.writableEnded) {
           if (ev.kind === 'question') {
             res.write(`event: question\ndata: ${JSON.stringify({ item: ev.item })}\n\n`);
+          } else if (ev.kind === 'status') {
+            res.write(`event: status\ndata: ${JSON.stringify({ message: ev.message })}\n\n`);
+          } else if (ev.kind === 'tool_call') {
+            res.write(`event: tool_call\ndata: ${JSON.stringify({ tool: ev.tool, args: ev.args })}\n\n`);
           } else {
             res.write(`event: autopilot\ndata: ${JSON.stringify({ status: ev })}\n\n`);
           }
@@ -1102,6 +1106,10 @@ export async function handleApiRequest(
         if (!res.writableEnded) {
           if (ev.kind === 'question') {
             res.write(`event: question\ndata: ${JSON.stringify({ item: ev.item })}\n\n`);
+          } else if (ev.kind === 'status') {
+            res.write(`event: status\ndata: ${JSON.stringify({ message: ev.message })}\n\n`);
+          } else if (ev.kind === 'tool_call') {
+            res.write(`event: tool_call\ndata: ${JSON.stringify({ tool: ev.tool, args: ev.args })}\n\n`);
           } else {
             res.write(`event: autopilot\ndata: ${JSON.stringify({ status: ev })}\n\n`);
           }

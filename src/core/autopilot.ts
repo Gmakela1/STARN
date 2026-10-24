@@ -6,13 +6,15 @@ import { TurnResult } from './runner.js';
 import { approveArtifact } from './approvals.js';
 import { addPortalItem, answerPortalItem, listPortalItems } from './question-portal.js';
 
-export type AutopilotDocStatus = 'idle' | 'drafting' | 'critic' | 'revising' | 'passed' | 'parked';
+export type AutopilotDocStatus = 'idle' | 'drafting' | 'critic' | 'revising' | 'passed' | 'auto-approved' | 'parked';
 
 export type AutopilotEvent =
   | { kind: 'start'; total: number }
   | { kind: 'phase'; phaseId: string; status: AutopilotDocStatus }
   | { kind: 'question'; item: PortalItem }
   | { kind: 'parked'; item: PortalItem }
+  | { kind: 'status'; message: string }
+  | { kind: 'tool_call'; tool: string; args: unknown }
   | { kind: 'complete'; result: { passed: string[]; parked: string[] } }
   | { kind: 'error'; message: string };
 
@@ -31,6 +33,10 @@ export interface AutopilotDeps {
       detail?: string;
       source: 'autopilot';
     }>) => void;
+    /** Live status updates from the runner (discovery, drafting, critic). */
+    onStatusUpdate?: (status: string) => void;
+    /** Live tool call notifications from the runner. */
+    onToolCall?: (tool: string, args: unknown) => void;
   }) => Promise<TurnResult>;
 }
 
@@ -231,7 +237,9 @@ export class AutopilotDriver {
               });
               this.emit({ kind: 'question', item: portalItem });
             }
-          }
+          },
+          onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
+          onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args })
         });
 
         // Check abort after turn (in case signal fired mid-turn)
@@ -333,12 +341,12 @@ export class AutopilotDriver {
         // Resolve any parked items for this phase (from a previous park/resume)
         this.resolveParkedItems(phase.id);
 
-        // Mark passed
+        // Mark auto-approved (critic passed, autopilot approved)
         state = this.readState();
-        state.autopilot.docStatus[phase.id] = 'passed';
+        state.autopilot.docStatus[phase.id] = 'auto-approved';
         passed.push(phase.id);
         stateManager.saveState(state);
-        this.emit({ kind: 'phase', phaseId: phase.id, status: 'passed' });
+        this.emit({ kind: 'phase', phaseId: phase.id, status: 'auto-approved' });
       }
 
       // Chain complete — all phases processed

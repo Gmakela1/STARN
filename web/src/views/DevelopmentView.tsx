@@ -49,14 +49,20 @@ export default function DevelopmentView({
   // Mount autopilot event hook locally; append live events to the chat pane.
   const handleAutopilotEvent = useCallback((ev: AutopilotLiveEvent) => {
     if (ev.kind === 'phase') {
-      const icon = ev.status === 'passed' ? '✓' : ev.status === 'parked' ? '⚠' : '✎';
-      const label = ev.status === 'drafting' ? 'Drafting' : ev.status === 'critic' ? 'Critic review' : ev.status === 'revising' ? 'Revising' : ev.status === 'passed' ? 'Passed' : ev.status === 'parked' ? 'Parked' : ev.status;
+      const icon = ev.status === 'passed' ? '✓' : ev.status === 'auto-approved' ? '✓' : ev.status === 'parked' ? '⚠' : '✎';
+      const label = ev.status === 'drafting' ? 'Drafting' : ev.status === 'critic' ? 'Critic review' : ev.status === 'revising' ? 'Revising' : ev.status === 'passed' ? 'Passed' : ev.status === 'auto-approved' ? 'Auto-approved' : ev.status === 'parked' ? 'Parked' : ev.status;
       appendEntry({ role: 'system', text: `${icon} Autopilot: ${label} ${ev.phaseId}` });
     } else if (ev.kind === 'complete') {
       const msg = `✓ Autopilot complete: ${ev.result.passed.length} passed` + (ev.result.parked.length > 0 ? `, ${ev.result.parked.length} parked` : '');
       appendEntry({ role: 'system', text: msg });
     } else if (ev.kind === 'error') {
       appendEntry({ role: 'system', text: `⚠ Autopilot error: ${ev.message}` });
+    } else if (ev.kind === 'status') {
+      // Live status updates (discovery, drafting, critic progress)
+      appendEntry({ role: 'system', text: `🔍 ${ev.message}` });
+    } else if (ev.kind === 'tool_call') {
+      // Tool call notifications
+      appendEntry({ role: 'system', text: `🛠 ${ev.tool}${ev.args ? ': ' + JSON.stringify(ev.args).slice(0, 80) : ''}` });
     }
   }, [appendEntry]);
 

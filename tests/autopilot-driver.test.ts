@@ -129,9 +129,9 @@ describe('AutopilotDriver', () => {
     expect(state.workflow.activePhase).toBe('sow');
     // Autopilot state
     expect(state.autopilot!.running).toBe(false);
-    expect(state.autopilot!.docStatus['conops']).toBe('passed');
-    expect(state.autopilot!.docStatus['architecture']).toBe('passed');
-    expect(state.autopilot!.docStatus['icd']).toBe('passed');
+    expect(state.autopilot!.docStatus['conops']).toBe('auto-approved');
+    expect(state.autopilot!.docStatus['architecture']).toBe('auto-approved');
+    expect(state.autopilot!.docStatus['icd']).toBe('auto-approved');
   });
 
   // ── Test 2: forceSpecialistId passed in each executeTurn opts ──────────
@@ -305,7 +305,7 @@ describe('AutopilotDriver', () => {
 
     // Let conops complete (it returns immediately from mock)
     await vi.waitFor(() => {
-      const phaseEvs = capturedEvents.filter(e => e.kind === 'phase' && (e as any).phaseId === 'conops' && (e as any).status === 'passed');
+      const phaseEvs = capturedEvents.filter(e => e.kind === 'phase' && (e as any).phaseId === 'conops' && (e as any).status === 'auto-approved');
       return phaseEvs.length > 0;
     }, { timeout: 3000, interval: 30 });
 
@@ -437,7 +437,7 @@ describe('AutopilotDriver', () => {
 
     const state = driver.getState();
     expect(state.running).toBe(false);
-    expect(state.docStatus['conops']).toBe('passed');
+    expect(state.docStatus['conops']).toBe('auto-approved');
     expect(state.revisionsUsed['conops']).toBeDefined();
   });
 });

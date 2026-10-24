@@ -18,6 +18,8 @@ export type AutopilotLiveEvent =
   | { kind: 'phase'; phaseId: string; status: string }
   | { kind: 'question'; item: PortalItem }
   | { kind: 'parked'; item: PortalItem }
+  | { kind: 'status'; message: string }
+  | { kind: 'tool_call'; tool: string; args: unknown }
   | { kind: 'complete'; result: { passed: string[]; parked: string[] } }
   | { kind: 'error'; message: string };
 
@@ -101,6 +103,12 @@ export function useAutopilotEvents(onEvent?: (ev: AutopilotLiveEvent) => void): 
                     case 'question':
                       setPortalItems(prev => [...prev, parsed.item ?? parsed]);
                       onEvent?.({ kind: 'question', item: parsed.item ?? parsed });
+                      break;
+                    case 'status':
+                      onEvent?.({ kind: 'status', message: parsed.message });
+                      break;
+                    case 'tool_call':
+                      onEvent?.({ kind: 'tool_call', tool: parsed.tool, args: parsed.args });
                       break;
                   }
                 } catch {

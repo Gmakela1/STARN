@@ -56,6 +56,7 @@ export default function AutopilotHud({
   // S6: re-draft ripple — track which dots were affected
   const parkedCount = Object.values(docStatus).filter(v => v === 'parked').length;
   const draftingCount = Object.values(docStatus).filter(v => v === 'drafting').length;
+  const autoApprovedCount = Object.values(docStatus).filter(v => v === 'auto-approved').length;
 
   const statusWord = running
     ? draftingCount > 0
@@ -63,7 +64,9 @@ export default function AutopilotHud({
       : 'Idle'
     : parkedCount > 0
       ? `${parkedCount} parked`
-      : 'Idle';
+      : autoApprovedCount > 0
+        ? `${autoApprovedCount} auto-approved`
+        : 'Idle';
 
   const currentPhaseId = status?.currentPhaseId;
 
@@ -74,6 +77,8 @@ export default function AutopilotHud({
     let ringClass = '';
     if (st === 'passed') {
       dotClass = 'bg-emerald-500';
+    } else if (st === 'auto-approved') {
+      dotClass = 'bg-cyan-500 ring-1 ring-cyan-500/60';
     } else if (st === 'drafting') {
       dotClass = 'w-3 bg-cyan-500 motion-safe:animate-pulse ring-2 ring-cyan-500/40';
     } else if (st === 'parked') {
