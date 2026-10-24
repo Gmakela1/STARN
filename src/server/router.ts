@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ProjectStateManager, ORDERED_WORKFLOW_PHASES, resolveArtifactPaths, resolvePhaseRef } from '../workspace/state.js';
+import { approveArtifact } from '../core/approvals.js';
 import { ProjectContext } from '../workspace/project-context.js';
 import { listFolders } from '../workspace/folder-browser.js';
 import { countOpenQuestions, parseOpenQuestionsFromContent } from '../core/open-questions-parser.js';
@@ -511,7 +512,7 @@ export async function handleApiRequest(
         return fail(res, 400, 'decision must be approve | revise | discard');
       }
       try {
-        const result = deps.session.resolveCheckpoint(decision as any, body.feedback);
+        const result = await deps.session.resolveCheckpoint(decision as any, body.feedback);
         return ok(res, result);
       } catch (err: any) {
         return fail(res, 409, err?.message ?? 'No pending checkpoint');
@@ -550,9 +551,24 @@ export async function handleApiRequest(
       }
 
       if (method === 'POST' && segments[3] === 'approve') {
-        const result = deps.stateManager.manualApproveArtifact(phase.id.toUpperCase());
-        if (!result.success) return fail(res, 409, result.error ?? 'Approval failed');
-        return ok(res, { artifact: result.artifact });
+        // Read the current doc content from disk, then route through the shared
+        // core approval primitive: hash detection, change-impact run, and phase
+        // advance (web approval parity with the CLI re-approval flow).
+        const content = docPath ? safeReadFile(docPath) : null;
+        if (content === null) {
+          return fail(res, 409, `Document not found on disk at ${phase.artifactPath}. Create or draft it first.`);
+        }
+        await approveArtifact({
+          projectPath: deps.projectPath,
+          stateManager: deps.stateManager,
+          specialistId: phase.id,
+          content,
+          runChangeImpact: deps.session
+            ? phaseId => deps.session!.runChangeImpactForApproval(phaseId)
+            : undefined
+        });
+        const artifact = deps.stateManager.getState().artifacts.find(a => a.id === phase.id.toUpperCase());
+        return ok(res, { artifact });
       }
     }
 

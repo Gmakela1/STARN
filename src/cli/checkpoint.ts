@@ -4,9 +4,13 @@ import path from 'node:path';
 import chalk from 'chalk';
 import boxen from 'boxen';
 import { CriticResult, enrichFeedbackWithCritic } from '../core/critic.js';
+import { approveArtifact, parseAffectedPhaseIds } from '../core/approvals.js';
+import { harvestDecisionLog } from '../core/decision-log.js';
 
 // Re-exported for backward compatibility (now lives headlessly in core/critic.ts)
 export { enrichFeedbackWithCritic };
+// Re-exported for backward compatibility (moved verbatim to core/decision-log.ts)
+export { harvestDecisionLog };
 import { ProjectStateManager } from '../workspace/state.js';
 import { OpenRouterClient } from '../openrouter/client.js';
 import { ChatClient } from '../openrouter/types.js';
@@ -176,68 +180,71 @@ export async function runHumanCheckpoint(
     if (action === 'accept' || action === 'override') {
       if (isFullDeliverable) {
         const docName = `${specialistId.toUpperCase()}.md`;
-        const docsDir = path.join(projectPath, 'docs');
-        if (!fs.existsSync(docsDir)) {
-          fs.mkdirSync(docsDir, { recursive: true });
-        }
-        const outPath = path.join(docsDir, docName);
-        fs.writeFileSync(outPath, cleanedDoc, 'utf-8');
+        const outPath = path.join(path.join(projectPath, 'docs'), docName);
 
-        // Detect re-approval with content changes BEFORE recordArtifact overwrites the hash.
-        const artifactId = specialistId.toUpperCase();
-        const existingArt = stateManager.getState().artifacts.find(a => a.id === artifactId);
-        const wasPreviouslyApproved = existingArt?.status === 'approved' && !!existingArt?.approvedContentHash;
-        const changedSinceApproval = wasPreviouslyApproved && stateManager.hasContentChangedSinceApproval(artifactId);
-
-        stateManager.recordArtifact({
-          id: artifactId,
+        // Core approval mechanics: write the doc, record the artifact (hash stored),
+        // harvest design decisions, and auto-run change-impact on content change.
+        // The CLI's caller (src/index.ts) advances to the next phase after accept, so
+        // the core phase advance is disabled here to avoid double-advancing.
+        let impactReport: string | undefined;
+        const result = await approveArtifact({
+          projectPath,
+          stateManager,
+          specialistId,
+          content: cleanedDoc,
           title: `${specialistName} Document`,
-          path: path.relative(projectPath, outPath).replace(/\\/g, '/'),
-          status: 'approved',
-          criticScore: criticResult?.score
+          criticScore: criticResult?.score,
+          advance: false,
+          runChangeImpact: client && model && toolRegistry
+            ? async phaseId => {
+                // Preserve historical CLI behavior: only re-approvals with content
+                // changes trigger change-impact (first approvals skip it).
+                if (!stateManager.isArtifactApproved(phaseId.toUpperCase())) {
+                  return [];
+                }
+                console.log(chalk.cyan('\n📋 Content changed since last approval — running change-impact analysis...'));
+                try {
+                  const { runAgentToolLoop } = await import('../core/agent-loop.js');
+                  const { changeImpactPackage } = await import('../specialists/packages/change-impact/index.js');
+                  const impactResult = await runAgentToolLoop({
+                    client,
+                    model,
+                    systemPrompt: changeImpactPackage.systemPrompt,
+                    userMessage: `Analyze the impact of changes to ${phaseId}. Compare the current docs/${phaseId}.md against all other approved/draft documents in docs/. Identify which downstream documents are now inconsistent and what specific sections/interfaces/requirements are affected.`,
+                    toolRegistry,
+                    allowedTools: changeImpactPackage.allowedTools,
+                    context: { projectPath, stateManager }
+                  });
+                  console.log(`\n${chalk.bold.yellow('Change Impact Report:')}\n${impactResult.finalResponse}\n`);
+                  impactReport = impactResult.finalResponse;
+                  return parseAffectedPhaseIds(impactResult.finalResponse);
+                } catch (err: any) {
+                  console.log(chalk.yellow(`Change-impact analysis failed: ${err.message}`));
+                  return [];
+                }
+              }
+            : undefined
         });
 
-        // Harvest Design Decisions section into centralized decision log
-        const entriesHarvested = harvestDecisionLog(projectPath, specialistId);
-        if (entriesHarvested > 0) {
-          console.log(chalk.cyan(`\n📝 ${entriesHarvested} design decision(s) logged to docs/DECISIONS.md`));
+        if (result.decisionCount > 0) {
+          console.log(chalk.cyan(`\n📝 ${result.decisionCount} design decision(s) logged to docs/DECISIONS.md`));
         }
-
         console.log(chalk.green(`\n✔ Saved clean deliverable to ${outPath}`));
 
-        // Auto change-impact on re-approval with content changes
-        if (changedSinceApproval && client && model && toolRegistry) {
-          console.log(chalk.cyan('\n📋 Content changed since last approval — running change-impact analysis...'));
-          try {
-            const { runAgentToolLoop } = await import('../core/agent-loop.js');
-            const { changeImpactPackage } = await import('../specialists/packages/change-impact/index.js');
-            const impactResult = await runAgentToolLoop({
-              client,
-              model,
-              systemPrompt: changeImpactPackage.systemPrompt,
-              userMessage: `Analyze the impact of changes to ${artifactId}. Compare the current docs/${artifactId}.md against all other approved/draft documents in docs/. Identify which downstream documents are now inconsistent and what specific sections/interfaces/requirements are affected.`,
-              toolRegistry,
-              allowedTools: changeImpactPackage.allowedTools,
-              context: { projectPath, stateManager }
-            });
-            console.log(`\n${chalk.bold.yellow('Change Impact Report:')}\n${impactResult.finalResponse}\n`);
-
-            // Offer to align downstream docs
-            const align = await select({
-              message: 'Apply these changes to downstream docs?',
-              choices: [
-                { name: '✎ Yes — align downstream docs now', value: 'align' },
-                { name: '⏭  No — I\'ll handle it manually', value: 'skip' }
-              ]
-            });
-            if (align === 'align') {
-              userFeedback = `${impactResult.finalResponse}\n\nUSER INSTRUCTION: Apply the recommended changes above to align the downstream documents. Update the affected docs in place.`;
-              finalAction = 'feedback';
-              promptActive = false;
-              break;
-            }
-          } catch (err: any) {
-            console.log(chalk.yellow(`Change-impact analysis failed: ${err.message}`));
+        // Downstream-align offer stays in the CLI — only core approval mechanics moved.
+        if (result.changedSinceApproval && impactReport) {
+          const align = await select({
+            message: 'Apply these changes to downstream docs?',
+            choices: [
+              { name: '✎ Yes — align downstream docs now', value: 'align' },
+              { name: '⏭  No — I\'ll handle it manually', value: 'skip' }
+            ]
+          });
+          if (align === 'align') {
+            userFeedback = `${impactReport}\n\nUSER INSTRUCTION: Apply the recommended changes above to align the downstream documents. Update the affected docs in place.`;
+            finalAction = 'feedback';
+            promptActive = false;
+            break;
           }
         }
       }
@@ -251,60 +258,6 @@ export async function runHumanCheckpoint(
   }
 
   return { action: finalAction, feedback: userFeedback };
-}
-
-// Decision Log Harvest
-const DESIGN_DECISIONS_HEADER = '## Design Decisions';
-
-/**
- * Extracts the Design Decisions section from a document and appends it to docs/DECISIONS.md.
- * Idempotent: checks for duplicate D-XXX IDs before appending.
- * Returns the number of new entries appended.
- */
-export function harvestDecisionLog(projectPath: string, specialistId: string): number {
-  const docName = `${specialistId.toUpperCase()}.md`;
-  const docPath = path.join(projectPath, 'docs', docName);
-  const decisionsPath = path.join(projectPath, 'docs', 'DECISIONS.md');
-
-  if (!fs.existsSync(docPath)) return 0;
-
-  const docContent = fs.readFileSync(docPath, 'utf-8');
-  const headerIndex = docContent.indexOf(DESIGN_DECISIONS_HEADER);
-  if (headerIndex === -1) return 0;
-
-  // Extract everything from the Design Decisions header to the next top-level header or end
-  const afterHeader = docContent.slice(headerIndex + DESIGN_DECISIONS_HEADER.length);
-  const nextHeaderMatch = afterHeader.match(/\n## /);
-  const decisionsSection = nextHeaderMatch
-    ? afterHeader.slice(0, nextHeaderMatch.index)
-    : afterHeader;
-
-  const trimmedSection = decisionsSection.trim();
-  if (!trimmedSection) return 0;
-
-  // Extract all D-XXX or D-XXX IDs from the section
-  const idRegex = /D-\d+/g;
-  const newIds: string[] = trimmedSection.match(idRegex) || [];
-  if (newIds.length === 0) return 0;
-
-  // Read existing DECISIONS.md if it exists
-  let existingContent = '';
-  if (fs.existsSync(decisionsPath)) {
-    existingContent = fs.readFileSync(decisionsPath, 'utf-8');
-  }
-
-  // Check for duplicates — skip if any entry already exists
-  const existingIds: string[] = existingContent.match(/D-\d+/g) || [];
-  const alreadyExists = newIds.some(id => existingIds.includes(id));
-  if (alreadyExists) {
-    return 0; // idempotent — skip if any entry already exists
-  }
-
-  // Append the entries (no duplicate header)
-  const entry = `\n${trimmedSection}`;
-  fs.writeFileSync(decisionsPath, existingContent + entry, 'utf-8');
-
-  return newIds.length;
 }
 
 /**

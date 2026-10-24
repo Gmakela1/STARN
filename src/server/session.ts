@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CoreRunner, TurnResult } from '../core/runner.js';
+import { approveArtifact, parseAffectedPhaseIds } from '../core/approvals.js';
 import { CriticResult, enrichFeedbackWithCritic } from '../core/critic.js';
 import { ChatMessage } from '../openrouter/types.js';
 import { ChatClient } from '../openrouter/types.js';
@@ -261,12 +262,12 @@ export class ServerSessionManager {
    * - revise: clears the checkpoint and returns a critic-enriched revision prompt.
    * - discard: clears the checkpoint.
    */
-  resolveCheckpoint(decision: CheckpointDecision, feedback?: string): {
+  async resolveCheckpoint(decision: CheckpointDecision, feedback?: string): Promise<{
     status: 'approved' | 'revision_requested' | 'discarded';
     savedPath?: string;
     revisionPrompt?: string;
     nextPhase?: string;
-  } {
+  }> {
     const pending = this.pending;
     if (!pending) {
       throw new Error('No checkpoint is pending');
@@ -286,8 +287,7 @@ export class ServerSessionManager {
     // approve — prefer the disk file (authoritative; written via fs_write)
     const { projectPath, stateManager } = this.deps;
     const docName = `${pending.specialistId.toUpperCase()}.md`;
-    const docsDir = path.join(projectPath, 'docs');
-    const outPath = path.join(docsDir, docName);
+    const outPath = path.join(projectPath, 'docs', docName);
 
     let content = pending.output;
     try {
@@ -297,24 +297,51 @@ export class ServerSessionManager {
       // no disk file yet — use the turn output
     }
 
-    if (!fs.existsSync(docsDir)) fs.mkdirSync(docsDir, { recursive: true });
-    fs.writeFileSync(outPath, content, 'utf-8');
-
-    stateManager.recordArtifact({
-      id: pending.specialistId.toUpperCase(),
+    // Core approval mechanics (write + recordArtifact hash + decision harvesting
+    // + change-impact). The web path gains the change-impact parity the CLI has.
+    await approveArtifact({
+      projectPath,
+      stateManager,
+      specialistId: pending.specialistId,
+      content,
       title: `${pending.specialistName} Document`,
-      path: path.relative(projectPath, outPath).replace(/\\/g, '/'),
-      status: 'approved',
-      criticScore: pending.criticResult?.score
+      criticScore: pending.criticResult?.score,
+      runChangeImpact: phaseId => this.runChangeImpactForApproval(phaseId)
     });
 
     this.pending = null;
-    const nextPhase = stateManager.advanceToNextPhase();
+    const nextPhase = stateManager.getState().workflow.activePhase;
     return {
       status: 'approved',
       savedPath: path.relative(projectPath, outPath).replace(/\\/g, '/'),
-      nextPhase: nextPhase ?? undefined
+      nextPhase
     };
+  }
+
+  /**
+   * Runs the change-impact package programmatically with the drafting client
+   * (web parity with the CLI re-approval flow). Returns affected phase ids.
+   * Kept in the server layer (not core) because it imports the agent tool loop.
+   */
+  async runChangeImpactForApproval(phaseId: string): Promise<string[]> {
+    const { projectPath, stateManager, toolRegistry } = this.deps;
+    try {
+      const { runAgentToolLoop } = await import('../core/agent-loop.js');
+      const { changeImpactPackage } = await import('../specialists/packages/change-impact/index.js');
+      const impactResult = await runAgentToolLoop({
+        client: this.roleClients.drafting.client,
+        model: this.roleClients.drafting.model,
+        systemPrompt: changeImpactPackage.systemPrompt,
+        userMessage: `Analyze the impact of changes to ${phaseId}. Compare the current docs/${phaseId}.md against all other approved/draft documents in docs/. Identify which downstream documents are now inconsistent and what specific sections/interfaces/requirements are affected.`,
+        toolRegistry,
+        allowedTools: changeImpactPackage.allowedTools,
+        context: { projectPath, stateManager }
+      });
+      return parseAffectedPhaseIds(impactResult.finalResponse);
+    } catch (err: any) {
+      this.deps.logger?.error(`Change-impact analysis failed: ${err?.message ?? err}`);
+      return [];
+    }
   }
 }
 
