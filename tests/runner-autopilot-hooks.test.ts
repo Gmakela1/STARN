@@ -393,4 +393,42 @@ describe('Core Runner autopilot hooks', () => {
     expect(hook).toHaveBeenCalledTimes(1);
     expect(hook.mock.calls[0][0]).toEqual([]);
   });
+
+  it('fires natural-language onStatusUpdate strings (discovery, draft, critic baseline, polishing)', async () => {
+    approveRequirements(stateMgr, tempDir);
+    installBomMock(tempDir, mockClient, {
+      draftContent: bomDocWithOpenQuestions(['Confirm motor shaft pilot diameter.']),
+      revisionContent: bomDocWithOpenQuestions(['Confirm motor shaft pilot diameter.']),
+      criticResults: [
+        { passed: false, score: 4.0 },
+        { passed: true, score: 8.7 }
+      ]
+    });
+    const statusUpdates: string[] = [];
+
+    await CoreRunner.executeTurn({
+      userPrompt: 'Draft the BOM',
+      projectPath: tempDir,
+      stateManager: stateMgr,
+      client: mockClient,
+      model: 'test-model',
+      toolRegistry,
+      specialistRegistry,
+      forceSpecialistId: 'bom',
+      onStatusUpdate: (msg: string) => statusUpdates.push(msg),
+      sessionMessages: []
+    });
+
+    // §4.1 natural-English replacements fired on this multi-revision turn.
+    expect(statusUpdates).toContain('Skimming the project folder for related documents and decisions…');
+    expect(statusUpdates).toContain('Asking Bill of Materials (BOM) to prepare the first draft…');
+    expect(statusUpdates).toContain('Comparing the draft against the approved project baseline…');
+    expect(statusUpdates).toContain('Baseline review suggests refinements (score: 4/10). Polishing — pass 1 of 2…');
+
+    // Old engine-speak is gone
+    expect(statusUpdates.join('|')).not.toContain('Classifying request');
+    expect(statusUpdates.join('|')).not.toContain('Executing specialist');
+    expect(statusUpdates.join('|')).not.toContain('harsh critic');
+    expect(statusUpdates.join('|')).not.toContain('Running mandatory');
+  });
 });

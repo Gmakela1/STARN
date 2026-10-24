@@ -10,12 +10,12 @@ export type AutopilotDocStatus = 'idle' | 'drafting' | 'critic' | 'revising' | '
 
 export type AutopilotEvent =
   | { kind: 'start'; total: number }
-  | { kind: 'phase'; phaseId: string; status: AutopilotDocStatus }
+  | { kind: 'phase'; phaseId: string; status: AutopilotDocStatus; name: string }
   | { kind: 'question'; item: PortalItem }
   | { kind: 'parked'; item: PortalItem }
   | { kind: 'status'; message: string }
   | { kind: 'tool_call'; tool: string; args: unknown }
-  | { kind: 'complete'; result: { passed: string[]; parked: string[] } }
+  | { kind: 'complete'; result: { passed: string[]; parked: string[] }; reason: 'finished' | 'stopped' }
   | { kind: 'error'; message: string };
 
 export interface AutopilotDeps {
@@ -224,7 +224,7 @@ export class AutopilotDriver {
         state.autopilot.currentPhaseId = phase.id;
         state.autopilot.docStatus[phase.id] = 'drafting';
         stateManager.saveState(state);
-        this.emit({ kind: 'phase', phaseId: phase.id, status: 'drafting' });
+        this.emit({ kind: 'phase', phaseId: phase.id, status: 'drafting', name: phase.name });
 
         // Execute the turn
         let turnResult = await executeTurn({
@@ -254,7 +254,8 @@ export class AutopilotDriver {
           stateManager.saveState(state);
           this.emit({
             kind: 'complete',
-            result: { passed, parked }
+            result: { passed, parked },
+            reason: 'stopped'
           });
           return;
         }
@@ -268,7 +269,7 @@ export class AutopilotDriver {
         // writing the document. Re-run with a stronger instruction.
         if (turnResult.error && !this._retriedPhase.has(phase.id)) {
           this._retriedPhase.add(phase.id);
-          this.emit({ kind: 'status', message: `Retrying ${phase.name} with stronger output instruction…` });
+          this.emit({ kind: 'status', message: `The first pass didn't produce a usable ${phase.name} document — retrying with clearer instructions…` });
           const retryResult = await executeTurn({
             userPrompt: `You previously failed to produce the ${phase.name} deliverable. This is a retry.\n\nCRITICAL: You MUST write the file docs/${phase.id.toUpperCase()}.md using fs_write. Your response MUST be the complete document content starting with a level-1 heading (#).\n\nDo NOT return commentary, explanations, or summaries. Only the document itself.`,
             forceSpecialistId: phase.id,
@@ -315,7 +316,8 @@ export class AutopilotDriver {
           stateManager.saveState(state);
           this.emit({
             kind: 'complete',
-            result: { passed, parked }
+            result: { passed, parked },
+            reason: 'stopped'
           });
           return;
         }
@@ -340,7 +342,7 @@ export class AutopilotDriver {
             state.autopilot.docStatus[phase.id] = 'passed';
             passed.push(phase.id);
             stateManager.saveState(state);
-            this.emit({ kind: 'phase', phaseId: phase.id, status: 'passed' });
+            this.emit({ kind: 'phase', phaseId: phase.id, status: 'passed', name: phase.name });
             continue;
           }
           // No artifact written: park with error
@@ -374,7 +376,7 @@ export class AutopilotDriver {
         state.autopilot.docStatus[phase.id] = 'auto-approved';
         passed.push(phase.id);
         stateManager.saveState(state);
-        this.emit({ kind: 'phase', phaseId: phase.id, status: 'auto-approved' });
+        this.emit({ kind: 'phase', phaseId: phase.id, status: 'auto-approved', name: phase.name });
       }
 
       // Chain complete — all phases processed
@@ -384,7 +386,8 @@ export class AutopilotDriver {
       stateManager.saveState(state);
       this.emit({
         kind: 'complete',
-        result: { passed, parked }
+        result: { passed, parked },
+        reason: 'finished'
       });
     } catch (err: any) {
       state = this.readState();

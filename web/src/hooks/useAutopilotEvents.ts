@@ -15,12 +15,13 @@ export interface AutopilotEventsState {
 
 /** Raw events from the /api/autopilot/events SSE stream, for live chat updates. */
 export type AutopilotLiveEvent =
-  | { kind: 'phase'; phaseId: string; status: string }
+  | { kind: 'start'; total: number }
+  | { kind: 'phase'; phaseId: string; status: string; name?: string }
   | { kind: 'question'; item: PortalItem }
   | { kind: 'parked'; item: PortalItem }
   | { kind: 'status'; message: string }
   | { kind: 'tool_call'; tool: string; args: unknown }
-  | { kind: 'complete'; result: { passed: string[]; parked: string[] } }
+  | { kind: 'complete'; result: { passed: string[]; parked: string[] }; reason?: 'finished' | 'stopped' }
   | { kind: 'error'; message: string };
 
 /**

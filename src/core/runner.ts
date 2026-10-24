@@ -204,7 +204,7 @@ export class CoreRunner {
       specialist = forcedSpecialist;
       CoreRunner.lastActiveSpecialistId = forcedSpecialist.id;
     } else {
-      onStatusUpdate?.('Classifying request...');
+      onStatusUpdate?.('Figuring out who should handle this…');
       specialistId = await classifyRequest(
         userPrompt,
         options.classifierClient ?? client,
@@ -257,7 +257,7 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     }
 
     // 3. Mandatory Discovery
-    onStatusUpdate?.('Running mandatory project discovery...');
+    onStatusUpdate?.('Skimming the project folder for related documents and decisions…');
     const discovery = await runDiscovery(projectPath, stateManager);
 
     // 4. Adaptive Story-Based Intake Interview for CONOPS if not yet completed
@@ -342,10 +342,10 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     });
     if (compactionResult.compacted) {
       sessionMessages = compactionResult.messages;
-      onStatusUpdate?.(`Compacted session (${compactionResult.tokensBefore} → ${compactionResult.tokensAfter} tokens)`);
+      onStatusUpdate?.(`Tidying up the conversation history so there's room to work…`);
     }
 
-    onStatusUpdate?.(`Executing specialist: ${specialist.name}...`);
+    onStatusUpdate?.(`Asking ${specialist.name} to prepare the first draft…`);
     const enhancedSystemPrompt = `${specialist.systemPrompt}\n\n${discovery.discoveryText}${existingBaselineText}${SHARED_EDIT_INSTRUCTIONS}`;
 
     const transcriptionOn = options.transcriptionEnabled !== false;
@@ -488,7 +488,7 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
 
     // 7. Critic While-Loop with Program Baseline Verification
     if (specialist.requiresCritic) {
-      onStatusUpdate?.('Running harsh critic evaluation with program alignment...');
+      onStatusUpdate?.('Comparing the draft against the approved project baseline…');
       const critic = new CriticEvaluator(options.criticClient ?? client);
       let attempts = 0;
       const maxAttempts = 2;
@@ -572,7 +572,7 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
         if (attempts < maxAttempts) {
           attempts++;
           autoRevisionsRun++;
-          onStatusUpdate?.(`Critic requested improvements (Score: ${criticResult.score}/10). Revising draft (Attempt ${attempts}/${maxAttempts})...`);
+          onStatusUpdate?.(`Baseline review suggests refinements (score: ${criticResult.score}/10). Polishing — pass ${attempts} of ${maxAttempts}…`);
 
           const isDeltaReview = targetDocExistedBeforeTurn && (
             (context.editLog && context.editLog.length > 0) || diskModified

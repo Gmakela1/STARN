@@ -106,12 +106,19 @@ describe('AutopilotDriver', () => {
 
     const completeEv = capturedEvents.find(e => e.kind === 'complete')!;
     expect(completeEv).toMatchObject({ kind: 'complete' });
+    expect((completeEv as any).reason).toBe('finished');
     const completeResult = (completeEv as any).result;
     expect(completeResult.passed.length).toBe(13);
     expect(completeResult.passed[0]).toBe('conops');
     expect(completeResult.passed[1]).toBe('architecture');
     expect(completeResult.passed[2]).toBe('icd');
     expect(completeResult.parked).toEqual([]);
+
+    // Phase events carry name
+    const phaseEvs = capturedEvents.filter(e => e.kind === 'phase');
+    for (const ev of phaseEvs) {
+      expect((ev as any).name).toBeTruthy();
+    }
 
     // executeTurn called with forceSpecialistId per phase
     const turnCalls = executeTurnMock.mock.calls;
@@ -225,6 +232,7 @@ describe('AutopilotDriver', () => {
 
     // Only conops passed, architecture parked
     const completeEv = capturedEvents.find(e => e.kind === 'complete')! as any;
+    expect(completeEv.reason).toBe('stopped');
     expect(completeEv.result.passed).toEqual(['conops']);
     expect(completeEv.result.parked).toContain('architecture');
   });
@@ -273,6 +281,7 @@ describe('AutopilotDriver', () => {
 
     // Chain continued past architecture
     const completeEv = capturedEvents.find(e => e.kind === 'complete')! as any;
+    expect(completeEv.reason).toBe('finished');
     expect(completeEv.result.passed).toContain('architecture');
   });
 

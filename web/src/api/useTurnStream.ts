@@ -1,11 +1,29 @@
 import { useCallback, useRef, useState } from 'react';
 import { AutopilotStatusResponse, CriticResult, PendingCheckpoint, PortalItem } from '../types/api';
 
+export type ActivityKind =
+  | 'live' | 'tool' | 'phase' | 'complete' | 'error' | 'note';
+
+export interface ActivityMeta {
+  kind: ActivityKind;
+  phaseId?: string;
+  phaseName?: string;   // friendly name, core-provided
+  score?: number;       // critic score /10
+  attempts?: number;
+  maxAttempts?: number;
+  passedCount?: number;
+  parkedCount?: number;
+  stopped?: boolean;
+  reason?: string;      // error detail / park reason
+  tool?: string;        // raw tool name
+}
+
 export interface ChatEntry {
   id: string;
   role: 'user' | 'agent' | 'system';
   specialistName?: string;
   text: string;
+  activity?: ActivityMeta;   // NEW — present only on autopilot feed lines
   criticResult?: CriticResult;
   requiresReview?: boolean;
   aborted?: boolean;
@@ -83,7 +101,7 @@ export function useTurnStream() {
     busyRef.current = true;
     setBusy(true);
     setError(null);
-    setStatus('Classifying request…');
+    setStatus('Figuring out who should handle this…');
     setToolActivity(null);
     if (!options?.silentUserEntry) {
       appendEntry({ role: 'user', text: prompt });

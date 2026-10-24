@@ -18,11 +18,24 @@ import {
   Check,
   RotateCcw,
   X,
-  Mic
+  Mic,
+  BookOpen,
+  FolderOpen,
+  FilePen,
+  PenLine,
+  Database,
+  Star,
+  Search,
+  Globe,
+  Wrench,
+  Activity,
+  Clock3,
+  CheckCircle2
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
 import { DocData, ProjectInfo, RoadmapPhase } from '../types/api';
-import { useTurnStream } from '../api/useTurnStream';
+import { useTurnStream, ChatEntry, ActivityMeta } from '../api/useTurnStream';
 import { useAutopilotEvents, AutopilotLiveEvent } from '../hooks/useAutopilotEvents';
 import Markdown from '../components/Markdown';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
@@ -32,7 +45,27 @@ import QuestionBar from '../components/QuestionBar';
 import AutopilotHud from '../components/AutopilotHud';
 
 /** Render a tool call as a short human-readable action instead of raw JSON. */
-function formatToolCall(tool: string, args: unknown): string {
+const TOOL_ICON_BY_NAME: Record<string, LucideIcon> = {
+  fs_read: BookOpen,
+  fs_list: FolderOpen,
+  fs_write: FilePen,
+  fs_edit: PenLine,
+  state_read: Database,
+  state_update: Save,
+  example_reader: Star,
+  examples_list: Star,
+  pdf_extract: FileText,
+  doc_transcribe: FileText,
+  web_search: Search,
+  web_fetch: Globe
+};
+
+interface ToolCallLine {
+  icon: LucideIcon;
+  text: string;
+}
+
+function formatToolCall(tool: string, args: unknown): ToolCallLine {
   const a = (args ?? {}) as Record<string, unknown>;
   const path = typeof a.path === 'string' ? a.path : typeof a.file === 'string' ? a.file : '';
   const dir = typeof a.dir === 'string' ? a.dir : '';
@@ -41,30 +74,189 @@ function formatToolCall(tool: string, args: unknown): string {
   const shorten = (s: string) => (s.length > 60 ? s.slice(0, 57) + '…' : s);
   switch (tool) {
     case 'fs_read':
-      return path ? `📖 Reading ${shorten(path)}` : '📖 Reading file';
+      return { icon: BookOpen, text: path ? `Reading ${shorten(path)}` : 'Reading file' };
     case 'fs_list':
-      return dir ? `🗂 Listing ${shorten(dir)}` : '🗂 Listing directory';
+      return { icon: FolderOpen, text: dir ? `Listing ${shorten(dir)}` : 'Listing directory' };
     case 'fs_write':
-      return path ? `✍️ Writing ${shorten(path)}` : '✍️ Writing file';
+      return { icon: FilePen, text: path ? `Writing ${shorten(path)}` : 'Writing file' };
     case 'fs_edit':
-      return path ? `🖊 Editing ${shorten(path)}` : '🖊 Editing file';
+      return { icon: PenLine, text: path ? `Editing ${shorten(path)}` : 'Editing file' };
     case 'state_read':
-      return '📋 Reading project state';
+      return { icon: Database, text: 'Checking project state' };
     case 'state_update':
-      return '💾 Updating project state';
+      return { icon: Save, text: 'Saving project state' };
     case 'example_reader':
     case 'examples_list':
-      return '⭐ Checking quality examples';
+      return { icon: Star, text: 'Reviewing quality examples' };
     case 'pdf_extract':
     case 'doc_transcribe':
-      return path ? `🖨 Transcribing ${shorten(path)}` : '🖨 Transcribing document';
+      return { icon: FileText, text: path ? `Transcribing ${shorten(path)}` : 'Transcribing document' };
     case 'web_search':
-      return query ? `🔎 Searching: ${shorten(query)}` : '🔎 Searching web';
+      return { icon: Search, text: query ? `Searching: ${shorten(query)}` : 'Searching web' };
     case 'web_fetch':
-      return url ? `🌐 Fetching ${shorten(url)}` : '🌐 Fetching URL';
+      return { icon: Globe, text: url ? `Fetching ${shorten(url)}` : 'Fetching URL' };
     default:
-      return `🛠 ${tool}`;
+      return { icon: Wrench, text: tool };
   }
+}
+
+/** §4.3 — natural-English line for a phase event. */
+function phaseLine(ev: AutopilotLiveEvent & { kind: 'phase' }): string {
+  const name = ev.name || ev.phaseId;
+  switch (ev.status) {
+    case 'drafting': return `Drafting ${name}…`;
+    case 'critic': return `Reviewing the ${name} draft…`;
+    case 'revising': return `Polishing ${name} after the review…`;
+    case 'passed': return `${name} completed`;
+    case 'auto-approved': return `Approved ${name} — continuing…`;
+    case 'parked': return `Held ${name} for your review`;
+    default: return `Working on ${name}…`;
+  }
+}
+
+/** §4.3 — wrap-up summary line for a complete event. */
+function summaryLine(ev: AutopilotLiveEvent & { kind: 'complete' }): string {
+  const n = ev.result.passed.length;
+  const m = ev.result.parked.length;
+  if (ev.reason === 'stopped') {
+    return m > 0 ? `Stopped — ${n} finalized so far, ${m} on hold` : `Stopped — ${n} finalized so far`;
+  }
+  return m > 0 ? `All done — ${n} documents finalized, ${m} on hold for review` : `All done — ${n} documents finalized`;
+}
+
+/** §3.1 — lucide icon for a feed line; per-tool icons win for tool events. */
+function feedIconFor(m: ActivityMeta, text: string): LucideIcon {
+  if (m.kind === 'tool') {
+    return TOOL_ICON_BY_NAME[m.tool ?? ''] ?? Wrench;
+  }
+  switch (m.kind) {
+    case 'phase':
+      if (text.startsWith('Approved')) return CheckCircle2;
+      if (text.startsWith('Held')) return Clock3;
+      return FileText;
+    case 'complete':
+      return CheckCircle2;
+    case 'error':
+      return TriangleAlert;
+    case 'live':
+    case 'note':
+    default:
+      return Activity;
+  }
+}
+
+/** §6.3 — timeline dot tone for a feed line. */
+function dotTone(m: ActivityMeta, opts: { live: boolean; held: boolean }): string {
+  if (m.kind === 'error') return 'bg-rose-400';
+  if (opts.held || m.stopped) return 'bg-amber-400';
+  if (m.kind === 'complete') return 'bg-emerald-400';
+  if (opts.live) return 'bg-cyan-400 ring-2 ring-cyan-400/30 motion-safe:animate-pulse';
+  return 'bg-slate-600';
+}
+
+/** §6.3 — activity prose with emphasized phase names. */
+function renderActivityText(m: ActivityMeta, text: string) {
+  if (m.phaseName && text.includes(m.phaseName)) {
+    const [before, after] = text.split(m.phaseName);
+    return (
+      <>
+        {before}
+        <span className="text-slate-300 font-medium">{m.phaseName}</span>
+        {after}
+      </>
+    );
+  }
+  return <>{text}</>;
+}
+
+/** §3.1 + §3.3 + §3.4 — calm live-stream feed line. */
+function ActivityFeedEntry({ entry, isLive, running }: { entry: ChatEntry; isLive: boolean; running: boolean }) {
+  const m = entry.activity!;
+  const held = m.kind === 'phase' && entry.text.startsWith('Held');
+
+  // §3.3 — warm error block (never a "System" card)
+  if (m.kind === 'error') {
+    const raw = m.reason ?? entry.text;
+    const isParked = /blocked|parked|produced no document/i.test(raw);
+    const reason = raw.replace(/^Phase\s+\S+:\s*/, '');
+    return (
+      <div
+        role="alert"
+        className={`relative flex items-start gap-2 py-[3px] pl-5 pr-2 text-xs leading-relaxed ${isLive ? 'opacity-100' : 'opacity-80'}`}
+      >
+        <span aria-hidden className={`absolute left-1 top-[9px] h-1.5 w-1.5 rounded-full ${isParked ? 'bg-amber-400' : 'bg-rose-400'}`} />
+        <div className={`min-w-0 flex-1 rounded-lg border px-3 py-2 ${isParked ? 'border-amber-800/70 bg-amber-950/40' : 'border-rose-800/70 bg-rose-950/40'}`}>
+          <div className="flex items-start gap-2">
+            <TriangleAlert className={`mt-px h-3.5 w-3.5 shrink-0 ${isParked ? 'text-amber-400' : 'text-rose-400'}`} aria-hidden />
+            <div className="min-w-0">
+              <p className={`text-[11px] font-bold ${isParked ? 'text-amber-300' : 'text-rose-300'}`}>
+                {isParked ? 'Needs attention' : 'Something went wrong'}
+              </p>
+              <p className={`mt-0.5 break-words ${isParked ? 'text-amber-200/90' : 'text-rose-200/90'}`}>{reason}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const live = isLive && running;
+  const tone = dotTone(m, { live, held });
+  const Icon = feedIconFor(m, entry.text);
+  return (
+    <div
+      className={`relative flex items-start gap-2 py-[3px] pl-5 pr-2 text-xs leading-relaxed hover:rounded-md hover:bg-slate-900/40 ${isLive ? 'opacity-100' : 'opacity-80'}`}
+    >
+      <span aria-hidden className={`absolute left-1 top-[9px] h-1.5 w-1.5 rounded-full ${tone}`} />
+      <Icon className="mt-[1px] h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
+      <p className="min-w-0 flex-1 break-words text-slate-400">
+        {renderActivityText(m, entry.text)}
+        {live && (
+          <span className="ml-2 inline-block self-center rounded-full border border-cyan-800/60 bg-cyan-950/60 px-2 py-px align-middle text-[10px] font-medium text-cyan-300">
+            auto-drafting
+          </span>
+        )}
+      </p>
+    </div>
+  );
+}
+
+/** §4.4 + §6.2 — classifier + calm note for untagged system entries. */
+function LegacySystemNote({ entry }: { entry: ChatEntry }) {
+  const stripped = entry.text.replace(/^[\s🔍✓⚠✎✔🚀☑]*/, '');
+
+  if (/^(Error|Connection error):/i.test(stripped)) {
+    const reason = stripped.replace(/^(Error|Connection error):\s*/i, '');
+    return (
+      <div
+        role="alert"
+        className="flex items-start gap-2 rounded-lg border border-rose-800/70 bg-rose-950/40 px-3 py-2 text-xs"
+      >
+        <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0 text-rose-400" aria-hidden />
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold text-rose-300">Something went wrong</p>
+          <p className="mt-0.5 break-words text-rose-200/90">{reason}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (/^(Draft approved|Saved|✔ Uploaded)/i.test(stripped)) {
+    return (
+      <div className="flex items-start gap-2 rounded-md border border-emerald-900/60 bg-emerald-950/30 px-3 py-1.5 text-xs text-emerald-300">
+        <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0 text-emerald-400" aria-hidden />
+        <p className="break-words">{stripped}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative flex items-start gap-2 py-[3px] pl-5 pr-2 text-xs leading-relaxed">
+      <span aria-hidden className="absolute left-1 top-[9px] h-1.5 w-1.5 rounded-full bg-slate-600" />
+      <Activity className="mt-[1px] h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
+      <p className="min-w-0 flex-1 break-words text-slate-400">{stripped}</p>
+    </div>
+  );
 }
 
 export interface DevelopmentViewProps {
@@ -84,21 +276,40 @@ export default function DevelopmentView({
 
   // Mount autopilot event hook locally; append live events to the chat pane.
   const handleAutopilotEvent = useCallback((ev: AutopilotLiveEvent) => {
-    if (ev.kind === 'phase') {
-      const icon = ev.status === 'passed' ? '✓' : ev.status === 'auto-approved' ? '✓' : ev.status === 'parked' ? '⚠' : '✎';
-      const label = ev.status === 'drafting' ? 'Drafting' : ev.status === 'critic' ? 'Critic review' : ev.status === 'revising' ? 'Revising' : ev.status === 'passed' ? 'Passed' : ev.status === 'auto-approved' ? 'Auto-approved' : ev.status === 'parked' ? 'Parked' : ev.status;
-      appendEntry({ role: 'system', text: `${icon} Autopilot: ${label} ${ev.phaseId}` });
-    } else if (ev.kind === 'complete') {
-      const msg = `✓ Autopilot complete: ${ev.result.passed.length} passed` + (ev.result.parked.length > 0 ? `, ${ev.result.parked.length} parked` : '');
-      appendEntry({ role: 'system', text: msg });
-    } else if (ev.kind === 'error') {
-      appendEntry({ role: 'system', text: `⚠ Autopilot error: ${ev.message}` });
-    } else if (ev.kind === 'status') {
-      // Live status updates (discovery, drafting, critic progress)
-      appendEntry({ role: 'system', text: `🔍 ${ev.message}` });
-    } else if (ev.kind === 'tool_call') {
-      // Tool call notifications (human-readable)
-      appendEntry({ role: 'system', text: formatToolCall(ev.tool, ev.args) });
+    switch (ev.kind) {
+      case 'start':
+        return appendEntry({
+          role: 'system',
+          text: 'Auto-drafting started — working through the phases in order…',
+          activity: { kind: 'phase' }
+        });
+      case 'phase':
+        return appendEntry({
+          role: 'system',
+          text: phaseLine(ev),
+          activity: { kind: 'phase', phaseId: ev.phaseId, phaseName: ev.name }
+        });
+      case 'status':
+        return appendEntry({ role: 'system', text: ev.message, activity: { kind: 'live' } });
+      case 'tool_call': {
+        const { text } = formatToolCall(ev.tool, ev.args);
+        return appendEntry({ role: 'system', text, activity: { kind: 'tool', tool: ev.tool } });
+      }
+      case 'complete':
+        return appendEntry({
+          role: 'system',
+          text: summaryLine(ev),
+          activity: {
+            kind: 'complete',
+            passedCount: ev.result.passed.length,
+            parkedCount: ev.result.parked.length,
+            stopped: ev.reason === 'stopped'
+          }
+        });
+      case 'error':
+        return appendEntry({ role: 'system', text: ev.message, activity: { kind: 'error', reason: ev.message } });
+      default:
+        return; // question/parked surface via portal + QuestionBar
     }
   }, [appendEntry]);
 
@@ -112,7 +323,8 @@ export default function DevelopmentView({
   const [docUpdateBanner, setDocUpdateBanner] = useState<string | null>(null);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    chatEndRef.current?.scrollIntoView({ behavior: prefersReduced ? 'auto' : 'smooth' });
   }, [entries, status, checkpoint]);
 
   // Voice recorder
@@ -309,6 +521,9 @@ export default function DevelopmentView({
     );
   };
 
+  const lastActivityIdx = entries.reduce((last, e, i) => (e.activity ? i : last), -1);
+  const latestActivityText = lastActivityIdx >= 0 ? entries[lastActivityIdx].text : '';
+
   return (
     <div className="grid h-full grid-cols-1 lg:grid-cols-2">
       {/* ------------------------------ Chat pane ----------------------------- */}
@@ -395,40 +610,52 @@ export default function DevelopmentView({
             </div>
           )}
 
-          {entries.map(entry => (
-            <article
-              key={entry.id}
-              className={`max-w-[92%] rounded-xl border p-3 ${
-                entry.role === 'user'
-                  ? 'ml-auto border-sky-900/60 bg-sky-950/40'
-                  : entry.role === 'system'
-                    ? 'border-rose-900/60 bg-rose-950/30'
+          {entries.map((entry, idx) => {
+            // §6.3 — autopilot feed lines render as a calm dot-rail, never a "System" card
+            if (entry.activity) {
+              return (
+                <ActivityFeedEntry
+                  key={entry.id}
+                  entry={entry}
+                  isLive={idx === lastActivityIdx}
+                  running={autopilotStatus?.running === true}
+                />
+              );
+            }
+            if (entry.role === 'system') {
+              return <LegacySystemNote key={entry.id} entry={entry} />;
+            }
+            return (
+              <article
+                key={entry.id}
+                className={`max-w-[92%] rounded-xl border p-3 ${
+                  entry.role === 'user'
+                    ? 'ml-auto border-sky-900/60 bg-sky-950/40'
                     : 'border-slate-800 bg-slate-900/70'
-              }`}
-            >
-              <header className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                {entry.role === 'user' ? (
-                  <><User className="h-3.5 w-3.5" aria-hidden /> You</>
-                ) : entry.role === 'system' ? (
-                  <><TriangleAlert className="h-3.5 w-3.5 text-rose-400" aria-hidden /> System</>
-                ) : (
-                  <>
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-cyan-500/20 ring-1 ring-cyan-500/40">
-                      <Bot className="h-2.5 w-2.5 text-cyan-300" aria-hidden />
-                    </span>
-                    <span className="text-cyan-300">{entry.specialistName ?? 'AI Studio'}</span>
-                    {entry.aborted && <span className="text-rose-400 normal-case">· aborted</span>}
-                  </>
+                }`}
+              >
+                <header className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  {entry.role === 'user' ? (
+                    <><User className="h-3.5 w-3.5" aria-hidden /> You</>
+                  ) : (
+                    <>
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-cyan-500/20 ring-1 ring-cyan-500/40">
+                        <Bot className="h-2.5 w-2.5 text-cyan-300" aria-hidden />
+                      </span>
+                      <span className="text-cyan-300">{entry.specialistName ?? 'AI Studio'}</span>
+                      {entry.aborted && <span className="text-rose-400 normal-case">· aborted</span>}
+                    </>
+                  )}
+                </header>
+                <Markdown content={entry.text} />
+                {entry.criticResult && (
+                  <div className="mt-2">
+                    <CriticScorecard result={entry.criticResult} compact />
+                  </div>
                 )}
-              </header>
-              <Markdown content={entry.text} />
-              {entry.criticResult && (
-                <div className="mt-2">
-                  <CriticScorecard result={entry.criticResult} compact />
-                </div>
-              )}
-            </article>
-          ))}
+              </article>
+            );
+          })}
 
           {busy && (
             <div className="flex items-center gap-2.5 rounded-xl border border-cyan-800/60 bg-cyan-950/40 p-3 text-xs text-cyan-200" role="status">
@@ -437,7 +664,7 @@ export default function DevelopmentView({
               {toolActivity && (
                 <span className="flex min-w-0 items-center gap-1.5 rounded-lg border border-cyan-700/50 bg-slate-950/60 px-2.5 py-1 text-[11px] text-cyan-100">
                   <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-cyan-400" aria-hidden />
-                  <span className="truncate">{toolActivity}</span>
+                  <span className="truncate">{formatToolCall(toolActivity, {}).text}</span>
                 </span>
               )}
             </div>
@@ -478,6 +705,10 @@ export default function DevelopmentView({
             </article>
           )}
           <div ref={chatEndRef} />
+          {/* §7 — screen-reader live region for the newest activity line */}
+          <div role="status" aria-live="polite" className="sr-only">
+            {latestActivityText}
+          </div>
         </div>
 
         {/* S1: QuestionBar outside scroll container, between scroll region and footer */}
@@ -744,7 +975,7 @@ export default function DevelopmentView({
         </div>
 
         {uploadNotice && (
-          <p className={`border-b px-4 py-1.5 text-xs ${uploadNotice.startsWith('✔') ? 'border-emerald-900/60 bg-emerald-950/40 text-emerald-300' : 'border-rose-900/60 bg-rose-950/40 text-rose-300'}`}>
+          <p className={`border-b px-4 py-1.5 text-xs ${uploadNotice.startsWith('✔') ? 'border-emerald-900/60 bg-emerald-950/40 text-emerald-300' : 'border-rose-800/60 bg-rose-950/40 text-rose-300'}`}>
             {uploadNotice}
           </p>
         )}
