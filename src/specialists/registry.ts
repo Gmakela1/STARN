@@ -36,6 +36,25 @@ export class SpecialistRegistry {
     this.register(buildSequencePackage);
     this.register(workInstructionsPackage);
     this.applyOpenQuestionsRules();
+    this.applyReferenceInspectionRules();
+  }
+
+  /**
+   * Appends reference-document inspection instructions to packages that have
+   * doc_transcribe in their allowed tools. This ensures the model checks the
+   * reference/ directory for scanned PDFs and transcribes them during drafting.
+   */
+  private applyReferenceInspectionRules(): void {
+    const RULE = `
+## Reference Document Inspection
+Before drafting, use \`fs_list\` to check whether a \`reference/\` directory exists in the project root. If it does, inspect each file there via \`fs_read\` — scanned PDFs will be automatically transcribed so you can read their content (manuals, datasheets, technical drawings). Incorporate any specifications, constraints, or parameters from these reference documents into your deliverable.`;
+    for (const pkg of this.specialists.values()) {
+      if (pkg.id === 'general' || pkg.id === 'change-impact') continue;
+      if (!pkg.allowedTools.includes('doc_transcribe')) continue;
+      if (pkg.systemPrompt.includes('## Reference Document Inspection')) continue;
+      pkg.systemPrompt = `${pkg.systemPrompt}
+${RULE}`;
+    }
   }
 
   /**

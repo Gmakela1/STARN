@@ -460,6 +460,29 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
           ]
         };
       }
+
+      // Guard: even when tool calls were made, if the artifact is still empty
+      // (model made non-writing calls but returned commentary), surface an
+      // actionable error instead of sending an empty string to the critic.
+      if (!artifactForCritic || artifactForCritic.trim().length === 0) {
+        const reply = (finalOutput || '').trim();
+        const output =
+          `No document was drafted. The model returned commentary but no deliverable content. ` +
+          (reply ? `\n\nModel reply:\n${reply}` : '');
+        return {
+          specialistId: specialist.id,
+          specialistName: specialist.name,
+          output,
+          autoRevisionsRun: 0,
+          requiresReview: false,
+          error: true,
+          sessionMessages: [
+            ...sessionMessages,
+            { role: 'user', content: userPrompt },
+            { role: 'assistant', content: reply || output }
+          ]
+        };
+      }
     }
 
     // 7. Critic While-Loop with Program Baseline Verification
