@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderDetail } from '../web/src/lib/portalDetail';
+import { renderDetail } from './portalDetail';
 
 // Design spec §2.1 — concise question detail rendering, verbatim-split only.
 // One pure helper used by both the QuestionBar card and the AnswerDialog.
