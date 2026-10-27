@@ -15,6 +15,8 @@ import { Logger } from '../util/logger.js';
 import { CriticEvaluator, CriticResult, BaselineDocument } from './critic.js';
 import { classifyTurnArtifact, buildNoDocumentError } from './artifact-guard.js';
 import { buildRevisionGuidance, buildCriticNote } from './critic-revision.js';
+import { loadProgramBaseline, loadUserExamples } from './critic-inputs.js';
+import { decideCriticIteration } from './critic-iteration.js';
 import { TurnFormatters, headlessFormatters } from './formatters.js';
 import { resolvePhaseRef, ORDERED_WORKFLOW_PHASES } from '../workspace/state.js';
 
@@ -85,6 +87,25 @@ export interface TurnResult {
   criticFailed?: boolean;
   /** True when the turn failed in a way the user must act on (e.g. drafting model produced no document). */
   error?: boolean;
+}
+
+/**
+ * A signal-aborted turn always returns this exact shape — drafting, critic, or
+ * revision aborts. One builder so the aborted shape can never drift.
+ */
+function buildAbortedTurnResult(
+  specialistId: string, specialistName: string, autoRevisionsRun: number, sessionMessages: ChatMessage[]
+): TurnResult {
+  const aborted = true;
+  return {
+    specialistId,
+    specialistName,
+    output: '',
+    autoRevisionsRun,
+    requiresReview: false,
+    sessionMessages,
+    aborted
+  };
 }
 
 export class CoreRunner {
@@ -362,6 +383,20 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
         ? { client: options.transcriberClient!, model: options.transcriberModel ?? '' }
         : undefined
     };
+    // Draft/resume the agent tool loop with a given user message. The drafting
+    // call and each critic-triggered revision differ only in the user message.
+    const runAgentTurn = (userMessage: string) => runAgentToolLoop({
+      client,
+      model,
+      systemPrompt: enhancedSystemPrompt,
+      userMessage,
+      toolRegistry,
+      allowedTools: specialist.allowedTools,
+      context,
+      priorMessages: sessionMessages,
+      onToolCall,
+      signal
+    });
     // Snapshot the target doc's mtime before the agent loop runs, so we can detect
     // whether the model modified it this turn (via fs_edit or fs_write). Filesystem
     // mtime granularity can lag Date.now(), so we compare against this snapshot.
@@ -379,47 +414,39 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
       a => a.id.toUpperCase() === specialist.id.toUpperCase()
     );
     const priorArtifactScore = existingArtifact?.criticScore ?? 8.5;
-    const agentResult = await runAgentToolLoop({
-      client,
-      model,
-      systemPrompt: enhancedSystemPrompt,
-      userMessage: userPrompt,
-      toolRegistry,
-      allowedTools: specialist.allowedTools,
-      context,
-      priorMessages: sessionMessages,
-      onToolCall,
-      signal
-    });
-
-    // User pressed ESC — abort the turn, discard partial work.
-    if (agentResult.aborted) {
-      return {
-        specialistId: specialist.id,
-        specialistName: specialist.name,
-        output: '',
-        autoRevisionsRun: 0,
-        requiresReview: false,
-        sessionMessages,
-        aborted: true
-      };
-    }
+    const agentResult = await runAgentTurn(userPrompt);
 
     let finalOutput = agentResult.finalResponse;
     let criticResult: CriticResult | undefined;
     let autoRevisionsRun = 0;
 
-    // If the LLM wrote the file to disk but responded with commentary, recover the document for the critic.
-    // When fs_edit was used (editLog non-empty), the on-disk file is the source of truth —
-    // always read it, even if the model's summary text contains a '# ' heading (the old
-    // heuristic mistook a revision summary for the document).
+    // User pressed ESC — abort the turn, discard partial work.
+    if (agentResult.aborted) {
+      return buildAbortedTurnResult(specialist.id, specialist.name, autoRevisionsRun, sessionMessages);
+    }
+
+    // If the LLM wrote the file to disk but responded with commentary, recover the on-disk document for the critic;
+    // when fs_edit ran (editLog non-empty), the on-disk file is the source of truth over the model's summary text.
     let artifactForCritic = finalOutput;
     let diskModified = false;
     if (specialist.requiresCritic) {
       const filePath = path.join(projectPath, 'docs', `${specialist.id.toUpperCase()}.md`);
       const editUsed = context.editLog && context.editLog.length > 0;
-      // Read from disk if (a) fs_edit ran, (b) the file was touched this turn (fs_write),
-      // or (c) the response lacks a markdown heading.
+      // Surface a non-deliverable turn exactly once (byte-identical 8-of-9
+      // shape) instead of sending commentary/emptiness to the critic.
+      const errorResult = (output: string, reply: string): TurnResult => ({
+        specialistId: specialist.id,
+        specialistName: specialist.name,
+        output,
+        autoRevisionsRun: 0,
+        requiresReview: false,
+        error: true,
+        sessionMessages: [
+          ...sessionMessages,
+          { role: 'user', content: userPrompt },
+          { role: 'assistant', content: reply || output }
+        ]
+      });
       try {
         if (fs.existsSync(filePath)) {
           const currentContent = fs.readFileSync(filePath, 'utf-8');
@@ -454,43 +481,17 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
         const output =
           buildNoDocumentError(model, options.draftingProviderName ?? 'OpenRouter') +
           (reply ? `\n\nModel reply:\n${reply}` : '');
-        return {
-          specialistId: specialist.id,
-          specialistName: specialist.name,
-          output,
-          autoRevisionsRun: 0,
-          requiresReview: false,
-          error: true,
-          sessionMessages: [
-            ...sessionMessages,
-            { role: 'user', content: userPrompt },
-            { role: 'assistant', content: reply || output }
-          ]
-        };
+        return errorResult(output, reply);
       }
 
-      // Guard: even when tool calls were made, if the artifact isn't a valid
-      // markdown document (no heading), surface an actionable error instead of
-      // sending commentary to the critic. This catches models that return
-      // prose like "I have drafted the document..." instead of the document itself.
+      // Guard: even when tool calls were made, an artifact that isn't a valid
+      // markdown document (no heading) is commentary, not a deliverable.
       if (artifactClassification.kind === 'commentary' || artifactClassification.kind === 'none') {
         const reply = (finalOutput || '').trim();
         const output =
           `No document was drafted. The model returned commentary but no deliverable content. ` +
           (reply ? `\n\nModel reply:\n${reply}` : '');
-        return {
-          specialistId: specialist.id,
-          specialistName: specialist.name,
-          output,
-          autoRevisionsRun: 0,
-          requiresReview: false,
-          error: true,
-          sessionMessages: [
-            ...sessionMessages,
-            { role: 'user', content: userPrompt },
-            { role: 'assistant', content: reply || output }
-          ]
-        };
+        return errorResult(output, reply);
       }
     }
 
@@ -500,44 +501,12 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
       const critic = new CriticEvaluator(options.criticClient ?? client);
       let attempts = 0;
       const maxAttempts = 2;
-      let passed = false;
 
-      // Load all existing approved baseline documents for cross-document program alignment
-      const programBaselineDocs: BaselineDocument[] = [];
-      const docsDir = path.join(projectPath, 'docs');
-      if (fs.existsSync(docsDir)) {
-        const files = fs.readdirSync(docsDir).filter(f => f.endsWith('.md'));
-        for (const f of files) {
-          const docId = f.replace(/\.md$/i, '').toUpperCase();
-          if (docId !== specialist.id.toUpperCase()) {
-            try {
-              const content = fs.readFileSync(path.join(docsDir, f), 'utf-8');
-              if (content.trim()) {
-                programBaselineDocs.push({
-                  id: docId,
-                  path: `docs/${f}`,
-                  content
-                });
-              }
-            } catch (_e) {
-              // ignore
-            }
-          }
-        }
-      }
+      // Program baseline + user examples are loop-invariant — loaded once, before the loop.
+      const programBaselineDocs: BaselineDocument[] = loadProgramBaseline(projectPath, specialist.id);
+      const customExamples = loadUserExamples(projectPath, specialist.id);
 
-      while (attempts <= maxAttempts && !passed) {
-        // Load user custom examples if present
-        const customExamples: string[] = [];
-        const userExDir = path.join(projectPath, 'examples', specialist.id);
-        if (fs.existsSync(userExDir)) {
-          for (const f of fs.readdirSync(userExDir)) {
-            if (f.endsWith('.md') || f.endsWith('.txt')) {
-              customExamples.push(fs.readFileSync(path.join(userExDir, f), 'utf-8'));
-            }
-          }
-        }
-
+      while (attempts <= maxAttempts) {
         const isDeltaReview = targetDocExistedBeforeTurn && (
           (context.editLog && context.editLog.length > 0) || diskModified
         );
@@ -559,65 +528,29 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
         } catch (err: any) {
           // ESC during critic — abort the turn.
           if (err?.name === 'AbortError' || signal?.aborted) {
-            return {
-              specialistId: specialist.id,
-              specialistName: specialist.name,
-              output: '',
-              autoRevisionsRun: autoRevisionsRun,
-              requiresReview: false,
-              sessionMessages,
-              aborted: true
-            };
+            return buildAbortedTurnResult(specialist.id, specialist.name, autoRevisionsRun, sessionMessages);
           }
           throw err;
         }
 
-        if (criticResult.passed) {
-          passed = true;
-          break;
-        }
-
-        if (attempts < maxAttempts) {
+        const decision = decideCriticIteration(criticResult, attempts, maxAttempts);
+        if (decision === 'revise') {
           attempts++;
           autoRevisionsRun++;
           onStatusUpdate?.(`Baseline review suggests refinements (score: ${criticResult.score}/10). Polishing — pass ${attempts} of ${maxAttempts}…`);
-
-          const isDeltaReview = targetDocExistedBeforeTurn && (
-            (context.editLog && context.editLog.length > 0) || diskModified
-          );
 
           const revisionPrompt = buildRevisionGuidance(criticResult, isDeltaReview, specialist.id.toUpperCase());
 
           // Reset the edit log so the critic sees only this revision's edits.
           context.editLog = [];
-          const revisionResult = await runAgentToolLoop({
-            client,
-            model,
-            systemPrompt: enhancedSystemPrompt,
-            userMessage: revisionPrompt,
-            toolRegistry,
-            allowedTools: specialist.allowedTools,
-            context,
-            priorMessages: sessionMessages,
-            onToolCall,
-            signal
-          });
+          const revisionResult = await runAgentTurn(revisionPrompt);
           finalOutput = revisionResult.finalResponse;
           // ESC during revision — abort the whole turn.
           if (revisionResult.aborted) {
-            return {
-              specialistId: specialist.id,
-              specialistName: specialist.name,
-              output: '',
-              autoRevisionsRun: autoRevisionsRun,
-              requiresReview: false,
-              sessionMessages,
-              aborted: true
-            };
+            return buildAbortedTurnResult(specialist.id, specialist.name, autoRevisionsRun, sessionMessages);
           }
-          // Re-check the disk file after revision. Prefer the on-disk file whenever
-          // fs_edit was used this revision (editLog non-empty) — the model's summary
-          // is not the document.
+          // Re-check the disk file after revision: prefer the on-disk file when fs_edit
+          // ran this revision (editLog non-empty) — the model's summary is not the document.
           const revisionEditUsed = context.editLog && context.editLog.length > 0;
           let revisionDiskModified = false;
           try {
@@ -648,8 +581,7 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
       }
     }
 
-    // Autopilot hook: after the critic loop settles (post auto-revisions), parse
-    // open questions from the FINAL on-disk artifact and notify exactly once.
+    // Autopilot hook: parse open questions from the FINAL on-disk artifact and notify once.
     if (options.onQuestions) {
       let questionItems: Array<{
         type: 'question';

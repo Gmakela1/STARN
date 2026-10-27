@@ -469,3 +469,80 @@ describe('Core Runner Intake & Multi-Turn', () => {
     expect(lastMsg.content).toContain('PTO spline dimension omitted');
   });
 });
+
+describe('Core Runner abort shape', () => {
+  let tempDir: string;
+  let stateMgr: ProjectStateManager;
+  let mockClient: OpenRouterClient;
+  let toolRegistry: ToolRegistry;
+  let specialistRegistry: SpecialistRegistry;
+
+  beforeEach(() => {
+    tempDir = path.join(os.tmpdir(), 'starn-runner-abort-' + Date.now() + '-' + Math.random().toString(36).substring(2));
+    fs.mkdirSync(tempDir, { recursive: true });
+    stateMgr = new ProjectStateManager(tempDir);
+    stateMgr.getOrCreateState('p1', 'Tractor Test');
+    stateMgr.completeIntake();
+    mockClient = new OpenRouterClient({ apiKey: 'mock' });
+    toolRegistry = new ToolRegistry();
+    specialistRegistry = new SpecialistRegistry();
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('returns the exact documented aborted shape when ESC aborts during the critic stage', async () => {
+    let criticStartedResolve: () => void;
+    const criticStarted = new Promise<void>((resolve) => {
+      criticStartedResolve = resolve;
+    });
+    const controller = new AbortController();
+
+    vi.spyOn(mockClient, 'chatCompletion').mockImplementation(async (opts: any) => {
+      const content = String(opts.messages[0]?.content || '');
+      if (content.includes('Request Classifier for STARN')) {
+        return { content: JSON.stringify({ specialistId: 'conops', reason: 'draft' }), raw: {} };
+      }
+      // The critic call stays in-flight until ESC; the signal aborts it.
+      if (content.includes('Harsh Critic')) {
+        criticStartedResolve!();
+        return new Promise((_resolve, reject) => {
+          opts.signal?.addEventListener('abort', () => {
+            const e = new Error('aborted');
+            e.name = 'AbortError';
+            reject(e);
+          });
+        });
+      }
+      // Drafting: produce a valid document so the turn reaches the critic loop.
+      return { content: '# Concept of Operations\n\nFull deliverable text.', raw: {} };
+    });
+
+    const turnPromise = CoreRunner.executeTurn({
+      userPrompt: 'Draft the CONOPS',
+      projectPath: tempDir,
+      stateManager: stateMgr,
+      client: mockClient,
+      model: 'test-model',
+      toolRegistry,
+      specialistRegistry,
+      sessionMessages: [],
+      signal: controller.signal
+    });
+
+    await criticStarted;
+    controller.abort();
+    const result = await turnPromise;
+
+    expect(result).toEqual({
+      specialistId: 'conops',
+      specialistName: 'CONOPS & User Intent',
+      output: '',
+      autoRevisionsRun: 0,
+      requiresReview: false,
+      sessionMessages: [],
+      aborted: true
+    });
+  });
+});
