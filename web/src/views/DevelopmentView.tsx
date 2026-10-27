@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Send,
   Square,
@@ -16,8 +16,6 @@ import {
   Paperclip,
   ChevronDown,
   Check,
-  RotateCcw,
-  X,
   Mic,
   BookOpen,
   FolderOpen,
@@ -41,7 +39,8 @@ import Markdown from '../components/Markdown';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import CriticScorecard from '../components/CriticScorecard';
 import CheckpointPanel from '../components/CheckpointPanel';
-import QuestionBar from '../components/QuestionBar';
+import QuestionBadge from '../components/QuestionBadge';
+import QuestionPanel from '../components/QuestionPanel';
 import AutopilotHud from '../components/AutopilotHud';
 
 /** Render a tool call as a short human-readable action instead of raw JSON. */
@@ -335,11 +334,11 @@ export default function DevelopmentView({
         const title = portalItemsRef.current.find(i => i.id === ev.itemId)?.title ?? 'this question';
         return appendEntry({
           role: 'system',
-          text: `Couldn't apply your answer to "${title}" — ${ev.error}. Retry from the question bar.`
+          text: `Couldn't apply your answer to "${title}" — ${ev.error}. Retry from the question panel.`
         });
       }
       default:
-        return; // question/parked surface via portal + QuestionBar
+        return; // question/parked surface via portal + right-pane panel
     }
   }, [appendEntry]);
 
@@ -348,12 +347,57 @@ export default function DevelopmentView({
   // --- Chat state ---
   const [prompt, setPrompt] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const [dismissedParked, setDismissedParked] = useState<Set<string>>(new Set());
+  // §8.1 — lifted question-surface state (D7): 'closed' | 'open' | 'minimized'
+  // plus the general dismissal set. The badge and the right-pane panel both
+  // derive from portalItems minus dismissedIds, so dismissal is deterministic
+  // between 3s polls instead of waiting on the server.
+  const [surface, setSurface] = useState<'closed' | 'open' | 'minimized'>('closed');
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [answerStates, setAnswerStates] = useState<Record<string, AnswerState>>({});
   const portalItemsRef = useRef(portalItems);
   useEffect(() => {
     portalItemsRef.current = portalItems;
   }, [portalItems]);
+
+  // §8.1/D7 — badge counts and panel items derive from the visible pool only.
+  const visibleItems = useMemo(
+    () => portalItems.filter(i => !dismissedIds.has(i.id) && (i.status === 'open' || i.status === 'answered')),
+    [portalItems, dismissedIds]
+  );
+  const pendingCount = visibleItems.filter(i => i.status === 'open').length;
+  const queuedOrApplyingCount = Object.values(answerStates).filter(s => s.phase === 'queued' || s.phase === 'applying').length;
+  const blockingCount = visibleItems.filter(i => i.severity === 'blocking' && i.status === 'open').length;
+  const appliedCount = Object.values(answerStates).filter(s => s.phase === 'applied').length;
+
+  // §8.8 — live-region announcements on per-item answer-state phase transitions
+  // only (moved from the retired left-pane question bar). First mount seeds the baseline so
+  // pre-existing states are NOT announced; batch transitions accumulate in
+  // order instead of overwriting each other.
+  const [announcement, setAnnouncement] = useState('');
+  const announcementMountedRef = useRef(false);
+  const prevStatesRef = useRef<Record<string, AnswerState>>({});
+  useEffect(() => {
+    const current = answerStates ?? {};
+    if (!announcementMountedRef.current) {
+      announcementMountedRef.current = true;
+      prevStatesRef.current = current;
+      return;
+    }
+    const phrases: string[] = [];
+    for (const [id, st] of Object.entries(current)) {
+      const prev = prevStatesRef.current[id];
+      if (!prev || prev.phase !== st.phase) {
+        switch (st.phase) {
+          case 'queued': phrases.push('Answer queued. Will apply after the current phase finishes.'); break;
+          case 'applying': phrases.push('Applying answer to the document.'); break;
+          case 'applied': phrases.push('Answer applied.'); break;
+          case 'failed': phrases.push(`Couldn't apply your answer.${st.error ? ` ${st.error}` : ''}`); break;
+        }
+      }
+    }
+    if (phrases.length > 0) setAnnouncement(phrases.join(' '));
+    prevStatesRef.current = current;
+  }, [answerStates]);
 
   useEffect(() => {
     const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -386,6 +430,20 @@ export default function DevelopmentView({
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, [busy, checkpoint, recording, startRecording, stopRecording]);
+
+  // §8.8 — Ctrl+. (or Meta+.) toggles the question panel: open ↔ minimized
+  // (and opens from closed). The !e.altKey guard blocks AltGr layouts that
+  // synthesize Ctrl+Alt+.; cleanup on unmount covers the project-switch remount.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && !e.repeat && !e.isComposing && e.key === '.') {
+        e.preventDefault();
+        setSurface(s => (s === 'open' ? 'minimized' : 'open'));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // §1.6.5 — SSE-drop fallback: the 3s poll only fetches open items, so an
   // answered item never appears in portalItems. When a queued/applying chip has
@@ -461,12 +519,21 @@ export default function DevelopmentView({
   const [approving, setApproving] = useState(false);
   const [docNotice, setDocNotice] = useState<string | null>(null);
 
-  // S4: parked items from portal
-  const parkedItems = portalItems.filter(i => i.type === 'parked' && i.status === 'open' && !dismissedParked.has(i.id));
-
-  const handleDismissParked = (id: string) => {
-    setDismissedParked(prev => new Set(prev).add(id));
-  };
+  // §8.8/D10 — React 18's types omit `inert`, so toggle it (and the matching
+  // aria-hidden) on the doc content element by ref while the panel is open so
+  // tab order cannot wander underneath the overlay.
+  const docContentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = docContentRef.current;
+    if (!el) return;
+    if (surface === 'open') {
+      el.setAttribute('inert', '');
+      el.setAttribute('aria-hidden', 'true');
+    } else {
+      el.removeAttribute('inert');
+      el.removeAttribute('aria-hidden');
+    }
+  }, [surface]);
 
   // Quality example upload state
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
@@ -564,6 +631,26 @@ export default function DevelopmentView({
 
   const selectedPhaseInfo = roadmap.find(p => p.id === selectedPhase);
 
+  /**
+   * §8.1/D1/D5 — select the roadmap phase whose artifact filename matches a
+   * portal item's docPath, then start from a clean (non-editing) view. Path
+   * prefixes differ between docPath and artifactPath, so match by filename
+   * suffix. Uses the doc-dropdown onSelect call pattern for api.setActivePhase.
+   * No-op when no phase matches.
+   */
+  const selectPhaseByDocPath = async (docPath: string): Promise<void> => {
+    const wanted = docPath.split('/').pop();
+    if (!wanted) return;
+    const phase = roadmap.find(p => p.artifactPath.split('/').pop() === wanted);
+    if (!phase) return;
+    setSelectedPhase(phase.id);
+    setEditing(false);
+    try {
+      await api.setActivePhase(phase.id);
+      await onProjectChanged();
+    } catch {}
+  };
+
   const renderStatusPill = (phase?: RoadmapPhase) => {
     if (!phase) return null;
     if (phase.status === 'COMPLETED') {
@@ -595,69 +682,6 @@ export default function DevelopmentView({
       {/* ------------------------------ Chat pane ----------------------------- */}
       <section className="flex min-h-0 flex-col border-r border-slate-800" aria-label="Agent conversation">
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 relative">
-          {/* S4: sticky parked doc card */}
-          {parkedItems.length > 0 && (
-            <div className="sticky top-0 z-10 space-y-2">
-              {parkedItems.map(item => (
-                <div
-                  key={item.id}
-                  className="rounded-xl border-l-2 border-rose-500 bg-rose-950/20 p-3 animate-park-reveal shadow-lg"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-xs font-bold text-rose-200">Critic blocked — review required</span>
-                    <button
-                      onClick={() => handleDismissParked(item.id)}
-                      className="flex h-5 w-5 items-center justify-center rounded text-rose-400 hover:text-rose-200"
-                      aria-label="Dismiss"
-                    >
-                      <X className="h-3 w-3" aria-hidden />
-                    </button>
-                  </div>
-                  <p className="mt-1 text-sm font-medium text-slate-200">{item.title}</p>
-                  {item.detail && (
-                    <p className="mt-0.5 text-xs text-slate-400">{item.detail}</p>
-                  )}
-                  {item.gaps && item.gaps.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      <p className="text-[11px] font-semibold text-rose-300">Missing requirements:</p>
-                      <ul className="list-inside list-disc space-y-0.5">
-                        {item.gaps.map((gap, i) => (
-                          <li key={i} className="text-[11px] text-rose-200/70">{gap}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  <div className="mt-2 flex gap-2">
-                    <button
-                      onClick={() => {/* Review gaps: expand question bar */}}
-                      className="rounded border border-rose-700 bg-rose-950/60 px-2.5 py-1 text-[11px] font-medium text-rose-200 hover:bg-rose-900/60"
-                    >
-                      Review gaps →
-                    </button>
-                    <button
-                      onClick={async () => {
-                        try {
-                          await api.autopilotResume(item.docPath);
-                        } catch {}
-                      }}
-                      className="rounded border border-rose-700 bg-rose-950/60 px-2.5 py-1 text-[11px] font-medium text-rose-200 hover:bg-rose-900/60"
-                    >
-                      <RotateCcw className="mr-1 inline h-3 w-3" aria-hidden />
-                      Resolve & Resume
-                    </button>
-                    <button
-                      onClick={() => {
-                        setEditing(true);
-                      }}
-                      className="rounded border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:bg-slate-800"
-                    >
-                      Edit Manually
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
           {entries.length === 0 && !busy && (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-500/30 bg-cyan-950/50">
@@ -765,15 +789,15 @@ export default function DevelopmentView({
           </div>
         </div>
 
-        {/* S1: QuestionBar outside scroll container, between scroll region and footer */}
-        <QuestionBar
-          items={portalItems}
-          onSubmit={handleQueueAnswer}
-          answerStates={answerStates}
-          onDismiss={async (id) => {
-            await api.dismissPortalItem(id);
-          }}
-          checkpointVisible={checkpoint !== null}
+        {/* S1: QuestionBadge between scroll region and footer; opens the right-pane panel */}
+        <QuestionBadge
+          count={pendingCount}
+          queuedCount={queuedOrApplyingCount}
+          blockingCount={blockingCount}
+          resolvedCount={appliedCount}
+          surface={surface}
+          subdued={checkpoint !== null}
+          onOpen={() => setSurface('open')}
         />
 
         {/* Input bar */}
@@ -851,6 +875,8 @@ export default function DevelopmentView({
             </div>
           </div>
         </footer>
+        {/* §8.8 — persistent live region owned by DevelopmentView; works with the panel closed */}
+        <span role="status" aria-live="polite" className="sr-only">{announcement}</span>
       </section>
 
       {/* --------------------------- Document pane ---------------------------- */}
@@ -974,16 +1000,7 @@ export default function DevelopmentView({
           onStop={async () => {
             try { await api.autopilotStop(); } catch {}
           }}
-          onResume={async (docId) => {
-            try { await api.autopilotResume(docId); } catch {}
-          }}
-            parkedDocs={parkedItems.map(i => ({
-              id: i.id,
-              title: i.title,
-              docPath: i.docPath,
-              gaps: i.gaps
-            }))}
-          />
+        />
 
         {/* Quality example drop zone */}
         <div
@@ -1037,7 +1054,8 @@ export default function DevelopmentView({
           </p>
         )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="relative min-h-0 flex-1">
+          <div ref={docContentRef} className="h-full overflow-y-auto">
           {editing ? (
             <textarea
               value={draft}
@@ -1064,6 +1082,21 @@ export default function DevelopmentView({
               )}
             </div>
           )}
+          </div>
+          <QuestionPanel
+            surface={surface}
+            items={visibleItems.filter(i => i.status === 'open')}
+            answerStates={answerStates}
+            onSubmit={handleQueueAnswer}
+            onDismiss={async (id) => {
+              setDismissedIds(prev => new Set(prev).add(id));
+              await api.dismissPortalItem(id);
+            }}
+            onResume={async (docPath) => { try { await api.autopilotResume(docPath); } catch {} }}
+            onEditDoc={(docPath) => { setSurface('closed'); selectPhaseByDocPath(docPath); setEditing(true); }}
+            onMinimize={() => setSurface('minimized')}
+            onClose={() => setSurface('closed')}
+          />
         </div>
       </section>
     </div>
