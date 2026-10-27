@@ -6,10 +6,6 @@ export interface AutopilotHudProps {
   enabled: boolean;
   onStart: () => Promise<void>;
   onStop: () => Promise<void>;
-  onResume: (docId?: string) => void;
-  onEditDoc?: (docId?: string) => void;
-  /** Parked doc items to show inline (from portal items filtered to type='parked') */
-  parkedDocs?: Array<{ id: string; title: string; docPath?: string; gaps?: string[] }>;
   /** Phase names for the 13-dot rail */
   phaseNames?: string[];
 }
@@ -31,7 +27,7 @@ const PHASE_IDS = [
 ];
 
 /**
- * Autopilot toggle + 13-dot progress rail + parked doc card.
+ * Autopilot toggle + 13-dot progress rail.
  * S7: progress rail IS the status locus.
  */
 export default function AutopilotHud({
@@ -39,9 +35,6 @@ export default function AutopilotHud({
   enabled,
   onStart,
   onStop,
-  onResume,
-  onEditDoc,
-  parkedDocs = [],
   phaseNames
 }: AutopilotHudProps) {
   // When autopilot is disabled in settings, render nothing.
@@ -144,43 +137,6 @@ export default function AutopilotHud({
           </button>
         )}
       </div>
-
-      {/* Parked doc cards inline */}
-      {parkedDocs.length > 0 && !running && (
-        <div className="space-y-1.5 px-3 pb-2">
-          {parkedDocs.map(doc => (
-            <div
-              key={doc.id}
-              className="rounded-lg border-l-2 border-rose-500 bg-rose-950/20 p-2 animate-park-reveal"
-            >
-              <p className="text-xs font-semibold text-rose-200">{doc.title}</p>
-              {doc.gaps && doc.gaps.length > 0 && (
-                <ul className="mt-1 list-inside list-disc">
-                  {doc.gaps.map((gap, i) => (
-                    <li key={i} className="text-[11px] text-rose-200/70">{gap}</li>
-                  ))}
-                </ul>
-              )}
-              <div className="mt-1.5 flex gap-2">
-                <button
-                  onClick={() => onResume(doc.docPath)}
-                  className="rounded border border-rose-700 bg-rose-950/60 px-2 py-0.5 text-[11px] font-medium text-rose-200 hover:bg-rose-900/60"
-                >
-                  Resolve & Resume
-                </button>
-                {onEditDoc && (
-                  <button
-                    onClick={() => onEditDoc(doc.docPath)}
-                    className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-slate-300 hover:bg-slate-800"
-                  >
-                    Edit Manually
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
