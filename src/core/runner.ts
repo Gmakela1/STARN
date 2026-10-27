@@ -13,6 +13,8 @@ import { runAgentToolLoop } from './agent-loop.js';
 import { maybeCompact } from './compaction.js';
 import { Logger } from '../util/logger.js';
 import { CriticEvaluator, CriticResult, BaselineDocument } from './critic.js';
+import { classifyTurnArtifact, buildNoDocumentError } from './artifact-guard.js';
+import { buildRevisionGuidance, buildCriticNote } from './critic-revision.js';
 import { TurnFormatters, headlessFormatters } from './formatters.js';
 import { resolvePhaseRef, ORDERED_WORKFLOW_PHASES } from '../workspace/state.js';
 
@@ -437,14 +439,20 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
         }
       }
 
-      // Guard: the drafting model made no tool calls and neither wrote nor returned a document.
-      // Common with local models that lack tool calling. Never send an empty
-      // artifact to the critic; surface an actionable error instead.
-      if (!editUsed && !diskModified && !finalOutput.includes('# ') && (agentResult.toolCallCount ?? 0) === 0) {
+      // Guard: classify the turn's artifact (pure decision tree, extracted from
+      // this inline guard logic). Never send an empty artifact or inline
+      // commentary to the critic; surface an actionable error instead.
+      const artifactClassification = classifyTurnArtifact(
+        artifactForCritic,
+        (agentResult.toolCallCount ?? 0) > 0,
+        editUsed || diskModified
+      );
+      if (artifactClassification.kind === 'none' && artifactClassification.reason === 'no-tool-calls-no-document') {
+        // The drafting model made no tool calls and neither wrote nor returned
+        // a document. Common with local models that lack tool calling.
         const reply = finalOutput.trim();
         const output =
-          `Drafting model "${model}" on "${options.draftingProviderName ?? 'OpenRouter'}" produced no document. ` +
-          `It may not support tool calling. Reassign drafting in Settings or /models.` +
+          buildNoDocumentError(model, options.draftingProviderName ?? 'OpenRouter') +
           (reply ? `\n\nModel reply:\n${reply}` : '');
         return {
           specialistId: specialist.id,
@@ -465,7 +473,7 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
       // markdown document (no heading), surface an actionable error instead of
       // sending commentary to the critic. This catches models that return
       // prose like "I have drafted the document..." instead of the document itself.
-      if (!artifactForCritic || !artifactForCritic.trim().startsWith('#')) {
+      if (artifactClassification.kind === 'commentary' || artifactClassification.kind === 'none') {
         const reply = (finalOutput || '').trim();
         const output =
           `No document was drafted. The model returned commentary but no deliverable content. ` +
@@ -578,12 +586,7 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
             (context.editLog && context.editLog.length > 0) || diskModified
           );
 
-          const revisionPrompt = isDeltaReview
-            ? `The Critic evaluated your targeted edits to docs/${specialist.id.toUpperCase()}.md and found the following issues:\n` +
-              `${(criticResult.weaknesses || []).map(w => `- ${w}`).join('\n')}\n\n` +
-              `Actionable Guidance:\n${criticResult.actionableGuidance || 'Fix weaknesses'}\n\n` +
-              `INSTRUCTION: Use the fs_edit tool to surgically resolve these specific issues in the document. Do NOT rewrite or regenerate the entire document.`
-            : `The Critic evaluated your draft and found the following weaknesses:\n${(criticResult.weaknesses || []).map(w => `- ${w}`).join('\n')}\n\nActionable Guidance:\n${criticResult.actionableGuidance || 'Fix weaknesses'}\n\nPlease revise the deliverable to resolve all weaknesses while maintaining rigorous physical engineering standards and program alignment.`;
+          const revisionPrompt = buildRevisionGuidance(criticResult, isDeltaReview, specialist.id.toUpperCase());
 
           // Reset the edit log so the critic sees only this revision's edits.
           context.editLog = [];
@@ -681,16 +684,7 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     ];
 
     if (criticResult) {
-      let criticNote = `[Critic Review for ${specialist.name}]: Score: ${criticResult.score.toFixed(1)}/10.`;
-      if (criticResult.summary) {
-        criticNote += `\nSummary: ${criticResult.summary}`;
-      }
-      if (criticResult.weaknesses && criticResult.weaknesses.length > 0) {
-        criticNote += `\nWeaknesses:\n${criticResult.weaknesses.map(w => `- ${w}`).join('\n')}`;
-      }
-      if (criticResult.actionableGuidance) {
-        criticNote += `\nActionable Guidance: ${criticResult.actionableGuidance}`;
-      }
+      const criticNote = buildCriticNote(specialist.name, criticResult, criticResult.passed);
       updatedSessionMessages.push({
         role: 'user',
         content: criticNote
