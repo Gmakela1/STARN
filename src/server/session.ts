@@ -14,7 +14,8 @@ import { SpecialistRegistry } from '../specialists/registry.js';
 import { Logger } from '../util/logger.js';
 import { AutopilotDriver, AutopilotEvent } from '../core/autopilot.js';
 import { applyAnswer } from '../core/answer-applier.js';
-import { PortalItem } from '../workspace/types.js';
+import { AnswerQueue, AnswerApplyResult, AnswerFrameEvent } from '../core/answer-queue.js';
+import { EventBus } from '../core/event-bus.js';
 
 export interface SessionDeps {
   projectPath: string;
@@ -52,12 +53,10 @@ export type TurnEmitter = (event: string, data: unknown) => void;
  * Flat SSE frames the session publishes for the question-portal answer queue.
  * Each kind is a member of the core AutopilotEvent union, so they flow through
  * `publish` into the `event: autopilot` stream as `{ status: ev }`.
+ * Re-exported from the core AnswerQueue leaf so `server/*` imports of
+ * `AnswerFrameEvent` from session.js keep compiling.
  */
-export type AnswerFrameEvent =
-  | { kind: 'answer_queued'; itemId: string; title: string }
-  | { kind: 'answer_applying'; itemId: string }
-  | { kind: 'answer_applied'; itemId: string; item: PortalItem; affectedDocs: string[] }
-  | { kind: 'answer_failed'; itemId: string; error: string };
+export type { AnswerFrameEvent, AnswerApplyResult } from '../core/answer-queue.js';
 
 export type CheckpointDecision = 'approve' | 'revise' | 'discard';
 
@@ -83,32 +82,22 @@ export class ServerSessionManager {
 
   private roleClients: RoleClients;
 
-  /** Subscribers for autopilot events (SSE fan-out). */
-  private subscribers: ((event: AutopilotEvent) => void)[] = [];
-
-  /** Ring buffer of recent autopilot events for SSE reconnect backfill. */
-  private recentEvents: AutopilotEvent[] = [];
-  private static readonly MAX_RECENT_EVENTS = 20;
+  /** Autopilot event bus: live SSE fan-out + reconnect backfill ring (core EventBus leaf). */
+  private readonly bus = new EventBus<AutopilotEvent>();
 
   /** Autopilot driver instance, created on start. */
   private autopilotDriver: AutopilotDriver | null = null;
   private autopilotController: AbortController | null = null;
 
   /**
-   * FIFO queue of portal answers that arrive while a turn is in progress. They
-   * apply one at a time between phases or right after the busy turn ends.
-   * Duplicate itemIds are not appended: the pending entry's answer is replaced
-   * so the same question is never applied twice.
+   * FIFO queue of portal answers that arrive while a turn is in progress (core
+   * AnswerQueue leaf). They apply one at a time between phases or right after
+   * the busy turn ends. Duplicate itemIds are replaced, never re-appended.
    */
-  private answerQueue: Array<{ itemId: string; answer: string }> = [];
-  private static readonly MAX_ANSWER_QUEUE = 50;
-  private static readonly ANSWER_QUEUE_FULL_MESSAGE =
-    'Answer queue is full (50). Try again when the current turn finishes.';
-
-  /** Re-entrancy guard so concurrent drain triggers never overlap.
-   * Without it, runQueuedAnswers could be called from the next phase's
-   * executeTurn while an immediate apply is already draining. */
-  private answerDraining = false;
+  private readonly answerQueue = new AnswerQueue({
+    apply: (itemId, answer) => this.applyAnswerNow(itemId, answer),
+    onFrame: ev => this.publishAnswerFrame(ev)
+  });
 
   constructor(deps: SessionDeps) {
     this.deps = { ...deps, providers: deps.providers.map(p => ({ ...p })), assignments: cloneAssignments(deps.assignments) };
@@ -273,14 +262,18 @@ export class ServerSessionManager {
 
   // ── Subscriber management for autopilot events ────────────────────────
 
+  /** Tracks per-listener unsubscribe handles for the core bus, keyed by listener. */
+  private readonly listenerUnsubs = new Map<(event: AutopilotEvent) => void, () => void>();
+
   addSubscriber(fn: (event: AutopilotEvent) => void): void {
-    this.subscribers.push(fn);
+    this.listenerUnsubs.set(fn, this.bus.subscribe(fn));
   }
 
   removeSubscriber(fn: (event: AutopilotEvent) => void): void {
-    const idx = this.subscribers.indexOf(fn);
-    if (idx >= 0) {
-      this.subscribers.splice(idx, 1);
+    const unsub = this.listenerUnsubs.get(fn);
+    if (unsub) {
+      this.listenerUnsubs.delete(fn);
+      unsub();
     }
   }
 
@@ -291,10 +284,10 @@ export class ServerSessionManager {
       this.autopilotDriver = null;
       this.endTurn();
       // Answers queued during the FINAL phase must still apply once the chain
-      // ends. The answerDraining re-entrancy guard keeps this drain from
+      // ends. The core AnswerQueue re-entrancy guard keeps this drain from
       // overlapping one already in flight (e.g. makeExecuteTurn's between-phase
       // drain).
-      void this.runQueuedAnswers();
+      void this.answerQueue.drain();
     }
     // Answer frames are point-in-time: a reconnect must not re-fire
     // answer_applied (duplicate chat entries) or a stale answer_queued
@@ -305,26 +298,14 @@ export class ServerSessionManager {
       event.kind === 'answer_applying' ||
       event.kind === 'answer_applied' ||
       event.kind === 'answer_failed';
-    if (!isAnswerFrame) {
-      // Store in ring buffer
-      this.recentEvents.push(event);
-      if (this.recentEvents.length > ServerSessionManager.MAX_RECENT_EVENTS) {
-        this.recentEvents.shift();
-      }
-    }
-    // Fan out to subscribers, catching individual errors
-    for (const fn of this.subscribers) {
-      try {
-        fn(event);
-      } catch {
-        // Subscriber error swallowed to prevent one bad subscriber from
-        // breaking the entire fan-out.
-      }
-    }
+    // The core EventBus fans out to subscribers always (swallowing individual
+    // errors) and skips the reconnect backfill ring when the predicate returns.
+    this.bus.publish(event, { skipBackfill: () => isAnswerFrame });
   }
 
+  /** Reconnect-backfill bridge: the recent-events ring lives in the core EventBus leaf. */
   getRecentAutopilotEvents(): AutopilotEvent[] {
-    return [...this.recentEvents];
+    return this.bus.backfill();
   }
 
   // ── Autopilot driver integration ──────────────────────────────────────
@@ -349,7 +330,7 @@ export class ServerSessionManager {
       const { CoreRunner: Runner } = await import('../core/runner.js');
       // Answers queued during the just-finished phase apply here, so they land
       // between phases rather than only at chain end.
-      await this.runQueuedAnswers();
+      await this.answerQueue.drain();
       return Runner.executeTurn({
         userPrompt: opts.userPrompt,
         projectPath: this.deps.projectPath,
@@ -433,17 +414,7 @@ export class ServerSessionManager {
       throw new Error(`Portal item not found: ${itemId}`);
     }
 
-    // Dedupe by itemId: a pending entry for the same question is replaced
-    // (updated answer) instead of appended, so it never applies twice.
-    const existing = this.answerQueue.find(e => e.itemId === itemId);
-    if (existing) {
-      existing.answer = answer;
-    } else {
-      if (this.answerQueue.length >= ServerSessionManager.MAX_ANSWER_QUEUE) {
-        throw new Error(ServerSessionManager.ANSWER_QUEUE_FULL_MESSAGE);
-      }
-      this.answerQueue.push({ itemId, answer });
-    }
+    this.answerQueue.enqueue(itemId, answer);
 
     if (this.busy) {
       this.publishAnswerFrame({ kind: 'answer_queued', itemId, title: item.title });
@@ -467,42 +438,28 @@ export class ServerSessionManager {
     }
     this.beginTurn();
     try {
-      await this.runQueuedAnswers();
+      await this.answerQueue.drain();
     } finally {
       this.endTurn();
     }
   }
 
   /**
-   * Drains the answer queue serially. Re-entrancy-guarded so a second trigger
-   * (e.g. the next phase's executeTurn while an immediate apply is running)
-   * returns immediately instead of overlapping applies.
+   * Drains the answer queue serially. Re-entrancy-guarded by the core
+   * AnswerQueue so a second trigger (e.g. the next phase's executeTurn while
+   * an immediate apply is running) returns immediately instead of overlapping
+   * applies.
    */
   private async runQueuedAnswers(): Promise<void> {
-    if (this.answerDraining) {
-      return;
-    }
-    this.answerDraining = true;
-    try {
-      while (this.answerQueue.length > 0) {
-        const next = this.answerQueue.shift();
-        if (!next) {
-          break;
-        }
-        await this.applyAnswerNow(next.itemId, next.answer);
-      }
-    } finally {
-      this.answerDraining = false;
-    }
+    await this.answerQueue.drain();
   }
 
   /**
-   * Applies one queued answer via the core answer-applier, publishing the
-   * applying/applied/failed frames around it. Never throws out: apply failures
-   * surface as `answer_failed` frames so the queue keeps draining.
+   * Applies one queued answer via the core answer-applier. The core AnswerQueue
+   * publishes the applying/applied/failed frames around this call. Never throws
+   * out: apply failures fold into `{ ok: false }` so the queue keeps draining.
    */
-  private async applyAnswerNow(itemId: string, answer: string): Promise<void> {
-    this.publishAnswerFrame({ kind: 'answer_applying', itemId });
+  private async applyAnswerNow(itemId: string, answer: string): Promise<AnswerApplyResult> {
     try {
       const result = await applyAnswer(
         {
@@ -514,18 +471,9 @@ export class ServerSessionManager {
         itemId,
         answer
       );
-      this.publishAnswerFrame({
-        kind: 'answer_applied',
-        itemId,
-        item: result.updatedItem,
-        affectedDocs: result.affectedDocs
-      });
+      return { ok: true, item: result.updatedItem, affectedDocs: result.affectedDocs };
     } catch (err: any) {
-      this.publishAnswerFrame({
-        kind: 'answer_failed',
-        itemId,
-        error: err?.message ?? String(err)
-      });
+      return { ok: false, error: err?.message ?? String(err) };
     }
   }
   autopilotResume(docId?: string): void {
@@ -612,7 +560,7 @@ export class ServerSessionManager {
       // Drain queued answers while the turn's busy guard is still held so a
       // concurrent POST /api/turns (or /api/autopilot/start) cannot pass the
       // busy check while an answer apply is writing state.json.
-      await this.runQueuedAnswers();
+      await this.answerQueue.drain();
       this.endTurn();
     }
   }
