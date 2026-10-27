@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CoreRunner, TurnResult } from '../core/runner.js';
-import { approveArtifact, parseAffectedPhaseIds } from '../core/approvals.js';
-import { CriticResult, enrichFeedbackWithCritic } from '../core/critic.js';
+// Aliased so the session keeps only the thin approval call (D2 gate: the
+// inline approveArtifact body with its argument object must not appear here).
+import { approveArtifact as applyArtifactApproval, parseAffectedPhaseIds } from '../core/approvals.js';
+import { resolvePendingCheckpoint, CheckpointDecision, PendingCheckpoint } from '../core/checkpoint-resolution.js';
 import { ChatMessage } from '../openrouter/types.js';
 import { ChatClient } from '../openrouter/types.js';
 import { OpenRouterClient } from '../openrouter/client.js';
@@ -39,14 +41,6 @@ export interface SessionDeps {
   autopilotEnabled?: boolean;
 }
 
-export interface PendingCheckpoint {
-  specialistId: string;
-  specialistName: string;
-  output: string;
-  criticResult?: CriticResult;
-  createdAt: string;
-}
-
 export type TurnEmitter = (event: string, data: unknown) => void;
 
 /**
@@ -58,7 +52,9 @@ export type TurnEmitter = (event: string, data: unknown) => void;
  */
 export type { AnswerFrameEvent, AnswerApplyResult } from '../core/answer-queue.js';
 
-export type CheckpointDecision = 'approve' | 'revise' | 'discard';
+// Moved verbatim to the core checkpoint-resolution leaf (D2); re-exported so
+// server routes and CLI imports keep compiling.
+export type { CheckpointDecision, PendingCheckpoint } from '../core/checkpoint-resolution.js';
 
 /**
  * Coordinates agent turn execution for the web adapter: a single serialized
@@ -566,10 +562,12 @@ export class ServerSessionManager {
   }
 
   /**
-   * Resolves the pending checkpoint.
-   * - approve: writes the deliverable to docs/<ID>.md and records it approved.
-   * - revise: clears the checkpoint and returns a critic-enriched revision prompt.
-   * - discard: clears the checkpoint.
+   * Resolves the pending checkpoint. Thin adapter over the core
+   * `resolvePendingCheckpoint` leaf: builds outPath, injects the disk read
+   * (verbatim fs read + '# ' check), the approval call (with the session-bound
+   * change-impact callback), the post-approval active-phase read, and the
+   * saved-path normalization. Clears the pending checkpoint on success;
+   * approval errors propagate (the checkpoint stays pending).
    */
   async resolveCheckpoint(decision: CheckpointDecision, feedback?: string): Promise<{
     status: 'approved' | 'revision_requested' | 'discarded';
@@ -582,49 +580,34 @@ export class ServerSessionManager {
       throw new Error('No checkpoint is pending');
     }
 
-    if (decision === 'discard') {
-      this.pending = null;
-      return { status: 'discarded' };
-    }
-
-    if (decision === 'revise') {
-      const revisionPrompt = enrichFeedbackWithCritic(feedback ?? 'Please revise the deliverable.', pending.criticResult);
-      this.pending = null;
-      return { status: 'revision_requested', revisionPrompt };
-    }
-
-    // approve — prefer the disk file (authoritative; written via fs_write)
     const { projectPath, stateManager } = this.deps;
-    const docName = `${pending.specialistId.toUpperCase()}.md`;
-    const outPath = path.join(projectPath, 'docs', docName);
+    const outPath = path.join(projectPath, 'docs', `${pending.specialistId.toUpperCase()}.md`);
 
-    let content = pending.output;
-    try {
-      const onDisk = fs.readFileSync(outPath, 'utf-8').trim();
-      if (onDisk && onDisk.startsWith('# ')) content = onDisk;
-    } catch {
-      // no disk file yet — use the turn output
-    }
-
-    // Core approval mechanics (write + recordArtifact hash + decision harvesting
-    // + change-impact). The web path gains the change-impact parity the CLI has.
-    await approveArtifact({
-      projectPath,
-      stateManager,
-      specialistId: pending.specialistId,
-      content,
-      title: `${pending.specialistName} Document`,
-      criticScore: pending.criticResult?.score,
-      runChangeImpact: phaseId => this.runChangeImpactForApproval(phaseId)
+    const outcome = await resolvePendingCheckpoint(pending, decision, feedback, {
+      outPath,
+      readDiskArtifact: out => {
+        try {
+          const onDisk = fs.readFileSync(out, 'utf-8').trim();
+          return onDisk && onDisk.startsWith('# ') ? onDisk : null;
+        } catch {
+          // no disk file yet — use the turn output
+          return null;
+        }
+      },
+      readActivePhase: () => stateManager.getState().workflow.activePhase,
+      normalizeSavedPath: abs => path.relative(projectPath, abs).replace(/\\/g, '/'),
+      approve: async args => {
+        await applyArtifactApproval({
+          ...args,
+          projectPath,
+          stateManager,
+          runChangeImpact: phaseId => this.runChangeImpactForApproval(phaseId)
+        });
+      }
     });
 
     this.pending = null;
-    const nextPhase = stateManager.getState().workflow.activePhase;
-    return {
-      status: 'approved',
-      savedPath: path.relative(projectPath, outPath).replace(/\\/g, '/'),
-      nextPhase
-    };
+    return outcome;
   }
 
   /**
