@@ -334,7 +334,7 @@ export default function DevelopmentView({
         const title = portalItemsRef.current.find(i => i.id === ev.itemId)?.title ?? 'this question';
         return appendEntry({
           role: 'system',
-          text: `Couldn't apply your answer to "${title}" — ${ev.error}. Retry from the question panel.`
+          text: `Couldn't apply your answer to "${title}" — ${(ev.error ?? '').slice(0, 200)}. Retry from the question panel.`
         });
       }
       default:
@@ -352,6 +352,15 @@ export default function DevelopmentView({
   // derive from portalItems minus dismissedIds, so dismissal is deterministic
   // between 3s polls instead of waiting on the server.
   const [surface, setSurface] = useState<'closed' | 'open' | 'minimized'>('closed');
+  const badgeRef = useRef<HTMLButtonElement>(null);
+  const prevSurfaceRef = useRef<'closed' | 'open' | 'minimized' | null>(null);
+  // §8.2 — Close restores focus to the badge (a11y); never steals focus on mount.
+  useEffect(() => {
+    if (prevSurfaceRef.current !== null && surface === 'closed' && prevSurfaceRef.current !== 'closed') {
+      badgeRef.current?.focus();
+    }
+    prevSurfaceRef.current = surface;
+  }, [surface]);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [answerStates, setAnswerStates] = useState<Record<string, AnswerState>>({});
   const portalItemsRef = useRef(portalItems);
@@ -391,13 +400,31 @@ export default function DevelopmentView({
           case 'queued': phrases.push('Answer queued. Will apply after the current phase finishes.'); break;
           case 'applying': phrases.push('Applying answer to the document.'); break;
           case 'applied': phrases.push('Answer applied.'); break;
-          case 'failed': phrases.push(`Couldn't apply your answer.${st.error ? ` ${st.error}` : ''}`); break;
+          case 'failed':
+            phrases.push(`Couldn't apply your answer.${st.error ? ` ${st.error.slice(0, 200)}` : ''}`);
+            break;
         }
       }
     }
     if (phrases.length > 0) setAnnouncement(phrases.join(' '));
     prevStatesRef.current = current;
   }, [answerStates]);
+
+  // §8.6/§8.8 — announce question arrivals ("item arrives while closed → badge
+  // pulse + count + live-region announce"). Seed the baseline on mount so
+  // pre-existing items are not announced; only new arrivals announce.
+  const prevPendingCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevPendingCountRef.current === null) {
+      prevPendingCountRef.current = pendingCount;
+      return;
+    }
+    const delta = pendingCount - prevPendingCountRef.current;
+    prevPendingCountRef.current = pendingCount;
+    if (delta > 0) {
+      setAnnouncement(delta === 1 ? 'New question arrived.' : `${delta} new questions arrived.`);
+    }
+  }, [pendingCount]);
 
   useEffect(() => {
     const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -798,6 +825,7 @@ export default function DevelopmentView({
           surface={surface}
           subdued={checkpoint !== null}
           onOpen={() => setSurface('open')}
+          buttonRef={badgeRef}
         />
 
         {/* Input bar */}
@@ -1090,11 +1118,25 @@ export default function DevelopmentView({
             onSubmit={handleQueueAnswer}
             onDismiss={async (id) => {
               setDismissedIds(prev => new Set(prev).add(id));
-              await api.dismissPortalItem(id);
+              try {
+                await api.dismissPortalItem(id);
+              } catch {
+                // Roll back the local dismissal so the item stays visible/retryable
+                // (the 3s poll keeps returning it until the server accepts).
+                setDismissedIds(prev => {
+                  const next = new Set(prev);
+                  next.delete(id);
+                  return next;
+                });
+                setAnnouncement('Couldn’t dismiss that question — it will reappear.');
+              }
             }}
             onResume={async (docPath) => { try { await api.autopilotResume(docPath); } catch {} }}
             onEditDoc={(docPath) => { setSurface('closed'); selectPhaseByDocPath(docPath); setEditing(true); }}
+            selectedDocName={roadmap.find(p => p.id === selectedPhase)?.artifactPath.split('/').pop()}
+            onOpenDocument={(docPath) => { setSurface('closed'); void selectPhaseByDocPath(docPath); }}
             onMinimize={() => setSurface('minimized')}
+            onExpand={() => setSurface('open')}
             onClose={() => setSurface('closed')}
           />
         </div>

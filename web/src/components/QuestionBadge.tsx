@@ -1,3 +1,4 @@
+import { type Ref } from 'react';
 import { CheckCircle2, ChevronDown, Clock3, MessageSquare } from 'lucide-react';
 
 export interface QuestionBadgeProps {
@@ -13,6 +14,8 @@ export interface QuestionBadgeProps {
   surface: 'closed' | 'open' | 'minimized';
   /** Checkpoint pending: render the compact subdued line instead of the full strip. */
   subdued: boolean;
+  /** Ref to the trigger button, so the parent can restore focus on close (a11y). */
+  buttonRef?: Ref<HTMLButtonElement>;
   /** Open the question panel (parent owns the surface transition). */
   onOpen: () => void;
 }
@@ -37,6 +40,7 @@ export default function QuestionBadge({
   surface,
   subdued,
   onOpen,
+  buttonRef,
 }: QuestionBadgeProps) {
   // Hidden entirely: nothing pending, nothing queued, nothing resolved.
   if (count === 0 && queuedCount === 0 && resolvedCount === 0) {
@@ -44,7 +48,7 @@ export default function QuestionBadge({
   }
 
   const statusLabel = [
-    'Questions from AI',
+    'Open questions from AI',
     count > 0 ? `${count} pending` : null,
     queuedCount > 0 ? `${queuedCount} queued` : null,
     blockingCount > 0 ? `${blockingCount} blocking` : null,
@@ -63,6 +67,7 @@ export default function QuestionBadge({
         aria-expanded={surface === 'open'}
         aria-controls="question-panel"
         aria-label={statusLabel}
+        ref={buttonRef}
         className="flex h-8 w-full items-center gap-2 border-t border-slate-800 bg-slate-900/60 px-3 opacity-60 transition hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
       >
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} aria-hidden />
@@ -80,11 +85,16 @@ export default function QuestionBadge({
       aria-expanded={surface === 'open'}
       aria-controls="question-panel"
       aria-label={statusLabel}
+      ref={buttonRef}
       className={`flex min-h-[44px] w-full items-center gap-2 border-l-2 bg-slate-900/80 px-3 transition hover:bg-slate-800/80 focus:outline-none focus:ring-2 focus:ring-sky-500/40 ${
         blockingCount > 0 ? 'border-rose-500' : 'border-amber-500'
       }`}
     >
-      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} aria-hidden />
+      <span
+        key={count}
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass} animate-question-arrive`}
+        aria-hidden
+      />
       <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/20">
         <MessageSquare className="h-3 w-3 text-amber-400" aria-hidden />
       </span>

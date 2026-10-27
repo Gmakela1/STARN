@@ -97,7 +97,10 @@ export function useAutopilotEvents(onEvent?: (ev: AutopilotLiveEvent) => void): 
                   switch (eventName) {
                     case 'autopilot': {
                       const st = parsed.status ?? parsed;
-                      const isAnswerFrame = typeof st?.kind === 'string' && ['answer_queued', 'answer_applying', 'answer_applied', 'answer_failed'].includes(st.kind);
+                      const isAnswerFrame =
+                        typeof st?.kind === 'string' &&
+                        typeof st?.itemId === 'string' &&
+                        ['answer_queued', 'answer_applying', 'answer_applied', 'answer_failed'].includes(st.kind);
                       if (isAnswerFrame) { onEvent?.(st); break; } // answer frames: forward only, never merge into status
                       setStatus(prev => {
                         // 'complete' and 'error' events mean the run finished
@@ -109,10 +112,16 @@ export function useAutopilotEvents(onEvent?: (ev: AutopilotLiveEvent) => void): 
                       onEvent?.(st);
                       break;
                     }
-                    case 'question':
-                      setPortalItems(prev => [...prev, parsed.item ?? parsed]);
-                      onEvent?.({ kind: 'question', item: parsed.item ?? parsed });
+                    case 'question': {
+                      // Schema gate (defense-in-depth): only well-formed items with
+                      // a string id enter state; duplicate ids are coalesced so the
+                      // panel's keyed chips stay deterministic (security INFO).
+                      const item = parsed.item ?? parsed;
+                      if (typeof item?.id !== 'string') break;
+                      setPortalItems(prev => (prev.some(i => i.id === item.id) ? prev : [...prev, item]));
+                      onEvent?.({ kind: 'question', item });
                       break;
+                    }
                     case 'status':
                       onEvent?.({ kind: 'status', message: parsed.message });
                       break;

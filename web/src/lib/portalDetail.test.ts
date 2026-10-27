@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { renderDetail } from './portalDetail';
 
 // Design spec §2.1 — concise question detail rendering, verbatim-split only.
-// One pure helper used by both the QuestionBar card and the AnswerDialog.
+// One pure helper used by the right-pane QuestionPanel bullet rendering.
 describe('renderDetail', () => {
   describe('rule 1 — already a list (newlines or marker segments)', () => {
     it('bulletizes each line and caps at 4 with overflow count', () => {

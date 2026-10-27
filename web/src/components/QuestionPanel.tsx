@@ -25,7 +25,12 @@ export interface QuestionPanelProps {
   onResume: (docPath: string) => Promise<void>;
   onEditDoc: (docPath: string) => void;
   onMinimize: () => void;
+  onExpand: () => void;
   onClose: () => void;
+  /** Basename of the currently selected doc; gates the header "Open document" affordance (D5). */
+  selectedDocName?: string;
+  /** D5: close the panel, select the phase for docPath, and refresh the doc. */
+  onOpenDocument?: (docPath: string) => void;
 }
 
 /** §1.4.1 — per-phase chip visuals, keyed off the AnswerPhase union (moved from QuestionBar). */
@@ -63,7 +68,10 @@ export default function QuestionPanel({
   onResume,
   onEditDoc,
   onMinimize,
-  onClose
+  onExpand,
+  onClose,
+  selectedDocName,
+  onOpenDocument
 }: QuestionPanelProps) {
   const [activeId, setActiveId] = useState<string>(items[0]?.id ?? '');
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -160,12 +168,25 @@ export default function QuestionPanel({
   }, []);
 
   // Advance-on-vanish (D6): the active item left the open pool on its own —
-  // select the first remaining item. Vanished drafts stay in the map so they
-  // return if the item reappears.
+  // select the successor in list order, or the predecessor when it was last
+  // (spec: "wrapping to the previous if it was last"). Vanished drafts stay
+  // in the map so they return if the item reappears.
+  const prevItemsRef = useRef<string[]>([]);
   useEffect(() => {
-    if (items.length === 0) return;
-    if (items.some(i => i.id === activeId)) return;
-    setActiveId(items[0].id);
+    if (items.length === 0) {
+      prevItemsRef.current = [];
+      return;
+    }
+    const ids = items.map(i => i.id);
+    if (!ids.includes(activeId)) {
+      const prevIds = prevItemsRef.current;
+      const vanished = prevIds.find(id => !ids.includes(id)) ?? activeId;
+      const idx = prevIds.indexOf(vanished);
+      const candidate =
+        idx >= 0 && idx < prevIds.length - 1 ? prevIds[idx + 1] : idx > 0 ? prevIds[idx - 1] : undefined;
+      setActiveId(candidate && ids.includes(candidate) ? candidate : items[0].id);
+    }
+    prevItemsRef.current = ids;
   }, [items, activeId]);
 
   // Focus integrity (§8.8): open → composer (question) or first action button
@@ -293,7 +314,7 @@ export default function QuestionPanel({
         <button
           ref={expandRef}
           type="button"
-          onClick={onMinimize}
+          onClick={onExpand}
           aria-label="Expand questions"
           title="Expand questions"
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
@@ -435,7 +456,9 @@ export default function QuestionPanel({
           )}
         </div>
 
-        <p className="mt-1.5 text-sm font-bold text-slate-200">{item.title}</p>
+        <p className="mt-1.5 line-clamp-3 text-sm font-bold text-slate-200" title={item.title}>
+          {item.title}
+        </p>
 
         {detailView && <div className="mt-1.5">{detailView}</div>}
 
@@ -443,11 +466,14 @@ export default function QuestionPanel({
           <div className="mt-2 space-y-1">
             <p className="text-[11px] font-semibold text-rose-300">Missing requirements:</p>
             <ul className="list-inside list-disc space-y-0.5">
-              {item.gaps.map((gap, i) => (
+              {item.gaps.slice(0, 8).map((gap, i) => (
                 <li key={i} className="text-[11px] text-rose-200/70">
                   {gap}
                 </li>
               ))}
+              {item.gaps.length > 8 && (
+                <li className="text-[11px] text-rose-200/50">+{item.gaps.length - 8} more gaps</li>
+              )}
             </ul>
           </div>
         )}
@@ -565,10 +591,15 @@ export default function QuestionPanel({
             </span>
           )}
           <div className="ml-auto flex shrink-0 items-center gap-1">
-            {item?.docPath && (
+            {item?.docPath &&
+              onOpenDocument &&
+              item.docPath.split('/').pop() !== selectedDocName && (
               <button
                 type="button"
-                onClick={onClose}
+                onClick={() => {
+                  const p = item?.docPath;
+                  if (p) onOpenDocument(p);
+                }}
                 className="cursor-pointer rounded px-1.5 py-1 text-xs text-sky-400 transition hover:text-sky-300 focus:ring-2 focus:ring-sky-500/40"
               >
                 Open document
@@ -576,7 +607,11 @@ export default function QuestionPanel({
             )}
             <button
               type="button"
-              onClick={onMinimize}
+              onClick={() => {
+                // §8.2: minimize with nothing to show collapses to closed.
+                if (items.length === 0) onClose();
+                else onMinimize();
+              }}
               aria-label="Minimize questions"
               title="Minimize questions (keeps your draft)"
               className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"

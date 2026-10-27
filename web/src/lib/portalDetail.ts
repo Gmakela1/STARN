@@ -2,8 +2,8 @@
  * §2.1 — Concise question-detail rendering.
  *
  * Verbatim-split only: no paraphrasing, no LLM, no new model calls.
- * The answer dialog is the "read it fully" surface; this helper drives
- * both the QuestionBar card and the AnswerDialog bullets.
+ * The right-pane QuestionPanel's "Show full question" toggle is the
+ * "read it fully" surface; this helper drives the panel's bullets.
  */
 
 export interface RenderDetailResult {

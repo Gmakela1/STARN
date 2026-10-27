@@ -5,3 +5,8 @@ dist/
 test-output/
 *.log
 .superpowers/
+
+# local dev/test launcher (bypasses CLI prompts for browser testing)
+boot_test_server.mjs
+
+.playwright-mcp/
