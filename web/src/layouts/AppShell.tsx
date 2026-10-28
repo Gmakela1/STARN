@@ -1,22 +1,20 @@
 import { useEffect, useState } from 'react';
 import {
-  Bot,
-  LayoutDashboard,
-  Compass,
-  Wrench,
-  FolderArchive,
-  PackageSearch,
-  MessageSquareWarning,
   Box,
-  Settings as SettingsIcon,
+  FolderArchive,
+  MessageSquareWarning,
+  PackageSearch,
   Satellite,
-  CircleAlert,
-  Menu,
+  Settings as SettingsIcon,
+  Wrench,
   X
 } from 'lucide-react';
 import { api } from '../api/client';
-import { ProjectInfo } from '../types/api';
+import { AutopilotStatusResponse, ProjectInfo } from '../types/api';
 import { useTurnStream } from '../api/useTurnStream';
+import { TopBar, HUBS } from '../components/TopBar';
+import type { TabId } from '../components/TopBar';
+import { deriveRunState } from '../lib/runState';
 import DashboardView from '../views/DashboardView';
 import RoadmapView from '../views/RoadmapView';
 import DevelopmentView from '../views/DevelopmentView';
@@ -27,49 +25,8 @@ import DigitalTwinView from '../views/DigitalTwinView';
 import LibraryView from '../views/LibraryView';
 import SettingsView from '../views/SettingsView';
 
-export type TabId = 'dashboard' | 'roadmap' | 'development' | 'build' | 'vault';
 export type BuildSubTab = 'parts' | 'work' | 'issues';
 export type VaultSubTab = 'library' | 'twin' | 'settings';
-
-export interface HubNav {
-  id: TabId;
-  label: string;
-  tagline: string;
-  icon: typeof LayoutDashboard;
-}
-
-const HUBS: HubNav[] = [
-  {
-    id: 'dashboard',
-    label: 'Dashboard',
-    tagline: 'Mission Overview & Charter',
-    icon: LayoutDashboard
-  },
-  {
-    id: 'roadmap',
-    label: 'Roadmap',
-    tagline: '13-Stage Build Journey',
-    icon: Compass
-  },
-  {
-    id: 'development',
-    label: 'Engineering Studio',
-    tagline: 'Collaborative AI Workbench',
-    icon: Bot
-  },
-  {
-    id: 'build',
-    label: 'Materials & Build',
-    tagline: 'Shopping List, Shop Instructions & Issues',
-    icon: Wrench
-  },
-  {
-    id: 'vault',
-    label: 'Vault & Settings',
-    tagline: 'Reference Manuals, 3D Twin & Config',
-    icon: FolderArchive
-  }
-];
 
 const BUILD_SUB_TABS: Array<{ id: BuildSubTab; label: string; icon: typeof PackageSearch }> = [
   { id: 'parts', label: 'Shopping List & BOM', icon: PackageSearch },
@@ -93,6 +50,8 @@ export default function AppShell() {
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [connected, setConnected] = useState(true);
   const [projectRevision, setProjectRevision] = useState(0);
+  const [runStatus, setRunStatus] = useState<AutopilotStatusResponse | null>(null);
+  const [openQuestions, setOpenQuestions] = useState(0);
   const turnStream = useTurnStream();
 
   const refreshProject = async () => {
@@ -105,15 +64,31 @@ export default function AppShell() {
     }
   };
 
+  // Coarse run-state snapshot (design BC-1): a REST poll, not a second SSE.
+  // Runs parallel to fetchProject; a failure of one never kills the other.
+  const refreshRunStatus = async () => {
+    const [statusResult, portalResult] = await Promise.allSettled([
+      api.fetchAutopilotStatus(),
+      api.fetchPortalItems({ status: 'open' })
+    ]);
+    if (statusResult.status === 'fulfilled') setRunStatus(statusResult.value);
+    if (portalResult.status === 'fulfilled') setOpenQuestions(portalResult.value.items.length);
+  };
+
   useEffect(() => {
     void refreshProject();
+    void refreshRunStatus();
     // Restore a pending checkpoint after a page reload / reconnect.
     api.fetchPendingCheckpoint()
       .then(cp => {
         if (cp) turnStream.restoreCheckpoint(cp);
       })
       .catch(() => undefined);
-    const interval = setInterval(() => void refreshProject(), 15000);
+    // One 15s poll cycle drives both the project and the run-state snapshot.
+    const interval = setInterval(() => {
+      void refreshProject();
+      void refreshRunStatus();
+    }, 15000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -134,83 +109,31 @@ export default function AppShell() {
     setTab('development');
   };
 
+  const runState = deriveRunState({
+    busy: turnStream.busy,
+    checkpoint: turnStream.checkpoint !== null,
+    autopilotRunning: runStatus?.running ?? false,
+    openQuestions,
+    blocks: runStatus?.blocks ?? 0,
+    lastError: turnStream.error ?? null,
+    passedCount: runStatus?.passedCount ?? 0
+  });
+
   return (
     <div className="flex h-full flex-col bg-slate-950 text-slate-100">
-      {/* Top Header */}
-      <header className="flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-900/80 px-4 py-2.5 backdrop-blur-md shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          {/* Mobile hamburger button (< 1024px) */}
-          <button
-            type="button"
-            onClick={() => setMobileMenuOpen(prev => !prev)}
-            className="flex min-h-[48px] min-w-[48px] items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors lg:hidden shrink-0"
-            aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
-            aria-expanded={mobileMenuOpen}
-          >
-            {mobileMenuOpen ? <X className="h-5 w-5" aria-hidden /> : <Menu className="h-5 w-5" aria-hidden />}
-          </button>
-
-          {/* Brand & Project Info */}
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/30">
-              <Satellite className="h-5 w-5 text-cyan-400" aria-hidden />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-xs font-black tracking-widest text-white uppercase leading-tight">STARN</h1>
-              <p
-                className="text-xs font-medium text-slate-300 truncate max-w-[160px] sm:max-w-xs md:max-w-sm leading-tight"
-                title={project?.name}
-              >
-                {project ? project.name : 'Connecting to project…'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Header Telemetry Badges */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {/* Stage Badge */}
-          {project && (
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/40 bg-cyan-950/50 px-3 py-1 text-xs font-semibold text-cyan-300 shadow-sm"
-              title={`Active Project Stage: ${project.activePhase}`}
-            >
-              <span className="text-cyan-400/80 font-normal hidden sm:inline">Stage:</span>
-              <span className="font-mono tracking-wide uppercase">{project.activePhase}</span>
-            </span>
-          )}
-
-          {/* Reconnecting Badge */}
-          {!connected && (
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full border border-rose-700/80 bg-rose-950/80 px-3 py-1 text-xs font-semibold text-rose-300"
-              role="status"
-            >
-              <CircleAlert className="h-3.5 w-3.5" aria-hidden />
-              <span className="hidden sm:inline">Reconnecting…</span>
-            </span>
-          )}
-
-          {/* Agent Status Badge */}
-          {turnStream.busy ? (
-            <span
-              className="inline-flex items-center gap-2 rounded-full border border-cyan-500/40 bg-cyan-950/70 px-3 py-1 text-xs font-semibold text-cyan-300 shadow-sm"
-              role="status"
-            >
-              <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse" aria-hidden />
-              <span>Working…</span>
-            </span>
-          ) : (
-            <span
-              className="inline-flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-950/50 px-3 py-1 text-xs font-semibold text-emerald-300 shadow-sm"
-              role="status"
-            >
-              <span className="h-2 w-2 rounded-full bg-emerald-400" aria-hidden />
-              <span className="hidden xs:inline sm:inline">AI Ready</span>
-            </span>
-          )}
-        </div>
-      </header>
+      {/* Merged top bar — brand · tabs · run-state cluster */}
+      <TopBar
+        project={project}
+        tab={tab}
+        onSelectTab={setTab}
+        runState={runState}
+        phase={runStatus?.currentPhaseId ?? project?.activePhase}
+        step={turnStream.status}
+        connected={connected}
+        openQuestions={openQuestions}
+        mobileMenuOpen={mobileMenuOpen}
+        onToggleMobileMenu={() => setMobileMenuOpen(prev => !prev)}
+      />
 
       {/* Mobile Navigation Drawer (< 1024px) */}
       {mobileMenuOpen && (
@@ -291,44 +214,6 @@ export default function AppShell() {
           </div>
         </div>
       )}
-
-      {/* Primary Maker Hub Navigation (Desktop lg+) */}
-      <nav
-        className="hidden lg:flex items-center gap-1.5 border-b border-slate-800 bg-slate-900/50 px-4 py-2 shrink-0"
-        role="tablist"
-        aria-label="Maker Lifecycle Hubs"
-      >
-        {HUBS.map(({ id, label, tagline, icon: Icon }) => {
-          const active = tab === id;
-          return (
-            <button
-              key={id}
-              role="tab"
-              aria-selected={active}
-              onClick={() => setTab(id)}
-              className={`group flex items-center gap-2.5 rounded-xl px-4 py-2 text-xs xl:text-sm font-medium transition-all ${
-                active
-                  ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shadow-sm'
-                  : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200 border border-transparent'
-              }`}
-              title={tagline}
-            >
-              <Icon
-                className={`h-4 w-4 shrink-0 transition-colors ${
-                  active ? 'text-cyan-400' : 'text-slate-400 group-hover:text-slate-200'
-                }`}
-                aria-hidden
-              />
-              <div className="flex flex-col text-left">
-                <span className="font-bold leading-tight">{label}</span>
-                <span className="hidden xl:block text-[10px] font-normal text-slate-500 group-hover:text-slate-400 leading-tight">
-                  {tagline}
-                </span>
-              </div>
-            </button>
-          );
-        })}
-      </nav>
 
       {/* Active Hub View */}
       <main key={projectRevision} className="min-h-0 flex-1 overflow-hidden">
