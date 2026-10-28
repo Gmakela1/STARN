@@ -1028,6 +1028,18 @@ export default function DevelopmentView({
           onStop={async () => {
             try { await api.autopilotStop(); } catch {}
           }}
+          roadmap={roadmap}
+          onSelectPhase={(id) => {
+            // Rail dot click reuses the doc-dropdown phase-select pattern (design §5.F).
+            setEditing(false);
+            setSelectedPhase(id);
+            void (async () => {
+              try {
+                await api.setActivePhase(id);
+                await onProjectChanged();
+              } catch {}
+            })();
+          }}
         />
 
         {/* Quality example drop zone */}
