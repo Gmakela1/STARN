@@ -1296,7 +1296,7 @@ export default function DevelopmentView({
           <div className="flex min-w-0 flex-1 items-center">
             <AutopilotHud
               status={autopilotStatus}
-              enabled={autopilotStatus !== null || (turnStream as any).autopilotEnabled}
+              enabled={autopilotStatus?.enabled ?? false}
               onStart={async () => {
                 try { await api.autopilotStart(); } catch {}
               }}

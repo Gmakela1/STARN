@@ -50,6 +50,7 @@ export default function PaneSplitter({
 
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     recordDragStart(e);
+    e.currentTarget.setPointerCapture(e.pointerId);
     draggingRef.current = true;
   };
 
