@@ -13,6 +13,7 @@ import {
   Bot,
   User,
   TriangleAlert,
+  Play,
   Paperclip,
   ChevronDown,
   Check,
@@ -603,13 +604,13 @@ export default function DevelopmentView({
   // MIN = 340px expressed as a % of the container; MAX keeps the right pane at
   // its 340px floor. minPct is capped at 33 (the clamp floor at the lg 1024px
   // breakpoint) per the design's sane-range rule.
-  const [minPct, setMinPct] = useState(33);
+  const [minPct, setMinPct] = useState(20);
   const maxPct = 100 - minPct;
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const computeClamp = () => {
       const width = rootRef.current?.getBoundingClientRect().width ?? window.innerWidth ?? 1024;
-      setMinPct(Math.min(33, Math.round((340 / Math.max(width, 1)) * 100)));
+      setMinPct(Math.min(20, Math.round((200 / Math.max(width, 1)) * 100)));
     };
     computeClamp();
     window.addEventListener('resize', computeClamp);
@@ -1315,6 +1316,7 @@ export default function DevelopmentView({
                   } catch {}
                 })();
               }}
+              hideControls
             />
           </div>
 
@@ -1341,6 +1343,25 @@ export default function DevelopmentView({
             >
               {uploadingExample ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Paperclip className="h-4 w-4" aria-hidden />}
             </button>
+            {autopilotStatus?.running ? (
+              <button
+                onClick={async () => { try { await api.autopilotStop(); } catch {} }}
+                className="flex h-8 shrink-0 items-center gap-1 rounded-md border border-rose-600/40 bg-rose-950/60 px-2.5 text-[11px] font-bold text-rose-300 transition hover:bg-rose-900/70"
+                aria-label="Stop autopilot"
+              >
+                <Square className="h-3 w-3 fill-current" aria-hidden />
+                Stop
+              </button>
+            ) : (
+              <button
+                onClick={async () => { try { await api.autopilotStart(); } catch {} }}
+                className="flex h-8 shrink-0 items-center gap-1 rounded-md bg-cyan-600 px-2.5 text-[11px] font-bold text-white transition hover:bg-cyan-500"
+                aria-label="Start autopilot"
+              >
+                <Play className="h-3 w-3 fill-current" aria-hidden />
+                Start
+              </button>
+            )}
             <button
               onClick={() => void refreshDoc()}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"

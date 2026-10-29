@@ -14,6 +14,8 @@ export interface AutopilotHudProps {
   roadmap?: RoadmapPhase[];
   /** Dot-click → phase select (reuses the doc-dropdown onSelect pattern). */
   onSelectPhase?: (id: string) => void;
+  /** When true, render only the PhaseRail (no Start/Stop — caller places them in the action cluster). */
+  hideControls?: boolean;
 }
 
 // Real phase order from ORDERED_WORKFLOW_PHASES (src/workspace/state.ts).
@@ -43,7 +45,8 @@ export default function AutopilotHud({
   onStop,
   phaseNames,
   roadmap,
-  onSelectPhase
+  onSelectPhase,
+  hideControls
 }: AutopilotHudProps) {
   // When autopilot is disabled in settings, render nothing.
   if (!enabled) return null;
@@ -114,8 +117,8 @@ export default function AutopilotHud({
           </button>
         )}
 
-        {/* Stop button */}
-        {running && (
+        {/* Stop button (hidden when hideControls is true) */}
+        {running && !hideControls && (
           <button
             onClick={() => void onStop()}
             className="flex h-5 w-5 items-center justify-center rounded bg-rose-600 text-white hover:bg-rose-500"

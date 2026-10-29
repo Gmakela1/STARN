@@ -499,7 +499,7 @@ export default function QuestionPanel({
           )}
         </div>
 
-        <p className="mt-1.5 line-clamp-3 text-sm font-bold text-slate-200" title={item.title}>
+        <p className="mt-1.5 text-sm font-bold text-slate-200" title={item.title}>
           {item.title}
         </p>
 
@@ -607,7 +607,7 @@ export default function QuestionPanel({
       className="absolute inset-0 z-20 flex flex-col bg-slate-950 animate-panel-in"
     >
       <header className="shrink-0 border-b border-slate-800 bg-slate-900/90 px-3 py-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <MessageSquare className="h-4 w-4 shrink-0 text-amber-400" aria-hidden />
           <span className="text-sm font-bold text-slate-100">Questions from AI</span>
           <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] font-bold tabular-nums text-cyan-300">
