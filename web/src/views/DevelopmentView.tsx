@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import {
   Send,
   Square,
@@ -12,7 +13,6 @@ import {
   Bot,
   User,
   TriangleAlert,
-  Upload,
   Paperclip,
   ChevronDown,
   Check,
@@ -28,11 +28,17 @@ import {
   Wrench,
   Activity,
   Clock3,
-  CheckCircle2
+  CheckCircle2,
+  Maximize2,
+  Minimize2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
-import { AnswerState, DocData, ProjectInfo, RoadmapPhase } from '../types/api';
+import { AnswerState, DocData, PortalItem, ProjectInfo, RoadmapPhase } from '../types/api';
 import { useTurnStream, ChatEntry, ActivityMeta } from '../api/useTurnStream';
 import { useAutopilotEvents, AutopilotLiveEvent } from '../hooks/useAutopilotEvents';
 import Markdown from '../components/Markdown';
@@ -42,6 +48,19 @@ import CheckpointPanel from '../components/CheckpointPanel';
 import QuestionBadge from '../components/QuestionBadge';
 import QuestionPanel from '../components/QuestionPanel';
 import AutopilotHud from '../components/AutopilotHud';
+import PaneSplitter from '../components/PaneSplitter';
+import { deriveRunState } from '../lib/runState';
+import {
+  applyAnchorHighlight,
+  clearAnchorHighlights,
+  extractRequirementIds,
+  pickAnchorId
+} from '../lib/requirementAnchor';
+
+/** §11 — artifact basename (docPath / artifactPath are both `dir/NAME.ext`). */
+function basename(path: string): string {
+  return path.split('/').pop() ?? '';
+}
 
 /** Render a tool call as a short human-readable action instead of raw JSON. */
 const TOOL_ICON_BY_NAME: Record<string, LucideIcon> = {
@@ -263,13 +282,19 @@ export interface DevelopmentViewProps {
   project: ProjectInfo | null;
   onProjectChanged: () => Promise<void> | void;
   initialPhase?: string;
+  /** Workstream C/D: deep-link into the question panel (consumed once). */
+  initialQuestionId?: string;
+  /** Workstream C/D: state-based return path to the queue (design BC-5). */
+  onNavigate?: (tab: string) => void;
 }
 
 export default function DevelopmentView({
   turnStream,
   project,
   onProjectChanged,
-  initialPhase
+  initialPhase,
+  initialQuestionId,
+  onNavigate
 }: DevelopmentViewProps) {
   const { entries, busy, status, toolActivity, checkpoint, sendTurn, abortTurn, clearCheckpoint, appendEntry } = turnStream;
 
@@ -546,12 +571,14 @@ export default function DevelopmentView({
   const [approving, setApproving] = useState(false);
   const [docNotice, setDocNotice] = useState<string | null>(null);
 
-  // §8.8/D10 — React 18's types omit `inert`, so toggle it (and the matching
-  // aria-hidden) on the doc content element by ref while the panel is open so
-  // tab order cannot wander underneath the overlay.
+  // §5.A cover semantics (Workstream C) — the DOC is never inert: it is what
+  // the user reads while answering. The FEED gets inert + aria-hidden in its
+  // place so tab order cannot wander underneath the panel overlay. The doc
+  // element keeps docContentRef for the scroll/highlight logic only.
   const docContentRef = useRef<HTMLDivElement>(null);
+  const feedScrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const el = docContentRef.current;
+    const el = feedScrollRef.current;
     if (!el) return;
     if (surface === 'open') {
       el.setAttribute('inert', '');
@@ -561,6 +588,174 @@ export default function DevelopmentView({
       el.removeAttribute('aria-hidden');
     }
   }, [surface]);
+
+  // --- Workstream C: pane sizing + collapse/Zen (design §5.I) ---
+  const [leftPct, setLeftPct] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem('starn.studio.splitPct');
+      if (raw !== null) {
+        const n = parseFloat(raw);
+        if (Number.isFinite(n) && n >= 33 && n <= 67) return n;
+      }
+    } catch { /* storage unavailable — default 50/50 */ }
+    return 50;
+  });
+  // MIN = 340px expressed as a % of the container; MAX keeps the right pane at
+  // its 340px floor. minPct is capped at 33 (the clamp floor at the lg 1024px
+  // breakpoint) per the design's sane-range rule.
+  const [minPct, setMinPct] = useState(33);
+  const maxPct = 100 - minPct;
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const computeClamp = () => {
+      const width = rootRef.current?.getBoundingClientRect().width ?? window.innerWidth ?? 1024;
+      setMinPct(Math.min(33, Math.round((340 / Math.max(width, 1)) * 100)));
+    };
+    computeClamp();
+    window.addEventListener('resize', computeClamp);
+    return () => window.removeEventListener('resize', computeClamp);
+  }, []);
+
+  const [docCollapsed, setDocCollapsed] = useState(false);
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [zenPane, setZenPane] = useState<'left' | 'right' | null>(null);
+  // Focus-first ratio (BC-3): animate to 40/60 on the FIRST question focus, then
+  // user drags rule. Ratio transition classes apply only during that one move
+  // (drag stays direct manipulation, no laggy animation).
+  const userDraggedRef = useRef(false);
+  const ratioAnimatedRef = useRef(false);
+  const [ratioTransition, setRatioTransition] = useState(false);
+
+  const leftIsRail = leftCollapsed || zenPane === 'right';
+  const rightIsRail = docCollapsed || zenPane === 'left';
+  let leftStyle: CSSProperties;
+  let rightStyle: CSSProperties;
+  if (zenPane === 'left') {
+    leftStyle = { flex: '1 1 0%' };
+    rightStyle = { flexBasis: '44px' };
+  } else if (zenPane === 'right') {
+    leftStyle = { flexBasis: '44px' };
+    rightStyle = { flex: '1 1 0%' };
+  } else if (leftCollapsed) {
+    leftStyle = { flexBasis: '44px' };
+    rightStyle = { flex: '1 1 0%' };
+  } else if (docCollapsed) {
+    leftStyle = { flex: '1 1 0%' };
+    rightStyle = { flexBasis: '44px' };
+  } else {
+    leftStyle = { flexBasis: `${leftPct}%` };
+    rightStyle = { flexBasis: `${100 - leftPct}%` };
+  }
+  const clampToRange = (pct: number) => Math.min(Math.max(pct, minPct), maxPct);
+  const persistSplit = (pct: number) => {
+    userDraggedRef.current = true;
+    try {
+      localStorage.setItem('starn.studio.splitPct', String(Math.round(clampToRange(pct))));
+    } catch { /* presentational only */ }
+  };
+
+  // Esc exits Zen — but never while the open panel owns Escape (one owner).
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (surface === 'open') return;
+      setZenPane(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [surface]);
+
+  // --- Workstream C: requirement-ID doc highlight (design §5.C) ---
+  const [highlight, setHighlight] = useState<{ id: string; docPath: string; token: number } | null>(null);
+  const highlightTokenRef = useRef(0);
+  const selectedDocName = useMemo(
+    () => roadmap.find(p => p.id === selectedPhase)?.artifactPath.split('/').pop(),
+    [roadmap, selectedPhase]
+  );
+  const docHasTable = useMemo(() => /(?:^|\n)\s*\|/m.test(doc?.content ?? ''), [doc]);
+
+  // Apply once the item's doc is loaded AND rendered (doc identity check keeps
+  // the wrong/placeholder DOM from producing a false "couldn't locate").
+  useEffect(() => {
+    if (!highlight || editing) return;
+    if (basename(highlight.docPath) !== selectedDocName) return;
+    if (!doc || basename(doc.path) !== basename(highlight.docPath)) return;
+    const root = docContentRef.current;
+    if (!root) return;
+    const ok = applyAnchorHighlight(root, highlight.id);
+    setAnnouncement(ok
+      ? `Jumped to ${highlight.id} in ${basename(highlight.docPath)}.`
+      : `Opened ${basename(highlight.docPath)} — couldn't locate ${highlight.id} in this document.`);
+  }, [highlight, doc, editing, selectedDocName]);
+
+  // Clear highlights on edit-mode, doc change, panel close, and unmount.
+  useEffect(() => {
+    const el = docContentRef.current;
+    if (!el) return;
+    return () => clearAnchorHighlights(el);
+  }, [doc, editing, surface]);
+
+  // Deep-link (design §5.E): the panel adopts the focusRequest and emits
+  // onFocusDocument, which runs the navigation below exactly once (no double
+  // navigate/highlight). The initialQuestionId prop is consumed once.
+  const [focusRequest, setFocusRequest] = useState<{ id: string; token: number } | null>(null);
+  const focusTokenRef = useRef(0);
+  const consumedInitialRef = useRef(false);
+  useEffect(() => {
+    if (consumedInitialRef.current || !initialQuestionId) return;
+    const item = visibleItems.find(i => i.id === initialQuestionId);
+    if (!item) return;
+    consumedInitialRef.current = true;
+    setSurface('open');
+    setFocusRequest({ id: item.id, token: ++focusTokenRef.current });
+  }, [initialQuestionId, visibleItems]);
+
+  const runState = deriveRunState({
+    busy,
+    checkpoint: checkpoint !== null,
+    autopilotRunning: autopilotStatus?.running === true,
+    openQuestions: pendingCount,
+    blocks: autopilotStatus?.blocks ?? 0,
+    lastError: turnStream.error ?? null,
+    passedCount: autopilotStatus?.passedCount ?? 0
+  });
+  const phaseName = autopilotStatus?.currentPhaseId ?? undefined;
+
+  /**
+   * §5.C trigger handler — the panel emits onFocusDocument on chip/pager
+   * click, open-onto-an-item, and deep-link adoption. Owns the doc navigation
+   * (selectPhaseByDocPath) + highlight state; applyAnchorHighlight in the
+   * effect above is the real doc-presence check once the target doc renders.
+   */
+  const handleFocusDocument = async (item: PortalItem): Promise<void> => {
+    if (!userDraggedRef.current && !ratioAnimatedRef.current) {
+      ratioAnimatedRef.current = true;
+      setRatioTransition(true);
+      setLeftPct(40);
+      window.setTimeout(() => setRatioTransition(false), 320);
+    }
+    const docName = item.docPath ? basename(item.docPath) : '';
+    if (!item.docPath || !docName) {
+      setHighlight(null);
+      return;
+    }
+    const ids = extractRequirementIds(`${item.title}\n${item.detail ?? ''}`);
+    const targetLoaded = selectedDocName === docName;
+    let id = pickAnchorId(ids, doc?.content ?? '');
+    if (!targetLoaded) {
+      await selectPhaseByDocPath(item.docPath);
+      // Cross-doc: presence can't be checked against the unloaded target, so
+      // carry the first candidate; the effect's applyAnchorHighlight verifies
+      // against the rendered doc (false positives degrade to "no highlight").
+      if (id === null && ids.length > 0) id = ids[0];
+    }
+    if (id) {
+      setHighlight({ id, docPath: item.docPath, token: ++highlightTokenRef.current });
+    } else {
+      setHighlight(null);
+      setAnnouncement(`Opened ${docName} — couldn't locate a requirement anchor in this document.`);
+    }
+  };
 
   // Quality example upload state
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
@@ -705,10 +900,67 @@ export default function DevelopmentView({
   const latestActivityText = lastActivityIdx >= 0 ? entries[lastActivityIdx].text : '';
 
   return (
-    <div className="grid h-full grid-cols-1 lg:grid-cols-2">
-      {/* ------------------------------ Chat pane ----------------------------- */}
-      <section className="flex min-h-0 flex-col border-r border-slate-800" aria-label="Agent conversation">
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 relative">
+    <div ref={rootRef} className="flex h-full min-h-0">
+      {/* ------------ Left pane: question surface covers the feed (§5.A) ------------ */}
+      <section
+        aria-label="Agent conversation"
+        style={leftStyle}
+        className={`relative flex min-h-0 flex-col border-r border-slate-800 grow lg:grow-0 ${leftIsRail ? '' : 'lg:min-w-[340px] lg:max-w-[calc(100%-340px)]'} ${
+          ratioTransition ? 'transition-[flex-basis] duration-300 motion-reduce:transition-none' : ''
+        } ${leftIsRail ? 'overflow-hidden' : ''}`}
+      >
+        {/* §5.I — collapse / Zen strip (lg+ only; below lg the chat stays single-pane) */}
+        <div className="hidden h-8 shrink-0 items-center gap-1 border-b border-slate-800 bg-slate-900/40 px-2 lg:flex">
+          <button
+            type="button"
+            onClick={() => setLeftCollapsed(true)}
+            aria-label="Collapse conversation pane"
+            title="Collapse conversation pane"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+          >
+            <PanelLeftClose className="h-4 w-4" aria-hidden />
+          </button>
+          {zenPane === 'left' ? (
+            <button
+              type="button"
+              onClick={() => setZenPane(null)}
+              aria-label="Exit focus conversation pane"
+              title="Exit focus conversation pane"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+            >
+              <Minimize2 className="h-4 w-4" aria-hidden />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setZenPane('left')}
+              aria-label="Focus conversation pane"
+              title="Focus conversation pane"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+            >
+              <Maximize2 className="h-4 w-4" aria-hidden />
+            </button>
+          )}
+        </div>
+
+        {leftIsRail && (
+          <div className="absolute inset-0 z-30 hidden w-11 flex-col items-center justify-center gap-2 bg-slate-900/95 lg:flex">
+            <button
+              type="button"
+              onClick={() => {
+                if (zenPane === 'right') setZenPane(null);
+                else setLeftCollapsed(false);
+              }}
+              aria-label="Expand conversation pane"
+              title="Expand conversation pane"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+            >
+              <PanelLeftOpen className="h-4 w-4" aria-hidden />
+            </button>
+          </div>
+        )}
+
+        <div ref={feedScrollRef} id="studio-feed" className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 relative">
           {entries.length === 0 && !busy && (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-500/30 bg-cyan-950/50">
@@ -905,11 +1157,81 @@ export default function DevelopmentView({
         </footer>
         {/* §8.8 — persistent live region owned by DevelopmentView; works with the panel closed */}
         <span role="status" aria-live="polite" className="sr-only">{announcement}</span>
+        {/* §5.A — the panel covers the feed inside the LEFT pane; the doc is never covered. */}
+        {surface !== 'closed' && (
+          <QuestionPanel
+            surface={surface}
+            items={visibleItems.filter(i => i.status === 'open')}
+            answerStates={answerStates}
+            onSubmit={handleQueueAnswer}
+            onDismiss={async (id) => {
+              setDismissedIds(prev => new Set(prev).add(id));
+              try {
+                await api.dismissPortalItem(id);
+              } catch {
+                // Roll back the local dismissal so the item stays visible/retryable
+                // (the 3s poll keeps returning it until the server accepts).
+                setDismissedIds(prev => {
+                  const next = new Set(prev);
+                  next.delete(id);
+                  return next;
+                });
+                setAnnouncement('Couldn’t dismiss that question — it will reappear.');
+              }
+            }}
+            onResume={async (docPath) => { try { await api.autopilotResume(docPath); } catch {} }}
+            onEditDoc={(docPath) => { setSurface('closed'); void selectPhaseByDocPath(docPath); setEditing(true); }}
+            selectedDocName={selectedDocName}
+            onOpenDocument={(docPath) => { setSurface('closed'); void selectPhaseByDocPath(docPath); }}
+            onMinimize={() => setSurface('minimized')}
+            onExpand={() => setSurface('open')}
+            onClose={() => setSurface('closed')}
+            onFocusDocument={handleFocusDocument}
+            onBackToQueue={() => onNavigate?.('dashboard')}
+            runState={runState}
+            phaseName={phaseName}
+            focusRequest={focusRequest}
+          />
+        )}
       </section>
 
+      {/* §5.I — pane divider (lg+ only; below lg the single chat pane stays full-width) */}
+      <div className="hidden lg:flex">
+        <PaneSplitter
+          leftPct={leftPct}
+          onChange={setLeftPct}
+          onCommit={persistSplit}
+          minPct={minPct}
+          maxPct={maxPct}
+        />
+      </div>
+
       {/* --------------------------- Document pane ---------------------------- */}
-      <section className="hidden min-h-0 flex-col lg:flex" aria-label="Document workspace">
-        <header className="flex items-center gap-2 border-b border-slate-800 bg-slate-900/40 px-3 py-2">
+      <section
+        aria-label="Document workspace"
+        style={rightStyle}
+        className={`relative hidden min-h-0 flex-col lg:flex ${rightIsRail ? '' : 'lg:min-w-[340px] lg:max-w-[calc(100%-340px)]'} ${
+          ratioTransition ? 'transition-[flex-basis] duration-300 motion-reduce:transition-none' : ''
+        } ${rightIsRail ? 'overflow-hidden' : ''}`}
+      >
+        {rightIsRail && (
+          <div className="absolute inset-0 z-30 hidden w-11 flex-col items-center justify-center gap-2 bg-slate-900/95 lg:flex">
+            <button
+              type="button"
+              onClick={() => {
+                if (zenPane === 'left') setZenPane(null);
+                else setDocCollapsed(false);
+              }}
+              aria-label="Expand document pane"
+              title="Expand document pane"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+            >
+              <PanelRightOpen className="h-4 w-4" aria-hidden />
+            </button>
+          </div>
+        )}
+
+        <header className="flex h-12 items-center gap-2 border-b border-slate-800 bg-slate-900/40 px-3">
           <FileText className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
 
           {/* Custom Document Selector Popover */}
@@ -970,10 +1292,58 @@ export default function DevelopmentView({
             )}
           </div>
 
-          <div className="ml-auto flex items-center gap-1.5">
+          {/* §5.G — 5-state rail folds onto the doc-header line (h-8 cluster) */}
+          <div className="flex min-w-0 flex-1 items-center">
+            <AutopilotHud
+              status={autopilotStatus}
+              enabled={autopilotStatus !== null || (turnStream as any).autopilotEnabled}
+              onStart={async () => {
+                try { await api.autopilotStart(); } catch {}
+              }}
+              onStop={async () => {
+                try { await api.autopilotStop(); } catch {}
+              }}
+              roadmap={roadmap}
+              onSelectPhase={(id) => {
+                // Rail dot click reuses the doc-dropdown phase-select pattern (design §5.F).
+                setEditing(false);
+                setSelectedPhase(id);
+                void (async () => {
+                  try {
+                    await api.setActivePhase(id);
+                    await onProjectChanged();
+                  } catch {}
+                })();
+              }}
+            />
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1.5">
+            {/* §5.B — folded quality-example drop zone: one Paperclip button, same file input */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".md,.txt,.pdf"
+              className="hidden"
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (file) void handleFileUpload(file);
+                e.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingExample || busy}
+              aria-label="Attach a quality example"
+              title="Attach a quality example"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40 disabled:opacity-40"
+            >
+              {uploadingExample ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Paperclip className="h-4 w-4" aria-hidden />}
+            </button>
             <button
               onClick={() => void refreshDoc()}
-              className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
               aria-label="Refresh document"
               title="Refresh document"
             >
@@ -1015,72 +1385,38 @@ export default function DevelopmentView({
                 Approve phase
               </button>
             )}
-          </div>
-        </header>
-
-        {/* S7: AutopilotHud progress rail — always visible when autopilot is enabled */}
-        <AutopilotHud
-          status={autopilotStatus}
-          enabled={autopilotStatus !== null || (turnStream as any).autopilotEnabled}
-          onStart={async () => {
-            try { await api.autopilotStart(); } catch {}
-          }}
-          onStop={async () => {
-            try { await api.autopilotStop(); } catch {}
-          }}
-          roadmap={roadmap}
-          onSelectPhase={(id) => {
-            // Rail dot click reuses the doc-dropdown phase-select pattern (design §5.F).
-            setEditing(false);
-            setSelectedPhase(id);
-            void (async () => {
-              try {
-                await api.setActivePhase(id);
-                await onProjectChanged();
-              } catch {}
-            })();
-          }}
-        />
-
-        {/* Quality example drop zone */}
-        <div
-          onDragOver={e => e.preventDefault()}
-          onDrop={e => {
-            e.preventDefault();
-            const file = e.dataTransfer.files?.[0];
-            if (file) void handleFileUpload(file);
-          }}
-          className="flex items-center justify-between border-b border-slate-800/80 bg-slate-950/40 px-3 py-1.5 text-xs text-slate-400"
-        >
-          <div className="flex items-center gap-2 truncate">
-            <Upload className="h-3.5 w-3.5 text-sky-400 shrink-0" />
-            <span className="truncate">
-              Drop example for <strong className="text-slate-200">{selectedPhaseInfo?.name ?? 'phase'}</strong> (.md, .txt, .pdf)
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept=".md,.txt,.pdf"
-              className="hidden"
-              onChange={e => {
-                const file = e.target.files?.[0];
-                if (file) void handleFileUpload(file);
-                e.target.value = '';
-              }}
-            />
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingExample || busy}
-              className="flex min-h-[32px] items-center gap-1 rounded border border-slate-700 bg-slate-900 px-2.5 py-0.5 text-[11px] font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-40"
+              onClick={() => setDocCollapsed(true)}
+              aria-label="Collapse document pane"
+              title="Collapse document pane"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
             >
-              {uploadingExample ? <Loader2 className="h-3 w-3 animate-spin" /> : <Paperclip className="h-3 w-3" />}
-              Choose file
+              <PanelRightClose className="h-4 w-4" aria-hidden />
             </button>
+            {zenPane === 'right' ? (
+              <button
+                type="button"
+                onClick={() => setZenPane(null)}
+                aria-label="Exit focus"
+                title="Exit focus"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+              >
+                <Minimize2 className="h-4 w-4" aria-hidden />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setZenPane('right')}
+                aria-label="Focus document pane"
+                title="Focus document pane"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+              >
+                <Maximize2 className="h-4 w-4" aria-hidden />
+              </button>
+            )}
           </div>
-        </div>
+        </header>
 
         {uploadNotice && (
           <p className={`border-b px-4 py-1.5 text-xs ${uploadNotice.startsWith('✔') ? 'border-emerald-900/60 bg-emerald-950/40 text-emerald-300' : 'border-rose-800/60 bg-rose-950/40 text-rose-300'}`}>
@@ -1094,7 +1430,16 @@ export default function DevelopmentView({
           </p>
         )}
 
-        <div className="relative min-h-0 flex-1">
+        {/* §5.B — drag/drop now lives on the doc body wrapper (the strip is folded) */}
+        <div
+          className="relative min-h-0 flex-1"
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => {
+            e.preventDefault();
+            const file = e.dataTransfer.files?.[0];
+            if (file) void handleFileUpload(file);
+          }}
+        >
           <div ref={docContentRef} className="h-full overflow-y-auto">
           {editing ? (
             <textarea
@@ -1105,7 +1450,7 @@ export default function DevelopmentView({
               className="h-full w-full resize-none bg-slate-950 p-4 font-mono text-[13px] leading-relaxed text-slate-200 focus:outline-none"
             />
           ) : doc ? (
-            <div className="p-5">
+            <div className={`px-6 py-4 ${docHasTable ? '' : 'max-w-[72ch]'}`}>
               <p className="mb-3 font-mono text-[11px] text-slate-500">{doc.path}</p>
               <Markdown content={doc.content} />
             </div>
@@ -1123,34 +1468,6 @@ export default function DevelopmentView({
             </div>
           )}
           </div>
-          <QuestionPanel
-            surface={surface}
-            items={visibleItems.filter(i => i.status === 'open')}
-            answerStates={answerStates}
-            onSubmit={handleQueueAnswer}
-            onDismiss={async (id) => {
-              setDismissedIds(prev => new Set(prev).add(id));
-              try {
-                await api.dismissPortalItem(id);
-              } catch {
-                // Roll back the local dismissal so the item stays visible/retryable
-                // (the 3s poll keeps returning it until the server accepts).
-                setDismissedIds(prev => {
-                  const next = new Set(prev);
-                  next.delete(id);
-                  return next;
-                });
-                setAnnouncement('Couldn’t dismiss that question — it will reappear.');
-              }
-            }}
-            onResume={async (docPath) => { try { await api.autopilotResume(docPath); } catch {} }}
-            onEditDoc={(docPath) => { setSurface('closed'); selectPhaseByDocPath(docPath); setEditing(true); }}
-            selectedDocName={roadmap.find(p => p.id === selectedPhase)?.artifactPath.split('/').pop()}
-            onOpenDocument={(docPath) => { setSurface('closed'); void selectPhaseByDocPath(docPath); }}
-            onMinimize={() => setSurface('minimized')}
-            onExpand={() => setSurface('open')}
-            onClose={() => setSurface('closed')}
-          />
         </div>
       </section>
     </div>

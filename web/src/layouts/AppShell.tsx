@@ -227,6 +227,10 @@ export default function AppShell() {
             project={project}
             onProjectChanged={refreshProject}
             initialPhase={studioPhase}
+            // Workstream C: state-based return path to the queue (design BC-5).
+            // initialQuestionId is optional and unwired until Workstream D lifts
+            // studioQuestionId (Dashboard onOpenQuestion wiring).
+            onNavigate={(t) => setTab(t as TabId)}
           />
         )}
 

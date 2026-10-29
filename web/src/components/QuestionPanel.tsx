@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
+  ArrowLeft,
   Check,
   CheckCircle2,
   Clock3,
@@ -15,6 +16,8 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { AnswerState, PortalItem } from '../types/api';
 import { renderDetail } from '../lib/portalDetail';
+import RunStateCluster from './RunStateCluster';
+import type { RunState } from '../lib/runState';
 
 export interface QuestionPanelProps {
   surface: 'closed' | 'open' | 'minimized';
@@ -31,6 +34,15 @@ export interface QuestionPanelProps {
   selectedDocName?: string;
   /** D5: close the panel, select the phase for docPath, and refresh the doc. */
   onOpenDocument?: (docPath: string) => void;
+  /** Workstream C: parent-owned doc navigation + highlight (chip click / open / deep-link). */
+  onFocusDocument?: (item: PortalItem) => void;
+  /** Design BC-5: state-based return path to the queue until URL routing lands. */
+  onBackToQueue?: () => void;
+  /** Compact run-state echo in the panel header (§5.A); renders only when provided. */
+  runState?: RunState;
+  phaseName?: string;
+  /** Parent-driven deep-link focus (design §5.E); token prevents re-adoption. */
+  focusRequest?: { id: string; token: number } | null;
 }
 
 /** §1.4.1 — per-phase chip visuals, keyed off the AnswerPhase union (moved from QuestionBar). */
@@ -71,7 +83,12 @@ export default function QuestionPanel({
   onExpand,
   onClose,
   selectedDocName,
-  onOpenDocument
+  onOpenDocument,
+  onFocusDocument,
+  onBackToQueue,
+  runState,
+  phaseName,
+  focusRequest
 }: QuestionPanelProps) {
   const [activeId, setActiveId] = useState<string>(items[0]?.id ?? '');
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -96,6 +113,8 @@ export default function QuestionPanel({
   const activeIdRef = useRef(activeId);
   const draftsRef = useRef(drafts);
   const onCloseRef = useRef(onClose);
+  const onFocusDocumentRef = useRef(onFocusDocument);
+  const consumedFocusRef = useRef<{ token: number } | null>(null);
 
   // Sync refs for the single window-level Escape listener so it never needs to
   // re-register when surface/draft/active-id change.
@@ -103,6 +122,7 @@ export default function QuestionPanel({
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
   useEffect(() => { draftsRef.current = drafts; }, [drafts]);
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useEffect(() => { onFocusDocumentRef.current = onFocusDocument; }, [onFocusDocument]);
 
   // Last-known item map. The snapshot effect needs the item even in the frame
   // where the poll drops it in the same batch as the applied state arrives.
@@ -191,6 +211,10 @@ export default function QuestionPanel({
 
   // Focus integrity (§8.8): open → composer (question) or first action button
   // (parked); minimize → Expand. Close → the parent's badge gets focus.
+  // Workstream C: opening onto an item also emits onFocusDocument so the parent
+  // scrolls + highlights the doc (§5.C trigger b). A pending deep-link
+  // focusRequest owns that emission instead (its adoption effect below runs in
+  // the same commit), so the doc navigates to the requested item exactly once.
   useEffect(() => {
     const prev = prevSurfaceRef.current;
     prevSurfaceRef.current = surface;
@@ -202,10 +226,29 @@ export default function QuestionPanel({
       } else {
         composerRef.current?.focus();
       }
+      if (!focusRequest) onFocusDocumentRef.current?.(item);
     } else if (surface === 'minimized' && prev !== 'minimized') {
       expandRef.current?.focus();
     }
-  }, [surface, items, activeId]);
+  }, [surface, items, activeId, focusRequest]);
+
+  // Parent-driven deep-link focus (§5.E): adopt the requested item once per
+  // token, focus per the existing open behavior, and emit onFocusDocument so
+  // the parent runs the doc navigation/highlight exactly once.
+  useEffect(() => {
+    if (!focusRequest) return;
+    if (consumedFocusRef.current?.token === focusRequest.token) return;
+    const item = items.find(i => i.id === focusRequest.id);
+    if (!item) return;
+    consumedFocusRef.current = { token: focusRequest.token };
+    setActiveId(item.id);
+    if (item.type === 'parked') {
+      parkedActionRef.current?.focus();
+    } else {
+      composerRef.current?.focus();
+    }
+    onFocusDocumentRef.current?.(item);
+  }, [focusRequest, items]);
 
   const showEmptyState =
     surface === 'open' && items.length === 0 && Object.keys(recentlyResolved).length === 0;
@@ -590,6 +633,18 @@ export default function QuestionPanel({
               {pagerIndex} of {items.length}
             </span>
           )}
+          {runState && <RunStateCluster runState={runState} phase={phaseName} />}
+          {onBackToQueue && (
+            <button
+              type="button"
+              onClick={onBackToQueue}
+              aria-label="Back to Open Actions"
+              className="flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-[11px] text-sky-400 transition hover:text-sky-300 focus:ring-2 focus:ring-sky-500/40"
+            >
+              <ArrowLeft className="h-3 w-3" aria-hidden />
+              Back to Open Actions
+            </button>
+          )}
           <div className="ml-auto flex shrink-0 items-center gap-1">
             {item?.docPath &&
               onOpenDocument &&
@@ -641,7 +696,10 @@ export default function QuestionPanel({
               <button
                 key={navItem.id}
                 type="button"
-                onClick={() => setActiveId(navItem.id)}
+                onClick={() => {
+                  setActiveId(navItem.id);
+                  onFocusDocument?.(navItem);
+                }}
                 aria-current={isActive ? 'true' : undefined}
                 className={`flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
                   isActive

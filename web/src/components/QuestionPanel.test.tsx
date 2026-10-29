@@ -250,4 +250,107 @@ describe('QuestionPanel', () => {
     expect(props.onSubmit).toHaveBeenCalledTimes(2);
     expect(props.onSubmit).toHaveBeenLastCalledWith('A', 'apply this fix');
   });
+
+  // ————— 11. Workstream C: onFocusDocument wiring —————
+  it('chip click: onFocusDocument fires with the clicked item', async () => {
+    const A = makeItem({ id: 'A', title: 'Question A' });
+    const B = makeItem({ id: 'B', title: 'Question B' });
+    const onFocusDocument = vi.fn();
+    const props = baseProps({ items: [A, B], onFocusDocument });
+    const { user } = renderWithUser(<QuestionPanel {...props} />);
+
+    const chipB = screen.getByRole('button', { name: /Question B/ });
+    await user.click(chipB);
+
+    expect(onFocusDocument).toHaveBeenCalledTimes(1);
+    expect(onFocusDocument).toHaveBeenCalledWith(B);
+  });
+
+  it('open onto an item: onFocusDocument fires for the active item once', () => {
+    const item = makeItem({ id: 'A', title: 'Question A', detail: 'About SS-09.a' });
+    const onFocusDocument = vi.fn();
+    const props = baseProps({ surface: 'closed', items: [item], onFocusDocument });
+    const view = renderWithUser(<QuestionPanel {...props} />);
+
+    expect(onFocusDocument).not.toHaveBeenCalled();
+
+    view.rerender(<QuestionPanel {...props} surface="open" />);
+    expect(onFocusDocument).toHaveBeenCalledTimes(1);
+    expect(onFocusDocument).toHaveBeenCalledWith(item);
+  });
+
+  it('mounted inside a left-pane wrapper keeps the region role and docked composer', () => {
+    renderWithUser(
+      <div className="relative flex min-h-0 flex-col">
+        <QuestionPanel {...baseProps()} />
+      </div>,
+    );
+
+    const region = screen.getByRole('region', { name: 'Questions from AI' });
+    expect(region).toHaveAttribute('id', 'question-panel');
+    expect(screen.getByLabelText('Your answer')).toBeInTheDocument();
+  });
+
+  // ————— 12. Back to Open Actions (design BC-5) —————
+  it('Back to Open Actions renders and calls onBackToQueue', async () => {
+    const onBackToQueue = vi.fn();
+    const props = baseProps({ onBackToQueue });
+    const { user } = renderWithUser(<QuestionPanel {...props} />);
+
+    const back = screen.getByRole('button', { name: 'Back to Open Actions' });
+    expect(back.textContent).toContain('Back to Open Actions');
+    await user.click(back);
+    expect(onBackToQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('Back to Open Actions is absent when onBackToQueue is omitted', () => {
+    renderWithUser(<QuestionPanel {...baseProps()} />);
+    expect(screen.queryByRole('button', { name: 'Back to Open Actions' })).not.toBeInTheDocument();
+  });
+
+  // ————— 13. Run-state echo in the panel header (design §5.A) —————
+  it('run-state echo renders RunStateCluster when runState is provided', () => {
+    const props = baseProps({ runState: 'waiting', phaseName: 'requirements' });
+    renderWithUser(<QuestionPanel {...props} />);
+
+    const cluster = screen.getByRole('status', { name: 'Agent status: Waiting for your answer' });
+    expect(cluster).toHaveAttribute('data-run-state', 'waiting');
+    expect(screen.getByText('requirements')).toBeInTheDocument();
+  });
+
+  it('run-state echo is absent when runState is omitted', () => {
+    renderWithUser(<QuestionPanel {...baseProps()} />);
+    expect(screen.queryByRole('status', { name: /Agent status/ })).not.toBeInTheDocument();
+  });
+
+  // ————— 14. focusRequest deep-link adoption (design §5.E) —————
+  it('focusRequest: adopts the item as active and emits onFocusDocument once per token', () => {
+    const A = makeItem({ id: 'A', title: 'Question A' });
+    const B = makeItem({ id: 'B', title: 'Question B' });
+    const onFocusDocument = vi.fn();
+    const props = baseProps({ items: [A, B], onFocusDocument });
+    const view = renderWithUser(<QuestionPanel {...props} />);
+
+    expect(screen.getByRole('button', { name: /Question A/ })).toHaveAttribute('aria-current', 'true');
+
+    view.rerender(<QuestionPanel {...props} focusRequest={{ id: 'B', token: 1 }} />);
+
+    expect(screen.getByRole('button', { name: /Question B/ })).toHaveAttribute('aria-current', 'true');
+    expect(onFocusDocument).toHaveBeenCalledTimes(1);
+    expect(onFocusDocument).toHaveBeenCalledWith(B);
+
+    // Same token again — no re-emit.
+    view.rerender(<QuestionPanel {...props} focusRequest={{ id: 'B', token: 1 }} />);
+    expect(onFocusDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('focusRequest for an unknown id is ignored without side effects', () => {
+    const onFocusDocument = vi.fn();
+    const props = baseProps({ onFocusDocument });
+    const view = renderWithUser(<QuestionPanel {...props} />);
+
+    view.rerender(<QuestionPanel {...props} focusRequest={{ id: 'nope', token: 2 }} />);
+
+    expect(onFocusDocument).not.toHaveBeenCalled();
+  });
 });

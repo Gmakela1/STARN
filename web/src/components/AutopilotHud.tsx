@@ -85,9 +85,11 @@ export default function AutopilotHud({
   });
   const approvedCount = items.filter(i => i.view.state === 'approved').length;
 
+  // §5.G — the HUD lives inline on the doc-header line as an h-8 cluster
+  // (no own row / border); the parent header supplies the row chrome.
   return (
-    <div className="bg-slate-900/80 border-b border-slate-800">
-      <div className="flex items-center gap-1.5 px-3 py-1.5">
+    <div>
+      <div className="flex h-8 items-center gap-1.5">
         {/* 5-state rail — replaces the old color-only 13-dot row */}
         <PhaseRail
           items={items}
