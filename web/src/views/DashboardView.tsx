@@ -26,7 +26,56 @@ import { PHASE_SUBTITLES } from '../components/roadmapMeta';
 const money = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
-export default function DashboardView({ onNavigate }: { onNavigate?: (tab: string) => void }) {
+/** Design §5.E: relative timestamp from an ISO-8601 string (pure, no dep). */
+function relativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+/** Basename of a docPath without pulling in node:path in the browser bundle. */
+function fileBase(p: string): string {
+  const segs = p.split('/');
+  return segs[segs.length - 1] || p;
+}
+
+/**
+ * Design §5.E J/K row navigation: move focus between the row buttons of one
+ * tier. Guarded so J/K never fires while typing in an input/textarea or a
+ * contenteditable (e.g. the question-panel composer).
+ */
+function handleRowKeydown(e: React.KeyboardEvent<HTMLDivElement>): void {
+  const target = e.target as HTMLElement;
+  const tag = target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
+  const key = e.key.toLowerCase();
+  if (key !== 'j' && key !== 'k') return;
+  const buttons = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('button'));
+  if (buttons.length === 0) return;
+  const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+  if (key === 'j') {
+    if (current + 1 < buttons.length) {
+      e.preventDefault();
+      buttons[current + 1].focus();
+    }
+  } else if (current > 0) {
+    e.preventDefault();
+    buttons[current - 1].focus();
+  }
+}
+
+export default function DashboardView({
+  onNavigate,
+  onOpenQuestion
+}: {
+  onNavigate?: (tab: string) => void;
+  onOpenQuestion?: (id: string) => void;
+}) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -133,24 +182,35 @@ export default function DashboardView({ onNavigate }: { onNavigate?: (tab: strin
             {label}
             <span className="ml-auto font-mono text-[11px] font-normal text-slate-500">{items.length}</span>
           </h3>
-          <ul className="divide-y divide-slate-800/70">
+          <div role="list" className="divide-y divide-slate-800/70" onKeyDown={handleRowKeydown}>
             {items.slice(0, 4).map(item => (
-              <li
-                key={item.id}
-                className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-slate-800/40"
-                onClick={() => {
-                  if (route && onNavigate) onNavigate(route);
-                }}
-              >
-                <p className="min-w-0 flex-1 truncate text-sm text-slate-300">{item.title}</p>
-                {item.docPath && (
-                  <span className="font-mono text-[11px] text-slate-500">
-                    {item.docPath.split('/').pop()}
-                  </span>
-                )}
-              </li>
+              <div key={item.id} role="listitem">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Deep-link into the question panel; fall back to the old
+                    // tab switch when no handler is wired (pre-Workstream D).
+                    if (onOpenQuestion) onOpenQuestion(item.id);
+                    else if (route && onNavigate) onNavigate(route);
+                  }}
+                  className="flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-slate-800/40 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-sky-500/40"
+                >
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="text-[11px] font-mono text-slate-500">
+                      STARN · needs input · {item.docPath ? fileBase(item.docPath) : 'unknown'}
+                    </div>
+                    <div className="truncate text-sm text-slate-200">{item.title}</div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5 self-center">
+                    <span className="text-[11px] text-slate-500 tabular-nums">
+                      {relativeTime(item.createdAt)}
+                    </span>
+                    <ArrowRight className="h-3 w-3 text-slate-600" aria-hidden />
+                  </div>
+                </button>
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
       );
     };

@@ -45,6 +45,7 @@ export default function AppShell() {
   const [buildSubTab, setBuildSubTab] = useState<BuildSubTab>('parts');
   const [vaultSubTab, setVaultSubTab] = useState<VaultSubTab>('library');
   const [studioPhase, setStudioPhase] = useState<string | undefined>(undefined);
+  const [studioQuestionId, setStudioQuestionId] = useState<string | undefined>(undefined);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
@@ -108,6 +109,19 @@ export default function AppShell() {
     setStudioPhase(phaseId);
     setTab('development');
   };
+
+  // Design §5.E: Dashboard needs-input rows deep-link into the studio with the
+  // question active. The id is handed to DevelopmentView (consumed once).
+  const handleOpenQuestion = (id: string) => {
+    setStudioQuestionId(id);
+    setTab('development');
+  };
+
+  // Design §5.E: clear the deep-link when leaving the studio so navigating
+  // back without a fresh question focus never re-triggers the one-shot effect.
+  useEffect(() => {
+    if (tab !== 'development') setStudioQuestionId(undefined);
+  }, [tab]);
 
   const runState = deriveRunState({
     busy: turnStream.busy,
@@ -217,7 +231,9 @@ export default function AppShell() {
 
       {/* Active Hub View */}
       <main key={projectRevision} className="min-h-0 flex-1 overflow-hidden">
-        {tab === 'dashboard' && <DashboardView onNavigate={(t) => setTab(t as TabId)} />}
+        {tab === 'dashboard' && (
+          <DashboardView onNavigate={(t) => setTab(t as TabId)} onOpenQuestion={handleOpenQuestion} />
+        )}
 
         {tab === 'roadmap' && <RoadmapView onSelectPhase={handleSelectPhase} />}
 
@@ -227,9 +243,8 @@ export default function AppShell() {
             project={project}
             onProjectChanged={refreshProject}
             initialPhase={studioPhase}
-            // Workstream C: state-based return path to the queue (design BC-5).
-            // initialQuestionId is optional and unwired until Workstream D lifts
-            // studioQuestionId (Dashboard onOpenQuestion wiring).
+            initialQuestionId={studioQuestionId}
+            // Workstream C/D: state-based return path to the queue (design BC-5).
             onNavigate={(t) => setTab(t as TabId)}
           />
         )}
