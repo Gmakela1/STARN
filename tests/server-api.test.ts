@@ -287,6 +287,33 @@ describe('HTTP Server API', () => {
     expect(json.data.items).toEqual([]);
   });
 
+  it('GET /api/portal archives persisted duplicate open questions (keeps oldest); dashboard excludes archived', async () => {
+    const state = stateManager.getState();
+    const mk = (id: string, createdAt: string) => ({
+      id,
+      type: 'question' as const,
+      severity: 'normal' as const,
+      docPath: 'docs/CONOPS.md',
+      title: 'What max voltage?',
+      status: 'open' as const,
+      source: 'autopilot' as const,
+      createdAt,
+      updatedAt: createdAt
+    });
+    state.portalItems = [mk('new', '2025-01-03T00:00:00.000Z'), mk('old', '2025-01-01T00:00:00.000Z')];
+    stateManager.saveState(state);
+
+    const { json } = await request(server, 'GET', '/api/portal?status=open');
+    expect(json.data.items.map((i: any) => i.id)).toEqual(['old']);
+
+    const persisted = stateManager.getState().portalItems!.find(i => i.id === 'new');
+    expect(persisted?.meta?.archived).toBe(true);
+
+    const dash = await request(server, 'GET', '/api/dashboard');
+    expect(dash.json.data.portalSummary.questions).toBe(1);
+    expect(dash.json.data.portalSummary.topItems.map((i: any) => i.id)).toEqual(['old']);
+  });
+
   it('POST /api/portal/:id/answer returns 404 for unknown item', async () => {
     const { status, json } = await request(server, 'POST', '/api/portal/nonexistent/answer', {
       answer: 'test answer'

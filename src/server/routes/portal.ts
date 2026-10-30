@@ -1,4 +1,4 @@
-import { listPortalItems, dismissPortalItem } from '../../core/question-portal.js';
+import { archiveDuplicateOpenPortalItems, listPortalItems, dismissPortalItem } from '../../core/question-portal.js';
 import { readJsonBody, ok, fail, sendJson, RouteModule } from './kit.js';
 
 export const portalModule: RouteModule = {
@@ -11,6 +11,8 @@ export const portalModule: RouteModule = {
       const status = url.searchParams.get('status') as any || undefined;
       const type = url.searchParams.get('type') as any || undefined;
       const phaseId = url.searchParams.get('phaseId') || undefined;
+      // Heal duplicates persisted by earlier runs before listing.
+      archiveDuplicateOpenPortalItems(deps.stateManager);
       const items = listPortalItems(deps.stateManager, { status, type, phaseId });
       return ok(res, { items });
     }

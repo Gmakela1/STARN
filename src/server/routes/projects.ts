@@ -110,7 +110,7 @@ export const projectsModule: RouteModule = {
           }));
 
       // Portal summary for dashboard
-      const portalItems = state.portalItems || [];
+      const portalItems = (state.portalItems || []).filter(i => i.meta?.archived !== true);
       const portalSummary = {
         blocking: portalItems.filter(i => i.severity === 'blocking' && i.status === 'open').length,
         parked: portalItems.filter(i => i.type === 'parked' && i.status === 'open').length,

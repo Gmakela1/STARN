@@ -22,8 +22,49 @@ function createItemId(): string {
   return `p_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
 
+function normalizeTitle(title: string): string {
+  return title.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function dedupeKey(item: Pick<PortalItem, 'type' | 'docPath' | 'title'>): string {
+  return JSON.stringify([item.type, item.docPath ?? '', normalizeTitle(item.title)]);
+}
+
 /**
- * Adds a portal item (or dedupes onto an open item in the same autopilot run).
+ * Pure: marks later open duplicates (same type + docPath + normalized title)
+ * `meta.archived = true`, keeping the OLDEST of each group. Answered,
+ * dismissed, resolved and already-archived items are never touched.
+ * Returns true when at least one item was changed (idempotent: a second call
+ * returns false).
+ */
+export function dedupeOpenPortalItems(items: PortalItem[]): boolean {
+  const open = items
+    .filter(item => item.status === 'open' && item.meta?.archived !== true)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const seen = new Set<string>();
+  let changed = false;
+  for (const item of open) {
+    const key = dedupeKey(item);
+    if (!seen.has(key)) {
+      seen.add(key);
+      continue;
+    }
+    item.meta = { ...(item.meta || {}), archived: true };
+    changed = true;
+  }
+  return changed;
+}
+
+/** Heals persisted duplicates: archives them and saves state only when something changed. */
+export function archiveDuplicateOpenPortalItems(manager: ProjectStateManager): void {
+  const state = manager.getState();
+  if (dedupeOpenPortalItems(state.portalItems || [])) {
+    manager.saveState(state);
+  }
+}
+
+/**
+ * Adds a portal item (or dedupes onto an existing open item with the same type, docPath and title).
  * Returns the stored PortalItem.
  */
 export function addPortalItem(manager: ProjectStateManager, input: PortalItemInput): PortalItem {
@@ -35,19 +76,14 @@ export function addPortalItem(manager: ProjectStateManager, input: PortalItemInp
     state.autopilot = defaultAutopilotState();
   }
 
-  // Dedupe: within the same autopilot run, an identical open question for the
-  // same docPath+title is returned as-is instead of creating a duplicate.
-  if (state.autopilot.running) {
-    const existing = state.portalItems.find(
-      item =>
-        item.status === 'open' &&
-        item.meta?.archived !== true &&
-        item.docPath === input.docPath &&
-        item.title === input.title
-    );
-    if (existing) {
-      return existing;
-    }
+  // Dedupe: an identical open question (same type, docPath and normalized
+  // title) is returned as-is instead of creating a duplicate — across runs too.
+  const key = dedupeKey(input);
+  const existing = state.portalItems.find(
+    item => item.status === 'open' && item.meta?.archived !== true && dedupeKey(item) === key
+  );
+  if (existing) {
+    return existing;
   }
 
   // Cap: never grow beyond MAX_PORTAL_ITEMS — archive the oldest open item
@@ -119,12 +155,12 @@ export function dismissPortalItem(manager: ProjectStateManager, id: string): Por
 }
 
 /**
- * Lists portal items, optionally filtered by status/type/phaseId. Sorted with
+ * Lists non-archived portal items, optionally filtered by status/type/phaseId. Sorted with
  * open items first, then by createdAt descending within each status bucket.
  */
 export function listPortalItems(manager: ProjectStateManager, filter?: PortalListFilter): PortalItem[] {
   const state = manager.getState();
-  let items = state.portalItems || [];
+  let items = (state.portalItems || []).filter(i => i.meta?.archived !== true);
 
   if (filter?.status !== undefined) {
     items = items.filter(i => i.status === filter.status);

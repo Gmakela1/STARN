@@ -8,7 +8,9 @@ import {
   answerPortalItem,
   dismissPortalItem,
   listPortalItems,
-  clearResolvedThread
+  clearResolvedThread,
+  dedupeOpenPortalItems,
+  archiveDuplicateOpenPortalItems
 } from '../src/core/question-portal.js';
 import { PortalItem } from '../src/workspace/types.js';
 
@@ -356,5 +358,109 @@ describe('question portal store', () => {
     expect(archived).toHaveLength(1);
     expect(archived[0].id).toBe('pre_0');
     expect(archived[0].status).toBe('open');
+  });
+
+  describe('cross-run dedupe', () => {
+    const base = {
+      type: 'question' as const,
+      severity: 'normal' as const,
+      docPath: 'docs/CONOPS.md',
+      title: 'What max voltage?',
+      source: 'autopilot' as const
+    };
+
+    function makeItem(over: Partial<PortalItem>): PortalItem {
+      return {
+        id: 'x',
+        type: 'question',
+        severity: 'normal',
+        docPath: 'docs/CONOPS.md',
+        title: 'What max voltage?',
+        status: 'open',
+        source: 'autopilot',
+        createdAt: '2025-01-01T00:00:00.000Z',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+        ...over
+      };
+    }
+
+    it('dedupes an identical open question even when autopilot is NOT running', () => {
+      expect(stateMgr.getState().autopilot!.running).toBe(false);
+      const first = addPortalItem(stateMgr, base);
+      const second = addPortalItem(stateMgr, base);
+      expect(second.id).toBe(first.id);
+      expect(listPortalItems(stateMgr)).toHaveLength(1);
+    });
+
+    it('dedupes titles that differ only by case and whitespace', () => {
+      const first = addPortalItem(stateMgr, base);
+      const second = addPortalItem(stateMgr, { ...base, title: '  what MAX   voltage? ' });
+      expect(second.id).toBe(first.id);
+    });
+
+    it('does not dedupe across different docPath or type', () => {
+      addPortalItem(stateMgr, base);
+      addPortalItem(stateMgr, { ...base, docPath: 'docs/ICD.md' });
+      addPortalItem(stateMgr, { ...base, type: 'flag' });
+      expect(listPortalItems(stateMgr)).toHaveLength(3);
+    });
+
+    it('does not dedupe onto an answered item', () => {
+      const first = addPortalItem(stateMgr, base);
+      answerPortalItem(stateMgr, first.id, '42V');
+      const second = addPortalItem(stateMgr, base);
+      expect(second.id).not.toBe(first.id);
+      expect(second.status).toBe('open');
+    });
+
+    it('dedupeOpenPortalItems keeps the oldest and archives later open duplicates', () => {
+      const items = [
+        makeItem({ id: 'new', createdAt: '2025-01-03T00:00:00.000Z' }),
+        makeItem({ id: 'old', createdAt: '2025-01-01T00:00:00.000Z' }),
+        makeItem({ id: 'mid', createdAt: '2025-01-02T00:00:00.000Z', title: ' WHAT max voltage?' })
+      ];
+      const changed = dedupeOpenPortalItems(items);
+      expect(changed).toBe(true);
+      expect(items.find(i => i.id === 'old')!.meta?.archived).toBeUndefined();
+      expect(items.find(i => i.id === 'mid')!.meta?.archived).toBe(true);
+      expect(items.find(i => i.id === 'new')!.meta?.archived).toBe(true);
+    });
+
+    it('dedupeOpenPortalItems never touches answered/dismissed items or different docPath/type', () => {
+      const items = [
+        makeItem({ id: 'a', createdAt: '2025-01-01T00:00:00.000Z' }),
+        makeItem({ id: 'answered', status: 'answered', createdAt: '2025-01-02T00:00:00.000Z' }),
+        makeItem({ id: 'dismissed', status: 'dismissed', createdAt: '2025-01-02T00:00:00.000Z' }),
+        makeItem({ id: 'other-doc', docPath: 'docs/ICD.md', createdAt: '2025-01-02T00:00:00.000Z' }),
+        makeItem({ id: 'other-type', type: 'flag', createdAt: '2025-01-02T00:00:00.000Z' })
+      ];
+      expect(dedupeOpenPortalItems(items)).toBe(false);
+      expect(items.every(i => i.meta?.archived === undefined)).toBe(true);
+    });
+
+    it('dedupeOpenPortalItems is idempotent', () => {
+      const items = [
+        makeItem({ id: 'old', createdAt: '2025-01-01T00:00:00.000Z' }),
+        makeItem({ id: 'new', createdAt: '2025-01-03T00:00:00.000Z' })
+      ];
+      expect(dedupeOpenPortalItems(items)).toBe(true);
+      expect(dedupeOpenPortalItems(items)).toBe(false);
+      expect(items.filter(i => i.meta?.archived === true)).toHaveLength(1);
+    });
+
+    it('archiveDuplicateOpenPortalItems persists the heal; listPortalItems hides archived items', () => {
+      const state = stateMgr.getState();
+      state.portalItems = [
+        makeItem({ id: 'old', createdAt: '2025-01-01T00:00:00.000Z' }),
+        makeItem({ id: 'new', createdAt: '2025-01-03T00:00:00.000Z' })
+      ];
+      stateMgr.saveState(state);
+
+      archiveDuplicateOpenPortalItems(stateMgr);
+
+      const reloaded = new ProjectStateManager(tmpDir).getState();
+      expect(reloaded.portalItems!.find(i => i.id === 'new')!.meta?.archived).toBe(true);
+      expect(listPortalItems(stateMgr).map(i => i.id)).toEqual(['old']);
+    });
   });
 });
