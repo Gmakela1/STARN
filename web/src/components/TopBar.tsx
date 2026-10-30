@@ -9,8 +9,9 @@ import {
   Wrench,
   X
 } from 'lucide-react';
-import type { ProjectInfo } from '../types/api';
+import type { ProjectInfo, RoadmapPhase } from '../types/api';
 import type { RunState } from '../lib/runState';
+import DocProgressBar from './DocProgressBar';
 import RunStateCluster from './RunStateCluster';
 
 /**
@@ -70,10 +71,14 @@ export interface TopBarProps {
   phase?: string;
   step?: string | null;
   connected: boolean;
-  /** Open question count — drives the hub badge (§5.E). */
-  openQuestions: number;
   mobileMenuOpen: boolean;
   onToggleMobileMenu: () => void;
+  /** DocProgressBar props — replaces the old openQuestions badge (§5.E). */
+  progressPhases: RoadmapPhase[];
+  progressDocStatus: Record<string, string>;
+  progressTotalPhases: number;
+  progressOpenQuestions: number;
+  onNavigateToDashboard: () => void;
 }
 
 export function TopBar({
@@ -84,9 +89,13 @@ export function TopBar({
   phase,
   step,
   connected,
-  openQuestions,
   mobileMenuOpen,
-  onToggleMobileMenu
+  onToggleMobileMenu,
+  progressPhases,
+  progressDocStatus,
+  progressTotalPhases,
+  progressOpenQuestions,
+  onNavigateToDashboard
 }: TopBarProps) {
   const activePhase = phase ?? project?.activePhase;
 
@@ -128,7 +137,6 @@ export function TopBar({
       >
         {HUBS.map(({ id, label, tagline, icon: Icon }) => {
           const active = tab === id;
-          const badgeVisible = id === 'development' && openQuestions > 0;
           return (
             <button
               key={id}
@@ -137,7 +145,7 @@ export function TopBar({
               aria-selected={active}
               onClick={() => onSelectTab(id)}
               title={tagline}
-              aria-label={badgeVisible ? `${label}, ${openQuestions} needs input` : `${label} — ${tagline}`}
+              aria-label={`${label} — ${tagline}`}
               className={`group flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-all xl:text-sm ${
                 active
                   ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shadow-sm'
@@ -151,21 +159,20 @@ export function TopBar({
                 aria-hidden
               />
               <span className="hidden xl:inline font-bold leading-tight whitespace-nowrap">{label}</span>
-              {badgeVisible && (
-                <span
-                  className="ml-1 inline-flex items-center justify-center rounded-full bg-amber-500/20 border border-amber-500/40 px-1.5 text-[10px] font-bold text-amber-300"
-                  aria-hidden
-                >
-                  {openQuestions}
-                </span>
-              )}
             </button>
           );
         })}
       </div>
 
-      {/* Right — run-state cluster + active phase + connection (always visible) */}
+      {/* Right — DocProgressBar + run-state cluster + active phase + connection (always visible) */}
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <DocProgressBar
+          phases={progressPhases}
+          docStatus={progressDocStatus}
+          totalPhases={progressTotalPhases}
+          openQuestions={progressOpenQuestions}
+          onNavigateToDashboard={onNavigateToDashboard}
+        />
         <RunStateCluster runState={runState} phase={phase} step={step} />
 
         {activePhase && (

@@ -10,7 +10,7 @@ import {
   X
 } from 'lucide-react';
 import { api } from '../api/client';
-import { AutopilotStatusResponse, ProjectInfo } from '../types/api';
+import { AutopilotStatusResponse, ProjectInfo, RoadmapPhase } from '../types/api';
 import { useTurnStream } from '../api/useTurnStream';
 import { TopBar, HUBS } from '../components/TopBar';
 import type { TabId } from '../components/TopBar';
@@ -53,6 +53,7 @@ export default function AppShell() {
   const [projectRevision, setProjectRevision] = useState(0);
   const [runStatus, setRunStatus] = useState<AutopilotStatusResponse | null>(null);
   const [openQuestions, setOpenQuestions] = useState(0);
+  const [roadmap, setRoadmap] = useState<RoadmapPhase[]>([]);
   const turnStream = useTurnStream();
 
   const refreshProject = async () => {
@@ -76,9 +77,19 @@ export default function AppShell() {
     if (portalResult.status === 'fulfilled') setOpenQuestions(portalResult.value.items.length);
   };
 
+  const refreshRoadmap = async () => {
+    try {
+      const data = await api.fetchRoadmap();
+      setRoadmap(data);
+    } catch {
+      // Silently ignore — roadmap will be empty if unavailable.
+    }
+  };
+
   useEffect(() => {
     void refreshProject();
     void refreshRunStatus();
+    void refreshRoadmap();
     // Restore a pending checkpoint after a page reload / reconnect.
     api.fetchPendingCheckpoint()
       .then(cp => {
@@ -89,6 +100,7 @@ export default function AppShell() {
     const interval = setInterval(() => {
       void refreshProject();
       void refreshRunStatus();
+      void refreshRoadmap();
     }, 15000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -144,9 +156,13 @@ export default function AppShell() {
         phase={runStatus?.currentPhaseId ?? project?.activePhase}
         step={turnStream.status}
         connected={connected}
-        openQuestions={openQuestions}
         mobileMenuOpen={mobileMenuOpen}
         onToggleMobileMenu={() => setMobileMenuOpen(prev => !prev)}
+        progressPhases={roadmap}
+        progressDocStatus={runStatus?.docStatus ?? {}}
+        progressTotalPhases={runStatus?.totalPhases ?? 13}
+        progressOpenQuestions={openQuestions}
+        onNavigateToDashboard={() => setTab('dashboard')}
       />
 
       {/* Mobile Navigation Drawer (< 1024px) */}

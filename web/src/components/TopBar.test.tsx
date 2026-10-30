@@ -3,12 +3,11 @@ import { screen, within } from '@testing-library/react';
 import { renderWithUser } from '../test/render';
 import { TopBar } from './TopBar';
 import type { TopBarProps } from './TopBar';
-import type { ProjectInfo } from '../types/api';
+import type { ProjectInfo, RoadmapPhase } from '../types/api';
 
 /**
  * TopBar (design §5.G + §5.E + §5.H).
- * ONE 56px header: brand · tablist · run-state cluster. The cluster is
- * shrink-0 and always visible — never inside the overflow region.
+ * ONE 56px header: brand · tablist · DocProgressBar · run-state cluster.
  */
 
 const project = {
@@ -23,21 +22,30 @@ const project = {
   financials: { totalEstimated: 0, totalActual: 0, netVariance: 0, procurementProgressPercent: 0 },
 } as ProjectInfo;
 
+const defaultPhases: RoadmapPhase[] = [
+  { id: 'SS-01', name: 'SS-01', status: 'COMPLETED', artifactPath: '', contentHash: null, docExists: false, openQuestions: 0 },
+];
+
 function setup(overrides: Partial<TopBarProps> = {}) {
   const onSelectTab = vi.fn();
   const onToggleMobileMenu = vi.fn();
+  const onNavigateToDashboard = vi.fn();
   const props: TopBarProps = {
     project,
     tab: 'development',
     onSelectTab,
     runState: 'ready',
     connected: true,
-    openQuestions: 0,
     mobileMenuOpen: false,
     onToggleMobileMenu,
+    progressPhases: defaultPhases,
+    progressDocStatus: {},
+    progressTotalPhases: 13,
+    progressOpenQuestions: 0,
+    onNavigateToDashboard,
     ...overrides,
   };
-  return { ...renderWithUser(<TopBar {...props} />), onSelectTab, onToggleMobileMenu };
+  return { ...renderWithUser(<TopBar {...props} />), onSelectTab, onToggleMobileMenu, onNavigateToDashboard };
 }
 
 describe('TopBar', () => {
@@ -97,16 +105,12 @@ describe('TopBar', () => {
     expect(cluster.parentElement?.className).toContain('shrink-0');
   });
 
-  it('shows no hub badge when there are no open questions', () => {
-    setup({ openQuestions: 0 });
-    const devTab = screen.getByRole('tab', { name: /Engineering Studio/ });
-    expect(within(devTab).queryByText('0')).toBeNull();
-  });
-
-  it('shows the needs-input count badge on the Engineering Studio tab', () => {
-    setup({ openQuestions: 2 });
-    const devTab = screen.getByRole('tab', { name: 'Engineering Studio, 2 needs input' });
-    expect(within(devTab).getByText('2')).toBeInTheDocument();
+  it('renders DocProgressBar as a progressbar in the right section', () => {
+    setup({ progressOpenQuestions: 3 });
+    const bar = screen.getByRole('progressbar');
+    expect(bar).toBeInTheDocument();
+    // Should be outside the tablist
+    expect(bar.closest('[role="tablist"]')).toBeNull();
   });
 
   it('reflects mobileMenuOpen on the hamburger and fires the toggle', async () => {
@@ -138,9 +142,13 @@ function baseProps(overrides: Partial<TopBarProps> = {}): TopBarProps {
     onSelectTab: vi.fn(),
     runState: 'ready',
     connected: true,
-    openQuestions: 0,
     mobileMenuOpen: false,
     onToggleMobileMenu: vi.fn(),
+    progressPhases: defaultPhases,
+    progressDocStatus: {},
+    progressTotalPhases: 13,
+    progressOpenQuestions: 0,
+    onNavigateToDashboard: vi.fn(),
     ...overrides,
   };
 }
