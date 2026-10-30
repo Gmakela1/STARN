@@ -204,11 +204,57 @@ describe('DocProgressBar component', () => {
     });
   });
 
+  it('exposes a keyboard-focusable button trigger named by the progress label', () => {
+    setup();
+    const trigger = screen.getByRole('button', {
+      name: 'Project progress: 3 of 13 documents approved',
+    });
+    expect(trigger).toHaveAttribute('type', 'button');
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).not.toHaveAttribute('tabindex', '-1');
+    expect(trigger).toContainElement(screen.getByRole('progressbar'));
+  });
+
+  it('keyboard Enter and Space toggle the popover and aria-expanded', async () => {
+    const { user } = setup();
+    const trigger = screen.getByRole('button', { name: /Project progress/ });
+
+    await user.tab();
+    expect(trigger).toHaveFocus();
+
+    await user.keyboard('{Enter}');
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const dialog = screen.getByRole('dialog', { name: 'Project status details' });
+    expect(dialog.id).not.toBe('');
+    expect(trigger).toHaveAttribute('aria-controls', dialog.id);
+
+    await user.keyboard(' ');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('dialog', { name: 'Project status details' })).toBeNull();
+  });
+
+  it('Escape closes the popover and returns focus to the trigger', async () => {
+    const { user } = setup();
+    const trigger = screen.getByRole('button', { name: /Project progress/ });
+    await user.click(trigger);
+    const viewButton = screen.getByRole('button', { name: /View full status report/i });
+    viewButton.focus();
+    expect(viewButton).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Project status details' })).toBeNull();
+    });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveFocus();
+  });
+
   it('calls onNavigateToDashboard when clicking view full status report', async () => {
     const { user, onNavigateToDashboard } = setup();
 
-    const bar = screen.getByRole('progressbar');
-    await user.click(bar);
+    await user.click(screen.getByRole('button', { name: /Project progress/ }));
 
     const viewButton = screen.getByRole('button', { name: /View full status report/i });
     await user.click(viewButton);

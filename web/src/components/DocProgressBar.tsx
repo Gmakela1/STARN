@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { RoadmapPhase } from '../types/api';
 
 export interface DocProgressBarProps {
@@ -58,9 +58,12 @@ export default function DocProgressBar({
   const [popoverOpen, setPopoverOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverId = useId();
 
   const progress = computeProgress(phases, docStatus);
   const total = totalPhases || 13;
+  const progressLabel = `Project progress: ${progress.greenCount} of ${total} documents approved`;
 
   const greenPct = total > 0 ? (progress.greenCount / total) * 100 : 0;
   const draftedPct = total > 0 ? (progress.drafted / total) * 100 : 0;
@@ -79,7 +82,10 @@ export default function DocProgressBar({
 
   // Close popover on Escape
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') setPopoverOpen(false);
+    if (e.key === 'Escape') {
+      setPopoverOpen(false);
+      triggerRef.current?.focus();
+    }
   }, []);
 
   useEffect(() => {
@@ -95,40 +101,51 @@ export default function DocProgressBar({
 
   return (
     <div className="relative flex items-center gap-2" ref={containerRef}>
-      {/* Progress bar */}
-      <div
-        role="progressbar"
-        aria-valuenow={progress.greenCount}
-        aria-valuemin={0}
-        aria-valuemax={total}
-        aria-label={`Project progress: ${progress.greenCount} of ${total} documents approved`}
-        className="h-6 w-28 cursor-pointer overflow-hidden rounded bg-slate-700 sm:w-36"
+      {/* Progress bar trigger */}
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={popoverOpen}
+        aria-controls={popoverId}
+        aria-label={progressLabel}
         onClick={() => setPopoverOpen((prev) => !prev)}
+        className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
       >
-        <div className="flex h-full w-full">
-          {greenPct > 0 && (
-            <div
-              className="h-full bg-emerald-500 transition-all"
-              style={{ width: `${greenPct}%` }}
-            />
-          )}
-          {draftedPct > 0 && (
-            <div
-              className="h-full"
-              style={{
-                width: `${draftedPct}%`,
-                background:
-                  'repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(56,189,248,0.5) 4px,rgba(56,189,248,0.5) 8px)',
-              }}
-            />
-          )}
+        <div
+          role="progressbar"
+          aria-valuenow={progress.greenCount}
+          aria-valuemin={0}
+          aria-valuemax={total}
+          aria-label={progressLabel}
+          className="h-6 w-28 overflow-hidden rounded bg-slate-700 sm:w-36"
+        >
+          <div className="flex h-full w-full">
+            {greenPct > 0 && (
+              <div
+                className="h-full bg-emerald-500 transition-all"
+                style={{ width: `${greenPct}%` }}
+              />
+            )}
+            {draftedPct > 0 && (
+              <div
+                className="h-full"
+                style={{
+                  width: `${draftedPct}%`,
+                  background:
+                    'repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(56,189,248,0.5) 4px,rgba(56,189,248,0.5) 8px)',
+                }}
+              />
+            )}
+          </div>
         </div>
-      </div>
+      </button>
 
       {/* Popover */}
       {popoverOpen && (
         <div
           ref={popoverRef}
+          id={popoverId}
           role="dialog"
           aria-label="Project status details"
           className="absolute top-full right-0 z-50 mt-2 w-72 rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl sm:left-auto max-sm:left-0 max-sm:right-0"
