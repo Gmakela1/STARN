@@ -1181,7 +1181,6 @@ export default function DevelopmentView({
             onEditDoc={(docPath) => { setSurface('closed'); void selectPhaseByDocPath(docPath); setEditing(true); }}
             selectedDocName={selectedDocName}
             onOpenDocument={(docPath) => { setSurface('closed'); void selectPhaseByDocPath(docPath); }}
-            onMinimize={() => setSurface('closed')}
             onExpand={() => setSurface('open')}
             onClose={() => setSurface('closed')}
             onFocusDocument={handleFocusDocument}

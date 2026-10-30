@@ -8,7 +8,6 @@ import {
   Loader2,
   Maximize2,
   MessageSquare,
-  Minimize2,
   RotateCcw,
   TriangleAlert,
   X
@@ -27,7 +26,6 @@ export interface QuestionPanelProps {
   onDismiss: (id: string) => Promise<void>;
   onResume: (docPath: string) => Promise<void>;
   onEditDoc: (docPath: string) => void;
-  onMinimize: () => void;
   onExpand: () => void;
   onClose: () => void;
   /** Basename of the currently selected doc; gates the header "Open document" affordance (D5). */
@@ -79,7 +77,6 @@ export default function QuestionPanel({
   onDismiss,
   onResume,
   onEditDoc,
-  onMinimize,
   onExpand,
   onClose,
   selectedDocName,
@@ -660,19 +657,6 @@ export default function QuestionPanel({
                 Open document
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => {
-                // §8.2: minimize with nothing to show collapses to closed.
-                if (items.length === 0) onClose();
-                else onMinimize();
-              }}
-              aria-label="Minimize questions"
-              title="Minimize questions (keeps your draft)"
-              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
-            >
-              <Minimize2 className="h-4 w-4" aria-hidden />
-            </button>
             <button
               type="button"
               onClick={onClose}

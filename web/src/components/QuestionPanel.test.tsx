@@ -33,7 +33,6 @@ function baseProps(overrides: Partial<QuestionPanelProps> = {}): QuestionPanelPr
     onDismiss: vi.fn(async () => {}),
     onResume: vi.fn(async () => {}),
     onEditDoc: vi.fn(),
-    onMinimize: vi.fn(),
     onExpand: vi.fn(),
     onClose: vi.fn(),
     ...overrides,
@@ -42,7 +41,7 @@ function baseProps(overrides: Partial<QuestionPanelProps> = {}): QuestionPanelPr
 
 describe('QuestionPanel', () => {
   // ————— 1. BUG 1 regression: minimized strip Expand must call onExpand —————
-  it('minimized: "Expand questions" calls onExpand and NOT onMinimize', async () => {
+  it('minimized: "Expand questions" calls onExpand', async () => {
     const props = baseProps({ surface: 'minimized' });
     const { user } = renderWithUser(<QuestionPanel {...props} />);
 
@@ -50,7 +49,6 @@ describe('QuestionPanel', () => {
     await user.click(expandBtn);
 
     expect(props.onExpand).toHaveBeenCalledTimes(1);
-    expect(props.onMinimize).not.toHaveBeenCalled();
   });
 
   it('minimized: shows active title and "Close questions" calls onClose', async () => {
@@ -70,16 +68,14 @@ describe('QuestionPanel', () => {
   });
 
   // ————— 3. Open surface structure —————
-  it('open: renders region with id/aria-label, header Minimize closes via callbacks', async () => {
+  it('open: renders region with id/aria-label; header has only a Close button', async () => {
     const props = baseProps();
     const { user } = renderWithUser(<QuestionPanel {...props} />);
 
     const region = screen.getByRole('region', { name: 'Questions from AI' });
     expect(region).toHaveAttribute('id', 'question-panel');
 
-    const minimizeBtn = screen.getByRole('button', { name: 'Minimize questions' });
-    await user.click(minimizeBtn);
-    expect(props.onMinimize).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /minimize/i })).not.toBeInTheDocument();
 
     const closeBtn = screen.getByRole('button', { name: 'Close questions' });
     await user.click(closeBtn);
