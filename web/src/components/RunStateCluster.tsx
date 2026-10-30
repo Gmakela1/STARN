@@ -15,6 +15,10 @@ export interface RunStateClusterProps {
   phase?: string;
   /** Current step from `turnStream.status`; renders only when non-empty. */
   step?: string | null;
+  /** Failed state only: says what is wrong instead of the generic word. */
+  detail?: string;
+  /** Failed state only: longer reason, exposed as a tooltip on the detail. */
+  detailTitle?: string;
 }
 
 const STATE_VIEW: Record<RunState, { word: string; text: string }> = {
@@ -40,20 +44,25 @@ function markerFor(runState: RunState): ReactNode {
   }
 }
 
-export default function RunStateCluster({ runState, phase, step }: RunStateClusterProps) {
+export default function RunStateCluster({ runState, phase, step, detail, detailTitle }: RunStateClusterProps) {
   const view = STATE_VIEW[runState];
+  const hasDetail = runState === 'failed' && typeof detail === 'string' && detail.length > 0;
+  const word = hasDetail ? detail : view.word;
+  const wordTitle = hasDetail ? detailTitle : undefined;
   const hasStep = typeof step === 'string' && step.length > 0;
 
   return (
     <span
       role="status"
       data-run-state={runState}
-      aria-label={`Agent status: ${view.word}`}
+      aria-label={`Agent status: ${word}`}
       className="inline-flex min-w-0 items-center gap-1.5"
     >
       <span className="inline-flex shrink-0 items-center gap-1.5">
         {markerFor(runState)}
-        <span className={`whitespace-nowrap text-xs font-semibold ${view.text}`}>{view.word}</span>
+        <span className={`whitespace-nowrap text-xs font-semibold ${view.text}`} title={wordTitle}>
+          {word}
+        </span>
       </span>
 
       {phase ? (

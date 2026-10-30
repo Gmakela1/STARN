@@ -41,7 +41,6 @@ function setup(overrides: Partial<TopBarProps> = {}) {
     progressPhases: defaultPhases,
     progressDocStatus: {},
     progressTotalPhases: 13,
-    progressOpenQuestions: 0,
     onNavigateToDashboard,
     ...overrides,
   };
@@ -106,11 +105,34 @@ describe('TopBar', () => {
   });
 
   it('renders DocProgressBar as a progressbar in the right section', () => {
-    setup({ progressOpenQuestions: 3 });
+    setup();
     const bar = screen.getByRole('progressbar');
     expect(bar).toBeInTheDocument();
     // Should be outside the tablist
     expect(bar.closest('[role="tablist"]')).toBeNull();
+  });
+
+  it('stacks the header above page content (z-40, relative)', () => {
+    const { container } = setup();
+    const cls = container.querySelector('header')?.className ?? '';
+    expect(cls).toContain('relative');
+    expect(cls).toContain('z-40');
+  });
+
+  it('hides the active-phase pill when it duplicates the run-state phase chip', () => {
+    setup({ phase: 'SS-01' });
+    expect(screen.getAllByText('SS-01')).toHaveLength(1);
+  });
+
+  it('shows the active-phase pill when it differs from the run-state phase', () => {
+    setup({ phase: 'BOM' });
+    expect(screen.getByText('BOM')).toBeInTheDocument();
+    expect(screen.getByText('SS-01')).toBeInTheDocument();
+  });
+
+  it('forwards failed detail to the run-state cluster', () => {
+    setup({ runState: 'failed', runDetail: '2 documents parked' });
+    expect(screen.getByText('2 documents parked')).toBeInTheDocument();
   });
 
   it('reflects mobileMenuOpen on the hamburger and fires the toggle', async () => {
@@ -147,7 +169,6 @@ function baseProps(overrides: Partial<TopBarProps> = {}): TopBarProps {
     progressPhases: defaultPhases,
     progressDocStatus: {},
     progressTotalPhases: 13,
-    progressOpenQuestions: 0,
     onNavigateToDashboard: vi.fn(),
     ...overrides,
   };

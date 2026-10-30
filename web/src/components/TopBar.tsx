@@ -70,6 +70,9 @@ export interface TopBarProps {
   runState: RunState;
   phase?: string;
   step?: string | null;
+  /** Failed-state explanation shown instead of the generic word. */
+  runDetail?: string;
+  runDetailTitle?: string;
   connected: boolean;
   mobileMenuOpen: boolean;
   onToggleMobileMenu: () => void;
@@ -77,7 +80,6 @@ export interface TopBarProps {
   progressPhases: RoadmapPhase[];
   progressDocStatus: Record<string, string>;
   progressTotalPhases: number;
-  progressOpenQuestions: number;
   onNavigateToDashboard: () => void;
 }
 
@@ -88,19 +90,22 @@ export function TopBar({
   runState,
   phase,
   step,
+  runDetail,
+  runDetailTitle,
   connected,
   mobileMenuOpen,
   onToggleMobileMenu,
   progressPhases,
   progressDocStatus,
   progressTotalPhases,
-  progressOpenQuestions,
   onNavigateToDashboard
 }: TopBarProps) {
-  const activePhase = phase ?? project?.activePhase;
+  // The cluster already shows `phase`; only show the project stage pill when it differs.
+  const activePhase = project?.activePhase;
+  const showActivePhase = Boolean(activePhase) && activePhase !== phase;
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-slate-800 bg-slate-900/80 px-4 backdrop-blur-md">
+    <header className="relative z-40 flex h-14 shrink-0 items-center gap-3 border-b border-slate-800 bg-slate-900/80 px-4 backdrop-blur-md">
       {/* Left — hamburger (< lg) + brand + project */}
       <div className="flex shrink-0 items-center gap-3">
         <button
@@ -170,12 +175,17 @@ export function TopBar({
           phases={progressPhases}
           docStatus={progressDocStatus}
           totalPhases={progressTotalPhases}
-          openQuestions={progressOpenQuestions}
           onNavigateToDashboard={onNavigateToDashboard}
         />
-        <RunStateCluster runState={runState} phase={phase} step={step} />
+        <RunStateCluster
+          runState={runState}
+          phase={phase}
+          step={step}
+          detail={runDetail}
+          detailTitle={runDetailTitle}
+        />
 
-        {activePhase && (
+        {showActivePhase && (
           <span
             className="inline-flex items-center rounded-full border border-cyan-500/40 bg-cyan-950/50 px-3 py-1 text-xs font-semibold text-cyan-300 shadow-sm"
             title={`Active Project Stage: ${activePhase}`}

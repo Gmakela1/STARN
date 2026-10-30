@@ -12,11 +12,14 @@ export const autopilotModule: RouteModule = {
       const autopilotState = state.autopilot || { running: false, docStatus: {}, revisionsUsed: {}, blocks: 0 };
       const docStatus = autopilotState.docStatus || {};
       const passedCount = Object.values(docStatus).filter(v => v === 'passed').length;
+      // Single source of truth: the stored counter is never decremented on
+      // dismiss/auto-approve, so derive blocks from currently parked docs.
+      const blocks = Object.values(docStatus).filter(v => v === 'parked').length;
       return ok(res, {
         enabled: deps.autopilotEnabled ?? true,
         running: autopilotState.running ?? false,
         docStatus,
-        blocks: autopilotState.blocks ?? 0,
+        blocks,
         currentPhaseId: autopilotState.currentPhaseId,
         passedCount,
         totalPhases: 13

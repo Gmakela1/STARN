@@ -29,7 +29,7 @@ function makePhases(
 }
 
 describe('computeProgress', () => {
-  it('subtracts open questions from greenCount (5 approved, 2 open -> greenCount=3)', () => {
+  it('counts every approved doc as green regardless of open questions (5 approved -> greenCount=5)', () => {
     const phases = makePhases({
       'SS-01': { status: 'COMPLETED' },
       'SS-02': { status: 'COMPLETED' },
@@ -37,32 +37,18 @@ describe('computeProgress', () => {
       'SS-04': { status: 'COMPLETED' },
       'SS-05': { status: 'COMPLETED' },
     });
-    const result = computeProgress(phases, {}, 2);
+    const result = computeProgress(phases, {});
     expect(result.approved).toBe(5);
-    expect(result.greenCount).toBe(3);
+    expect(result.greenCount).toBe(5);
     expect(result.drafted).toBe(0);
     expect(result.notStarted).toBe(8);
-    expect(result.openQuestions).toBe(2);
+    expect('openQuestions' in result).toBe(false);
   });
 
-  it('floors greenCount at 0 when open questions exceed approved (3 approved, 7 open)', () => {
-    const phases = makePhases({
-      'SS-01': { status: 'COMPLETED' },
-      'SS-02': { status: 'COMPLETED' },
-      'SS-03': { status: 'COMPLETED' },
-    });
-    const result = computeProgress(phases, {}, 7);
-    expect(result.approved).toBe(3);
-    expect(result.greenCount).toBe(0);
-    expect(result.drafted).toBe(0);
-    expect(result.notStarted).toBe(10);
-    expect(result.openQuestions).toBe(7);
-  });
-
-  it('all approved, zero open questions -> greenCount=13, drafted=0, notStarted=0', () => {
+  it('all approved -> greenCount=13, drafted=0, notStarted=0', () => {
     const phases = makePhases();
     const allCompleted = phases.map((p) => ({ ...p, status: 'COMPLETED' as const }));
-    const result = computeProgress(allCompleted, {}, 0);
+    const result = computeProgress(allCompleted, {});
     expect(result.approved).toBe(13);
     expect(result.greenCount).toBe(13);
     expect(result.drafted).toBe(0);
@@ -73,12 +59,12 @@ describe('computeProgress', () => {
     const phases = makePhases({
       'SS-01': { docExists: true },
     });
-    const result1 = computeProgress(phases, null, 0);
+    const result1 = computeProgress(phases, null);
     expect(result1.approved).toBe(0);
     expect(result1.drafted).toBe(1);
     expect(result1.notStarted).toBe(12);
 
-    const result2 = computeProgress(phases, {}, 0);
+    const result2 = computeProgress(phases, {});
     expect(result2.approved).toBe(0);
     expect(result2.drafted).toBe(1);
   });
@@ -90,7 +76,7 @@ describe('computeProgress', () => {
       'SS-02': 'auto-approved',
       'SS-03': 'drafted',
     };
-    const result = computeProgress(phases, docStatus, 0);
+    const result = computeProgress(phases, docStatus);
     expect(result.approved).toBe(2);
     expect(result.drafted).toBe(1);
     expect(result.notStarted).toBe(10);
@@ -100,7 +86,7 @@ describe('computeProgress', () => {
     const phases = makePhases({
       'SS-01': { status: 'PENDING_REVIEW' },
     });
-    const result = computeProgress(phases, {}, 0);
+    const result = computeProgress(phases, {});
     expect(result.approved).toBe(0);
     expect(result.drafted).toBe(1);
     expect(result.notStarted).toBe(12);
@@ -110,7 +96,7 @@ describe('computeProgress', () => {
     const phases = makePhases({
       'SS-01': { status: 'COMPLETED' },
     });
-    const result = computeProgress(phases, {}, 0);
+    const result = computeProgress(phases, {});
     expect(result.approved).toBe(1);
     expect(result.drafted).toBe(0);
     expect(result.notStarted).toBe(12);
@@ -130,7 +116,6 @@ describe('DocProgressBar component', () => {
     phases?: RoadmapPhase[];
     docStatus?: Record<string, string>;
     totalPhases?: number;
-    openQuestions?: number;
   } = {}) {
     const onNavigateToDashboard = vi.fn();
     const result = renderWithUser(
@@ -138,7 +123,6 @@ describe('DocProgressBar component', () => {
         phases={overrides.phases ?? defaultPhases}
         docStatus={overrides.docStatus ?? {}}
         totalPhases={overrides.totalPhases ?? 13}
-        openQuestions={overrides.openQuestions ?? 0}
         onNavigateToDashboard={onNavigateToDashboard}
       />
     );
@@ -154,23 +138,23 @@ describe('DocProgressBar component', () => {
   });
 
   it('renders three segments when all states present', () => {
-    setup({ openQuestions: 1 });
-    // 3 approved - 1 open = 2 green, 2 drafted = 2, rest = 9 not started
+    setup();
+    // 3 approved = 3 green, 2 drafted, rest = 8 not started
     const bar = screen.getByRole('progressbar');
     expect(bar).toBeInTheDocument();
 
-    // The bar should contain segments for green (greenCount=2), drafted (2), and not started
+    // The bar should contain segments for green (greenCount=3), drafted (2), and not started
     // We verify the structure by checking aria values
-    expect(bar).toHaveAttribute('aria-valuenow', '4'); // greenCount(2) + drafted(2)
+    expect(bar).toHaveAttribute('aria-valuenow', '3'); // approved docs only
     expect(bar).toHaveAttribute('aria-valuemin', '0');
     expect(bar).toHaveAttribute('aria-valuemax', '13');
   });
 
   it('does not render zero-width segments', () => {
-    // All approved, zero open questions -> no drafted or not-started segments
+    // All approved -> no drafted or not-started segments
     const phases = makePhases();
     const allCompleted = phases.map((p) => ({ ...p, status: 'COMPLETED' as const }));
-    setup({ phases: allCompleted, openQuestions: 0 });
+    setup({ phases: allCompleted });
 
     const bar = screen.getByRole('progressbar');
     // Should have only green segment (no drafted, no not-started divs with 0 width)
@@ -185,13 +169,24 @@ describe('DocProgressBar component', () => {
     expect(zeroWidthDivs).toHaveLength(0);
   });
 
-  it('renders the open-question amber badge', () => {
-    setup({ openQuestions: 3 });
-    expect(screen.getByText('3')).toBeInTheDocument();
+  it('renders no open-question badge or popover row', async () => {
+    const { user } = setup();
+    expect(screen.queryByText('3')).toBeNull();
+    await user.click(screen.getByRole('progressbar'));
+    expect(screen.queryByText('Open questions')).toBeNull();
+  });
+
+  it('labels the bar in documents approved', () => {
+    setup();
+    // 3 approved of 13 (drafted docs are not approved)
+    expect(screen.getByRole('progressbar')).toHaveAttribute(
+      'aria-label',
+      'Project progress: 3 of 13 documents approved'
+    );
   });
 
   it('click opens popover, Escape closes it', async () => {
-    const { user } = setup({ openQuestions: 2 });
+    const { user } = setup();
 
     // Click the progress bar
     const bar = screen.getByRole('progressbar');
@@ -210,7 +205,7 @@ describe('DocProgressBar component', () => {
   });
 
   it('calls onNavigateToDashboard when clicking view full status report', async () => {
-    const { user, onNavigateToDashboard } = setup({ openQuestions: 2 });
+    const { user, onNavigateToDashboard } = setup();
 
     const bar = screen.getByRole('progressbar');
     await user.click(bar);
@@ -221,17 +216,10 @@ describe('DocProgressBar component', () => {
     expect(onNavigateToDashboard).toHaveBeenCalledTimes(1);
   });
 
-  it('aria-valuenow reflects greenCount + drafted', () => {
-    // 3 approved, 0 open questions -> greenCount=3
-    // 2 drafted -> drafted=2
-    // aria-valuenow = 5
-    setup({ openQuestions: 0 });
+  it('aria-valuenow reflects approved docs, matching the label', () => {
+    // 3 approved, 2 drafted -> aria-valuenow = 3
+    setup();
     const bar = screen.getByRole('progressbar');
-    expect(bar).toHaveAttribute('aria-valuenow', '5');
-  });
-
-  it('does not show openQuestions count in the bar label when openQuestions=0', () => {
-    setup({ openQuestions: 0 });
-    expect(screen.queryByText('0')).toBeNull();
+    expect(bar).toHaveAttribute('aria-valuenow', '3');
   });
 });

@@ -5,19 +5,16 @@ export interface DocProgressBarProps {
   phases: RoadmapPhase[];
   docStatus: Record<string, string>;
   totalPhases: number;
-  openQuestions: number;
   onNavigateToDashboard: () => void;
 }
 
 export function computeProgress(
   phases: RoadmapPhase[],
-  docStatus: Record<string, string> | null,
-  openQuestions: number
+  docStatus: Record<string, string> | null
 ): {
   approved: number;
   drafted: number;
   notStarted: number;
-  openQuestions: number;
   greenCount: number;
 } {
   const status = docStatus ?? {};
@@ -41,14 +38,13 @@ export function computeProgress(
     else if (isDrafted) drafted++;
   }
 
-  const greenCount = Math.max(0, approved - openQuestions);
+  const greenCount = approved;
   const notStarted = total - approved - drafted;
 
   return {
     approved,
     drafted,
     notStarted,
-    openQuestions,
     greenCount,
   };
 }
@@ -57,14 +53,13 @@ export default function DocProgressBar({
   phases,
   docStatus,
   totalPhases,
-  openQuestions,
   onNavigateToDashboard,
 }: DocProgressBarProps) {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  const progress = computeProgress(phases, docStatus, openQuestions);
+  const progress = computeProgress(phases, docStatus);
   const total = totalPhases || 13;
 
   const greenPct = total > 0 ? (progress.greenCount / total) * 100 : 0;
@@ -103,10 +98,10 @@ export default function DocProgressBar({
       {/* Progress bar */}
       <div
         role="progressbar"
-        aria-valuenow={progress.greenCount + progress.drafted}
+        aria-valuenow={progress.greenCount}
         aria-valuemin={0}
         aria-valuemax={total}
-        aria-label={`Project progress: ${progress.greenCount + progress.drafted} of ${total} phases complete`}
+        aria-label={`Project progress: ${progress.greenCount} of ${total} documents approved`}
         className="h-6 w-28 cursor-pointer overflow-hidden rounded bg-slate-700 sm:w-36"
         onClick={() => setPopoverOpen((prev) => !prev)}
       >
@@ -129,16 +124,6 @@ export default function DocProgressBar({
           )}
         </div>
       </div>
-
-      {/* Open-question badge */}
-      {openQuestions > 0 && (
-        <span
-          className="inline-flex items-center justify-center rounded-full bg-amber-500/20 border border-amber-500/40 px-1.5 text-[10px] font-bold text-amber-300 min-w-[18px]"
-          aria-hidden
-        >
-          {openQuestions}
-        </span>
-      )}
 
       {/* Popover */}
       {popoverOpen && (
@@ -203,20 +188,6 @@ export default function DocProgressBar({
                 <div className="h-full bg-slate-600" style={{ width: '100%' }} />
               </div>
             </div>
-          </div>
-
-          {/* Open questions row */}
-          <div className="mt-3 flex items-center gap-2 border-t border-slate-700 pt-3 text-xs">
-            <span
-              className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-500/20 text-[10px] text-amber-300 font-bold"
-              aria-hidden
-            >
-              ?
-            </span>
-            <span className="flex-1 text-slate-300">Open questions</span>
-            <span className="font-mono text-amber-300 font-semibold tabular-nums">
-              {progress.openQuestions}
-            </span>
           </div>
 
           {/* View full status report button */}

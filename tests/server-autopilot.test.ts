@@ -94,6 +94,21 @@ describe('autopilot + portal API', () => {
     expect(json.data.totalPhases).toBe(13);
   });
 
+  it('3b. GET /api/autopilot derives blocks from parked docs, ignoring a stale counter', async () => {
+    const state = stateManager.getState();
+    state.autopilot.blocks = 2;
+    state.autopilot.docStatus = { requirements: 'auto-approved', bom: 'idle' };
+    stateManager.saveState(state);
+    const stale = await request(server, 'GET', '/api/autopilot');
+    expect(stale.json.data.blocks).toBe(0);
+
+    const next = stateManager.getState();
+    next.autopilot.docStatus = { requirements: 'auto-approved', bom: 'parked' };
+    stateManager.saveState(next);
+    const parked = await request(server, 'GET', '/api/autopilot');
+    expect(parked.json.data.blocks).toBe(1);
+  });
+
   it('4. POST /api/autopilot/start returns 202', async () => {
     const { status } = await request(server, 'POST', '/api/autopilot/start');
     expect(status).toBe(202);

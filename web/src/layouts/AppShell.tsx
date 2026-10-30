@@ -145,6 +145,17 @@ export default function AppShell() {
     passedCount: runStatus?.passedCount ?? 0
   });
 
+  const parkedCount = runStatus?.blocks ?? 0;
+  let runDetail: string | undefined;
+  let runDetailTitle: string | undefined;
+  if (parkedCount > 0) {
+    runDetail = `${parkedCount} document${parkedCount > 1 ? 's' : ''} parked`;
+    runDetailTitle = 'Autopilot parked these documents for your review';
+  } else if (turnStream.error) {
+    runDetail = 'Last request failed';
+    runDetailTitle = turnStream.error;
+  }
+
   return (
     <div className="flex h-full flex-col bg-slate-950 text-slate-100">
       {/* Merged top bar — brand · tabs · run-state cluster */}
@@ -155,13 +166,14 @@ export default function AppShell() {
         runState={runState}
         phase={runStatus?.currentPhaseId ?? project?.activePhase}
         step={turnStream.status}
+        runDetail={runDetail}
+        runDetailTitle={runDetailTitle}
         connected={connected}
         mobileMenuOpen={mobileMenuOpen}
         onToggleMobileMenu={() => setMobileMenuOpen(prev => !prev)}
         progressPhases={roadmap}
         progressDocStatus={runStatus?.docStatus ?? {}}
         progressTotalPhases={runStatus?.totalPhases ?? 13}
-        progressOpenQuestions={openQuestions}
         onNavigateToDashboard={() => setTab('dashboard')}
       />
 

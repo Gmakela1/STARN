@@ -91,4 +91,26 @@ describe('RunStateCluster', () => {
     expect(iStep).toBeGreaterThan(iPhase);
     expect(text).toContain('·');
   });
+
+  it('renders the failed detail instead of the generic word, with a tooltip and aria-label', () => {
+    render(
+      <RunStateCluster runState="failed" detail="2 documents parked" detailTitle="Autopilot parked 2 documents" />,
+    );
+    const root = screen.getByRole('status');
+    expect(root).toHaveAttribute('aria-label', 'Agent status: 2 documents parked');
+    expect(screen.getByText('2 documents parked')).toHaveAttribute('title', 'Autopilot parked 2 documents');
+    expect(screen.queryByText('Needs attention')).toBeNull();
+  });
+
+  it('falls back to Needs attention when failed has no detail', () => {
+    render(<RunStateCluster runState="failed" />);
+    expect(screen.getByText('Needs attention')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveAttribute('aria-label', 'Agent status: Needs attention');
+  });
+
+  it('ignores detail for non-failed states', () => {
+    render(<RunStateCluster runState="working" detail="2 documents parked" />);
+    expect(screen.getByText('Working…')).toBeInTheDocument();
+    expect(screen.queryByText('2 documents parked')).toBeNull();
+  });
 });
