@@ -74,6 +74,8 @@ export interface TopBarProps {
   runDetail?: string;
   runDetailTitle?: string;
   connected: boolean;
+  /** Open question count — drives the Engineering Studio tab pill (§5.E). Separate from progress props. */
+  openQuestions: number;
   mobileMenuOpen: boolean;
   onToggleMobileMenu: () => void;
   /** DocProgressBar props — replaces the old openQuestions badge (§5.E). */
@@ -93,6 +95,7 @@ export function TopBar({
   runDetail,
   runDetailTitle,
   connected,
+  openQuestions,
   mobileMenuOpen,
   onToggleMobileMenu,
   progressPhases,
@@ -142,6 +145,7 @@ export function TopBar({
       >
         {HUBS.map(({ id, label, tagline, icon: Icon }) => {
           const active = tab === id;
+          const badgeVisible = id === 'development' && openQuestions > 0;
           return (
             <button
               key={id}
@@ -150,7 +154,7 @@ export function TopBar({
               aria-selected={active}
               onClick={() => onSelectTab(id)}
               title={tagline}
-              aria-label={`${label} — ${tagline}`}
+              aria-label={badgeVisible ? `${label}, ${openQuestions} needs input` : `${label} — ${tagline}`}
               className={`group flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-all xl:text-sm ${
                 active
                   ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shadow-sm'
@@ -164,6 +168,14 @@ export function TopBar({
                 aria-hidden
               />
               <span className="hidden xl:inline font-bold leading-tight whitespace-nowrap">{label}</span>
+              {badgeVisible && (
+                <span
+                  className="ml-1 inline-flex items-center justify-center rounded-full bg-amber-500/20 border border-amber-500/40 px-1.5 text-[10px] font-bold text-amber-300"
+                  aria-hidden
+                >
+                  {openQuestions > 99 ? '99+' : openQuestions}
+                </span>
+              )}
             </button>
           );
         })}

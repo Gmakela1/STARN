@@ -36,6 +36,7 @@ function setup(overrides: Partial<TopBarProps> = {}) {
     onSelectTab,
     runState: 'ready',
     connected: true,
+    openQuestions: 0,
     mobileMenuOpen: false,
     onToggleMobileMenu,
     progressPhases: defaultPhases,
@@ -148,6 +149,58 @@ describe('TopBar', () => {
     expect(screen.getByRole('button', { name: 'Close navigation menu' })).toHaveAttribute('aria-expanded', 'true');
   });
 
+  describe('open-questions pill', () => {
+    it('shows the count on the Engineering Studio tab only', () => {
+      setup({ openQuestions: 3 });
+      const tabs = within(screen.getByRole('tablist')).getAllByRole('tab');
+      const withPill = tabs.filter(tab => tab.textContent?.includes('3'));
+      expect(withPill).toHaveLength(1);
+      expect(withPill[0]).toHaveAttribute('title', 'Collaborative AI Workbench');
+      const pill = within(withPill[0]).getByText('3');
+      expect(pill).toHaveAttribute('aria-hidden', 'true');
+      expect(pill.className).toContain('bg-amber-500/20');
+    });
+
+    it('is not rendered on the other tabs', () => {
+      setup({ openQuestions: 3 });
+      const tabs = within(screen.getByRole('tablist')).getAllByRole('tab');
+      const others = tabs.filter(tab => !/Engineering Studio/.test(tab.getAttribute('aria-label') ?? ''));
+      expect(others).toHaveLength(4);
+      others.forEach(tab => expect(tab.querySelector('[class*="bg-amber-500"]')).toBeNull());
+    });
+
+    it('is hidden when there are no open questions', () => {
+      setup({ openQuestions: 0 });
+      const devTab = screen.getByRole('tab', { name: /Engineering Studio/ });
+      expect(devTab.querySelector('[class*="bg-amber-500"]')).toBeNull();
+      expect(devTab).toHaveAttribute('aria-label', 'Engineering Studio — Collaborative AI Workbench');
+    });
+
+    it('includes the count in the tab aria-label', () => {
+      setup({ openQuestions: 3 });
+      expect(screen.getByRole('tab', { name: 'Engineering Studio, 3 needs input' })).toBeInTheDocument();
+    });
+
+    it('caps the displayed count at 99+', () => {
+      setup({ openQuestions: 150 });
+      const devTab = screen.getByRole('tab', { name: /Engineering Studio/ });
+      expect(within(devTab).getByText('99+')).toBeInTheDocument();
+      expect(screen.queryByText('150')).toBeNull();
+    });
+
+    it('shows 99 uncapped at the boundary', () => {
+      setup({ openQuestions: 99 });
+      expect(screen.getByText('99')).toBeInTheDocument();
+    });
+
+    it('stays visible in icon-only mode (not wrapped in an xl-only class)', () => {
+      setup({ openQuestions: 3 });
+      const pill = screen.getByText('3');
+      expect(pill.className).not.toMatch(/hidden/);
+      expect(pill.closest('[class*="hidden xl:inline"]')).toBeNull();
+    });
+  });
+
   it('shows the Reconnecting badge only when disconnected', () => {
     const { rerender } = renderWithUser(<TopBar {...baseProps()} />);
     expect(screen.queryByText('Reconnecting…')).toBeNull();
@@ -164,6 +217,7 @@ function baseProps(overrides: Partial<TopBarProps> = {}): TopBarProps {
     onSelectTab: vi.fn(),
     runState: 'ready',
     connected: true,
+    openQuestions: 0,
     mobileMenuOpen: false,
     onToggleMobileMenu: vi.fn(),
     progressPhases: defaultPhases,

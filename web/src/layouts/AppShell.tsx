@@ -169,6 +169,7 @@ export default function AppShell() {
         runDetail={runDetail}
         runDetailTitle={runDetailTitle}
         connected={connected}
+        openQuestions={openQuestions}
         mobileMenuOpen={mobileMenuOpen}
         onToggleMobileMenu={() => setMobileMenuOpen(prev => !prev)}
         progressPhases={roadmap}
