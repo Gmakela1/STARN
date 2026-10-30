@@ -11,7 +11,7 @@ import {
 } from './requirementAnchor';
 
 // Design §5.C + §9 — requirement-ID extraction, doc-presence anchoring, and
-// transient highlight on a rendered .doc-prose block.
+// persistent highlight on a rendered .doc-prose block.
 
 describe('extractRequirementIds', () => {
   it('extracts known ids in order and dedupes', () => {
@@ -94,12 +94,12 @@ describe('applyAnchorHighlight (jsdom, rendered Markdown)', () => {
     cleanup();
   });
 
-  it('marks, rings and fades the block containing the id', () => {
+  it('marks and rings the block, persisting until explicitly cleared', () => {
     const { container } = render(createElement(Markdown, { content: doc }));
     const root = container.querySelector('.doc-prose') as HTMLElement;
     const paragraph = Array.from(root.querySelectorAll('p')).find(p => p.textContent?.includes('SS-09.a')) as HTMLElement;
 
-    const el = applyAnchorHighlight(root, 'SS-09.a', 2400);
+    const el = applyAnchorHighlight(root, 'SS-09.a');
     expect(el).toBe(paragraph);
     expect(el).not.toBeNull();
     expect(el).toHaveAttribute('data-studio-anchor');
@@ -107,7 +107,15 @@ describe('applyAnchorHighlight (jsdom, rendered Markdown)', () => {
     expect(el!.querySelector('[data-studio-anchor-marker]')?.textContent).toBe('SS-09.a');
     expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
 
-    vi.advanceTimersByTime(2400);
+    // No auto-clear: the marker must persist past any animation window until
+    // clearAnchorHighlights is called (doc change, edit, panel close, new focus).
+    vi.advanceTimersByTime(5000);
+
+    expect(el).toHaveAttribute('data-studio-anchor');
+    expect(el).toHaveClass('animate-anchor-flash');
+    expect(el!.querySelector('[data-studio-anchor-marker]')).not.toBeNull();
+
+    clearAnchorHighlights(container);
 
     expect(el).not.toHaveAttribute('data-studio-anchor');
     expect(el).not.toHaveClass('animate-anchor-flash');
@@ -117,7 +125,7 @@ describe('applyAnchorHighlight (jsdom, rendered Markdown)', () => {
   it('returns null when no block contains the id', () => {
     const { container } = render(createElement(Markdown, { content: '## Voltage\n\nNothing to anchor here.' }));
     const root = container.querySelector('.doc-prose') as HTMLElement;
-    expect(applyAnchorHighlight(root, 'SS-09.a', 2400)).toBeNull();
+    expect(applyAnchorHighlight(root, 'SS-09.a')).toBeNull();
   });
 
   it('clearAnchorHighlights removes the highlight and marker immediately', () => {
@@ -125,7 +133,7 @@ describe('applyAnchorHighlight (jsdom, rendered Markdown)', () => {
     const root = container.querySelector('.doc-prose') as HTMLElement;
     const paragraph = Array.from(root.querySelectorAll('p')).find(p => p.textContent?.includes('SS-09.a')) as HTMLElement;
 
-    applyAnchorHighlight(root, 'SS-09.a', 10000);
+    applyAnchorHighlight(root, 'SS-09.a');
     expect(paragraph).toHaveAttribute('data-studio-anchor');
 
     clearAnchorHighlights(container);

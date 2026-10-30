@@ -48,7 +48,6 @@ import CriticScorecard from '../components/CriticScorecard';
 import CheckpointPanel from '../components/CheckpointPanel';
 import QuestionBadge from '../components/QuestionBadge';
 import QuestionPanel from '../components/QuestionPanel';
-import AutopilotHud from '../components/AutopilotHud';
 import PaneSplitter from '../components/PaneSplitter';
 import { deriveRunState } from '../lib/runState';
 import {
@@ -571,6 +570,19 @@ export default function DevelopmentView({
   const [saving, setSaving] = useState(false);
   const [approving, setApproving] = useState(false);
   const [docNotice, setDocNotice] = useState<string | null>(null);
+  // Header compact mode: below 500px the selector shows status pill + chevron
+  // only (doc name hidden) so the h-12 header line never wraps.
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerCompact, setHeaderCompact] = useState(false);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setHeaderCompact(entry.contentRect.width < 500);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // §5.A cover semantics (Workstream C) — the DOC is never inert: it is what
   // the user reads while answering. The FEED gets inert + aria-hidden in its
@@ -596,7 +608,7 @@ export default function DevelopmentView({
       const raw = localStorage.getItem('starn.studio.splitPct');
       if (raw !== null) {
         const n = parseFloat(raw);
-        if (Number.isFinite(n) && n >= 33 && n <= 67) return n;
+        if (Number.isFinite(n) && n >= 20 && n <= 80) return n;
       }
     } catch { /* storage unavailable — default 50/50 */ }
     return 50;
@@ -620,12 +632,6 @@ export default function DevelopmentView({
   const [docCollapsed, setDocCollapsed] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [zenPane, setZenPane] = useState<'left' | 'right' | null>(null);
-  // Focus-first ratio (BC-3): animate to 40/60 on the FIRST question focus, then
-  // user drags rule. Ratio transition classes apply only during that one move
-  // (drag stays direct manipulation, no laggy animation).
-  const userDraggedRef = useRef(false);
-  const ratioAnimatedRef = useRef(false);
-  const [ratioTransition, setRatioTransition] = useState(false);
 
   const leftIsRail = leftCollapsed || zenPane === 'right';
   const rightIsRail = docCollapsed || zenPane === 'left';
@@ -649,7 +655,6 @@ export default function DevelopmentView({
   }
   const clampToRange = (pct: number) => Math.min(Math.max(pct, minPct), maxPct);
   const persistSplit = (pct: number) => {
-    userDraggedRef.current = true;
     try {
       localStorage.setItem('starn.studio.splitPct', String(Math.round(clampToRange(pct))));
     } catch { /* presentational only */ }
@@ -729,12 +734,6 @@ export default function DevelopmentView({
    * effect above is the real doc-presence check once the target doc renders.
    */
   const handleFocusDocument = async (item: PortalItem): Promise<void> => {
-    if (!userDraggedRef.current && !ratioAnimatedRef.current) {
-      ratioAnimatedRef.current = true;
-      setRatioTransition(true);
-      setLeftPct(40);
-      window.setTimeout(() => setRatioTransition(false), 320);
-    }
     const docName = item.docPath ? basename(item.docPath) : '';
     if (!item.docPath || !docName) {
       setHighlight(null);
@@ -906,9 +905,7 @@ export default function DevelopmentView({
       <section
         aria-label="Agent conversation"
         style={leftStyle}
-        className={`relative flex min-h-0 flex-col border-r border-slate-800 grow lg:grow-0 ${leftIsRail ? '' : 'lg:min-w-[340px] lg:max-w-[calc(100%-340px)]'} ${
-          ratioTransition ? 'transition-[flex-basis] duration-300 motion-reduce:transition-none' : ''
-        } ${leftIsRail ? 'overflow-hidden' : ''}`}
+        className={`relative flex min-h-0 flex-col border-r border-slate-800 ${leftIsRail ? 'overflow-hidden' : ''}`}
       >
         {/* §5.I — collapse / Zen strip (lg+ only; below lg the chat stays single-pane) */}
         <div className="hidden h-8 shrink-0 items-center gap-1 border-b border-slate-800 bg-slate-900/40 px-2 lg:flex">
@@ -1184,7 +1181,7 @@ export default function DevelopmentView({
             onEditDoc={(docPath) => { setSurface('closed'); void selectPhaseByDocPath(docPath); setEditing(true); }}
             selectedDocName={selectedDocName}
             onOpenDocument={(docPath) => { setSurface('closed'); void selectPhaseByDocPath(docPath); }}
-            onMinimize={() => setSurface('minimized')}
+            onMinimize={() => setSurface('closed')}
             onExpand={() => setSurface('open')}
             onClose={() => setSurface('closed')}
             onFocusDocument={handleFocusDocument}
@@ -1211,9 +1208,7 @@ export default function DevelopmentView({
       <section
         aria-label="Document workspace"
         style={rightStyle}
-        className={`relative hidden min-h-0 flex-col lg:flex ${rightIsRail ? '' : 'lg:min-w-[340px] lg:max-w-[calc(100%-340px)]'} ${
-          ratioTransition ? 'transition-[flex-basis] duration-300 motion-reduce:transition-none' : ''
-        } ${rightIsRail ? 'overflow-hidden' : ''}`}
+        className={`relative hidden min-h-0 flex-col lg:flex ${rightIsRail ? 'overflow-hidden' : ''}`}
       >
         {rightIsRail && (
           <div className="absolute inset-0 z-30 hidden w-11 flex-col items-center justify-center gap-2 bg-slate-900/95 lg:flex">
@@ -1232,7 +1227,7 @@ export default function DevelopmentView({
           </div>
         )}
 
-        <header className="flex h-12 items-center gap-2 border-b border-slate-800 bg-slate-900/40 px-3">
+        <header ref={headerRef} className="flex h-12 items-center gap-2 border-b border-slate-800 bg-slate-900/40 px-3">
           <FileText className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
 
           {/* Custom Document Selector Popover */}
@@ -1242,11 +1237,13 @@ export default function DevelopmentView({
               onClick={() => setDocDropdownOpen(v => !v)}
               aria-haspopup="listbox"
               aria-expanded={docDropdownOpen}
-              className="flex min-h-[40px] items-center gap-2.5 rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm font-medium text-slate-100 hover:bg-slate-900 transition-colors cursor-pointer"
+              className={`flex min-h-[40px] items-center gap-2.5 rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm font-medium text-slate-100 hover:bg-slate-900 transition-colors cursor-pointer ${headerCompact ? 'w-10 justify-center' : ''}`}
             >
-              <span className="truncate max-w-[180px] sm:max-w-[240px]">
-                {selectedPhaseInfo ? selectedPhaseInfo.name : 'Select Document'}
-              </span>
+              {!headerCompact && (
+                <span className="truncate max-w-[180px] sm:max-w-[240px]">
+                  {selectedPhaseInfo ? selectedPhaseInfo.name : 'Select Document'}
+                </span>
+              )}
               {renderStatusPill(selectedPhaseInfo)}
               <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${docDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
@@ -1293,32 +1290,7 @@ export default function DevelopmentView({
             )}
           </div>
 
-          {/* §5.G — 5-state rail folds onto the doc-header line (h-8 cluster) */}
-          <div className="flex min-w-0 flex-1 items-center">
-            <AutopilotHud
-              status={autopilotStatus}
-              enabled={autopilotStatus?.enabled ?? false}
-              onStart={async () => {
-                try { await api.autopilotStart(); } catch {}
-              }}
-              onStop={async () => {
-                try { await api.autopilotStop(); } catch {}
-              }}
-              roadmap={roadmap}
-              onSelectPhase={(id) => {
-                // Rail dot click reuses the doc-dropdown phase-select pattern (design §5.F).
-                setEditing(false);
-                setSelectedPhase(id);
-                void (async () => {
-                  try {
-                    await api.setActivePhase(id);
-                    await onProjectChanged();
-                  } catch {}
-                })();
-              }}
-              hideControls
-            />
-          </div>
+          <div className="flex-1 min-w-0" />
 
           <div className="flex shrink-0 items-center gap-1.5">
             {/* §5.B — folded quality-example drop zone: one Paperclip button, same file input */}

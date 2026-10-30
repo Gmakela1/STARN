@@ -1,6 +1,6 @@
 /**
  * Requirement-ID doc anchors (design §5.C + §9).
- * Extraction → doc-presence anchoring → block resolution → transient highlight.
+ * Extraction → doc-presence anchoring → block resolution → persistent highlight.
  * False positives (SHA-256, PDF-1.4) degrade to "no highlight" via
  * pickAnchorId, never a wrong scroll.
  */
@@ -53,15 +53,19 @@ export function findAnchorBlock(
 }
 
 interface AnchorState {
-  timer: number;
   marker: HTMLSpanElement;
   addedClasses: string[];
 }
 
 const anchorStates = new WeakMap<HTMLElement, AnchorState>();
 
-/** Scroll to + flash the closest block-level element containing id. Returns it, or null. */
-export function applyAnchorHighlight(root: HTMLElement, id: string, ms = 2400): HTMLElement | null {
+/**
+ * Scroll to + mark the closest block-level element containing id. The marker
+ * persists until clearAnchorHighlight/clearAnchorHighlights is called — callers
+ * decide when the highlight dies (doc change, edit, panel close, new focus).
+ * Returns the block, or null when nothing contains id.
+ */
+export function applyAnchorHighlight(root: HTMLElement, id: string): HTMLElement | null {
   if (!root || !id) return null;
   const block = findClosestBlock(root, id);
   if (!block) return null;
@@ -84,17 +88,14 @@ export function applyAnchorHighlight(root: HTMLElement, id: string, ms = 2400): 
   marker.textContent = id;
   block.appendChild(marker);
 
-  const state: AnchorState = { timer: 0, marker, addedClasses };
-  state.timer = window.setTimeout(() => clearAnchorHighlight(block), ms);
-  anchorStates.set(block, state);
+  anchorStates.set(block, { marker, addedClasses });
   return block;
 }
 
-/** Remove the highlight from one element (also clears its pending timer). */
+/** Remove the highlight from one element. */
 export function clearAnchorHighlight(el: HTMLElement): void {
   const state = anchorStates.get(el);
   if (state) {
-    window.clearTimeout(state.timer);
     state.marker.remove();
     anchorStates.delete(el);
   }
