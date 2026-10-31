@@ -7,7 +7,6 @@ import {
   Loader2,
   Maximize2,
   MessageSquare,
-  Mic,
   RotateCcw,
   TriangleAlert,
   X
@@ -16,6 +15,8 @@ import type { LucideIcon } from 'lucide-react';
 import { AnswerState, PortalItem } from '../types/api';
 import { renderDetail } from '../lib/portalDetail';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
+// React Bits (reactbits.dev) component — see web/src/components/reactbits.
+import VoicePill from './reactbits/VoicePill/VoicePill';
 
 export interface QuestionPanelProps {
   surface: 'closed' | 'open' | 'minimized';
@@ -323,6 +324,19 @@ export default function QuestionPanel({
   // Alt-hold-to-talk; transcribed text appends into the active answer draft.
   const { recording, startRecording, stopRecording, error: voiceError } = useVoiceRecorder();
   useEffect(() => { recordingRef.current = recording; }, [recording]);
+
+  // VoicePill (React Bits) is the click affordance for the answer composer.
+  // It is self-managed (no controlled listening prop) and never transcribes,
+  // so useVoiceRecorder stays the single recorder: the pill's onStart/onStop
+  // proxy it, transcripts flow into the item draft exactly as before, and
+  // `reactive='simulated'` guarantees no second getUserMedia path. Alt-hold
+  // listeners below are unchanged; while a recording is pill-initiated the
+  // pill itself is the indicator (live waveform), otherwise the compact
+  // text indicator renders for Alt-initiated recordings.
+  const pillRecordingRef = useRef(false);
+  useEffect(() => {
+    if (!recording) pillRecordingRef.current = false;
+  }, [recording]);
 
   /**
    * Voice is live only while the panel is open on an answerable item
@@ -725,8 +739,9 @@ export default function QuestionPanel({
             </div>
           ) : (
             <>
-              {/* Recording indicator + voice errors (§2, mirrors the doc composer) */}
-              {recording && (
+              {/* Recording indicator (Alt-initiated only — pill-initiated
+                  recordings show the live VoicePill instead) + voice errors */}
+              {recording && !pillRecordingRef.current && (
                 <div
                   role="status"
                   className="flex items-center gap-2 rounded-md bg-rose-950/40 px-3 py-1.5 text-xs text-rose-300"
@@ -759,29 +774,26 @@ export default function QuestionPanel({
                   placeholder="Type your answer to the AI…"
                   className="min-h-[96px] min-w-0 flex-1 resize-y rounded-lg border border-[#3b4658] bg-[#05070c] px-3 py-2.5 text-sm text-[#e8edf5] placeholder:text-[#6e7d92] focus:border-[#ff2a3c] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/40 disabled:opacity-50"
                 />
-                {/* Mic button (§2): 44px touch target, click or hold Alt */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (recording) {
-                      void stopRecording().then(text => {
-                        if (text) appendVoiceText(item.id, text);
-                      });
-                    } else {
-                      startRecording();
-                    }
-                  }}
+                {/* VoicePill (React Bits): click toggle for recording — the
+                    recorder stays in useVoiceRecorder; 44px hit target via
+                    the pill's reach + waveform expansion. */}
+                <VoicePill
+                  ariaLabel="Record answer"
+                  mode="toggle"
+                  reactive="simulated"
+                  accentColor="#ff2a3c"
+                  background="#11151d"
                   disabled={composingDisabled}
-                  aria-label={recording ? 'Stop recording' : 'Record answer'}
-                  title={recording ? 'Release Alt or click to send' : 'Click or hold Alt to record'}
-                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40 disabled:opacity-50 ${
-                    recording
-                      ? 'bg-rose-600 text-white motion-safe:animate-pulse'
-                      : 'border border-[#3b4658] bg-[#11151d] text-[#a8b3c4] hover:border-violet-600 hover:text-violet-400'
-                  }`}
-                >
-                  <Mic className="h-4 w-4" aria-hidden />
-                </button>
+                  onStart={() => {
+                    pillRecordingRef.current = true;
+                    if (!recordingRef.current) startRecording();
+                  }}
+                  onStop={() => {
+                    void stopRecording().then(text => {
+                      if (text) appendVoiceText(item.id, text);
+                    });
+                  }}
+                />
               </div>
             </>
           )}

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import DotGrid from '../components/reactbits/DotGrid';
+import SquishSwitch from '../components/reactbits/SquishSwitch/SquishSwitch';
 import { SettingsSaveBar } from '../components/SettingsSaveBar';
 import type { SettingsSaveBarStatus } from '../components/SettingsSaveBar';
 import {
@@ -637,18 +638,17 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                 recommended model — a 25-page manual ≈ $0.05. Local models (Ollama / LM Studio) cost $0/token.
               </p>
             </div>
-            <button
-              role="switch"
-              aria-checked={transcriptionEnabled}
-              onClick={() => {
+            <SquishSwitch
+              checked={transcriptionEnabled}
+              onChange={() => {
                 setAiStatus(null);
                 setTranscriptionEnabled(v => !v);
               }}
-              className={`relative flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${transcriptionEnabled ? 'bg-[#d61f2c]' : 'bg-[#171c26]'}`}
-              aria-label="Toggle document transcription"
-            >
-              <span className={`absolute h-5 w-5 rounded-full bg-white transition-transform ${transcriptionEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-            </button>
+              ariaLabel="Toggle document transcription"
+              trackOnColor="#7c3aed"
+              thumbOnColor="#e8edf5"
+              trackColor="#2a3342"
+            />
           </div>
         </section>
 
@@ -726,15 +726,17 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
               <p className="text-sm font-semibold text-[#e8edf5]">Master Autopilot Toggle</p>
               <p className="mt-1 text-xs text-[#a8b3c4]">When enabled, the specialist chain auto-runs on project creation or phase transitions.</p>
             </div>
-            <button role="switch" aria-checked={autopilotEnabled}
-              onClick={() => {
+            <SquishSwitch
+              checked={autopilotEnabled}
+              onChange={() => {
                 setAiStatus(null);
                 setAutopilotEnabled(v => !v);
               }}
-              className={`relative flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${autopilotEnabled ? 'bg-[#d61f2c]' : 'bg-[#171c26]'}`}
-              aria-label="Toggle autopilot">
-              <span className={`absolute h-5 w-5 rounded-full bg-white transition-transform ${autopilotEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-            </button>
+              ariaLabel="Toggle autopilot"
+              trackOnColor="#7c3aed"
+              thumbOnColor="#e8edf5"
+              trackColor="#2a3342"
+            />
           </div>
           {/* Deferred token-budget slot */}
           <div className="mt-3 rounded-lg border border-dashed border-[#3b4658] bg-[#05070c]/40 p-4 opacity-40 pointer-events-none">

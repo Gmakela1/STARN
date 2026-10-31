@@ -453,29 +453,31 @@ describe('QuestionPanel', () => {
   });
 
   // ————— 15. Voice input in the answer composer (design §2) —————
-  it('voice: renders the mic button with aria-label "Record answer"', () => {
+  it('voice: renders the VoicePill with aria-label "Record answer"', () => {
     renderWithUser(<QuestionPanel {...baseProps()} />);
 
     expect(screen.getByRole('button', { name: 'Record answer' })).toBeInTheDocument();
   });
 
-  it('voice: click mic starts recording; recording indicator becomes visible', async () => {
+  it('voice: clicking the pill starts recording; the pill itself becomes the live indicator', async () => {
     const view = renderWithUser(<QuestionPanel {...baseProps()} />);
 
-    const mic = screen.getByRole('button', { name: 'Record answer' });
-    await view.user.click(mic);
+    const pill = screen.getByRole('button', { name: 'Record answer' });
+    await view.user.click(pill);
     expect(voiceMock.startRecording).toHaveBeenCalledTimes(1);
 
-    // Simulate the hook flipping to recording state.
+    // Simulate the hook flipping to recording state. Pill-initiated: the pill
+    // shows the live waveform indicator (aria-pressed) — no compact text
+    // note and no separate stop button.
     voiceMock.recording = true;
     view.rerender(<QuestionPanel {...baseProps()} />);
 
-    expect(screen.getByText(/Recording…/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Stop recording' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Record answer' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Recording…/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Record answer' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Stop recording' })).not.toBeInTheDocument();
   });
 
-  it('voice: stop appends the transcribed text into the answer textarea', async () => {
+  it('voice: ending a pill recording appends the transcribed text into the answer textarea', async () => {
     const view = renderWithUser(<QuestionPanel {...baseProps()} />);
 
     const textarea = screen.getByLabelText('Your answer');
@@ -483,12 +485,26 @@ describe('QuestionPanel', () => {
 
     voiceMock.recording = true;
     view.rerender(<QuestionPanel {...baseProps()} />);
-    await view.user.click(screen.getByRole('button', { name: 'Stop recording' }));
+    // Recording started outside the pill (Alt-hold path): the first click
+    // syncs the pill into its listening state, the second click ends it and
+    // the recorder's transcript is appended.
+    await view.user.click(screen.getByRole('button', { name: 'Record answer' }));
+    await view.user.click(screen.getByRole('button', { name: 'Record answer' }));
 
     await vi.waitFor(() => {
       expect((textarea as HTMLTextAreaElement).value).toBe('typed Transcribed answer text');
     });
     expect(voiceMock.stopRecording).toHaveBeenCalledTimes(1);
+  });
+
+  it('voice: Alt-initiated recording keeps the compact indicator and the pill idle', () => {
+    const view = renderWithUser(<QuestionPanel {...baseProps()} />);
+
+    voiceMock.recording = true;
+    view.rerender(<QuestionPanel {...baseProps()} />);
+
+    expect(screen.getByText(/Recording…/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Record answer' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('voice: Alt-hold starts and releasing appends the transcription', async () => {
