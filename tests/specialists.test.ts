@@ -111,6 +111,60 @@ describe('Specialist Packages & RTM', () => {
     expect(bom!.secretSauceExamples[0]).toContain('Financial & Procurement Rollup');
   });
 
+  it('bom statuses include truthful pre-sourcing states with status rules', () => {
+    const bom = registry.get('bom');
+    expect(bom!.systemPrompt).toContain('`Candidate — unverified`');
+    expect(bom!.systemPrompt).toContain('`Provisional candidate`');
+    expect(bom!.systemPrompt).toContain('`Blocked`');
+    // 'Identified' reserved for user-decision/baseline-fixed parts; gated parts provisional
+    expect(bom!.systemPrompt).toContain('reserved for parts FIXED by an explicit user decision or the approved baseline specification');
+    expect(bom!.systemPrompt).toContain('gated by a design decision such as DD-R13');
+    // every non-final row carries a verification action
+    expect(bom!.systemPrompt).toContain('verification action');
+  });
+
+  it('bom prompt mandates the baseline-conflict protocol', () => {
+    const bom = registry.get('bom');
+    expect(bom!.systemPrompt).toContain('BASELINE-CONFLICT PROTOCOL');
+    expect(bom!.systemPrompt).toContain('remains the approved basis pending formal revision');
+    expect(bom!.systemPrompt).toContain('NEVER assert that an approved baseline figure is unapproved');
+    expect(bom!.systemPrompt).toContain('NEVER invent a replacement bound');
+    expect(bom!.systemPrompt).toContain('Blocked — pending reconciliation');
+  });
+
+  it('bom prompt codifies the sourcing-failure fallback and image-only PDF rule', () => {
+    const bom = registry.get('bom');
+    expect(bom!.systemPrompt).toContain('SOURCING-FAILURE FALLBACK');
+    expect(bom!.systemPrompt).toContain('Skip Stage-2 promotion');
+    expect(bom!.systemPrompt).toContain('non-procurement estimate');
+    expect(bom!.systemPrompt).toContain('discloses the outage');
+    expect(bom!.systemPrompt).toContain('doc_transcribe');
+  });
+
+  it('bom secret sauce is a realistic pre-sourcing ledger, not procurement fiction', () => {
+    const example = registry.get('bom')!.secretSauceExamples[0];
+    expect(example).toContain('Candidate — unverified');
+    expect(example).toContain('Provisional candidate');
+    expect(example).toContain('Blocked — pending reconciliation');
+    expect(example).toContain('Not established — no approved budget target');
+    expect(example).toContain('non-procurement estimate');
+    expect(example).toContain('Stage: 1 — Pre-Sourcing (Grocery List)');
+    // No fabricated orders/prices/received-status
+    expect(example).not.toContain('#ORD-');
+    expect(example).not.toContain('1Z999');
+    expect(example).not.toContain('#KL-8820');
+    // Format exemplar value preserved: columns + traceability style
+    expect(example).toContain('| Item # | Part / Description | Subsystem | Qty |');
+    expect(example).toContain('Financial & Procurement Rollup');
+    expect(example).toContain('## Open Questions');
+  });
+
+  it('bom critic rubric accepts non-computable variance and generic-class trade alternatives', () => {
+    const bom = registry.get('bom');
+    expect(bom!.criticRubric).toContain('why variance is not yet computable');
+    expect(bom!.criticRubric).toContain('generic part classes');
+  });
+
   it('change-impact specialist cross-checks document consistency without rewriting files', () => {
     const ci = registry.get('change-impact');
     expect(ci).toBeDefined();

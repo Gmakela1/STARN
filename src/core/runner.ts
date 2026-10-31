@@ -12,7 +12,7 @@ import { parseOpenQuestionsFromContent, questionSlug } from './open-questions-pa
 import { runAgentToolLoop } from './agent-loop.js';
 import { maybeCompact } from './compaction.js';
 import { Logger } from '../util/logger.js';
-import { CriticEvaluator, CriticResult, BaselineDocument } from './critic.js';
+import { CriticEvaluator, CriticResult, BaselineDocument, detectStageHint } from './critic.js';
 import { classifyTurnArtifact, buildNoDocumentError } from './artifact-guard.js';
 import { buildRevisionGuidance, buildCriticNote } from './critic-revision.js';
 import { loadProgramBaseline, loadUserExamples } from './critic-inputs.js';
@@ -544,7 +544,13 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
             signal,
             mode: isDeltaReview ? 'delta' : 'full',
             priorScore: isDeltaReview ? priorArtifactScore : undefined,
-            userPrompt: isDeltaReview ? userPrompt : undefined
+            userPrompt: isDeltaReview ? userPrompt : undefined,
+            // Stage-aware critic: only the BOM package declares two-stage
+            // drafting; its Stage-1 marker opts the draft out of Stage-2
+            // criteria (verified URLs, variance). Other specialists: no hint.
+            stageHint: specialist.id === 'bom' && !isDeltaReview
+              ? detectStageHint(artifactForCritic)
+              : undefined
           });
         } catch (err: any) {
           // ESC during critic — abort the turn.

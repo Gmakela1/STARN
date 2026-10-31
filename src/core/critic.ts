@@ -25,6 +25,12 @@ export interface CriticEvaluateOptions {
   mode?: 'full' | 'delta';
   priorScore?: number;
   userPrompt?: string;
+  /**
+   * Stage hint for two-stage deliverables (e.g. BOM). When set (e.g. '1'),
+   * the critic prompt exempts the artifact from Stage-2-only criteria such as
+   * verified URLs and budget variance. Absent/undefined → no stage block.
+   */
+  stageHint?: string;
 }
 
 export interface CriticResult {
@@ -34,6 +40,17 @@ export interface CriticResult {
   strengths: string[];
   weaknesses: string[];
   actionableGuidance: string;
+}
+
+/**
+ * Detects the specialist's self-declared stage marker in an artifact
+ * (e.g. `Stage: 1 — Pre-Sourcing (Grocery List)` in a BOM Stage-1 draft).
+ * Returns '1' or '2' when a marker is present, undefined otherwise.
+ * Pure function — the runner calls this to build the critic's stage hint.
+ */
+export function detectStageHint(artifactContent: string): string | undefined {
+  const m = artifactContent.match(/^Stage:\s*([12])\b/m);
+  return m ? m[1] : undefined;
 }
 
 export class CriticEvaluator {
@@ -82,7 +99,7 @@ CRITICAL DELTA REVIEW GUIDELINES:
 2. Document-Wide Consistency:
    Verify that downstream statements, specs, or tables within this document align with the edits. (For example, if a subsystem voltage or power source changed, confirm that dependent sections reflect this or remain valid).
 3. Non-Regression & Anti-Hallucination:
-   Verify that the edits did not delete essential requirements, introduce vague placeholders ("TBD"), or inject unrequested third-party vendor brand names/part numbers.
+   Verify that the edits did not delete essential requirements, introduce vague placeholders ("TBD"), or inject unrequested third-party vendor brand names/part numbers. Grounding carve-out: part numbers, URLs, or figures the USER supplied or that are established in the baseline/user answers count as grounded, NOT invented; 'Blocked'/'TBD' rows explicitly tied to an open question or pending reconciliation are honest flags, NOT vague placeholders — only fail unexplained ones.
 4. Anti-Nitpicking Directive (MANDATORY):
    Do NOT fail or dock points for styling, depth, or formatting in sections that were NOT touched by these edits. Focus your evaluation on the modified regions and their direct downstream dependencies.
 5. Score Anchoring Rule:
@@ -102,20 +119,24 @@ Respond ONLY with valid JSON in this exact structure:
   "actionableGuidance": "Specific instructions for the builder to fix weaknesses"
 }`;
     } else {
+      const stageHintSection = options.stageHint
+        ? `\nSTAGE HINT (Stage ${options.stageHint}): This artifact is a Stage-1 pre-sourcing draft. Judge it on specification/quantity completeness, traceability to the baseline, and open questions. It is EXEMPT from verified-URL, verified-market-price, and budget-variance criteria; candidate rows with class-level sourcing and explicit "variance not computable yet" statements are correct for this stage, not defects.\n`
+        : '';
       prompt = `You are the Harsh Critic for STARN, an uncompromising engineering evaluation agent.
 Your mission is to evaluate a drafted hardware/physical engineering project deliverable against strict engineering quality standards, verify program alignment, and enforce anti-hallucination discipline.
 
 CRITIC GUIDELINES:
 1. Conduct an "apples-to-oranges" quality comparison: judge standard of quality, completeness, technical rigor, clarity, and professionalism (not whether content matches examples identically).
-2. Look for vague placeholders (e.g., "TBD", "approximate", "as needed"), lack of measurable specifications (dimensions, loads, power, temperatures), and missing physical considerations.
+2. Look for vague placeholders (e.g., "TBD", "approximate", "as needed"), lack of measurable specifications (dimensions, loads, power, temperatures), and missing physical considerations. Grounding carve-outs: (a) part numbers, URLs, or figures that the USER supplied or that are established in the baseline or user answers count as grounded, NOT invented; (b) 'Blocked'/'TBD' rows explicitly tied to an open question or a named pending reconciliation are honest flags, NOT vague placeholders — only fail unexplained placeholders; (d) cost/variance criteria are satisfied when the artifact explicitly states why variance is not yet computable (e.g. no approved budget target / 0% procurement).
 3. Program Alignment & Cross-Document Traceability:
-   Verify that this deliverable strictly aligns with the parameters, dimensions, electrical voltages, power levels, environmental ranges, and user intent defined in the approved upstream project documents. Reject (score < 8.0) if the deliverable contradicts or ignores the approved program baseline.
+   Verify that this deliverable strictly aligns with the parameters, dimensions, electrical voltages, power levels, environmental ranges, and user intent defined in the approved upstream project documents. Reject (score < 8.0) if the deliverable contradicts or ignores the approved program baseline. An approved baseline figure that a user answer asks to reconsider REMAINS the approved basis pending formal revision — never reward a draft for declaring an approved figure unapproved or for inventing a replacement bound.
 4. Anti-Hallucination & Collaborative Integrity (CRITICAL):
-   Penalize and fail (score < 8.0) any deliverable that invents specific third-party vendor brand names, part numbers, or unrequested subsystems (e.g., pyrofuses, complex vehicle CAN protocols, or unmentioned sensors) that were not specified by the user or established in the baseline. If critical engineering items are missing, the builder should suggest them as open questions/recommendations for the user rather than fabricating them as facts.
+   Penalize and fail (score < 8.0) any deliverable that invents specific third-party vendor brand names, part numbers, or unrequested subsystems (e.g., pyrofuses, complex vehicle CAN protocols, or unmentioned sensors) that were not specified by the user or established in the baseline. (c) Trade-study alternatives must be generic part classes unless user-sourced or baseline-established — named third-party brands without that grounding fail. If critical engineering items are missing, the builder should suggest them as open questions/recommendations for the user rather than fabricating them as facts.
 5. Pass (score >= 8.0) ONLY if the artifact meets or exceeds the engineering quality bar AND maintains strict grounding in user intent.
 
 GRADING RUBRIC:
 ${options.rubric}
+${stageHintSection}
 ${baselineSection}
 SECRET-SAUCE QUALITY EXAMPLES (Standard of Quality Reference):
 ${options.secretSauceExamples.map((ex, i) => `### Example ${i + 1}:\n${ex}`).join('\n\n')}
