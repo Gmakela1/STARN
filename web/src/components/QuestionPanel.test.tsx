@@ -184,6 +184,47 @@ describe('QuestionPanel', () => {
     expect(props.onExpand).not.toHaveBeenCalled();
   });
 
+  // ————— 6b. Board #57: 4KB write-time cap + Escape persistence —————
+  it('caps the persisted draft at 4KB so a remount reads a bounded prefix', () => {
+    const big = 'x'.repeat(5000);
+    const props = baseProps();
+    const { unmount } = renderWithUser(<QuestionPanel {...props} />);
+
+    fireEvent.change(screen.getByLabelText('Your answer'), {
+      target: { value: big }
+    });
+
+    // The persisted mirror is capped at write time (4096 chars), not just at
+    // persist-sweep time, so a reload can never resurrect >4KB from storage.
+    const stored: Record<string, string> = JSON.parse(
+      window.localStorage.getItem('starn.questionDrafts.v1') ?? '{}'
+    );
+    expect(stored.A).toHaveLength(4096);
+
+    unmount();
+    renderWithUser(<QuestionPanel {...props} />);
+    const remounted = screen.getByLabelText('Your answer') as HTMLTextAreaElement;
+    expect(remounted.value).toHaveLength(4096);
+  });
+
+  it('Escape then remount: the draft is gone from the store (persists nothing)', () => {
+    const props = baseProps();
+    const { unmount } = renderWithUser(<QuestionPanel {...props} />);
+
+    const textarea = screen.getByLabelText('Your answer');
+    fireEvent.change(textarea, { target: { value: 'draft text' } });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect((textarea as HTMLTextAreaElement).value).toBe('');
+
+    unmount();
+    renderWithUser(<QuestionPanel {...props} />);
+    expect((screen.getByLabelText('Your answer') as HTMLTextAreaElement).value).toBe('');
+    const stored: Record<string, string> = JSON.parse(
+      window.localStorage.getItem('starn.questionDrafts.v1') ?? '{}'
+    );
+    expect(stored.A).toBeUndefined();
+  });
+
   // ————— 7. renderDetail bullets + "Show full question" —————
   it('open: long detail renders 3 bullets with +N more and toggles full text', async () => {
     const longDetail = [

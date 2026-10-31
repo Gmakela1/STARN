@@ -62,9 +62,15 @@ export const docsModule: RouteModule = {
         // is the web's "completed, needs approval" signal. User approval
         // resolves that state: clear the marker so the UI shows plain
         // approved. Chain gating is unaffected (prereqs use artifact approval).
+        // Board #57 — only re-save when the marker value actually changes;
+        // 'idle' or an absent marker is already plain approved (no-op write
+        // skipped). Mutate-fresh-then-save is the codebase pattern (getState()
+        // re-reads from disk each call; see core/autopilot.ts).
         const postState = deps.stateManager.getState();
-        if (postState.autopilot?.docStatus?.[phase.id]) {
-          postState.autopilot.docStatus[phase.id] = 'idle';
+        const docStatus = postState.autopilot?.docStatus;
+        const marker = docStatus?.[phase.id];
+        if (marker === 'passed' || marker === 'auto-approved') {
+          docStatus![phase.id] = 'idle';
           deps.stateManager.saveState(postState);
         }
         const artifact = deps.stateManager.getState().artifacts.find(a => a.id === phase.id.toUpperCase());

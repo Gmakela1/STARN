@@ -13,7 +13,6 @@ import {
   Bot,
   User,
   TriangleAlert,
-  Play,
   Paperclip,
   ChevronDown,
   Check,
@@ -50,7 +49,7 @@ import CheckpointPanel from '../components/CheckpointPanel';
 import QuestionBadge from '../components/QuestionBadge';
 import QuestionPanel from '../components/QuestionPanel';
 import PaneSplitter from '../components/PaneSplitter';
-import { describeAutopilotStartError } from '../lib/autopilotError';
+import StartAutopilotButton from '../components/StartAutopilotButton';
 import { deriveQueuedAnswerStates } from '../lib/queuedStates';
 import {
   applyAnchorHighlight,
@@ -780,23 +779,8 @@ export default function DevelopmentView({
     }
   };
 
-  // Autopilot start control (§5). Never swallow the failure: a held busy guard
-  // answers 409 and the mapped reason renders inline under the action cluster.
-  const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
-
-  const handleStartAutopilot = async () => {
-    setStarting(true);
-    setStartError(null);
-    try {
-      await api.autopilotStart();
-    } catch (err) {
-      setStartError(describeAutopilotStartError(err));
-    } finally {
-      setStarting(false);
-    }
-  };
-
+  // Autopilot start/stop controls (§5) live in StartAutopilotButton (board #57
+  // extraction) so the start flow and stop-failure alert are unit-testable.
   const loadRoadmap = useCallback(async () => {
     try {
       const phases = await api.fetchRoadmap();
@@ -1345,31 +1329,11 @@ export default function DevelopmentView({
             >
               {uploadingExample ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Paperclip className="h-4 w-4" aria-hidden />}
             </button>
-            {autopilotStatus?.running ? (
-              <button
-                onClick={async () => { try { await api.autopilotStop(); } catch {} }}
-                className="flex h-8 shrink-0 items-center gap-1 rounded-md border border-rose-600/40 bg-rose-950/60 px-2.5 text-[11px] font-bold text-rose-300 transition hover:bg-rose-900/70"
-                aria-label="Stop autopilot"
-              >
-                <Square className="h-3 w-3 fill-current" aria-hidden />
-                Stop
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void handleStartAutopilot()}
-                disabled={starting}
-                className="flex min-h-[44px] shrink-0 items-center gap-1 rounded-md bg-cyan-600 px-3.5 text-xs font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="Start autopilot auto-drafting"
-              >
-                {starting ? (
-                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                ) : (
-                  <Play className="h-3 w-3 fill-current" aria-hidden />
-                )}
-                Start Auto-Drafting
-              </button>
-            )}
+            <StartAutopilotButton
+              running={!!autopilotStatus?.running}
+              onStart={async () => { await api.autopilotStart(); }}
+              onStop={async () => { await api.autopilotStop(); }}
+            />
             <button
               onClick={() => void refreshDoc()}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
@@ -1446,15 +1410,6 @@ export default function DevelopmentView({
             )}
           </div>
         </header>
-
-        {startError && (
-          <p
-            role="alert"
-            className="border-b border-rose-800/60 bg-rose-950/40 px-4 py-1.5 text-xs text-rose-300"
-          >
-            {startError}
-          </p>
-        )}
 
         {uploadNotice && (
           <p className={`border-b px-4 py-1.5 text-xs ${uploadNotice.startsWith('✔') ? 'border-emerald-900/60 bg-emerald-950/40 text-emerald-300' : 'border-rose-800/60 bg-rose-950/40 text-rose-300'}`}>

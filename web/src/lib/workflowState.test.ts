@@ -50,6 +50,11 @@ describe('railStateFor', () => {
     [{ roadmapStatus: 'COMPLETED' }, 'approved'],
     // precedence: COMPLETED beats docExists
     [{ docExists: true, roadmapStatus: 'COMPLETED' }, 'approved'],
+    // board #56/#57 — server-autopilot test 14 web-side mirror: after the user
+    // approves, the server clears the autopilot docStatus marker to 'idle' and
+    // the roadmap phase is COMPLETED, so the rail must resolve Approved (never
+    // Drafted via the docExists rule).
+    [{ docStatus: 'idle', docExists: true, roadmapStatus: 'COMPLETED' }, 'approved'],
 
     // 5. docExists → drafted; PENDING_REVIEW → drafted
     [{ docExists: true }, 'drafted'],

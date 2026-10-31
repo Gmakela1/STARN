@@ -89,7 +89,12 @@ function persistDraftStore(): void {
 
 function writeDraft(id: string, text: string): void {
   if (!id) return;
-  draftStore = { ...draftStore, [id]: text };
+  // Board #57 — the 4KB cap is enforced at write time, not only in the persist
+  // sweep: the store keeps a bounded prefix, so a reload always resurrects at
+  // most 4KB per draft. The composer textarea keeps the user's full text live;
+  // only the persisted/rehydrated draft is truncated.
+  const capped = text.length > DRAFT_MAX_LENGTH ? text.slice(0, DRAFT_MAX_LENGTH) : text;
+  draftStore = { ...draftStore, [id]: capped };
   persistDraftStore();
 }
 
