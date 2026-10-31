@@ -18,6 +18,9 @@ import type { PortalItem } from '../types/api';
 
 afterEach(async () => {
   cleanup();
+  // A test may leave fake timers active (caret-restore tests); restore real
+  // timers first so the flush below never hangs.
+  vi.useRealTimers();
   // Board #53A — the module draft store (and its localStorage mirror) is shared
   // across mounts. The recorder-flush microtask (stopRecording().then… append)
   // is feature behavior on close/unmount, so let it land BEFORE the reset or
@@ -614,6 +617,121 @@ describe('QuestionPanel', () => {
 
     fireEvent.keyUp(window, { key: 'Alt', ctrlKey: true });
     expect(voiceMock.stopRecording).not.toHaveBeenCalled();
+  });
+
+  // ————— 15b. Send button (same submit path as Enter) —————
+  it('send: renders far right of VoicePill, labeled Send, disabled while the draft is empty', () => {
+    renderWithUser(<QuestionPanel {...baseProps()} />);
+
+    const send = screen.getByRole('button', { name: 'Send answer' });
+    expect(screen.getByText('Send')).toBeInTheDocument();
+    expect(send).toBeDisabled();
+    expect(send).toHaveAttribute('title', 'Send answer — or press Enter');
+
+    // Far right: VoicePill precedes the Send button in the action row.
+    const pill = screen.getByRole('button', { name: 'Record answer' });
+    expect(send.compareDocumentPosition(pill) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+  });
+
+  it('send: clicking submits the trimmed text on the same path as Enter', async () => {
+    const props = baseProps();
+    const { user } = renderWithUser(<QuestionPanel {...props} />);
+
+    const textarea = screen.getByLabelText('Your answer');
+    await user.type(textarea, '  my answer  ');
+    await user.click(screen.getByRole('button', { name: 'Send answer' }));
+
+    expect(props.onSubmit).toHaveBeenCalledTimes(1);
+    expect(props.onSubmit).toHaveBeenCalledWith('A', 'my answer');
+  });
+
+  it('send: disabled while the submit is in flight', async () => {
+    let resolveSubmit!: () => void;
+    const onSubmit = vi.fn(() => new Promise<void>(res => { resolveSubmit = res; }));
+    const props = baseProps({ onSubmit });
+    const view = renderWithUser(<QuestionPanel {...props} />);
+
+    const textarea = screen.getByLabelText('Your answer');
+    await view.user.type(textarea, 'answer');
+    const send = screen.getByRole('button', { name: 'Send answer' });
+
+    const click = view.user.click(send);
+    await vi.waitFor(() => expect(send).toBeDisabled());
+
+    // Success clears the draft (board #53A), so Send is empty-disabled again.
+    // The clear continuation runs outside act; flush it before asserting.
+    resolveSubmit();
+    await click;
+    await act(async () => { await Promise.resolve(); });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(textarea).toHaveValue('');
+  });
+
+  it('send: a failed submit keeps the draft, shows the error, and re-enables', async () => {
+    const onSubmit = vi.fn(async () => { throw new Error('boom'); });
+    const view = renderWithUser(<QuestionPanel {...baseProps({ onSubmit })} />);
+
+    const textarea = screen.getByLabelText('Your answer');
+    await view.user.type(textarea, 'answer');
+    await view.user.click(screen.getByRole('button', { name: 'Send answer' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('boom');
+    expect(textarea).toHaveValue('answer');
+    expect(screen.getByRole('button', { name: 'Send answer' })).toBeEnabled();
+  });
+
+  // ————— 15c. Caret retention after a voice append (design §2) —————
+  it('voice: caret sits at the end of the appended text and the composer regains focus', async () => {
+    const view = renderWithUser(<QuestionPanel {...baseProps()} />);
+
+    const textarea = screen.getByLabelText('Your answer') as HTMLTextAreaElement;
+    await view.user.type(textarea, 'typed ');
+
+    voiceMock.recording = true;
+    view.rerender(<QuestionPanel {...baseProps()} />);
+    // Pill is toggle-mode: first click starts, second ends it and appends.
+    await view.user.click(screen.getByRole('button', { name: 'Record answer' }));
+    await view.user.click(screen.getByRole('button', { name: 'Record answer' }));
+
+    await vi.waitFor(() => {
+      expect(textarea.value).toBe('typed Transcribed answer text');
+      expect(document.activeElement).toBe(textarea);
+      expect(textarea.selectionStart).toBe(textarea.value.length);
+      expect(textarea.selectionEnd).toBe(textarea.value.length);
+    });
+  });
+
+  it('voice: no caret refocus when focus has already moved elsewhere after the append', async () => {
+    vi.useFakeTimers();
+    let resolveStop: (text: string | null) => void = () => {};
+    voiceMock.stopRecording.mockImplementationOnce(
+      () => new Promise<string | null>(res => { resolveStop = res; })
+    );
+    const view = renderWithUser(<QuestionPanel {...baseProps()} />);
+
+    voiceMock.recording = true;
+    view.rerender(<QuestionPanel {...baseProps()} />);
+    fireEvent.keyDown(window, { key: 'Alt' });
+    fireEvent.keyUp(window, { key: 'Alt' });
+    expect(voiceMock.stopRecording).toHaveBeenCalledTimes(1);
+
+    // Land the transcript: append runs as a microtask, the caret restore is
+    // deferred one task — focus can move in between.
+    await act(async () => {
+      resolveStop('Transcribed answer text');
+      await Promise.resolve();
+    });
+
+    // The user focused something else after the append; the restore must not
+    // steal focus back.
+    screen.getByRole('button', { name: 'Close questions' }).focus();
+    act(() => { vi.runAllTimers(); });
+
+    const textarea = screen.getByLabelText('Your answer') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Transcribed answer text');
+    expect(document.activeElement).not.toBe(textarea);
+
+    vi.useRealTimers();
   });
 
   // ————— 16. Lifecycle colors + follow-up chip (design §3, board #52) —————

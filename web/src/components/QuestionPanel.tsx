@@ -156,6 +156,8 @@ export default function QuestionPanel({
   /** Per-item expansion of the follow-up answer-history disclosure (§3 board #52). */
   const [showHistory, setShowHistory] = useState<Record<string, boolean>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /** Item id with a submit in flight — gates the Send button (never Enter). */
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
   /**
    * Snapshot of just-applied items so the 8s "Resolved ✓" dwell keeps rendering
    * after the item leaves the open pool (the open-only poll carries it away).
@@ -176,6 +178,10 @@ export default function QuestionPanel({
   const onCloseRef = useRef(onClose);
   const onFocusDocumentRef = useRef(onFocusDocument);
   const recordingRef = useRef(false);
+  /** Pending caret-restore timer from the latest voice append (design §2). */
+  const caretTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Element that held focus when the latest voice append landed. */
+  const focusAtAppendRef = useRef<Element | null>(null);
   const consumedFocusRef = useRef<{ token: number } | null>(null);
 
   // Sync refs for the single window-level Escape listener so it never needs to
@@ -248,7 +254,10 @@ export default function QuestionPanel({
   // End any in-flight dwell timers on unmount (project-switch remount safety).
   useEffect(() => {
     const timers = dwellTimersRef.current;
-    return () => timers.forEach(clearTimeout);
+    return () => {
+      timers.forEach(clearTimeout);
+      if (caretTimerRef.current) clearTimeout(caretTimerRef.current);
+    };
   }, []);
 
   // Advance-on-vanish (D6): the active item left the open pool on its own —
@@ -370,6 +379,24 @@ export default function QuestionPanel({
     const combined = (draftsRef.current[id] ?? '') + text;
     writeDraft(id, combined);
     setDrafts(prev => ({ ...prev, [id]: combined }));
+    // Caret retention (design §2): a transcript append must leave the caret at
+    // the end of the appended text and the composer focused, so the user can
+    // keep dictating or press Enter immediately. The pill (or whatever held
+    // focus) steals focus on click, so restore once per append — deferred one
+    // task so a user who already moved focus elsewhere (before the timer
+    // fires) is not yanked back.
+    focusAtAppendRef.current = document.activeElement;
+    if (caretTimerRef.current) clearTimeout(caretTimerRef.current);
+    caretTimerRef.current = setTimeout(() => {
+      caretTimerRef.current = null;
+      const ta = composerRef.current;
+      const stolen = document.activeElement !== focusAtAppendRef.current;
+      focusAtAppendRef.current = null;
+      if (!ta || stolen) return;
+      const end = ta.value.length;
+      ta.focus();
+      ta.setSelectionRange(end, end);
+    }, 0);
   }, []);
 
   // Alt-hold-to-record key listener (same shape as the doc composer's).
@@ -441,6 +468,7 @@ export default function QuestionPanel({
     if (phase === 'queued' || phase === 'applying') return;
     setRetryText(prev => ({ ...prev, [id]: trimmed }));
     setSubmitError(null);
+    setSubmittingId(id);
     try {
       await onSubmit(id, trimmed);
       // Board #53A — the draft is wiped only on a successful submit; a failure
@@ -454,6 +482,8 @@ export default function QuestionPanel({
       });
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Couldn't send your answer.");
+    } finally {
+      setSubmittingId(null);
     }
   };
 
@@ -806,6 +836,26 @@ export default function QuestionPanel({
                     });
                   }}
                 />
+                {/* Send: same submit path as Enter, far right of the action
+                    row. Disabled while the trimmed draft is empty, while that
+                    item's submit is in flight, or while composing is gated
+                    (queued/applying) — matching the Enter path's guards. */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleSubmit(item.id, drafts[item.id] ?? '');
+                  }}
+                  disabled={
+                    composingDisabled ||
+                    submittingId === item.id ||
+                    !(drafts[item.id] ?? '').trim()
+                  }
+                  aria-label="Send answer"
+                  title="Send answer — or press Enter"
+                  className="flex min-h-[44px] shrink-0 items-center gap-1.5 self-end rounded-lg border border-rose-700/40 bg-[#d61f2c] px-3 text-xs font-semibold text-white transition hover:bg-[#e11d3f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Send
+                </button>
               </div>
             </>
           )}
