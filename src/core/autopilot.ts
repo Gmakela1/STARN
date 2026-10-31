@@ -496,9 +496,12 @@ export class AutopilotDriver {
    * Runs one incorporation specialist turn per approved doc that still
    * carries a pending-answers block, before the current phase executes. The
    * specialist revises its own document's normative text to incorporate the
-   * answers and removes the pending block per its instructions. If a turn
-   * leaves the block behind, it is stripped deterministically so the chain
-   * never loops on a stale block. Errors are logged, not fatal.
+   * answers and removes the pending block per its instructions. Only a
+   * successful turn may strip a block the specialist left behind — on error
+   * or criticFailed the block is left intact (it is the only record of the
+   * user's answers) so the next chain start re-runs incorporation. Failures
+   * are logged and surfaced via a status event, never fatal; each phase
+   * boundary re-attempts incorporation at most once per run.
    */
   private async incorporatePendingAnswers(beforeIdx: number, signal?: AbortSignal): Promise<void> {
     const { stateManager, projectPath, executeTurn, logger } = this.deps;
@@ -529,9 +532,14 @@ You MUST write the complete updated document to docs/${phaseId.toUpperCase()}.md
         onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
         onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args })
       });
-      if (result?.error) {
+      // The pending block is the only record of the user's answers. Strip a
+      // block the specialist left behind ONLY when the turn succeeded (no
+      // error, critic passed). On error or criticFailed: signal and continue
+      // with the block intact — the next chain start re-runs incorporation.
+      if (result?.error || result?.criticFailed) {
         logger?.warn(`Autopilot: incorporation turn for ${phaseId} failed (${result.output?.slice(0, 120) || 'unknown error'})`);
-        this.emit({ kind: 'status', message: `Incorporation turn for ${phase.name} failed — continuing with the pending block stripped.` });
+        this.emit({ kind: 'status', message: `Incorporation turn for ${phase.name} failed — continuing with the pending answers left in place for the next chain start.` });
+        continue;
       }
       // Guard: if the specialist turn left the block in place, strip it so
       // the chain never re-runs incorporation on a stale block forever.

@@ -46,11 +46,27 @@ export interface CriticResult {
  * Detects the specialist's self-declared stage marker in an artifact
  * (e.g. `Stage: 1 — Pre-Sourcing (Grocery List)` in a BOM Stage-1 draft).
  * Returns '1' or '2' when a marker is present, undefined otherwise.
+ * The marker must appear within the first ~3 non-empty lines after the
+ * first '#' heading (heading-adjacent self-declaration) — a stray
+ * 'Stage: 1' deeper in the document body does not count.
  * Pure function — the runner calls this to build the critic's stage hint.
  */
 export function detectStageHint(artifactContent: string): string | undefined {
-  const m = artifactContent.match(/^Stage:\s*([12])\b/m);
-  return m ? m[1] : undefined;
+  const heading = artifactContent.match(/^# .*$/m);
+  if (!heading || heading.index === undefined) {
+    return undefined;
+  }
+  const afterHeading = artifactContent.slice(heading.index + heading[0].length);
+  let nonEmptySeen = 0;
+  for (const line of afterHeading.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    nonEmptySeen++;
+    const m = trimmed.match(/^Stage:\s*([12])\b/);
+    if (m) return m[1];
+    if (nonEmptySeen >= 3) break;
+  }
+  return undefined;
 }
 
 export class CriticEvaluator {

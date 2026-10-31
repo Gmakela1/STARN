@@ -581,4 +581,78 @@ describe('AutopilotDriver', () => {
     expect(loggerStub.info).toHaveBeenCalledWith(expect.stringContaining('pending user answers found in docs/REQUIREMENTS.md'));
     expect(capturedEvents.some(e => e.kind === 'status' && (e as any).message.includes('Incorporating pending user answers'))).toBe(true);
   });
+
+  it('leaves the pending block on disk and emits a status event when the incorporation turn errors', async () => {
+    const pendingContent = '# REQUIREMENTS\n\nApproved normative text.\n\n## User Answers (Pending Incorporation)\n\n**Bus current**\nAnswer: derive from motor max output at 72 V\n';
+    await preApprovePhase(tmpDir, stateMgr, 'conops');
+    await preApprovePhase(tmpDir, stateMgr, 'architecture');
+    await preApprovePhase(tmpDir, stateMgr, 'icd');
+    await preApprovePhase(tmpDir, stateMgr, 'capabilities');
+    await preApprovePhase(tmpDir, stateMgr, 'requirements', pendingContent);
+
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string }) => {
+      if (opts.forceSpecialistId === 'requirements') {
+        // Failed incorporation turn rewrites the same pending content.
+        writeDoc(tmpDir, 'requirements', pendingContent);
+        return { ...makeTurnResult('requirements'), error: true, output: 'turn blew up' };
+      }
+      writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nDeliverable content.\n`);
+      return makeTurnResult(opts.forceSpecialistId);
+    });
+
+    const driver = createDriver();
+    driver.start();
+
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    // Block NOT stripped: the pending answers survive on disk.
+    const reqDoc = fs.readFileSync(path.join(tmpDir, 'docs', 'REQUIREMENTS.md'), 'utf-8');
+    expect(reqDoc).toContain('## User Answers (Pending Incorporation)');
+    expect(reqDoc).toContain('derive from motor max output at 72 V');
+
+    // 'failed — continuing' status event emitted; the chain still continued
+    // past the failed incorporation (complete was reached).
+    expect(capturedEvents.some(e => e.kind === 'status' && (e as any).message.includes('Incorporation turn for System Requirements failed'))).toBe(true);
+    expect((capturedEvents.find(e => e.kind === 'complete') as any).reason).toBe('finished');
+  });
+
+  it('leaves the pending block on disk and emits a status event when the incorporation turn fails critic review', async () => {
+    const pendingContent = '# REQUIREMENTS\n\nApproved normative text.\n\n## User Answers (Pending Incorporation)\n\n**Bus current**\nAnswer: derive from motor max output at 72 V\n';
+    await preApprovePhase(tmpDir, stateMgr, 'conops');
+    await preApprovePhase(tmpDir, stateMgr, 'architecture');
+    await preApprovePhase(tmpDir, stateMgr, 'icd');
+    await preApprovePhase(tmpDir, stateMgr, 'capabilities');
+    await preApprovePhase(tmpDir, stateMgr, 'requirements', pendingContent);
+
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string }) => {
+      if (opts.forceSpecialistId === 'requirements') {
+        writeDoc(tmpDir, 'requirements', pendingContent);
+        return {
+          ...makeTurnResult('requirements'),
+          criticFailed: true,
+          criticResult: { passed: false, score: 5.0, summary: 'failed incorporation', strengths: [], weaknesses: ['answers not incorporated'], actionableGuidance: 'redo' }
+        };
+      }
+      writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nDeliverable content.\n`);
+      return makeTurnResult(opts.forceSpecialistId);
+    });
+
+    const driver = createDriver();
+    driver.start();
+
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    // Block NOT stripped despite the failed incorporation turn.
+    const reqDoc = fs.readFileSync(path.join(tmpDir, 'docs', 'REQUIREMENTS.md'), 'utf-8');
+    expect(reqDoc).toContain('## User Answers (Pending Incorporation)');
+
+    // criticFailed is signalled the same way; the chain continues (the failed
+    // revision is NOT committed as final — no approval/park of REQUIREMENTS).
+    expect(capturedEvents.some(e => e.kind === 'status' && (e as any).message.includes('Incorporation turn for System Requirements failed'))).toBe(true);
+    expect((capturedEvents.find(e => e.kind === 'complete') as any).reason).toBe('finished');
+  });
 });

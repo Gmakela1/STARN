@@ -48,6 +48,13 @@ describe('detectStageHint', () => {
   it('ignores stage mentions not at line start', () => {
     expect(detectStageHint('# BOM\n\nsee Stage: 1 for details')).toBeUndefined();
   });
+
+  it('ignores a stray Stage marker deeper in the document body', () => {
+    // The marker must be heading-adjacent (within the first ~3 non-empty
+    // lines after the first '#' heading); a line-start 'Stage: 1' further
+    // down must not trigger the Stage-1 exemption.
+    expect(detectStageHint('# BOM\n\nIntro paragraph.\n\n## Sourcing\n\nSome body text.\n\nStage: 1 — Fake marker\n')).toBeUndefined();
+  });
 });
 
 describe('CriticEvaluator stage hint + grounding carve-outs', () => {
