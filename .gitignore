@@ -10,3 +10,5 @@ test-output/
 boot_test_server.mjs
 
 .playwright-mcp/
+
+*.tsbuildinfo
