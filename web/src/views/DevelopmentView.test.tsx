@@ -201,11 +201,14 @@ describe('DevelopmentView PromptBar composer', () => {
     });
   });
 
-  it('lists repository docs as injectable sources in the composer menu', async () => {
+  it('lists repository docs only in the submenu, not as direct picker rows', async () => {
     const { user } = renderView({ busy: false });
     await user.click(screen.getByRole('button', { name: 'Add files and sources' }));
+    expect(await screen.findByRole('option', { name: /Attach from repository…/ })).toBeInTheDocument();
+    // Docs are submenu-only: the top-level list must not duplicate them.
+    expect(screen.queryByRole('option', { name: /hardware-spec\.md/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: /Attach from repository…/ }));
     expect(await screen.findByRole('option', { name: /hardware-spec\.md/ })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /Attach from repository…/ })).toBeInTheDocument();
   });
 
   it('morphs the send button into Stop while busy', () => {

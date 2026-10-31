@@ -642,7 +642,8 @@ export default function DevelopmentView({
 
   // --- Repository docs (reference/) for the PromptBar source picker ---
   // Fetched once per project (refetch on project change). Failures leave the
-  // picker without repo rows — reference docs are optional picker content.
+  // 'Attach from repository…' submenu without rows — reference docs are
+  // optional picker content.
   const [repoDocs, setRepoDocs] = useState<LibraryFileEntry[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -658,18 +659,15 @@ export default function DevelopmentView({
       cancelled = true;
     };
   }, [project?.id]);
+  // Top-level picker rows: 'Quality example' only. Repository docs live
+  // exclusively in PromptBar's '__repo_attach' submenu (fed via the repoDocs
+  // prop) — listing them here as direct inject rows doubled every doc row
+  // in the picker list.
   const promptSources = useMemo<PromptBarSource[]>(
     () => [
-      { key: 'example', name: 'Quality example', description: 'Upload for the selected phase', attach: true },
-      ...repoDocs.map(r => ({
-        key: `repo:${r.name}`,
-        name: r.name,
-        description: 'reference/ · repository doc',
-        icon: <FileText className="h-4 w-4" />,
-        inject: `Use reference/${r.name} as the primary reference for this request.`
-      }))
+      { key: 'example', name: 'Quality example', description: 'Upload for the selected phase', attach: true }
     ],
-    [repoDocs]
+    []
   );
 
   // --- Document panel state ---

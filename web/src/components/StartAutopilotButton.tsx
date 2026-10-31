@@ -29,8 +29,10 @@ export default function StartAutopilotButton({
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // One-shot idle→running transition flag: the rocket launch + spark burst
-  // fire only on the running edge, never on remount while already running.
+  // One-shot idle→running transition flag: the button owns the timing on the
+  // `running` edge (false→true fires the flag, cleared after 900ms) so both
+  // branches play the rocket launch + spark burst once, never on remount
+  // while already running.
   const prevRunning = useRef(running);
   const [launched, setLaunched] = useState(false);
   useEffect(() => {
@@ -105,15 +107,37 @@ export default function StartAutopilotButton({
         >
           {stopping ? (
             <Square className="h-3 w-3 fill-current" aria-hidden />
+          ) : launched ? (
+            // Launch window: the rocket plays the one-shot launch on the
+            // idle→running edge before the running layout settles.
+            <Rocket className="rocket-launch-safe h-6 w-6 fill-current" aria-hidden />
           ) : (
             <Rocket className="h-6 w-6 fill-current" aria-hidden />
           )}
           <span className="text-[11px] font-bold tracking-wide">AUTOPILOT ACTIVE</span>
           {/* Indeterminate 4px bar (aria-hidden redundancy next to the footer
-              LatticeLoader) — slides under reduced motion too, dimmed. */}
-          <span className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-rose-900/60" aria-hidden>
-            <span className="bar-slide-safe block h-full w-1/3 rounded-full bg-[#ff2a3c] motion-reduce:opacity-70" />
-          </span>
+              LatticeLoader) — static under reduced motion (index.css sets
+              animation:none on .bar-slide-safe), dimmed. Hidden during the
+              900ms launch window so the launch plays before settling. */}
+          {!launched && (
+            <span className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-rose-900/60" aria-hidden>
+              <span className="bar-slide-safe block h-full w-1/3 rounded-full bg-[#ff2a3c] motion-reduce:opacity-70" />
+            </span>
+          )}
+          {/* One-shot spark burst replayed on the running branch; the running
+              button is rounded-lg (no cut-corner clip-path), so nothing
+              clips the burst at the edges. */}
+          {launched && (
+            <span className="pointer-events-none absolute inset-0" aria-hidden="true">
+              {[0, 1, 2, 3, 4].map(i => (
+                <span
+                  key={i}
+                  className="spark-burst-safe absolute top-[-2px] block h-1.5 w-1.5 rounded-full bg-[#ffd28a]"
+                  style={{ left: `${12 + i * 19}%` }}
+                />
+              ))}
+            </span>
+          )}
         </button>
         {error && (
           <span

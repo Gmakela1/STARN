@@ -41,6 +41,36 @@ describe('StartAutopilotButton — full variant rocket redesign', () => {
     expect(screen.queryByRole('button', { name: 'Launch autopilot auto-drafting' })).not.toBeInTheDocument();
   });
 
+  it('plays the one-shot rocket launch on the running edge, then settles into the running layout', async () => {
+    const { rerender } = renderControls(false);
+    // Idle→running transition: the button fires its internal launched flag.
+    rerender(<StartAutopilotButton running onStart={start} onStop={stop} />);
+
+    const button = screen.getByRole('button', { name: 'Stop autopilot' });
+    // Launch window: rocket-launch animation + spark burst visible, bar held
+    // back until the window closes.
+    expect(button.querySelector('.rocket-launch-safe')).not.toBeNull();
+    expect(button.querySelector('.spark-burst-safe')).not.toBeNull();
+    expect(button.textContent).toContain('AUTOPILOT ACTIVE');
+    expect(button.querySelector('.h-1')).toBeNull();
+
+    // After the 900ms window the rocket is static and the bar renders.
+    await waitFor(
+      () => expect(button.querySelector('.bar-slide-safe')).not.toBeNull(),
+      { timeout: 2000 }
+    );
+    expect(button.querySelector('.rocket-launch-safe')).toBeNull();
+    expect(button.querySelector('.spark-burst-safe')).toBeNull();
+  });
+
+  it('does not replay the launch on remount while already running', () => {
+    // Mounting straight into running (e.g. DevelopmentView remount) must not
+    // fire the one-shot edge again.
+    const { container } = renderControls(true);
+    expect(container.querySelector('.rocket-launch-safe')).toBeNull();
+    expect(container.querySelector('.spark-burst-safe')).toBeNull();
+  });
+
   it('shows the IGNITING… label while the start request is pending', async () => {
     let resolveStart: () => void = () => {};
     start.mockImplementation(() => new Promise<void>(res => { resolveStart = res; }));
