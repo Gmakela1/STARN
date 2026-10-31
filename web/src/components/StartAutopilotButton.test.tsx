@@ -19,69 +19,105 @@ function renderControls(running = false) {
   );
 }
 
-describe('StartAutopilotButton — full variant rocket redesign', () => {
-  it('renders a plain 56px cut-corner button (no StarBorder wrapper) with rocket + idle label', () => {
+describe('StartAutopilotButton — full variant (276b255-era StarBorder pill)', () => {
+  it('renders the StarBorder wrapper with a crimson cut-corner 44px button, Sparkles and idle label', () => {
     const { container } = renderControls();
     const button = screen.getByRole('button', { name: 'Launch autopilot auto-drafting' });
     expect(button.tagName).toBe('BUTTON');
-    expect(button).toHaveClass('min-h-[56px]', 'cut-corner', 'rounded-none');
-    expect(button.querySelector('.lucide-rocket')).not.toBeNull();
-    expect(button.querySelector('.lucide-sparkles')).toBeNull();
-    expect(button.textContent).toContain('LAUNCH AUTO-DRAFTING');
-    // StarBorder's decorative canvas is gone with the wrapper.
-    expect(container.querySelector('canvas')).toBeNull();
+    expect(button).toHaveClass('min-h-[44px]', 'cut-corner', 'rounded-none');
+    expect(button.querySelector('.lucide-sparkles')).not.toBeNull();
+    expect(button.querySelector('.lucide-rocket')).toBeNull();
+    expect(button.textContent).toContain('Launch Auto-Drafting');
+    // StarBorder's decorative canvas is present again on the idle pill.
+    expect(container.querySelector('canvas')).not.toBeNull();
   });
 
-  it('switches to the rose 56px stop control with the indeterminate bar while running', () => {
+  it('switches to the plain rose 44px Stop pill while running', () => {
     renderControls(true);
     const button = screen.getByRole('button', { name: 'Stop autopilot' });
-    expect(button).toHaveClass('min-h-[56px]', 'w-56');
-    expect(button.textContent).toContain('AUTOPILOT ACTIVE');
-    expect(button.querySelector('.h-1')).not.toBeNull();
+    expect(button).toHaveClass('min-h-[44px]', 'rounded-md', 'border-rose-600/40', 'bg-rose-950/60', 'px-2.5');
+    expect(button.textContent).toContain('Stop');
+    expect(button.querySelector('.lucide-square')).not.toBeNull();
+    expect(button.textContent).not.toContain('AUTOPILOT ACTIVE');
+    expect(button.querySelector('.bar-slide-safe')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Launch autopilot auto-drafting' })).not.toBeInTheDocument();
   });
+});
 
-  it('plays the one-shot rocket launch on the running edge, then settles into the running layout', async () => {
-    const { rerender } = renderControls(false);
-    // Idle→running transition: the button fires its internal launched flag.
-    rerender(<StartAutopilotButton running onStart={start} onStop={stop} />);
+describe('StartAutopilotButton — composer variant (chat prompt box)', () => {
+  function renderComposer(running = false) {
+    return renderWithUser(
+      <StartAutopilotButton running={running} onStart={start} onStop={stop} size="composer" />
+    );
+  }
+
+  it('renders a 56x56 rocket-only idle button with accessible name and no text label', () => {
+    const { container } = renderComposer();
+    const button = screen.getByRole('button', { name: 'Launch autopilot auto-drafting' });
+    expect(button).toHaveClass('h-14', 'w-14', 'rounded-lg', 'cut-corner');
+    expect(button.querySelector('.lucide-rocket')).not.toBeNull();
+    expect(container.textContent).not.toContain('Launch Auto-Drafting');
+  });
+
+  it('renders the 56x56 rose stop control while running and stops on click', async () => {
+    stop.mockResolvedValue(undefined);
+    const { user } = renderComposer(true);
 
     const button = screen.getByRole('button', { name: 'Stop autopilot' });
+    expect(button).toHaveClass('h-14', 'w-14', 'border-rose-600/40', 'bg-rose-950/60');
+    expect(button.querySelector('.lucide-square')).not.toBeNull();
+    await user.click(button);
+    await waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
+  });
+
+  it('plays the one-shot rocket launch on the running edge, then settles into the bar layout', async () => {
+    const { rerender } = renderComposer(false);
+    // Idle→running transition: the button fires its internal launched flag.
+    rerender(<StartAutopilotButton running onStart={start} onStop={stop} size="composer" />);
+
+    const button = screen.getByRole('button', { name: 'Stop autopilot' });
+    // The bar and burst live on the outer span (the control), not inside the
+    // button — the composer running branch renders them as siblings.
+    const control = button.parentElement as HTMLElement;
     // Launch window: rocket-launch animation + spark burst visible, bar held
     // back until the window closes.
     expect(button.querySelector('.rocket-launch-safe')).not.toBeNull();
-    expect(button.querySelector('.spark-burst-safe')).not.toBeNull();
-    expect(button.textContent).toContain('AUTOPILOT ACTIVE');
-    expect(button.querySelector('.h-1')).toBeNull();
+    expect(control.querySelector('.spark-burst-safe')).not.toBeNull();
+    expect(control.querySelector('.bar-slide-safe')).toBeNull();
 
-    // After the 900ms window the rocket is static and the bar renders.
+    // After the 900ms window the glyph is a static Square and the 4px bar
+    // renders pinned to the bottom edge of the control.
     await waitFor(
-      () => expect(button.querySelector('.bar-slide-safe')).not.toBeNull(),
+      () => expect(control.querySelector('.bar-slide-safe')).not.toBeNull(),
       { timeout: 2000 }
     );
     expect(button.querySelector('.rocket-launch-safe')).toBeNull();
-    expect(button.querySelector('.spark-burst-safe')).toBeNull();
+    expect(control.querySelector('.spark-burst-safe')).toBeNull();
+    const barTrack = control.querySelector('.absolute.bottom-1.inset-x-2');
+    expect(barTrack).not.toBeNull();
+    expect(button.querySelector('.lucide-square')).not.toBeNull();
   });
 
   it('does not replay the launch on remount while already running', () => {
     // Mounting straight into running (e.g. DevelopmentView remount) must not
     // fire the one-shot edge again.
-    const { container } = renderControls(true);
+    const { container } = renderComposer(true);
     expect(container.querySelector('.rocket-launch-safe')).toBeNull();
     expect(container.querySelector('.spark-burst-safe')).toBeNull();
   });
 
-  it('shows the IGNITING… label while the start request is pending', async () => {
+  it('composer variant is disabled while the start request is pending', async () => {
     let resolveStart: () => void = () => {};
     start.mockImplementation(() => new Promise<void>(res => { resolveStart = res; }));
-    const { user } = renderControls();
+    const { user } = renderComposer();
 
     const button = screen.getByRole('button', { name: 'Launch autopilot auto-drafting' });
     await user.click(button);
-    expect(button.textContent).toContain('IGNITING…');
+    expect(button).toBeDisabled();
 
     resolveStart();
-    await waitFor(() => expect(button.textContent).toContain('LAUNCH AUTO-DRAFTING'));
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(start).toHaveBeenCalledTimes(1);
   });
 });
 

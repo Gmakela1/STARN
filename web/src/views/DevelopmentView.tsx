@@ -1254,9 +1254,9 @@ export default function DevelopmentView({
               </div>
             )}
             <div className="flex items-end gap-2">
-              {/* Autopilot start/stop (icon variant, 44px) — outside/left of PromptBar, per §3 */}
+              {/* Autopilot start/stop (composer variant, 56x56 rocket) — outside/left of PromptBar, bottom-aligned with the row */}
               <StartAutopilotButton
-                size="icon"
+                size="composer"
                 running={!!autopilotStatus?.running}
                 onStart={async () => { await api.autopilotStart(); }}
                 onStop={async () => { await api.autopilotStop(); }}
