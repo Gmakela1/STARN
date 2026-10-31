@@ -787,10 +787,19 @@ describe('AutopilotDriver', () => {
       expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
     }, { timeout: 5000, interval: 50 });
 
-    // Failed fix is non-fatal: warned, status event, and the NEXT flagged doc
-    // still gets its fix turn; the chain completes.
+    // Failed fix is non-fatal: warned, status event, portal question added for
+    // the user, and the NEXT flagged doc still gets its fix turn; the chain
+    // completes.
     expect(loggerStub.warn).toHaveBeenCalledWith(expect.stringContaining('ripple fix turn for architecture failed'));
     expect(capturedEvents.some(e => e.kind === 'status' && (e as any).message.includes('Ripple fix for System Architecture & Subsystems failed'))).toBe(true);
+    const failedItems = listPortalItems(stateMgr).filter(i => i.type === 'question' && i.title.startsWith('Ripple fix failed:'));
+    expect(failedItems).toHaveLength(1);
+    expect(failedItems[0].title).toBe('Ripple fix failed: System Architecture & Subsystems');
+    expect(failedItems[0].severity).toBe('normal');
+    expect(failedItems[0].source).toBe('autopilot');
+    expect(failedItems[0].detail).toContain('ripple fix blew up');
+    expect(failedItems[0].detail).toContain('ARCH-FLAG-MARKER');
+    expect(capturedEvents.some(e => e.kind === 'question' && (e as any).item.id === failedItems[0].id)).toBe(true);
     const calls: any[] = executeTurnMock.mock.calls.map(c => c[0]);
     expect(calls.some(c => c.forceSpecialistId === 'icd' && (c.userPrompt as string).includes('CHANGE-IMPACT RIPPLE'))).toBe(true);
     expect((capturedEvents.find(e => e.kind === 'complete') as any).reason).toBe('finished');
@@ -855,5 +864,136 @@ describe('AutopilotDriver', () => {
     expect(calls.some(c => c.forceSpecialistId === 'change-impact')).toBe(false);
     expect(calls[1].forceSpecialistId).toBe('bom');
     expect((capturedEvents.find(e => e.kind === 'complete') as any).reason).toBe('finished');
+  });
+
+  // ── V2: hash-based ripple trigger + intent-aware scan + critic-free fixes ──
+
+  const V2_REPORT = `## Change Impact Analysis
+
+**Source of change:** docs/ARCHITECTURE.md
+
+**Affected documents:**
+- docs/ICD.md — Section "Power Interface": stale bus figure — ICD-V2-MARKER. Scoped fix: raise to 96 V.
+`;
+
+  async function preApproveFirstFive(): Promise<void> {
+    await preApprovePhase(tmpDir, stateMgr, 'conops');
+    await preApprovePhase(tmpDir, stateMgr, 'architecture');
+    await preApprovePhase(tmpDir, stateMgr, 'icd');
+    await preApprovePhase(tmpDir, stateMgr, 'capabilities');
+    await preApprovePhase(tmpDir, stateMgr, 'requirements');
+  }
+
+  it('fires one intent-aware ripple scan when an approved doc is edited on disk (hash mismatch)', async () => {
+    await preApproveFirstFive();
+    // External edit: architecture changed outside the approval flow.
+    writeDoc(tmpDir, 'architecture', '# ARCHITECTURE\n\nEdited after approval: bus raised to 96 V.\n');
+
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string }) => {
+      if (opts.forceSpecialistId === 'change-impact') {
+        return makeTurnResult('change-impact', { requiresReview: false, output: V2_REPORT });
+      }
+      writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nDeliverable content.\n`);
+      return makeTurnResult(opts.forceSpecialistId);
+    });
+
+    const driver = createDriver();
+    driver.start();
+
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    const calls: any[] = executeTurnMock.mock.calls.map(c => c[0]);
+    // Exactly one scan, carrying the neutral intent note for the external edit.
+    const scanCalls = calls.filter(c => c.forceSpecialistId === 'change-impact');
+    expect(scanCalls).toHaveLength(1);
+    expect(scanCalls[0].userPrompt).toContain('docs/ARCHITECTURE.md');
+    expect(scanCalls[0].userPrompt).toContain('changed outside the approval flow');
+    expect(scanCalls[0].userPrompt).toContain('ANALYSIS ONLY');
+
+    // One critic-free owning-specialist fix turn for the flagged doc; the
+    // source doc (architecture) is excluded.
+    const fixCalls = calls.filter(c => c.forceSpecialistId === 'icd' && (c.userPrompt as string).includes('CHANGE-IMPACT RIPPLE'));
+    expect(fixCalls).toHaveLength(1);
+    expect(fixCalls[0].criticDisabled).toBe(true);
+    expect(fixCalls[0].userPrompt).toContain('ICD-V2-MARKER');
+    expect(calls.some(c => c.forceSpecialistId === 'architecture' && (c.userPrompt as string).includes('CHANGE-IMPACT RIPPLE'))).toBe(false);
+
+    // revised status set on the fixed doc + phase event emitted.
+    expect(stateMgr.getState().autopilot!.docStatus['icd']).toBe('revised');
+    expect(capturedEvents.some(e => e.kind === 'phase' && (e as any).status === 'revised' && (e as any).phaseId === 'icd')).toBe(true);
+  });
+
+  it('runs no ripple scan when every approved doc is byte-identical to its approved hash', async () => {
+    await preApproveFirstFive();
+
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string }) => {
+      writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nDeliverable content.\n`);
+      return makeTurnResult(opts.forceSpecialistId);
+    });
+
+    const driver = createDriver();
+    driver.start();
+
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    const calls: any[] = executeTurnMock.mock.calls.map(c => c[0]);
+    expect(calls.some(c => c.forceSpecialistId === 'change-impact')).toBe(false);
+    expect((capturedEvents.find(e => e.kind === 'complete') as any).reason).toBe('finished');
+  });
+
+  it('does not update approvedContentHash on ripple edits, so the next run re-detects the change', async () => {
+    await preApproveFirstFive();
+    writeDoc(tmpDir, 'architecture', '# ARCHITECTURE\n\nEdited after approval: bus raised to 96 V.\n');
+    const icdHashBefore = stateMgr.getState().artifacts.find(a => a.id === 'ICD')!.approvedContentHash;
+
+    // rtm parks the chain (criticFailed) so a later run re-runs the boundary.
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string }) => {
+      if (opts.forceSpecialistId === 'change-impact') {
+        return makeTurnResult('change-impact', { requiresReview: false, output: V2_REPORT });
+      }
+      if (opts.forceSpecialistId === 'rtm') {
+        return makeTurnResult('rtm', {
+          criticFailed: true,
+          requiresReview: true,
+          criticResult: { passed: false, score: 5.0, summary: 'park', strengths: [], weaknesses: ['stale'], actionableGuidance: 'fix' }
+        });
+      }
+      writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nDeliverable content.\n`);
+      return makeTurnResult(opts.forceSpecialistId);
+    });
+
+    const driver1 = createDriver();
+    driver1.start();
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+    expect((capturedEvents.find(e => e.kind === 'complete') as any).reason).toBe('stopped');
+
+    // The ripple fix edited docs/ICD.md but approvedContentHash is untouched:
+    // only approvals update it.
+    const icdAfter = stateMgr.getState().artifacts.find(a => a.id === 'ICD')!;
+    expect(icdAfter.approvedContentHash).toBe(icdHashBefore);
+    expect(stateMgr.isArtifactApproved('ICD')).toBe(true);
+
+    // Next run: the un-re-approved change is re-detected as an external source.
+    executeTurnMock.mockClear();
+    capturedEvents = [];
+    const driver2 = createDriver();
+    driver2.start();
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    const calls2: any[] = executeTurnMock.mock.calls.map(c => c[0]);
+    const scan2 = calls2.filter(c => c.forceSpecialistId === 'change-impact');
+    expect(scan2).toHaveLength(1);
+    expect(scan2[0].userPrompt).toContain('docs/ICD.md');
+    expect(scan2[0].userPrompt).toContain('changed outside the approval flow');
+    // The source docs get no fix turns on re-detection.
+    expect(calls2.some(c => (c.userPrompt as string).includes('CHANGE-IMPACT RIPPLE'))).toBe(false);
   });
 });

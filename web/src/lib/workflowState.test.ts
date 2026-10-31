@@ -38,6 +38,12 @@ describe('railStateFor', () => {
   // drafting beats needs-review
   [{ docStatus: 'drafting', openQuestions: 2 }, 'in-progress'],
 
+  // 2.5 revised (ripple fix applied, critic-free, not re-approved) → needs-review
+  [{ docStatus: 'revised' }, 'needs-review'],
+  // revised stays needs-review regardless of questions/roadmap (user must review)
+  [{ docStatus: 'revised', openQuestions: 2 }, 'needs-review'],
+  [{ docStatus: 'revised', roadmapStatus: 'COMPLETED' }, 'needs-review'],
+
     // 3. auto-approved → approved (+auto); passed → approved
     [{ docStatus: 'auto-approved' }, 'approved'],
     [{ docStatus: 'passed' }, 'approved'],
@@ -83,6 +89,8 @@ describe('railStateFor', () => {
     expect(railStateFor({ docExists: true }).label).toBe('Drafted — awaiting review');
     expect(railStateFor({ docStatus: 'passed' }).label).toBe('Approved');
     expect(railStateFor({ docStatus: 'parked' }).label).toBe('Error — needs attention');
+    // revised: completed by a critic-free ripple fix, not re-approved
+    expect(railStateFor({ docStatus: 'revised' }).label).toBe('Completed — not approved');
     // locked variant label
     expect(railStateFor({ roadmapStatus: 'LOCKED' }).label).toBe('Locked — reopen the upstream document');
   });

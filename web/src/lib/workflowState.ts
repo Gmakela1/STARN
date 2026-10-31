@@ -54,6 +54,13 @@ export function railStateFor(input: DocStateInput): PhaseRailView {
     return view('in-progress', 'In progress');
   }
 
+  // 2.5 revised (ripple fix applied to an approved doc) → completed category,
+  // but needs-review: the edit was critic-free and NOT re-approved, so the
+  // user must review before it counts as approved again.
+  if (docStatus === 'revised') {
+    return view('needs-review', 'Completed — not approved');
+  }
+
   // 3. autopilot completed the doc:
   //    open questions flagged → needs-review (§6, wins over draft);
   //    otherwise approved.

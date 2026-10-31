@@ -77,6 +77,13 @@ export interface TurnOptions {
    * turns grade ONLY answer incorporation, not the already-approved doc).
    */
   criticFocus?: string;
+  /**
+   * Skips the whole critic evaluation + auto-revision loop (ripple fix turns).
+   * The artifact-guard still applies: the turn must still produce/write the
+   * doc. The result carries autoRevisionsRun 0, criticResult undefined and
+   * criticFailed false; all other turn semantics are unchanged.
+   */
+  criticDisabled?: boolean;
 }
 
 export interface TurnResult {
@@ -522,7 +529,10 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     }
 
     // 7. Critic While-Loop with Program Baseline Verification
-    if (specialist.requiresCritic) {
+    // criticDisabled (ripple fix turns): skip evaluation + revision entirely;
+    // the artifact-guard above still enforced. criticResult stays undefined,
+    // autoRevisionsRun stays 0, criticFailed computes false below.
+    if (specialist.requiresCritic && !options.criticDisabled) {
       onStatusUpdate?.('Comparing the draft against the approved project baseline…');
       const critic = new CriticEvaluator(options.criticClient ?? client);
       let attempts = 0;

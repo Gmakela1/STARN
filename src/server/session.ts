@@ -329,6 +329,8 @@ export class ServerSessionManager {
   private makeExecuteTurn(abort: AbortController): (opts: {
     userPrompt: string;
     forceSpecialistId: string;
+    /** Ripple fix turns: skip the critic loop in the runner. */
+    criticDisabled?: boolean;
     signal?: AbortSignal;
     onQuestions?: (items: Array<{
       type: 'question';
@@ -370,6 +372,7 @@ export class ServerSessionManager {
         logger: this.deps.logger,
         signal: opts.signal ?? abort.signal,
         forceSpecialistId: opts.forceSpecialistId,
+        criticDisabled: opts.criticDisabled,
         onQuestions: opts.onQuestions,
         onStatusUpdate: opts.onStatusUpdate,
         onToolCall: opts.onToolCall

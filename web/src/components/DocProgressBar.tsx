@@ -27,6 +27,7 @@ export function computeProgress(
     const isApproved =
       docResult === 'passed' ||
       docResult === 'auto-approved' ||
+      docResult === 'revised' ||
       phase.status === 'COMPLETED';
     const isDrafted =
       !isApproved &&

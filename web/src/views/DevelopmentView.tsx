@@ -137,6 +137,7 @@ function phaseLine(ev: AutopilotLiveEvent & { kind: 'phase' }): string {
     case 'revising': return `Polishing ${name} after the review…`;
     case 'passed': return `${name} completed`;
     case 'auto-approved': return `Approved ${name} — continuing…`;
+    case 'revised': return `${name} revised by a ripple fix — pending your review`;
     case 'parked': return `Held ${name} for your review`;
     default: return `Working on ${name}…`;
   }

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { ProjectStateManager, ORDERED_WORKFLOW_PHASES, defaultAutopilotState } from '../workspace/state.js';
 import { PortalItem, PortalItemType, AutopilotState, ProjectState } from '../workspace/types.js';
@@ -7,7 +8,7 @@ import { approveArtifact, parseAffectedPhaseIds } from './approvals.js';
 import { addPortalItem, answerPortalItem, listPortalItems } from './question-portal.js';
 import { Logger } from '../util/logger.js';
 
-export type AutopilotDocStatus = 'idle' | 'drafting' | 'critic' | 'revising' | 'passed' | 'auto-approved' | 'parked';
+export type AutopilotDocStatus = 'idle' | 'drafting' | 'critic' | 'revising' | 'passed' | 'auto-approved' | 'revised' | 'parked';
 
 export type AutopilotEvent =
   | { kind: 'start'; total: number }
@@ -32,6 +33,8 @@ export interface AutopilotDeps {
   executeTurn: (opts: {
     userPrompt: string;
     forceSpecialistId: string;
+    /** Ripple fix turns: skip the critic loop in the runner. */
+    criticDisabled?: boolean;
     /** Scoped evaluation directive threaded to the critic (incorporation turns). */
     criticFocus?: string;
     signal?: AbortSignal;
@@ -57,6 +60,29 @@ export interface AutopilotDeps {
   onSettled?: () => void;
   /** Optional logger for routing decisions (pending-answer incorporation). */
   logger?: Logger;
+}
+
+/**
+ * SHA-256 hex digest of doc content — compared against the approved
+ * artifact's approvedContentHash for the hash-based ripple trigger.
+ */
+function sha256Hex(content: string): string {
+  return crypto.createHash('sha256').update(content).digest('hex');
+}
+
+/**
+ * One upstream change feeding the ripple scan (v2 triggers):
+ * - incorporation: the owning specialist just incorporated pending user
+ *   answers (diff captured before/after the turn);
+ * - external: the saved doc's on-disk content no longer matches its
+ *   approvedContentHash (edited outside the approval flow, not re-approved).
+ */
+interface RippleSource {
+  phaseId: string;
+  /** Compact before/after diff text; present only for incorporation sources. */
+  diff?: string;
+  /** True when the change came from a hash mismatch instead of incorporation. */
+  external: boolean;
 }
 
 /** Marker block that answer-applier appends for mid-chain answers not yet incorporated. */
@@ -193,6 +219,11 @@ export class AutopilotDriver {
   private runningPromise: Promise<void> | null = null;
   /** Tracks phases that have already been retried (one retry per phase). */
   private _retriedPhase: Set<string> = new Set();
+  /** Ripple sources already scanned/fixed this run — prevents in-run cascade
+   * so each doc ripples at most once per run (depth-1 recursion across runs:
+   * approvedContentHash is only updated by approvals, so the next run
+   * re-detects an un-re-approved change). */
+  private _rippleProcessed: Set<string> = new Set();
 
   constructor(deps: AutopilotDeps, onEvent?: (ev: AutopilotEvent) => void) {
     this.deps = deps;
@@ -331,6 +362,10 @@ export class AutopilotDriver {
     const total = ORDERED_WORKFLOW_PHASES.length;
     this.emit({ kind: 'start', total });
 
+    // Fresh ripple ledger per run: every changed approved doc ripples at most
+    // once per chain run.
+    this._rippleProcessed = new Set();
+
     const passed: string[] = [];
     const parked: string[] = [];
 
@@ -357,8 +392,9 @@ export class AutopilotDriver {
 
         // Pending user answers (appended mid-chain by answer-applier) must be
         // incorporated into their originating approved docs BEFORE this phase
-        // runs — chain-start/resume and between-phases routing.
-        await this.incorporatePendingAnswers(i, signal);
+        // runs; then every approved doc whose on-disk content no longer matches
+        // its approvedContentHash joins the ripple scan (v2 hash trigger).
+        await this.runPrePhaseRipples(i, signal);
         if (signal?.aborted) {
           break;
         }
@@ -569,6 +605,51 @@ export class AutopilotDriver {
   }
 
   /**
+   * Pre-phase ripple step (v2, subsumes the v1 incorporation-only trigger):
+   * 1. Runs incorporation turns for pending user answers; a changed doc is
+   *    captured as a ripple source with its diff.
+   * 2. Hash trigger: for EVERY approved artifact whose doc is saved on disk
+   *    with content hash ≠ approvedContentHash, adds that doc as an external
+   *    ripple source (byte-identical docs are skipped).
+   * 3. Runs ONE combined intent-aware change-impact scan over all sources.
+   * Each changed doc is processed at most once per run; failures are
+   * logged/emitted and never fatal.
+   */
+  private async runPrePhaseRipples(beforeIdx: number, signal?: AbortSignal): Promise<void> {
+    const sources: RippleSource[] = [];
+    await this.incorporatePendingAnswers(beforeIdx, signal, sources);
+    // Hash trigger: compare each approved doc's on-disk content hash against
+    // the approvedContentHash stored at approval time. Ripple edits do NOT
+    // update the hash (only approvals do), so an un-re-approved change keeps
+    // re-triggering on subsequent runs — depth-1 recursion per run.
+    const state = this.readState();
+    for (const phase of ORDERED_WORKFLOW_PHASES) {
+      if (sources.some(s => s.phaseId === phase.id) || this._rippleProcessed.has(phase.id)) {
+        continue;
+      }
+      if (!this.deps.stateManager.isArtifactApproved(phase.id.toUpperCase())) {
+        continue;
+      }
+      const artifact = state.artifacts.find(a => a.id.toUpperCase() === phase.id.toUpperCase());
+      if (!artifact?.approvedContentHash) {
+        continue;
+      }
+      const content = readDocContent(this.deps.projectPath, phase.id);
+      if (content === null || sha256Hex(content) === artifact.approvedContentHash) {
+        continue;
+      }
+      sources.push({ phaseId: phase.id, external: true });
+    }
+    if (sources.length === 0) {
+      return;
+    }
+    for (const s of sources) {
+      this._rippleProcessed.add(s.phaseId);
+    }
+    await this.runRippleScan(sources, signal);
+  }
+
+  /**
    * Runs one incorporation specialist turn per approved doc that still
    * carries a pending-answers block, before the current phase executes. The
    * specialist revises its own document's normative text to incorporate the
@@ -579,7 +660,7 @@ export class AutopilotDriver {
    * are logged and surfaced via a status event, never fatal; each phase
    * boundary re-attempts incorporation at most once per run.
    */
-  private async incorporatePendingAnswers(beforeIdx: number, signal?: AbortSignal): Promise<void> {
+  private async incorporatePendingAnswers(beforeIdx: number, signal?: AbortSignal, rippleSources?: RippleSource[]): Promise<void> {
     const { stateManager, projectPath, executeTurn, logger } = this.deps;
     const pendingPhaseIds = this.findPendingIncorporationPhases(beforeIdx);
     for (const phaseId of pendingPhaseIds) {
@@ -631,68 +712,93 @@ You MUST write the complete updated document to docs/${phaseId.toUpperCase()}.md
       // the deterministic guard strip below — so a no-op incorporation that
       // leaves the block untouched compares byte-identical to beforeContent.
       let postTurnContent: string | null = null;
+      let guardStripped = false;
       try {
         const content = fs.readFileSync(docPath, 'utf-8');
         postTurnContent = content;
         if (content.includes(PENDING_INCORPORATION_MARKER)) {
           const stripped = stripPendingBlock(content);
           fs.writeFileSync(docPath, stripped, 'utf-8');
+          guardStripped = true;
           logger?.info(`Autopilot: incorporation turn left the pending block in docs/${phaseId.toUpperCase()}.md — stripped it`);
         }
       } catch {
         // ignore: unreadable/missing doc — nothing to strip
       }
-      // Ripple scan gate (two triggers only): the incorporation turn just
-      // incorporated pending open-question answers (inherent to this path)
-      // AND the doc actually changed. No ripple on no-op incorporations.
-      if (postTurnContent === null || postTurnContent === beforeContent) {
+      if (postTurnContent === null) {
         continue;
       }
+      if (postTurnContent === beforeContent) {
+        // No-op incorporation: when the deterministic guard stripped the block
+        // here, only the non-normative pending block was removed — nothing
+        // normative changed. Suppress the ripple for the REST of this run; the
+        // next run still re-detects the hash mismatch until re-approval.
+        if (guardStripped) {
+          this._rippleProcessed.add(phaseId);
+        }
+        continue;
+      }
+      // Ripple source capture: the incorporation turn just incorporated
+      // pending open-question answers AND the doc actually changed. The
+      // source joins the combined pre-phase ripple scan.
       const diff = summarizeDiff(beforeContent, postTurnContent);
       if (!diff) {
         continue;
       }
-      await this.runRippleScan(phaseId, diff, signal);
+      rippleSources?.push({ phaseId, diff, external: false });
     }
   }
 
   /**
-   * Read-only ripple scan after a successful incorporation: runs the
-   * change-impact specialist (non-critic, no criticFocus) over the compact
-   * incorporation diff to flag downstream approved docs whose content is now
+   * Intent-aware ripple scan (v2): runs the change-impact specialist (non-critic)
+   * once over ALL combined ripple sources — each diff plus its intent (the
+   * incorporated user answers for incorporation sources; a neutral
+   * 'changed outside the approval flow' note for external hash-mismatch
+   * sources) — to flag downstream approved docs whose content is now
    * discrepant, then runs ONE scoped fix turn per flagged doc with its owning
-   * specialist (the incorporation doc itself is excluded). One ripple turn
-   * per doc per run — no loops. Scan/fix failures are logged and surfaced via
-   * a status event, never fatal; the affected doc is separate from the
-   * incorporation doc, so nothing is stripped on failure.
+   * specialist (source docs themselves are excluded). Fix turns run with the
+   * critic disabled; a successful fix marks the doc 'revised' (completed,
+   * NOT re-approved) and a failed fix adds a portal item so the user sees
+   * it. One ripple turn per doc per run — no loops. Scan/fix failures are
+   * logged and surfaced, never fatal; nothing is stripped on failure.
    */
-  private async runRippleScan(incorporatedPhaseId: string, diffSummaryText: string, signal?: AbortSignal): Promise<void> {
+  private async runRippleScan(sources: RippleSource[], signal?: AbortSignal): Promise<void> {
     const { executeTurn, logger } = this.deps;
-    const artifactId = incorporatedPhaseId.toUpperCase();
+    const sourcePhaseIds = sources.map(s => s.phaseId);
+    const sourceLineFor = (s: RippleSource): string => {
+      const doc = `docs/${s.phaseId.toUpperCase()}.md`;
+      if (s.external) {
+        return `UPSTREAM CHANGE in ${doc} (document content changed outside the approval flow — edited after approval, not yet re-approved): read the current on-disk content and flag downstream discrepancies it creates.`;
+      }
+      return `UPSTREAM CHANGE DIFF in ${doc} (pending user answers incorporated): ${s.diff}`;
+    };
     let scanResult: TurnResult;
     try {
       scanResult = await executeTurn({
-        userPrompt: `UPSTREAM CHANGE DIFF in docs/${artifactId}.md (pending user answers incorporated): ${diffSummaryText}\n\nRead the downstream approved docs. Flag every document/section where this change creates a discrepancy, contradiction, or stale value. Output format: per affected doc — path, section heading, what is now discrepant, and the scoped update that would fix it. ANALYSIS ONLY — do NOT write or edit any document.`,
+        userPrompt: `${sources.map(sourceLineFor).join('\n')}\n\nRead the downstream approved docs. Flag every document/section where these changes create a discrepancy, contradiction, or stale value. Output format: per affected doc — path, section heading, what is now discrepant, and the scoped update that would fix it. ANALYSIS ONLY — do NOT write or edit any document.`,
         forceSpecialistId: 'change-impact',
         signal,
         onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
         onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args })
       });
     } catch (err: any) {
-      logger?.warn(`Autopilot: ripple scan for docs/${artifactId}.md failed (${err?.message ?? String(err)})`);
+      logger?.warn(`Autopilot: ripple scan failed (${err?.message ?? String(err)})`);
       this.emit({ kind: 'status', message: 'Ripple scan failed — continuing.' });
       return;
     }
     if (scanResult?.error || scanResult?.criticFailed || scanResult?.aborted) {
-      logger?.warn(`Autopilot: ripple scan for docs/${artifactId}.md failed (${scanResult?.output?.slice(0, 120) || 'unknown error'})`);
+      logger?.warn(`Autopilot: ripple scan failed (${scanResult?.output?.slice(0, 120) || 'unknown error'})`);
       this.emit({ kind: 'status', message: 'Ripple scan failed — continuing.' });
       return;
     }
     const affectedPhaseIds = parseAffectedPhaseIds(scanResult.output)
-      .filter(id => id !== incorporatedPhaseId);
+      .filter(id => !sourcePhaseIds.includes(id));
     this.emit({ kind: 'status', message: `Ripple scan: ${affectedPhaseIds.length} documents flagged` });
     for (const targetId of affectedPhaseIds) {
       const targetPhase = ORDERED_WORKFLOW_PHASES.find(p => p.id === targetId)!;
+      // Each flagged doc ripples at most once per run, success or failure —
+      // a ripple fix that edits another approved doc must not cascade.
+      this._rippleProcessed.add(targetId);
       if (signal?.aborted) {
         return;
       }
@@ -700,24 +806,51 @@ You MUST write the complete updated document to docs/${phaseId.toUpperCase()}.md
       let fixResult: TurnResult;
       try {
         fixResult = await executeTurn({
-          userPrompt: `CHANGE-IMPACT RIPPLE: docs/${artifactId}.md was updated (upstream decision change). Update ONLY these flagged sections: ${details}. Keep everything else untouched. You may ground fixes with your tools; if a fix requires changing an approved upstream baseline figure, apply the baseline-conflict protocol instead (keep figure binding, mark pending reconciliation, record Open Question). You MUST write the complete updated document to docs/${targetPhase.id.toUpperCase()}.md using fs_write (or apply the edits with fs_edit).`,
+          userPrompt: `CHANGE-IMPACT RIPPLE: ${sourcePhaseIds.map(id => `docs/${id.toUpperCase()}.md`).join(', ')} was updated (upstream decision change). Update ONLY these flagged sections: ${details}. Keep everything else untouched. You may ground fixes with your tools; if a fix requires changing an approved upstream baseline figure, apply the baseline-conflict protocol instead (keep figure binding, mark pending reconciliation, record Open Question). You MUST write the complete updated document to docs/${targetPhase.id.toUpperCase()}.md using fs_write (or apply the edits with fs_edit).`,
           forceSpecialistId: targetId,
+          // Critic-free ripple fixes: the owning specialist's scoped edit is
+          // applied directly; the user reviews it via the 'revised' status.
+          criticDisabled: true,
           signal,
           onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
           onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args })
         });
       } catch (err: any) {
         logger?.warn(`Autopilot: ripple fix turn for ${targetId} failed (${err?.message ?? String(err)})`);
+        this.addFailedRipplePortalItem(targetPhase, String(err?.message ?? err).slice(0, 400), details, scanResult.output);
         this.emit({ kind: 'status', message: `Ripple fix for ${targetPhase.name} failed — continuing.` });
         continue;
       }
-      if (fixResult?.error || fixResult?.criticFailed) {
+      if (fixResult?.error || fixResult?.criticFailed || fixResult?.aborted) {
         logger?.warn(`Autopilot: ripple fix turn for ${targetId} failed (${fixResult?.output?.slice(0, 120) || 'unknown error'})`);
+        this.addFailedRipplePortalItem(targetPhase, (fixResult?.output ?? '').slice(0, 400), details, scanResult.output);
         this.emit({ kind: 'status', message: `Ripple fix for ${targetPhase.name} failed — continuing.` });
         continue;
       }
+      // Successful fix: mark the doc 'revised' — completed by a ripple fix,
+      // NOT re-approved (approvedContentHash untouched; the next run re-checks).
+      const state = this.readState();
+      state.autopilot.docStatus[targetPhase.id] = 'revised';
+      this.deps.stateManager.saveState(state);
+      this.emit({ kind: 'phase', phaseId: targetPhase.id, status: 'revised', name: targetPhase.name });
       this.emit({ kind: 'status', message: `Ripple fix: docs/${targetPhase.id.toUpperCase()}.md updated` });
     }
+  }
+
+  /**
+   * Adds a non-fatal portal question for a failed ripple fix turn so the
+   * user sees it (error excerpt + flagged discrepancy summary).
+   */
+  private addFailedRipplePortalItem(targetPhase: { id: string; name: string }, errorExcerpt: string, flaggedDetails: string, scanReport: string): void {
+    const item = addPortalItem(this.deps.stateManager, {
+      type: 'question',
+      severity: 'normal',
+      docPath: `docs/${targetPhase.id.toUpperCase()}.md`,
+      title: `Ripple fix failed: ${targetPhase.name}`,
+      detail: `The autopilot could not apply the ripple fix. Error: ${errorExcerpt || 'unknown error'}. Flagged discrepancy: ${flaggedDetails || scanReport.slice(0, 300)}`,
+      source: 'autopilot'
+    });
+    this.emit({ kind: 'question', item });
   }
 
   /**
