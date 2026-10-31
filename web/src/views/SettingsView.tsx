@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Loader2,
-  Save,
   Settings2,
   FolderOpen,
   Folder,
@@ -16,6 +15,8 @@ import {
   Bot
 } from 'lucide-react';
 import { api } from '../api/client';
+import { SettingsSaveBar } from '../components/SettingsSaveBar';
+import type { SettingsSaveBarStatus } from '../components/SettingsSaveBar';
 import {
   Assignments,
   ModelRole,
@@ -32,11 +33,17 @@ export interface SettingsViewProps {
 }
 
 const ROLES: Array<{ role: ModelRole; label: string; note?: string }> = [
-  { role: 'drafting', label: 'Drafting', note: 'Writes every deliverable and runs intake. Needs tool calling.' },
+  { role: 'drafting', label: 'Drafting', note: 'Writes every deliverable and runs intake. Needs tool calling (STARN tests this when you save).' },
   { role: 'critic', label: 'Critic', note: 'The critic gates every deliverable; assign your strongest model.' },
   { role: 'classifier', label: 'Classifier', note: 'Routes each request to a specialist. A small fast model is fine.' },
   { role: 'compaction', label: 'Compaction', note: 'Summarizes long sessions.' },
   { role: 'transcriber', label: 'Transcriber', note: 'Reads scanned PDFs (manuals, datasheets). Recommended: gemini-2.5-flash (low cost). Local: qwen2.5vl:7b.' }
+];
+
+const SEARCH_OPTIONS: Array<{ value: SearchProvider; title: string; blurb: string }> = [
+  { value: 'openrouter', title: 'OpenRouter (Built-in)', blurb: 'Zero configuration. Uses OpenRouter server tool and credits.' },
+  { value: 'tavily', title: 'Tavily Search', blurb: 'Recommended for LLMs. Clean spec extraction (1,000 free/mo).' },
+  { value: 'brave', title: 'Brave Search', blurb: 'Fast, private web search API.' }
 ];
 
 /** Editable provider row. `apiKey` undefined = keep stored key. */
@@ -58,7 +65,8 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
   const [testing, setTesting] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [warning, setWarning] = useState<string | null>(null);
+  const [aiStatus, setAiStatus] = useState<SettingsSaveBarStatus | null>(null);
+  const [searchStatus, setSearchStatus] = useState<SettingsSaveBarStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [transcriptionEnabled, setTranscriptionEnabled] = useState(true);
   const [autopilotEnabled, setAutopilotEnabled] = useState(true);
@@ -78,6 +86,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
 
   // Search settings state
   const [searchProvider, setSearchProvider] = useState<SearchProvider>('openrouter');
+  const [savedSearchProvider, setSavedSearchProvider] = useState<SearchProvider>('openrouter');
   const [tavilyKey, setTavilyKey] = useState<string>('');
   const [braveKey, setBraveKey] = useState<string>('');
   const [hasTavilyKey, setHasTavilyKey] = useState<boolean>(false);
@@ -149,13 +158,22 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
     try {
       const res = await api.fetchSearchSettings();
       setSearchProvider(res.provider);
+      setSavedSearchProvider(res.provider);
       setHasTavilyKey(res.hasTavilyKey);
       setHasBraveKey(res.hasBraveKey);
     } catch {}
   };
 
+  const discardSearch = () => {
+    setSearchProvider(savedSearchProvider);
+    setTavilyKey('');
+    setBraveKey('');
+    setSearchStatus(null);
+  };
+
   const handleSaveSearch = async () => {
     setSavingSearch(true);
+    setSearchStatus(null);
     try {
       const res = await api.saveSearchSettings({
         provider: searchProvider,
@@ -163,12 +181,14 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
         braveApiKey: braveKey || undefined
       });
       setSearchProvider(res.provider);
+      setSavedSearchProvider(res.provider);
       setHasTavilyKey(res.hasTavilyKey);
       setHasBraveKey(res.hasBraveKey);
-      setNotice('Search provider settings saved');
-      setTimeout(() => setNotice(null), 3000);
+      setTavilyKey('');
+      setBraveKey('');
+      setSearchStatus({ kind: 'success', text: 'Search settings saved.' });
     } catch (err: any) {
-      setError(err?.message ?? 'Failed to save search settings');
+      setSearchStatus({ kind: 'error', text: `Couldn't save: ${err?.message ?? 'Unknown error'}. Your changes are still here. Try again.` });
     } finally {
       setSavingSearch(false);
     }
@@ -222,10 +242,52 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
     );
   }, [settings, providers]);
 
-  const updateProvider = (index: number, patch: Partial<ProviderDraft>) =>
+  const assignmentsDirty = Boolean(settings && assignments && JSON.stringify(assignments) !== JSON.stringify(settings.assignments));
+  const draftingDirty = Boolean(
+    settings && assignments && JSON.stringify(assignments.drafting) !== JSON.stringify(settings.assignments.drafting)
+  );
+
+  const aiDirtyParts = useMemo(() => {
+    const parts: string[] = [];
+    if (dirtyProviders) parts.push('Providers');
+    if (assignmentsDirty) parts.push('Model assignments');
+    if (settings && transcriptionEnabled !== (settings.transcriptionEnabled ?? true)) parts.push('Transcription');
+    if (settings && autopilotEnabled !== (settings.autopilotEnabled ?? true)) parts.push('Autopilot');
+    return parts;
+  }, [settings, dirtyProviders, assignmentsDirty, transcriptionEnabled, autopilotEnabled]);
+
+  const searchDirtyParts: string[] = [];
+  if (searchProvider !== savedSearchProvider) searchDirtyParts.push('Search provider');
+  if (tavilyKey || braveKey) searchDirtyParts.push('API key');
+
+  const missingRoles = assignments ? ROLES.filter(r => !assignments[r.role].model.trim()).map(r => r.label) : [];
+  const blockedReason =
+    missingRoles.length > 0 ? `Choose a model for every role before saving. Missing: ${missingRoles.join(', ')}.` : undefined;
+
+  const anyDirty = aiDirtyParts.length > 0 || searchDirtyParts.length > 0;
+  useEffect(() => {
+    if (!anyDirty) return;
+    const guard = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', guard);
+    return () => window.removeEventListener('beforeunload', guard);
+  }, [anyDirty]);
+
+  const updateProvider = (index: number, patch: Partial<ProviderDraft>) => {
+    setAiStatus(null);
     setProviders(list => list.map((p, i) => (i === index ? { ...p, ...patch } : p)));
+  };
+
+  const discardAi = () => {
+    if (!settings) return;
+    load(settings);
+    setAiStatus(null);
+  };
 
   const addProvider = () => {
+    setAiStatus(null);
     const taken = new Set(providers.map(p => p.id));
     let id = 'ollama';
     for (let n = 2; taken.has(id); n++) id = `ollama-${n}`;
@@ -238,9 +300,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
   const save = async () => {
     if (!assignments) return;
     setSaving(true);
-    setError(null);
-    setNotice(null);
-    setWarning(null);
+    setAiStatus(null);
     try {
       const updated = await api.saveSettings({
         providers: providers
@@ -257,12 +317,16 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
       });
       load(updated);
       if (updated.probe && !updated.probe.ok) {
-        setWarning(`Drafting model failed the tool-calling check: ${updated.probe.detail}. Saved anyway; drafts may not be written.`);
+        setAiStatus({
+          kind: 'warning',
+          text: `Saved, but the Drafting model (${updated.assignments.drafting.model}) didn't pass the tool-calling test: ${updated.probe.detail}. Tool calling lets the model fill in your documents. Without it, drafts may come out empty or fail. Choose a different Drafting model, or check the provider with Test connection.`
+        });
+      } else {
+        setAiStatus({ kind: 'success', text: 'AI settings saved. New settings apply to your next request.' });
       }
-      setNotice('Saved. Applies to the next request and persists to ~/.starn/config.json.');
       await onSaved();
     } catch (err: any) {
-      setError(err?.message ?? 'Save failed');
+      setAiStatus({ kind: 'error', text: `Couldn't save: ${err?.message ?? 'Unknown error'}. Your changes are still here. Try again.` });
     } finally {
       setSaving(false);
     }
@@ -286,9 +350,6 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
 
         {error && (
           <p className="rounded-lg border border-rose-900 bg-rose-950/50 px-3 py-2 text-sm text-rose-200" role="alert">{error}</p>
-        )}
-        {warning && (
-          <p className="rounded-lg border border-amber-900 bg-amber-950/50 px-3 py-2 text-sm text-amber-200" role="alert">{warning}</p>
         )}
         {notice && (
           <p className="rounded-lg border border-emerald-900 bg-emerald-950/50 px-3 py-2 text-sm text-emerald-200" role="status">{notice}</p>
@@ -421,6 +482,9 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
           )}
         </section>
 
+        <div role="group" aria-labelledby="ai-group-h" className="space-y-5 pb-4">
+        <h2 id="ai-group-h" className="text-xs font-semibold uppercase tracking-wide text-slate-400">AI &amp; automation</h2>
+
         {/* Providers */}
         <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4" aria-labelledby="providers-heading">
           <div className="flex items-center justify-between gap-3">
@@ -497,7 +561,10 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                     {!p.builtIn && (
                       <button
                         type="button"
-                        onClick={() => setProviders(l => l.filter((_, j) => j !== i))}
+                        onClick={() => {
+                          setAiStatus(null);
+                          setProviders(l => l.filter((_, j) => j !== i));
+                        }}
                         disabled={roles.length > 0}
                         title={roles.length > 0 ? `Assigned to: ${roles.join(', ')}` : undefined}
                         className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-slate-700 px-3 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50"
@@ -530,7 +597,10 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
             <button
               role="switch"
               aria-checked={transcriptionEnabled}
-              onClick={() => setTranscriptionEnabled(v => !v)}
+              onClick={() => {
+                setAiStatus(null);
+                setTranscriptionEnabled(v => !v);
+              }}
               className={`relative flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${transcriptionEnabled ? 'bg-cyan-600' : 'bg-slate-700'}`}
               aria-label="Toggle document transcription"
             >
@@ -550,7 +620,10 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
               const a = assignments[role];
               const list = models[a.providerId];
               const options = Array.isArray(list) ? list : null;
-              const setA = (patch: Partial<typeof a>) => setAssignments(cur => (cur ? { ...cur, [role]: { ...cur[role], ...patch } } : cur));
+              const setA = (patch: Partial<typeof a>) => {
+                setAiStatus(null);
+                setAssignments(cur => (cur ? { ...cur, [role]: { ...cur[role], ...patch } } : cur));
+              };
               return (
                 <div key={role} className="grid gap-3 border-t border-slate-800 pt-3 first:border-t-0 first:pt-0 sm:grid-cols-[8rem_1fr_1.5fr]">
                   <div>
@@ -598,16 +671,53 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
           </section>
         )}
 
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={() => void save()}
-            disabled={saving || !assignments || Object.values(assignments).some(a => !a.model.trim())}
-            className="flex min-h-[44px] items-center gap-2 rounded-lg bg-sky-700 px-5 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:opacity-50"
-          >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Save className="h-4 w-4" aria-hidden />}
-            Save
-          </button>
-          <p className="text-xs text-slate-400">Saving the drafting role runs a quick tool-calling check.</p>
+        {/* Autopilot */}
+        <section aria-labelledby="autopilot-heading" className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+          <div className="flex items-center gap-2">
+            <Bot className="h-4 w-4 text-cyan-400" />
+            <h2 id="autopilot-heading" className="text-sm font-bold text-slate-200">Autopilot</h2>
+          </div>
+          <p className="text-xs text-slate-400">AI auto-drafts all 13 documents end-to-end with minimal human interference.</p>
+          <div className="flex items-start justify-between gap-4 mt-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-200">Master Autopilot Toggle</p>
+              <p className="mt-1 text-xs text-slate-400">When enabled, the specialist chain auto-runs on project creation or phase transitions.</p>
+            </div>
+            <button role="switch" aria-checked={autopilotEnabled}
+              onClick={() => {
+                setAiStatus(null);
+                setAutopilotEnabled(v => !v);
+              }}
+              className={`relative flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${autopilotEnabled ? 'bg-cyan-600' : 'bg-slate-700'}`}
+              aria-label="Toggle autopilot">
+              <span className={`absolute h-5 w-5 rounded-full bg-white transition-transform ${autopilotEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+          {/* Deferred token-budget slot */}
+          <div className="mt-3 rounded-lg border border-dashed border-slate-700 bg-slate-950/40 p-4 opacity-40 pointer-events-none">
+            <p className="text-xs font-semibold text-slate-400">Per-doc token budget &amp; model-based cost estimate</p>
+            <p className="mt-1 text-[11px] text-slate-500">Coming in a future release.</p>
+          </div>
+        </section>
+
+        <SettingsSaveBar
+          label="Save AI settings"
+          savingLabel={draftingDirty ? 'Saving and checking drafting model…' : 'Saving…'}
+          cleanText="All AI settings saved"
+          dirtyParts={aiDirtyParts}
+          saving={saving}
+          blockedReason={blockedReason}
+          status={aiStatus}
+          extra={
+            draftingDirty ? (
+              <p className="text-xs text-slate-400">
+                When you change the Drafting model, STARN does a quick test to confirm it can use tools. This can take a few seconds.
+              </p>
+            ) : undefined
+          }
+          onSave={() => void save()}
+          onDiscard={discardAi}
+        />
         </div>
 
         {/* Web Search & Hardware Sourcing */}
@@ -621,62 +731,30 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
           </p>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <label className={`flex cursor-pointer flex-col rounded-lg border p-3 transition-colors ${
-              searchProvider === 'openrouter' ? 'border-sky-500 bg-sky-950/30' : 'border-slate-800 bg-slate-950 hover:border-slate-700'
-            }`}>
-              <div className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="searchProvider"
-                  value="openrouter"
-                  checked={searchProvider === 'openrouter'}
-                  onChange={() => setSearchProvider('openrouter')}
-                  className="accent-sky-500"
-                />
-                <span className="text-xs font-semibold text-slate-200">OpenRouter (Built-in)</span>
-              </div>
-              <span className="mt-1 text-[11px] text-slate-400">
-                Zero configuration. Uses OpenRouter server tool and credits.
-              </span>
-            </label>
-
-            <label className={`flex cursor-pointer flex-col rounded-lg border p-3 transition-colors ${
-              searchProvider === 'tavily' ? 'border-sky-500 bg-sky-950/30' : 'border-slate-800 bg-slate-950 hover:border-slate-700'
-            }`}>
-              <div className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="searchProvider"
-                  value="tavily"
-                  checked={searchProvider === 'tavily'}
-                  onChange={() => setSearchProvider('tavily')}
-                  className="accent-sky-500"
-                />
-                <span className="text-xs font-semibold text-slate-200">Tavily Search</span>
-              </div>
-              <span className="mt-1 text-[11px] text-slate-400">
-                Recommended for LLMs. Clean spec extraction (1,000 free/mo).
-              </span>
-            </label>
-
-            <label className={`flex cursor-pointer flex-col rounded-lg border p-3 transition-colors ${
-              searchProvider === 'brave' ? 'border-sky-500 bg-sky-950/30' : 'border-slate-800 bg-slate-950 hover:border-slate-700'
-            }`}>
-              <div className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="searchProvider"
-                  value="brave"
-                  checked={searchProvider === 'brave'}
-                  onChange={() => setSearchProvider('brave')}
-                  className="accent-sky-500"
-                />
-                <span className="text-xs font-semibold text-slate-200">Brave Search</span>
-              </div>
-              <span className="mt-1 text-[11px] text-slate-400">
-                Fast, private web search API.
-              </span>
-            </label>
+            {SEARCH_OPTIONS.map(opt => (
+              <label
+                key={opt.value}
+                className={`flex cursor-pointer flex-col rounded-lg border p-3 transition-colors ${
+                  searchProvider === opt.value ? 'border-sky-500 bg-sky-950/30' : 'border-slate-800 bg-slate-950 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="searchProvider"
+                    value={opt.value}
+                    checked={searchProvider === opt.value}
+                    onChange={() => {
+                      setSearchStatus(null);
+                      setSearchProvider(opt.value);
+                    }}
+                    className="accent-sky-500"
+                  />
+                  <span className="text-xs font-semibold text-slate-200">{opt.title}</span>
+                </div>
+                <span className="mt-1 text-[11px] text-slate-400">{opt.blurb}</span>
+              </label>
+            ))}
           </div>
 
           {searchProvider === 'tavily' && (
@@ -693,7 +771,10 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                 type="password"
                 placeholder={hasTavilyKey ? '••••••••  (Leave blank to keep stored key)' : 'tvly-...'}
                 value={tavilyKey}
-                onChange={e => setTavilyKey(e.target.value)}
+                onChange={e => {
+                  setSearchStatus(null);
+                  setTavilyKey(e.target.value);
+                }}
                 className={inputClass}
               />
             </div>
@@ -713,64 +794,46 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                 type="password"
                 placeholder={hasBraveKey ? '••••••••  (Leave blank to keep stored key)' : 'BSA...'}
                 value={braveKey}
-                onChange={e => setBraveKey(e.target.value)}
+                onChange={e => {
+                  setSearchStatus(null);
+                  setBraveKey(e.target.value);
+                }}
                 className={inputClass}
               />
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-3 pt-1">
-            <button
-              onClick={() => void handleSaveSearch()}
-              disabled={savingSearch}
-              className="flex min-h-[44px] items-center gap-2 rounded-lg bg-sky-700 px-4 text-xs font-semibold text-white transition hover:bg-sky-600 disabled:opacity-50 cursor-pointer"
-            >
-              {savingSearch ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Save Search Settings
-            </button>
-
-            <button
-              onClick={() => void handleProbeSearch()}
-              disabled={probingSearch}
-              className="flex min-h-[44px] items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 text-xs font-semibold text-slate-200 transition hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
-            >
-              {probingSearch ? <Loader2 className="h-4 w-4 animate-spin text-sky-400" /> : <PlugZap className="h-4 w-4" />}
-              Test Connection
-            </button>
-
-            {searchProbeResult && (
-              <span className={`text-xs ${searchProbeResult.success ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {searchProbeResult.success
-                  ? `✓ Connected (${searchProbeResult.latencyMs}ms)`
-                  : `✗ Connection failed: ${searchProbeResult.error}`}
-              </span>
-            )}
-          </div>
-        </section>
-
-        {/* Autopilot */}
-        <section aria-labelledby="autopilot-heading" className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-          <div className="flex items-center gap-2">
-            <Bot className="h-4 w-4 text-cyan-400" />
-            <h2 id="autopilot-heading" className="text-sm font-bold text-slate-200">Autopilot</h2>
-          </div>
-          <p className="text-xs text-slate-400">AI auto-drafts all 13 documents end-to-end with minimal human interference.</p>
-          <div className="flex items-start justify-between gap-4 mt-3">
-            <div>
-              <p className="text-sm font-semibold text-slate-200">Master Autopilot Toggle</p>
-              <p className="mt-1 text-xs text-slate-400">When enabled, the specialist chain auto-runs on project creation or phase transitions.</p>
-            </div>
-            <button role="switch" aria-checked={autopilotEnabled} onClick={() => setAutopilotEnabled(v => !v)}
-              className={`relative flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${autopilotEnabled ? 'bg-cyan-600' : 'bg-slate-700'}`}
-              aria-label="Toggle autopilot">
-              <span className={`absolute h-5 w-5 rounded-full bg-white transition-transform ${autopilotEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-            </button>
-          </div>
-          {/* Deferred token-budget slot */}
-          <div className="mt-3 rounded-lg border border-dashed border-slate-700 bg-slate-950/40 p-4 opacity-40 pointer-events-none">
-            <p className="text-xs font-semibold text-slate-400">Per-doc token budget &amp; model-based cost estimate</p>
-            <p className="mt-1 text-[11px] text-slate-500">Coming in a future release.</p>
-          </div>
+          <SettingsSaveBar
+            label="Save search settings"
+            savingLabel="Saving…"
+            cleanText="Search settings saved"
+            dirtyParts={searchDirtyParts}
+            saving={savingSearch}
+            status={searchStatus}
+            extra={
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleProbeSearch()}
+                  disabled={probingSearch}
+                  className="flex min-h-[44px] items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 text-xs font-semibold text-slate-200 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 disabled:opacity-50"
+                >
+                  {probingSearch ? <Loader2 className="h-4 w-4 animate-spin text-sky-400" /> : <PlugZap className="h-4 w-4" />}
+                  Test search connection
+                </button>
+                <span className="text-xs text-slate-400">Test uses the key you typed; Save to keep it.</span>
+                {searchProbeResult && (
+                  <span className={`text-xs ${searchProbeResult.success ? 'text-emerald-400' : 'text-rose-400'}`} role="status">
+                    {searchProbeResult.success
+                      ? `Connected (${searchProbeResult.latencyMs}ms)`
+                      : `Connection failed: ${searchProbeResult.error}`}
+                  </span>
+                )}
+              </div>
+            }
+            onSave={() => void handleSaveSearch()}
+            onDiscard={discardSearch}
+          />
         </section>
 
         {settings && (
