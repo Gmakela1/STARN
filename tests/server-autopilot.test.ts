@@ -6,7 +6,7 @@ import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { createHttpServer } from '../src/server/server.js';
 import { ServerSessionManager } from '../src/server/session.js';
-import { ProjectStateManager } from '../src/workspace/state.js';
+import { ProjectStateManager, defaultAutopilotState } from '../src/workspace/state.js';
 import { ToolRegistry } from '../src/tools/registry.js';
 import { SpecialistRegistry } from '../src/specialists/registry.js';
 import { Assignments, ProviderConfig, DEFAULT_TRANSCRIBER_MODEL } from '../src/config.js';
@@ -167,5 +167,86 @@ describe('autopilot + portal API', () => {
     const { json } = await request(server, 'GET', '/api/autopilot');
     expect(json.data.running).toBe(false);
     expect(json.data.enabled).toBe(true);
+  });
+
+  // ── Turn-guard lifecycle (wedged autopilot regression) ────────────────
+
+  /** Minimal canned TurnResult for a phase. */
+  function makeTurnResult(specialistId: string): any {
+    return {
+      specialistId,
+      specialistName: specialistId.toUpperCase(),
+      output: `# ${specialistId.toUpperCase()}`,
+      criticResult: { passed: true, score: 9, summary: 'pass', strengths: [], weaknesses: [], actionableGuidance: '' },
+      autoRevisionsRun: 0,
+      requiresReview: true,
+      sessionMessages: [],
+      criticFailed: false
+    };
+  }
+
+  it('11. releases the turn guard when a chain ends without complete reaching publish', async () => {
+    // Simulate a chain that terminates (error) but whose terminal event never
+    // lands on publish — the exact condition that used to leave busy stuck true.
+    const publishSpy = vi.spyOn(session as any, 'publish').mockImplementation(() => {});
+    (session as any).makeExecuteTurn = () => async () => {
+      throw new Error('chain exploded before complete');
+    };
+
+    session.autopilotStart();
+    expect(session.busy).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(session.busy).toBe(false);
+    }, { timeout: 3000, interval: 30 });
+
+    publishSpy.mockRestore();
+
+    // The dead run must not 409 the next Start. Return an already-aborted turn
+    // so the new chain stops after phase one instead of driving the whole chain.
+    (session as any).makeExecuteTurn = () => async () =>
+      ({ ...makeTurnResult('conops'), aborted: true });
+    expect(() => session.autopilotStart()).not.toThrow();
+    expect(session.busy).toBe(true);
+    session.autopilotStop();
+    expect(session.busy).toBe(false);
+    await vi.waitFor(() => expect(session.busy).toBe(false), { timeout: 2000, interval: 20 });
+  });
+
+  it('12. autopilotStop releases the turn guard even if the chain never completes', async () => {
+    // A hung executeTurn never resolves, so runChain never emits 'complete'.
+    let resolveTurn: ((value: any) => void) | undefined;
+    (session as any).makeExecuteTurn = () => async () => {
+      return new Promise(resolve => { resolveTurn = resolve; });
+    };
+
+    session.autopilotStart();
+    expect(session.busy).toBe(true);
+
+    // Stop while the turn is still wedged.
+    session.autopilotStop();
+    expect(session.busy).toBe(false);
+
+    // Let the hung turn settle so no promise dangles; guard must stay clear.
+    resolveTurn?.(makeTurnResult('conops'));
+    await Promise.resolve();
+    expect(session.busy).toBe(false);
+  });
+
+  it('13. a stale running flag does not wedge the guard on a no-op start', async () => {
+    // The live wedge: state says autopilot.running=true while no chain is
+    // actually driving it. beginTurn acquires the guard, driver.start() no-ops,
+    // and previously nothing ever released it.
+    const st = stateManager.getState();
+    st.autopilot = { ...defaultAutopilotState(), running: true };
+    stateManager.saveState(st);
+
+    session.autopilotStart();
+    await vi.waitFor(() => {
+      expect(session.busy).toBe(false);
+    }, { timeout: 3000, interval: 30 });
+
+    // Subsequent Start must not throw 'A turn is already in progress'.
+    expect(() => session.autopilotStart()).not.toThrow();
   });
 });

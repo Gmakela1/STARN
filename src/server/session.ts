@@ -369,20 +369,31 @@ export class ServerSessionManager {
     const deps = {
       stateManager: this.deps.stateManager,
       projectPath: this.deps.projectPath,
-      executeTurn: this.makeExecuteTurn(abort)
+      executeTurn: this.makeExecuteTurn(abort),
+      // Release the turn guard on ANY chain exit (not just a published
+      // 'complete'/'error'), so a hang or a swallowed terminal event cannot
+      // leave the session wedged busy. Release is idempotent.
+      onSettled: () => {
+        this.endTurn();
+        void this.answerQueue.drain();
+      }
     };
 
     this.autopilotDriver = new AutopilotDriver(deps, (ev) => this.publish(ev));
     this.autopilotDriver.start();
   }
 
-  /** Stops the autopilot chain driver. The busy guard is released
-   * when the chain actually finishes (publish receives 'complete'/'error'). */
+  /**
+   * Stops the autopilot chain driver and releases the turn guard immediately.
+   * A wedged chain may never emit 'complete', so relying on publish() alone
+   * would leave the session busy (and the Start button dead) forever.
+   */
   autopilotStop(): void {
     if (this.autopilotDriver) {
       this.autopilotDriver.stop();
     }
     this.autopilotController = null;
+    this.endTurn();
   }
 
   /** Exposed for the answer route: creates an executeTurn bound to session roles. */
@@ -486,7 +497,11 @@ export class ServerSessionManager {
       const deps = {
         stateManager: this.deps.stateManager,
         projectPath: this.deps.projectPath,
-        executeTurn: this.makeExecuteTurn(abort)
+        executeTurn: this.makeExecuteTurn(abort),
+        onSettled: () => {
+          this.endTurn();
+          void this.answerQueue.drain();
+        }
       };
 
       this.autopilotDriver = new AutopilotDriver(deps, (ev) => this.publish(ev));

@@ -45,6 +45,13 @@ export interface AutopilotDeps {
     /** Live tool call notifications from the runner. */
     onToolCall?: (tool: string, args: unknown) => void;
   }) => Promise<TurnResult>;
+  /**
+   * Optional settlement hook fired exactly once whenever the chain ends, on
+   * ANY exit path (normal finish, error, abort, or a no-op start). The server
+   * adapter uses this to release the turn guard in a finally so a chain that
+   * never emits 'complete' cannot leave the session wedged busy.
+   */
+  onSettled?: () => void;
 }
 
 /**
@@ -92,7 +99,10 @@ export class AutopilotDriver {
   start(): void {
     const state = this.deps.stateManager.getState();
     if (state.autopilot?.running) {
-      return; // no-op when already running
+      // No-op when already running. Still settle: the caller may have acquired
+      // a turn guard for this start; release it now that nothing will run.
+      this.deps.onSettled?.();
+      return;
     }
 
     this.abortController = new AbortController();
@@ -171,6 +181,18 @@ export class AutopilotDriver {
   }
 
   private async runChain(resumeFrom?: string): Promise<void> {
+    try {
+      await this.runChainInternal(resumeFrom);
+    } finally {
+      // Guarantee settlement on every exit path. The chain normally publishes
+      // 'complete'/'error', but a hang or a swallowed terminal event must not
+      // leave the turn guard held. Releasing twice is safe (idempotent).
+      this.runningPromise = null;
+      this.deps.onSettled?.();
+    }
+  }
+
+  private async runChainInternal(resumeFrom?: string): Promise<void> {
     const { stateManager, projectPath, executeTurn } = this.deps;
     const signal = this.abortController?.signal;
 
