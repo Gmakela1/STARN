@@ -215,11 +215,17 @@ export async function runRippleScan(deps: RippleDeps, sources: RippleSource[], p
     }
     // Successful fix: mark the doc 'revised' — completed by a ripple fix,
     // NOT re-approved (approvedContentHash untouched; the next run re-checks).
+    // Same guard as the answer-applier's incorporation success: only completed
+    // statuses ('auto-approved'/'passed') move to 'revised'; 'idle'/'parked'
+    // docs must never be clobbered by a ripple fix.
     const state = deps.stateManager.getState();
     state.autopilot = state.autopilot ?? defaultAutopilotState();
-    state.autopilot.docStatus[targetPhase.id] = 'revised';
-    deps.stateManager.saveState(state);
-    deps.emit({ kind: 'phase', phaseId: targetPhase.id, status: 'revised', name: targetPhase.name });
+    const currentStatus = state.autopilot.docStatus[targetPhase.id];
+    if (currentStatus === 'auto-approved' || currentStatus === 'passed') {
+      state.autopilot.docStatus[targetPhase.id] = 'revised';
+      deps.stateManager.saveState(state);
+      deps.emit({ kind: 'phase', phaseId: targetPhase.id, status: 'revised', name: targetPhase.name });
+    }
     deps.emit({ kind: 'status', message: `Ripple fix: docs/${targetPhase.id.toUpperCase()}.md updated` });
   }
 }

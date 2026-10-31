@@ -484,6 +484,12 @@ describe('applyAnswer', () => {
   });
 
   it('(f) after incorporation success, the ripple scan runs IMMEDIATELY: change-impact scan + scoped fix for the flagged doc', async () => {
+    // Ripple fixes only move completed docs ('auto-approved'/'passed') to
+    // 'revised' — same guard as the applier's own docStatus write.
+    const s0 = stateMgr.getState();
+    s0.autopilot!.docStatus['requirements'] = 'auto-approved';
+    stateMgr.saveState(s0);
+
     const item = addPortalItem(stateMgr, {
       type: 'question',
       severity: 'normal',

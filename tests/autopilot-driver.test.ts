@@ -886,6 +886,12 @@ describe('AutopilotDriver', () => {
 
   it('fires one intent-aware ripple scan when an approved doc is edited on disk (hash mismatch)', async () => {
     await preApproveFirstFive();
+    // Ripple fixes only move completed docs ('auto-approved'/'passed') to
+    // 'revised' — seed the flagged doc's status accordingly.
+    const s0 = stateMgr.getState();
+    s0.autopilot!.docStatus['icd'] = 'auto-approved';
+    stateMgr.saveState(s0);
+
     // External edit: architecture changed outside the approval flow.
     writeDoc(tmpDir, 'architecture', '# ARCHITECTURE\n\nEdited after approval: bus raised to 96 V.\n');
 

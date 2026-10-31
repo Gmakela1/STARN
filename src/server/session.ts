@@ -77,6 +77,11 @@ export class ServerSessionManager {
   }
   private pending: PendingCheckpoint | null = null;
   private activeAbort: AbortController | null = null;
+  /** True while the busy guard is held by an answer-queue drain (not by a
+   *  chain/agent turn). applyAnswer's isBusy must report "chain turn in
+   *  progress", not "drain in progress" — so an idle-path apply can run its
+   *  incorporation turn while the drain-owned guard still blocks turns. */
+  private drainHoldsGuard = false;
 
   private roleClients: RoleClients;
 
@@ -263,8 +268,19 @@ export class ServerSessionManager {
     return abort;
   }
 
-  /** Ends the turn: clears the active AbortController. */
-  private endTurn(): void {
+  /** Ends the turn: clears the active AbortController.
+   *
+   * When an owner token is passed, the guard is cleared ONLY if this owner
+   * still holds it. Invariant: a guard released early (e.g. autopilotStop)
+   * and re-acquired by a newer turn is left untouched by a stale owner's
+   * cleanup — so a long-running drain or turn can never null a guard it no
+   * longer owns (which would let a concurrent POST /api/turns start while
+   * the first is still writing state).
+   */
+  private endTurn(owner?: AbortController): void {
+    if (owner && this.activeAbort !== owner) {
+      return;
+    }
     this.activeAbort = null;
   }
 
@@ -299,10 +315,11 @@ export class ServerSessionManager {
       this.autopilotDriver = null;
       this.endTurn();
       // Answers queued during the FINAL phase must still apply once the chain
-      // ends. The core AnswerQueue re-entrancy guard keeps this drain from
-      // overlapping one already in flight (e.g. makeExecuteTurn's between-phase
-      // drain).
-      void this.answerQueue.drain();
+      // ends. drainWithGuard re-acquires the guard for the drain so the
+      // answers (and any incorporation turn they trigger) cannot overlap a
+      // concurrent POST /api/turns; the core AnswerQueue re-entrancy guard
+      // keeps it from overlapping one already in flight.
+      void this.drainWithGuard();
     }
     // Answer frames are point-in-time: a reconnect must not re-fire
     // answer_applied (duplicate chat entries) or a stale answer_queued
@@ -469,18 +486,30 @@ export class ServerSessionManager {
    * Drains the answer queue while holding the busy guard, so a concurrent
    * POST /api/turns or /api/autopilot/start cannot slip past the busy check
    * while an answer apply is writing state. Used from the idle queueAnswer
-   * path, where busy is known to be false. Returns immediately (no drain) if
-   * busy somehow became true in the meantime.
+   * path, where busy is known to be false, and from the post-chain release
+   * paths (publish complete/error, onSettled). Returns immediately (no drain)
+   * if busy became true in the meantime or a drain is already in flight.
+   *
+   * Guard invariants:
+   * - The guard is held for the WHOLE drain, including any incorporation turn
+   *   an idle apply triggers — `drainHoldsGuard` marks the guard as
+   *   drain-owned so applyAnswer's isBusy ("a chain turn is in progress")
+   *   stays false mid-drain while POST /api/turns still sees busy.
+   * - endTurn is owner-checked: if the guard was force-released (e.g.
+   *   autopilotStop) and re-acquired by a newer turn during the drain, this
+   *   drain's cleanup must not null that newer guard.
    */
   private async drainWithGuard(): Promise<void> {
-    if (this.busy) {
+    if (this.busy || this.answerQueue.isDraining) {
       return;
     }
-    this.beginTurn();
+    const abort = this.beginTurn();
+    this.drainHoldsGuard = true;
     try {
       await this.answerQueue.drain();
     } finally {
-      this.endTurn();
+      this.drainHoldsGuard = false;
+      this.endTurn(abort);
     }
   }
 
@@ -506,7 +535,7 @@ export class ServerSessionManager {
           stateManager: this.deps.stateManager,
           projectPath: this.deps.projectPath,
           executeTurn: this.createAnswerExecuteTurn(),
-          isBusy: () => this.busy,
+          isBusy: () => this.busy && !this.drainHoldsGuard,
           emitStatus: (message) => this.publish({ kind: 'status', message }),
           emitPhase: (phaseId, status, name) => this.publish({ kind: 'phase', phaseId, status, name }),
           emitEvent: (ev) => this.publish(ev)
@@ -537,7 +566,10 @@ export class ServerSessionManager {
         logger: this.deps.logger,
         onSettled: () => {
           this.endTurn();
-          void this.answerQueue.drain();
+          // Guarded drain: the post-chain answer apply (and any incorporation
+          // turn it triggers) holds the busy guard so a concurrent turn start
+          // cannot slip in (see drainWithGuard).
+          void this.drainWithGuard();
         }
       };
 
