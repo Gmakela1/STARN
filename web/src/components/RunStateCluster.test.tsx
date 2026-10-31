@@ -11,16 +11,16 @@ import type { RunState } from '../lib/runState';
  */
 
 const CASES: Array<{ state: RunState; word: string; aria: string; icon?: string }> = [
-  { state: 'working', word: 'Working…', aria: 'Agent status: Working…', icon: 'svg.lucide-loader-circle' },
+  { state: 'working', word: 'Working…', aria: 'Agents status: Working…', icon: 'svg.lucide-loader-circle' },
   {
     state: 'waiting',
     word: 'Waiting for your answer',
-    aria: 'Agent status: Waiting for your answer',
+    aria: 'Agents status: Waiting for your answer',
     icon: 'svg.lucide-message-square',
   },
-  { state: 'finished', word: 'Finished', aria: 'Agent status: Finished', icon: 'svg.lucide-circle-check' },
-  { state: 'failed', word: 'Needs attention', aria: 'Agent status: Needs attention', icon: 'svg.lucide-triangle-alert' },
-  { state: 'ready', word: 'AI Ready', aria: 'Agent status: AI Ready' },
+  { state: 'finished', word: 'Finished', aria: 'Agents status: Finished', icon: 'svg.lucide-circle-check' },
+  { state: 'failed', word: 'Needs attention', aria: 'Agents status: Needs attention', icon: 'svg.lucide-triangle-alert' },
+  { state: 'ready', word: 'Agents Ready', aria: 'Agents status: Agents Ready' },
 ];
 
 describe('RunStateCluster', () => {
@@ -73,7 +73,7 @@ describe('RunStateCluster', () => {
       <RunStateCluster runState="failed" detail="2 documents parked" detailTitle="Autopilot parked 2 documents" />,
     );
     const root = screen.getByRole('status');
-    expect(root).toHaveAttribute('aria-label', 'Agent status: 2 documents parked');
+    expect(root).toHaveAttribute('aria-label', 'Agents status: 2 documents parked');
     expect(screen.getByText('2 documents parked')).toHaveAttribute('title', 'Autopilot parked 2 documents');
     expect(screen.queryByText('Needs attention')).toBeNull();
   });
@@ -81,7 +81,7 @@ describe('RunStateCluster', () => {
   it('falls back to Needs attention when failed has no detail', () => {
     render(<RunStateCluster runState="failed" />);
     expect(screen.getByText('Needs attention')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveAttribute('aria-label', 'Agent status: Needs attention');
+    expect(screen.getByRole('status')).toHaveAttribute('aria-label', 'Agents status: Needs attention');
   });
 
   it('ignores detail for non-failed states', () => {

@@ -22,7 +22,7 @@ const STATE_VIEW: Record<RunState, { word: string; text: string }> = {
   waiting: { word: 'Waiting for your answer', text: 'text-amber-300' },
   finished: { word: 'Finished', text: 'text-emerald-300' },
   failed: { word: 'Needs attention', text: 'text-rose-300' },
-  ready: { word: 'AI Ready', text: 'text-emerald-300' },
+  ready: { word: 'Agents Ready', text: 'text-emerald-300' },
 };
 
 function markerFor(runState: RunState): ReactNode {
@@ -50,7 +50,7 @@ export default function RunStateCluster({ runState, detail, detailTitle }: RunSt
     <span
       role="status"
       data-run-state={runState}
-      aria-label={`Agent status: ${word}`}
+      aria-label={`Agents status: ${word}`}
       className="inline-flex min-w-0 items-center gap-1.5"
     >
       <span className="inline-flex shrink-0 items-center gap-1.5">

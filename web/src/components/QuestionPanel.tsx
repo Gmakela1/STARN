@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
-  ArrowLeft,
   Check,
   CheckCircle2,
   Clock3,
@@ -15,8 +14,6 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { AnswerState, PortalItem } from '../types/api';
 import { renderDetail } from '../lib/portalDetail';
-import RunStateCluster from './RunStateCluster';
-import type { RunState } from '../lib/runState';
 
 export interface QuestionPanelProps {
   surface: 'closed' | 'open' | 'minimized';
@@ -34,10 +31,6 @@ export interface QuestionPanelProps {
   onOpenDocument?: (docPath: string) => void;
   /** Workstream C: parent-owned doc navigation + highlight (chip click / open / deep-link). */
   onFocusDocument?: (item: PortalItem) => void;
-  /** Design BC-5: state-based return path to the queue until URL routing lands. */
-  onBackToQueue?: () => void;
-  /** Compact run-state echo in the panel header (§5.A); renders only when provided. */
-  runState?: RunState;
   /** Parent-driven deep-link focus (design §5.E); token prevents re-adoption. */
   focusRequest?: { id: string; token: number } | null;
 }
@@ -81,8 +74,6 @@ export default function QuestionPanel({
   selectedDocName,
   onOpenDocument,
   onFocusDocument,
-  onBackToQueue,
-  runState,
   focusRequest
 }: QuestionPanelProps) {
   const [activeId, setActiveId] = useState<string>(items[0]?.id ?? '');
@@ -627,18 +618,6 @@ export default function QuestionPanel({
             <span className="text-[11px] font-mono text-slate-500 tabular-nums">
               {pagerIndex} of {items.length}
             </span>
-          )}
-          {runState && <RunStateCluster runState={runState} />}
-          {onBackToQueue && (
-            <button
-              type="button"
-              onClick={onBackToQueue}
-              aria-label="Back to Open Actions"
-              className="flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-[11px] text-sky-400 transition hover:text-sky-300 focus:ring-2 focus:ring-sky-500/40"
-            >
-              <ArrowLeft className="h-3 w-3" aria-hidden />
-              Back to Open Actions
-            </button>
           )}
           <div className="ml-auto flex shrink-0 items-center gap-1">
             {item?.docPath &&

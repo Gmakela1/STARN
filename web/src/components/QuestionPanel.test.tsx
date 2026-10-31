@@ -287,38 +287,6 @@ describe('QuestionPanel', () => {
     expect(screen.getByLabelText('Your answer')).toBeInTheDocument();
   });
 
-  // ————— 12. Back to Open Actions (design BC-5) —————
-  it('Back to Open Actions renders and calls onBackToQueue', async () => {
-    const onBackToQueue = vi.fn();
-    const props = baseProps({ onBackToQueue });
-    const { user } = renderWithUser(<QuestionPanel {...props} />);
-
-    const back = screen.getByRole('button', { name: 'Back to Open Actions' });
-    expect(back.textContent).toContain('Back to Open Actions');
-    await user.click(back);
-    expect(onBackToQueue).toHaveBeenCalledTimes(1);
-  });
-
-  it('Back to Open Actions is absent when onBackToQueue is omitted', () => {
-    renderWithUser(<QuestionPanel {...baseProps()} />);
-    expect(screen.queryByRole('button', { name: 'Back to Open Actions' })).not.toBeInTheDocument();
-  });
-
-  // ————— 13. Run-state echo in the panel header (design §5.A) —————
-  it('run-state echo renders RunStateCluster when runState is provided', () => {
-    const props = baseProps({ runState: 'waiting' });
-    renderWithUser(<QuestionPanel {...props} />);
-
-    const cluster = screen.getByRole('status', { name: 'Agent status: Waiting for your answer' });
-    expect(cluster).toHaveAttribute('data-run-state', 'waiting');
-    expect(cluster.textContent).toBe('Waiting for your answer');
-  });
-
-  it('run-state echo is absent when runState is omitted', () => {
-    renderWithUser(<QuestionPanel {...baseProps()} />);
-    expect(screen.queryByRole('status', { name: /Agent status/ })).not.toBeInTheDocument();
-  });
-
   // ————— 14. focusRequest deep-link adoption (design §5.E) —————
   it('focusRequest: adopts the item as active and emits onFocusDocument once per token', () => {
     const A = makeItem({ id: 'A', title: 'Question A' });

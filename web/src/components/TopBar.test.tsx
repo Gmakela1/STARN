@@ -124,7 +124,7 @@ describe('TopBar', () => {
     // project.activePhase is 'SS-01'; the old pill / cluster chip rendered it.
     setup();
     expect(screen.queryByText('SS-01')).toBeNull();
-    expect(screen.getByRole('status').textContent).toBe('AI Ready');
+    expect(screen.getByRole('status').textContent).toBe('Agents Ready');
   });
 
   it('compact brand block: h-7 w-7 logo box, 11px wordmark and project name with title', () => {

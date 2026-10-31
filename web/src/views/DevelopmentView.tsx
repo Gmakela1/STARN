@@ -49,7 +49,6 @@ import CheckpointPanel from '../components/CheckpointPanel';
 import QuestionBadge from '../components/QuestionBadge';
 import QuestionPanel from '../components/QuestionPanel';
 import PaneSplitter from '../components/PaneSplitter';
-import { deriveRunState } from '../lib/runState';
 import { describeAutopilotStartError } from '../lib/autopilotError';
 import {
   applyAnchorHighlight,
@@ -294,8 +293,7 @@ export default function DevelopmentView({
   project,
   onProjectChanged,
   initialPhase,
-  initialQuestionId,
-  onNavigate
+  initialQuestionId
 }: DevelopmentViewProps) {
   const { entries, busy, status, toolActivity, checkpoint, sendTurn, abortTurn, clearCheckpoint, appendEntry } = turnStream;
 
@@ -716,16 +714,6 @@ export default function DevelopmentView({
     setSurface('open');
     setFocusRequest({ id: item.id, token: ++focusTokenRef.current });
   }, [initialQuestionId, visibleItems]);
-
-  const runState = deriveRunState({
-    busy,
-    checkpoint: checkpoint !== null,
-    autopilotRunning: autopilotStatus?.running === true,
-    openQuestions: pendingCount,
-    blocks: autopilotStatus?.blocks ?? 0,
-    lastError: turnStream.error ?? null,
-    passedCount: autopilotStatus?.passedCount ?? 0
-  });
 
   /**
    * §5.C trigger handler — the panel emits onFocusDocument on chip/pager
@@ -1201,8 +1189,6 @@ export default function DevelopmentView({
             onExpand={() => setSurface('open')}
             onClose={() => setSurface('closed')}
             onFocusDocument={handleFocusDocument}
-            onBackToQueue={() => onNavigate?.('dashboard')}
-            runState={runState}
             focusRequest={focusRequest}
           />
         )}
