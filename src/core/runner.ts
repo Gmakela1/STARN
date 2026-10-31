@@ -400,6 +400,12 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
       toolRegistry,
       allowedTools: specialist.allowedTools,
       context,
+      // Specialist turns get room to deliver: the tool loop's 8-turn default is
+      // too tight for discovery-heavy drafting, which exhausted the budget
+      // mid-tool-calls and returned an empty finalResponse.
+      maxTurns: 24,
+      logger: options.logger,
+      docId: specialist.id,
       priorMessages: sessionMessages,
       onToolCall,
       signal
@@ -488,6 +494,10 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
         const output =
           buildNoDocumentError(model, options.draftingProviderName ?? 'OpenRouter') +
           (reply ? `\n\nModel reply:\n${reply}` : '');
+        options.logger?.warn(
+          `Turn error for ${specialist.id}: classification=${artifactClassification.kind}/${artifactClassification.reason}, ` +
+          `turnsUsed=${agentResult.turnsUsed ?? 0}, toolCallCount=${agentResult.toolCallCount ?? 0}`
+        );
         return errorResult(output, reply);
       }
 
@@ -498,6 +508,10 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
         const output =
           `No document was drafted. The model returned commentary but no deliverable content. ` +
           (reply ? `\n\nModel reply:\n${reply}` : '');
+        options.logger?.warn(
+          `Turn error for ${specialist.id}: classification=${artifactClassification.kind}, ` +
+          `turnsUsed=${agentResult.turnsUsed ?? 0}, toolCallCount=${agentResult.toolCallCount ?? 0}`
+        );
         return errorResult(output, reply);
       }
     }
@@ -541,6 +555,11 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
         }
 
         const decision = decideCriticIteration(criticResult, attempts, maxAttempts);
+        if (decision === 'pass') {
+          options.logger?.info(`Critic verdict for ${specialist.id}: pass (score ${criticResult.score}/10)`);
+        } else {
+          options.logger?.warn(`Critic verdict for ${specialist.id}: ${decision} (score ${criticResult.score}/10)`);
+        }
         if (decision === 'revise') {
           attempts++;
           autoRevisionsRun++;

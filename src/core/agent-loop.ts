@@ -1,6 +1,7 @@
 import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { ToolExecutionContext } from '../tools/types.js';
+import { Logger } from '../util/logger.js';
 
 export interface AgentLoopOptions {
   client: ChatClient;
@@ -14,6 +15,10 @@ export interface AgentLoopOptions {
   priorMessages?: ChatMessage[];
   onToolCall?: (tool: string, args: any) => void;
   signal?: AbortSignal;
+  /** Optional file-backed logger; core-safe (no UI deps). */
+  logger?: Logger;
+  /** Doc id used in budget-exhaustion log lines (e.g. 'bom'). */
+  docId?: string;
 }
 
 export interface AgentLoopResult {
@@ -22,6 +27,8 @@ export interface AgentLoopResult {
   aborted?: boolean;
   /** Number of tool calls the model issued during this loop. */
   toolCallCount?: number;
+  /** Number of model turns the main loop ran before ending. */
+  turnsUsed?: number;
 }
 
 export async function runAgentToolLoop(options: AgentLoopOptions): Promise<AgentLoopResult> {
@@ -48,6 +55,9 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
   let turn = 0;
   let finalResponse = '';
   let toolCallCount = 0;
+  // True when the most recent model response issued tool calls (i.e. the loop
+  // has not yet seen a plain-text reply). Reset to false on a normal break.
+  let endedWithToolCalls = false;
 
   while (turn < maxTurns) {
     turn++;
@@ -72,6 +82,7 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
     }
 
     if (response.toolCalls && response.toolCalls.length > 0) {
+      endedWithToolCalls = true;
       toolCallCount += response.toolCalls.length;
       messages.push({
         role: 'assistant',
@@ -100,15 +111,50 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
         });
       }
     } else {
+      endedWithToolCalls = false;
       finalResponse = response.content || '';
       messages.push({ role: 'assistant', content: finalResponse });
       break;
     }
   }
 
+  // Budget-exhaustion rescue: the loop ended because the turn budget ran out
+  // while the model was still tool-calling, so finalResponse is empty. Make ONE
+  // final model call with tools disabled so the model must deliver the document
+  // as its plain-text reply. Normal loop endings (a plain-text reply) are
+  // untouched.
+  if (finalResponse === '' && endedWithToolCalls) {
+    const rescueInstruction =
+      'Stop using tools. Write the complete document now as your final reply with a # heading. Do not call any tools.';
+    options.logger?.warn(
+      `Agent loop budget exhausted for ${options.docId ?? 'unknown-doc'}: ` +
+      `${turn}/${maxTurns} turns, ${toolCallCount} tool calls. Forcing a final no-tools write.`
+    );
+    messages.push({ role: 'user', content: rescueInstruction });
+    try {
+      // Tools intentionally omitted: this call must not execute any tools.
+      const rescue = await client.chatCompletion({ model, messages, signal });
+      const rescueText = rescue.content || '';
+      if (rescueText.includes('# ')) {
+        finalResponse = rescueText;
+      } else {
+        options.logger?.warn(
+          `Forced final write for ${options.docId ?? 'unknown-doc'} produced no # heading; keeping empty finalResponse.`
+        );
+      }
+      messages.push({ role: 'assistant', content: rescueText });
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || signal?.aborted) {
+        return { finalResponse: '', messages, aborted: true, toolCallCount, turnsUsed: turn };
+      }
+      throw err;
+    }
+  }
+
   return {
     finalResponse,
     messages,
-    toolCallCount
+    toolCallCount,
+    turnsUsed: turn
   };
 }

@@ -469,4 +469,118 @@ describe('Core Runner autopilot hooks', () => {
     expect(statusUpdates.join('|')).not.toContain('harsh critic');
     expect(statusUpdates.join('|')).not.toContain('Running mandatory');
   });
+
+  // ── Specialist turn budget: maxTurns 24 + forced final write ───────────
+
+  it('specialist drafting loop gets 24 tool turns before the forced final write (maxTurns: 24 threading)', async () => {
+    approveRequirements(stateMgr, tempDir);
+    const docsDir = path.join(tempDir, 'docs');
+    fs.mkdirSync(docsDir, { recursive: true });
+    const draftCalls: any[] = [];
+    vi.spyOn(mockClient, 'chatCompletion').mockImplementation(async (o: any) => {
+      const content = typeof o.messages[0].content === 'string' ? o.messages[0].content : '';
+      if (content.includes('Harsh Critic')) {
+        return {
+          content: JSON.stringify({ passed: true, score: 9.0, summary: 'ok', strengths: [], weaknesses: [], actionableGuidance: '' }),
+          raw: {}
+        };
+      }
+      if (content.includes('Bill of Materials (BOM) Specialist')) {
+        draftCalls.push(o);
+        const lastMsg = o.messages[o.messages.length - 1];
+        const lastText = typeof lastMsg.content === 'string' ? lastMsg.content : '';
+        if (lastText.includes('Stop using tools')) {
+          // Forced final write: the model delivers the document as plain text.
+          return { content: '# Bill of Materials (BOM)\n\nRescued deliverable.\n', raw: {} };
+        }
+        // Turns 1..24: keep tool-calling (unknown tool → fast error tool result).
+        return {
+          content: '',
+          toolCalls: [{ id: 't' + draftCalls.length, type: 'function', function: { name: 'no_such_tool', arguments: '{}' } }],
+          raw: {}
+        };
+      }
+      return { content: '', raw: {} };
+    });
+
+    const result = await CoreRunner.executeTurn({
+      userPrompt: 'Draft the BOM',
+      projectPath: tempDir,
+      stateManager: stateMgr,
+      client: mockClient,
+      model: 'test-model',
+      toolRegistry,
+      specialistRegistry,
+      forceSpecialistId: 'bom',
+      sessionMessages: []
+    });
+
+    // 24 tool-calling turns + 1 forced final write = 25 drafting calls.
+    // With the old 8-turn default this would have been 9.
+    expect(draftCalls).toHaveLength(25);
+    expect(draftCalls[24].tools).toBeUndefined();
+    expect(result.requiresReview).toBe(true);
+    expect(result.criticResult?.passed).toBe(true);
+  });
+
+  // ── Logging: errorResult path and critic verdict path ──────────────────
+
+  it('logger.warn fires on the errorResult path with classification, turn and tool-call counts', async () => {
+    approveRequirements(stateMgr, tempDir);
+    // Drafting call returns commentary, never calls tools, never writes —
+    // classification lands on 'no-tool-calls-no-document' → errorResult.
+    vi.spyOn(mockClient, 'chatCompletion').mockImplementation(async (o: any) => {
+      const content = typeof o.messages[0].content === 'string' ? o.messages[0].content : '';
+      if (content.includes('Harsh Critic')) {
+        throw new Error('critic must never run on an error turn');
+      }
+      return { content: 'Let me think about which parts to list.', raw: {} };
+    });
+    const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() } as any;
+
+    const result = await CoreRunner.executeTurn({
+      userPrompt: 'Draft the BOM',
+      projectPath: tempDir,
+      stateManager: stateMgr,
+      client: mockClient,
+      model: 'test-model',
+      toolRegistry,
+      specialistRegistry,
+      forceSpecialistId: 'bom',
+      logger,
+      sessionMessages: []
+    });
+
+    expect(result.error).toBe(true);
+    const warnMsgs = logger.warn.mock.calls.map((c: any[]) => String(c[0]));
+    expect(warnMsgs.some((m: string) => m.includes('Turn error for bom'))).toBe(true);
+    expect(warnMsgs.some((m: string) => m.includes('classification=none/no-tool-calls-no-document'))).toBe(true);
+    expect(warnMsgs.some((m: string) => m.includes('turnsUsed=1'))).toBe(true);
+    expect(warnMsgs.some((m: string) => m.includes('toolCallCount=0'))).toBe(true);
+  });
+
+  it('logger.info fires on the critic verdict path with docId and verdict', async () => {
+    approveRequirements(stateMgr, tempDir);
+    installBomMock(tempDir, mockClient, {
+      draftContent: bomDocWithOpenQuestions(['Confirm motor shaft pilot diameter.']),
+      criticResults: [{ passed: true, score: 9.1 }]
+    });
+    const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() } as any;
+
+    await CoreRunner.executeTurn({
+      userPrompt: 'Draft the BOM',
+      projectPath: tempDir,
+      stateManager: stateMgr,
+      client: mockClient,
+      model: 'test-model',
+      toolRegistry,
+      specialistRegistry,
+      forceSpecialistId: 'bom',
+      logger,
+      sessionMessages: []
+    });
+
+    const infoMsgs = logger.info.mock.calls.map((c: any[]) => String(c[0]));
+    expect(infoMsgs.some((m: string) => m.includes('Critic verdict for bom') && m.includes('pass'))).toBe(true);
+  });
 });

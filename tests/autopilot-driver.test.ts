@@ -449,4 +449,36 @@ describe('AutopilotDriver', () => {
     expect(state.docStatus['conops']).toBe('auto-approved');
     expect(state.revisionsUsed['conops']).toBeDefined();
   });
+
+  // ── Test 11: error retry re-runs with explicit override prompt ─────────
+
+  it('retries an error turn once with an override prompt (no discovery/web_search, write skeleton first)', async () => {
+    let callCount = 0;
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string; userPrompt?: string }) => {
+      callCount++;
+      if (callCount === 1) {
+        // First pass: model returned commentary → error result.
+        return makeTurnResult('conops', { error: true, requiresReview: false, criticResult: undefined });
+      }
+      // Retry: succeeds and writes the doc.
+      writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nRetry deliverable.`);
+      return makeTurnResult(opts.forceSpecialistId);
+    });
+
+    const driver = createDriver();
+    driver.start();
+
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    expect(executeTurnMock.mock.calls.length).toBeGreaterThan(1);
+    // conops is the first phase; its second executeTurn call is the retry.
+    const retryOpts = executeTurnMock.mock.calls[1][0];
+    expect(retryOpts.forceSpecialistId).toBe('conops');
+    expect(retryOpts.userPrompt).toContain('Skip discovery reads and web_search entirely');
+    expect(retryOpts.userPrompt).toContain('Immediately write the Stage-1 grocery-list skeleton');
+    expect(retryOpts.userPrompt).toContain('finish your reply with the document');
+    expect(capturedEvents.some(e => e.kind === 'status' && String(e.message).includes('retrying'))).toBe(true);
+  });
 });
