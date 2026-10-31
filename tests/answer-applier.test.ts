@@ -72,6 +72,36 @@ describe('buildUserAnswersBlock', () => {
     const expected = `\n\nUSER ANSWERS TO OPEN QUESTIONS (incorporate per your instructions):\nQ1. Any constraints?\nAnswer: None\n`;
     expect(result).toBe(expected);
   });
+
+  it('with context: lists prior history + other answered items and forbids re-asking (answer memory)', () => {
+    const item: PortalItem = {
+      id: 'p_test4',
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What fuse rating?',
+      source: 'autopilot',
+      status: 'open',
+      createdAt: '2025-01-01T00:00:00.000Z',
+      updatedAt: '2025-01-01T00:00:00.000Z',
+      meta: { answerHistory: [{ text: '32A earlier', at: '2025-01-01T00:00:00.000Z' }] }
+    };
+    const result = buildUserAnswersBlock(item, '40A final', {
+      priorHistory: [{ text: '32A earlier' }],
+      otherAnswered: [
+        { id: 'p_other', title: 'What is the max voltage?', answer: '48V' },
+        { id: 'p_other2', title: 'What gauge wire?', answer: '10 AWG' }
+      ]
+    });
+    expect(result).toContain('PREVIOUSLY ANSWERED');
+    expect(result).toContain('do NOT re-ask');
+    expect(result).toContain('only genuinely NEW unresolved items'.replace('only', 'Only'));
+    expect(result).toContain('32A earlier');
+    expect(result).toContain('What is the max voltage?');
+    expect(result).toContain('48V');
+    expect(result).toContain('What gauge wire?');
+    expect(result).toContain('10 AWG');
+  });
 });
 
 describe('applyAnswer', () => {
@@ -400,5 +430,129 @@ describe('applyAnswer', () => {
 
     await expect(applyAnswer(deps, item.id, 'answer'))
       .rejects.toThrow('Unknown phase');
+  });
+
+  it('answer memory: userPrompt includes other ANSWERED items for the same doc (capped at 6) and forbids re-asking', async () => {
+    // 8 previously answered items on the same doc → only the most recent 6 appear.
+    for (let i = 1; i <= 8; i++) {
+      const q = addPortalItem(stateMgr, {
+        type: 'question',
+        severity: 'normal',
+        docPath: 'docs/CONOPS.md',
+        title: `Q${i}. Old question ${i}?`,
+        source: 'autopilot'
+      });
+      answerPortalItem(stateMgr, q.id, `Answer ${i}`);
+    }
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What fuse rating?',
+      source: 'autopilot'
+    });
+
+    executeTurnMock.mockResolvedValue(makeTurnResult({
+      specialistId: 'conops',
+      criticResult: { passed: true, score: 9.0, summary: 'pass', strengths: [], weaknesses: [], actionableGuidance: '' }
+    }));
+
+    await applyAnswer(deps, item.id, '40A');
+
+    const userPrompt = executeTurnMock.mock.calls[0][0].userPrompt as string;
+    expect(userPrompt).toContain('PREVIOUSLY ANSWERED');
+    expect(userPrompt).toContain('do NOT re-ask');
+    // most recent 6 answers (3..8) present
+    expect(userPrompt).toContain('Old question 3?');
+    expect(userPrompt).toContain('Answer 8');
+ // oldest two dropped
+    expect(userPrompt).not.toContain('Old question 1?');
+    expect(userPrompt).not.toContain('Old question 2?');
+  });
+
+  it('mid-chain (busy): no full turn runs — answer becomes a plain doc edit, item answered, nothing deferred to counter-questions', async () => {
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What fuse rating?',
+      source: 'autopilot'
+    });
+
+    executeTurnMock.mockResolvedValue(makeTurnResult({
+      specialistId: 'conops',
+      criticResult: { passed: true, score: 9.0, summary: 'pass', strengths: [], weaknesses: [], actionableGuidance: '' }
+    }));
+
+    const busyDeps: AnswerApplierDeps = { ...deps, isBusy: () => true };
+    const result = await applyAnswer(busyDeps, item.id, '40A');
+
+    // No draft+critic turn, no approval, no counter-questions.
+    expect(executeTurnMock).not.toHaveBeenCalled();
+    expect(runChangeImpactMock).not.toHaveBeenCalled();
+    expect(result.counterQuestions).toEqual([]);
+    expect(result.affectedDocs).toEqual([]);
+
+    // Answer is recorded on the item and inserted into the doc for the next
+    // normal turn to incorporate.
+    expect(result.updatedItem.status).toBe('answered');
+    expect(result.updatedItem.answer).toBe('40A');
+    const doc = fs.readFileSync(path.join(tmpDir, 'docs', 'CONOPS.md'), 'utf-8');
+    expect(doc).toContain('## User Answers (Pending Incorporation)');
+    expect(doc).toContain('What fuse rating?');
+    expect(doc).toContain('Answer: 40A');
+  });
+
+  it('mid-chain (busy) with missing doc still marks the item answered without throwing', async () => {
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/REQUIREMENTS.md',
+      title: 'What fuse rating?',
+      source: 'autopilot'
+    });
+
+    const busyDeps: AnswerApplierDeps = { ...deps, isBusy: () => true };
+    const result = await applyAnswer(busyDeps, item.id, '40A');
+    expect(result.updatedItem.status).toBe('answered');
+  });
+
+  it('whole-thread history is only inherited by counter-questions on the SAME doc', async () => {
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What is the max voltage?',
+      source: 'autopilot'
+    });
+
+    executeTurnMock.mockImplementation(async (opts: {
+      onQuestions?: (items: Array<{
+        type: 'question';
+        severity: 'normal';
+        docPath: string;
+        title: string;
+        source: 'autopilot';
+      }>) => void;
+    }) => {
+      if (opts.onQuestions) {
+        opts.onQuestions([
+          { type: 'question', severity: 'normal', docPath: 'docs/CONOPS.md', title: 'Same-doc follow-up?', source: 'autopilot' },
+          { type: 'question', severity: 'normal', docPath: 'docs/ICD.md', title: 'Unrelated doc follow-up?', source: 'autopilot' }
+        ]);
+      }
+      return makeTurnResult({
+        specialistId: 'conops',
+        criticResult: { passed: true, score: 9.0, summary: 'pass', strengths: [], weaknesses: [], actionableGuidance: '' }
+      });
+    });
+
+    const result = await applyAnswer(deps, item.id, '12V nominal');
+
+    const byTitle = new Map(result.counterQuestions.map(q => [q.title, q]));
+    expect(byTitle.get('Same-doc follow-up?')?.meta?.answerHistory).toEqual([
+      { text: '12V nominal', at: expect.any(String) }
+    ]);
+    expect(byTitle.get('Unrelated doc follow-up?')?.meta?.answerHistory).toBeUndefined();
   });
 });

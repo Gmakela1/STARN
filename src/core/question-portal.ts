@@ -1,5 +1,6 @@
 import { PortalItem, PortalItemType } from '../workspace/types.js';
 import { ProjectStateManager, defaultAutopilotState } from '../workspace/state.js';
+import { questionSlug } from './open-questions-parser.js';
 
 export type PortalItemInput = Omit<PortalItem, 'id' | 'createdAt' | 'updatedAt' | 'status'>;
 
@@ -25,12 +26,11 @@ function createItemId(): string {
   return `p_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
 
-function normalizeTitle(title: string): string {
-  return title.trim().replace(/\s+/g, ' ').toLowerCase();
-}
-
 function dedupeKey(item: Pick<PortalItem, 'type' | 'docPath' | 'title'>): string {
-  return JSON.stringify([item.type, item.docPath ?? '', normalizeTitle(item.title)]);
+  // Stable identity: docPath + question slug (wording-variant tolerant, Qn
+  // prefix and "Why it matters" text excluded). Type stays in the key so
+  // questions never dedupe onto flags/gaps items.
+  return JSON.stringify([item.type, item.docPath ?? '', questionSlug(item.title)]);
 }
 
 /**
@@ -147,6 +147,18 @@ export function answerPortalItem(manager: ProjectStateManager, id: string, answe
     ...(item.meta || {}),
     answerHistory: [...priorHistory, { text: answer, at: item.updatedAt }].slice(-ANSWER_HISTORY_CAP)
   };
+  // Stable identity — answering one question supersedes any still-open twin
+  // (same type + docPath + slug) so the user is never asked the same question
+  // twice. Twins are hidden via meta.superseded; their ids stay untouched.
+  const key = dedupeKey(item);
+  for (const twin of state.portalItems || []) {
+    if (twin.id === item.id || twin.status !== 'open' || twin.meta?.archived === true) {
+      continue;
+    }
+    if (dedupeKey(twin) === key) {
+      twin.meta = { ...(twin.meta || {}), superseded: true };
+    }
+  }
   manager.saveState(state);
   return item;
 }
@@ -172,7 +184,7 @@ export function dismissPortalItem(manager: ProjectStateManager, id: string): Por
  */
 export function listPortalItems(manager: ProjectStateManager, filter?: PortalListFilter): PortalItem[] {
   const state = manager.getState();
-  let items = (state.portalItems || []).filter(i => i.meta?.archived !== true);
+  let items = (state.portalItems || []).filter(i => i.meta?.archived !== true && i.meta?.superseded !== true);
 
   if (filter?.status !== undefined) {
     items = items.filter(i => i.status === filter.status);

@@ -10,4 +10,6 @@ export const OPEN_QUESTIONS_SECTION_RULES = `OPEN QUESTIONS SECTION (MANDATORY):
 - Do NOT silently assume answers or invent default values for genuinely open items.
 - If the user later provides answers (e.g. a "USER ANSWERS TO OPEN QUESTIONS" block in their prompt), EDIT the relevant sections of the document IN PLACE to reflect each answer, REMOVE the answered questions from the Open Questions section, and re-derive any affected downstream statements. Do NOT regenerate or rewrite the entire document from scratch, and do NOT include your reasoning or meta-commentary in the document.
 - Questions the user explicitly defers or skips stay in the Open Questions section.
+- When the prompt contains PREVIOUSLY ANSWERED context, treat those decisions as settled: do NOT re-ask, re-open, or restate them in the Open Questions section; only genuinely NEW unresolved items may appear there.
+- Entries under a "## User Answers (Pending Incorporation)" section are user answers awaiting incorporation: apply them to the relevant sections IN PLACE, then delete that section.
 - If nothing is genuinely unresolved, omit the Open Questions section entirely.`;

@@ -265,6 +265,44 @@ describe('Core Runner autopilot hooks', () => {
     expect(items[0].title).not.toContain('Question A');
   });
 
+  it('onQuestions posts only NEW questions — pre-existing open questions are never re-posted', async () => {
+    approveRequirements(stateMgr, tempDir);
+    // The doc already had an open question before this turn ran.
+    fs.writeFileSync(
+      path.join(tempDir, 'docs', 'BOM.md'),
+      bomDocWithOpenQuestions(['Old question already on the board.']),
+      'utf-8'
+    );
+    installBomMock(tempDir, mockClient, {
+      // The regenerated doc keeps the old question (renumbered) and adds one new.
+      draftContent: bomDocWithOpenQuestions([
+        'Old question already on the board.',
+        'Fresh question raised this turn.'
+      ]),
+      criticResults: [{ passed: true, score: 9.0 }]
+    });
+    const hook = vi.fn();
+
+    await CoreRunner.executeTurn({
+      userPrompt: 'Draft the BOM',
+      projectPath: tempDir,
+      stateManager: stateMgr,
+      client: mockClient,
+      model: 'test-model',
+      toolRegistry,
+      specialistRegistry,
+      forceSpecialistId: 'bom',
+      onQuestions: hook,
+      sessionMessages: []
+    });
+
+    expect(hook).toHaveBeenCalledTimes(1);
+    const items = hook.mock.calls[0][0];
+    expect(items.map((i: { title: string }) => i.title)).toEqual([
+      'Fresh question raised this turn.'
+    ]);
+  });
+
   it('criticFailed is true only when the critic loop exhausts both revisions without passing', async () => {
     approveRequirements(stateMgr, tempDir);
     installBomMock(tempDir, mockClient, {

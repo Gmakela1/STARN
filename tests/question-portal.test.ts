@@ -465,7 +465,14 @@ describe('question portal store', () => {
       expect(second.status).toBe('open');
     });
 
-    it('dedupeOpenPortalItems keeps the oldest and archives later open duplicates', () => {
+    it('dedupes wording variants via question slug (Qn prefix, punctuation, numbering drift)', () => {
+      const first = addPortalItem(stateMgr, base);
+      const second = addPortalItem(stateMgr, { ...base, title: 'Q3. What max voltage?' });
+      expect(second.id).toBe(first.id);
+      expect(listPortalItems(stateMgr)).toHaveLength(1);
+    });
+
+    it('dedupeOpenPortalItems is idempotent', () => {
       const items = [
         makeItem({ id: 'new', createdAt: '2025-01-03T00:00:00.000Z' }),
         makeItem({ id: 'old', createdAt: '2025-01-01T00:00:00.000Z' }),
@@ -490,7 +497,42 @@ describe('question portal store', () => {
       expect(items.every(i => i.meta?.archived === undefined)).toBe(true);
     });
 
-    it('dedupeOpenPortalItems is idempotent', () => {
+    it('answerPortalItem supersedes open twins with the same slug (stable identity)', () => {
+    const original = addPortalItem(stateMgr, {
+      type: 'question', severity: 'normal', docPath: 'docs/CONOPS.md',
+      title: 'Q1. What gauge wire?', source: 'autopilot'
+    });
+    const other = addPortalItem(stateMgr, {
+      type: 'question', severity: 'normal', docPath: 'docs/CONOPS.md',
+      title: 'What fuse rating?', source: 'autopilot'
+    });
+
+    // Legacy twin: same doc, wording variant, stored directly (pre-slug data).
+    const state = stateMgr.getState();
+    state.portalItems!.push({
+      id: 'legacy_twin',
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'Q2. What gauge wire?',
+      status: 'open',
+      source: 'autopilot',
+      createdAt: '2024-12-01T00:00:00.000Z',
+      updatedAt: '2024-12-01T00:00:00.000Z'
+    });
+    stateMgr.saveState(state);
+
+    answerPortalItem(stateMgr, original.id, '10 AWG');
+
+    const stored = stateMgr.getState().portalItems!;
+    expect(stored.find(i => i.id === 'legacy_twin')?.meta?.superseded).toBe(true);
+    expect(stored.find(i => i.id === other.id)?.status).toBe('open');
+    expect(stored.find(i => i.id === other.id)?.meta?.superseded).toBeUndefined();
+    // superseded twin is hidden from the list
+    expect(listPortalItems(stateMgr).find(i => i.id === 'legacy_twin')).toBeUndefined();
+  });
+
+  it('dedupeOpenPortalItems is idempotent', () => {
       const items = [
         makeItem({ id: 'old', createdAt: '2025-01-01T00:00:00.000Z' }),
         makeItem({ id: 'new', createdAt: '2025-01-03T00:00:00.000Z' })

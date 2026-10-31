@@ -28,6 +28,7 @@ import {
 } from '../src/workspace/state.js';
 import { ProjectState } from '../src/workspace/types.js';
 import { SpecialistRegistry } from '../src/specialists/registry.js';
+import { questionSlug } from '../src/core/open-questions-parser.js';
 
 // ── Parser generalization ─────────────────────────────────────────────────────
 
@@ -66,6 +67,33 @@ describe('parseOpenQuestionsFromContent — generalized heading matching', () =>
     const qs = parseOpenQuestionsFromContent(doc);
     expect(qs).toHaveLength(1);
     expect(qs[0]).not.toContain('Design Decisions');
+  });
+
+  it('strips the "Why it matters" explanation from question titles', () => {
+    const doc = `# Doc\n\n## Open Questions\n\n**Q1. Bus voltage.** 48V or 72V?\n**Why it matters:** affects motor choice.\n\n## Next\n`;
+    const qs = parseOpenQuestionsFromContent(doc);
+    expect(qs).toHaveLength(1);
+    expect(qs[0]).toContain('Bus voltage');
+    expect(qs[0]).not.toContain('affects motor choice');
+  });
+});
+
+describe('questionSlug — stable question identity', () => {
+  it('maps wording variants of the same question to one slug', () => {
+    expect(questionSlug('Q3. What bus voltage?')).toBe(questionSlug('What bus voltage?'));
+    expect(questionSlug('Q1. Confirm motor shaft pilot diameter before ordering.'))
+      .toBe(questionSlug('confirm motor shaft pilot diameter before ordering'));
+  });
+
+  it('is case-, punctuation- and whitespace-insensitive, capped at 10 words', () => {
+    expect(questionSlug('  What   MAX, voltage?!  ')).toBe('what max voltage');
+    const eleven = 'one two three four five six seven eight nine ten eleven';
+    expect(questionSlug(eleven)).toBe('one two three four five six seven eight nine ten');
+  });
+
+  it('cuts at a Why-it-matters marker inside the title', () => {
+    expect(questionSlug('**Q1. Bus voltage.** 48V or 72V? **Why it matters:** motor choice'))
+      .toBe('bus voltage 48v or 72v');
   });
 });
 

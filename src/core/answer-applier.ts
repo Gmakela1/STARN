@@ -26,6 +26,13 @@ export interface AnswerApplierDeps {
    * The server/CLI adapter populates this; if absent, affectedDocs stays empty.
    */
   runChangeImpact?: (phaseId: string) => Promise<string[]>;
+  /**
+   * True while the owning session is mid-chain (a turn or autopilot chain is
+   * running). When set and true, applyAnswer takes the plain-edit path: the
+   * answer is inserted into the doc as a pending edit and incorporation is
+   * deferred to the next normal turn — no draft+critic turn runs mid-chain.
+   */
+  isBusy?: () => boolean;
 }
 
 /**
@@ -43,11 +50,31 @@ function extractQuestionNumber(title: string): number {
 }
 
 /**
+ * Saved context injected alongside the current answer so the specialist never
+ * re-asks what the user already answered.
+ */
+export interface UserAnswersContext {
+  /** Saved history entries for THIS question (most recent last). */
+  priorHistory?: Array<{ text: string }>;
+  /** Other ANSWERED questions on the same document (id + title + latest answer). */
+  otherAnswered?: Array<{ id: string; title: string; answer: string }>;
+}
+
+/** Cap on how many other answered questions the answer-apply prompt carries. */
+const OTHER_ANSWERED_CAP = 6;
+
+/**
  * Build the standard USER ANSWERS prompt block that the specialist will see
  * alongside the existing baseline document. Mirrors the CLI's pre-turn block
- * at src/index.ts:582.
+ * at src/index.ts:582. With `context`, the block also carries the answer
+ * memory: this question's saved history plus other answered questions for the
+ * same document, with a do-not-re-ask rule.
  */
-export function buildUserAnswersBlock(item: PortalItem, answerText: string): string {
+export function buildUserAnswersBlock(
+  item: PortalItem,
+  answerText: string,
+  context?: UserAnswersContext
+): string {
   const number = extractQuestionNumber(item.title);
   // Strip the Qn. prefix from title for display in the block — the CLI format
   // uses the raw question text, not the Q-prefixed version. Check the CLI:
@@ -56,7 +83,19 @@ export function buildUserAnswersBlock(item: PortalItem, answerText: string): str
   // "Q3. What bus voltage?" (with prefix). We show the title as-is but number
   // from extractQuestionNumber.
   const displayTitle = item.title.replace(/^Q\d+[\.:\)]\s*/, '');
-  return `\n\nUSER ANSWERS TO OPEN QUESTIONS (incorporate per your instructions):\nQ${number}. ${displayTitle}\nAnswer: ${answerText}\n`;
+  let block = `\n\nUSER ANSWERS TO OPEN QUESTIONS (incorporate per your instructions):\nQ${number}. ${displayTitle}\nAnswer: ${answerText}\n`;
+  const hasHistory = !!context?.priorHistory?.length;
+  const hasOther = !!context?.otherAnswered?.length;
+  if (hasHistory || hasOther) {
+    block += `\nPREVIOUSLY ANSWERED — these decisions are settled: do NOT re-ask, re-open, or restate them as open questions; incorporate them into the relevant sections. Only genuinely NEW unresolved items may appear in the Open Questions section.\n`;
+    if (hasHistory) {
+      block += context!.priorHistory!.map(h => `Q${number} earlier answer: ${h.text}`).join('\n') + '\n';
+    }
+    if (hasOther) {
+      block += context!.otherAnswered!.map(a => `Q?. ${a.title}\nAnswer: ${a.answer}`).join('\n') + '\n';
+    }
+  }
+  return block;
 }
 
 /**
@@ -124,8 +163,38 @@ export async function applyAnswer(
     existingContent = '';
   }
 
-  // 4. Build userPrompt
-  const answerBlock = buildUserAnswersBlock(item, answerText);
+  // 3b. Mid-chain answers (FIX): while the session is busy running the chain,
+  // do NOT burn a full draft+critic turn. Insert the answer as a plain doc
+  // edit and mark the item answered; the next normal turn incorporates it
+  // (it sees the answer via the PREVIOUSLY ANSWERED context).
+  if (deps.isBusy?.()) {
+    if (existingContent.trim()) {
+      const displayTitle = item.title.replace(/^Q\d+[\.:\)]\s*/, '');
+      const pendingBlock = `${existingContent.trimEnd()}\n\n## User Answers (Pending Incorporation)\n\n**${displayTitle}**\nAnswer: ${answerText}\n`;
+      fs.writeFileSync(docFilePath, pendingBlock, 'utf-8');
+    }
+    // If the doc is missing/empty there is nothing to edit in place; the
+    // answer still lands on the item and reaches the next turn via context.
+    const answeredItem = answerPortalItem(stateManager, itemId, answerText);
+    return { updatedItem: answeredItem, affectedDocs: [], counterQuestions: [] };
+  }
+
+  // 4. Build userPrompt — with answer memory (this item's history + other
+  // answered questions on the same doc) so the specialist never re-asks.
+  const allItems = state.portalItems || [];
+  const otherAnswered = allItems
+    .filter(i =>
+      i.id !== itemId &&
+      i.docPath === item.docPath &&
+      i.status === 'answered' &&
+      typeof i.answer === 'string' && i.answer.trim() !== '')
+    .sort((a, b) => (a.updatedAt || '').localeCompare(b.updatedAt || ''))
+    .slice(-OTHER_ANSWERED_CAP)
+    .map(i => ({ id: i.id, title: i.title, answer: i.answer as string }));
+  const priorHistory = Array.isArray(item.meta?.answerHistory)
+    ? item.meta!.answerHistory.slice(-ANSWER_HISTORY_CAP)
+    : [];
+  const answerBlock = buildUserAnswersBlock(item, answerText, { priorHistory, otherAnswered });
   const userPrompt = `${existingContent}${answerBlock}\n\nUpdate the document in place per the Section 6 answer handling instructions. Do NOT regenerate the entire document.`;
 
   // 5. Call executeTurn with forceSpecialistId and onQuestions hook
@@ -207,6 +276,12 @@ export async function applyAnswer(
       const fresh = stateManager.getState();
       const byId = new Map((fresh.portalItems || []).map(i => [i.id, i]));
       for (const cq of counterQuestions) {
+        // Answer history stays scoped: only follow-ups on the SAME document
+        // inherit the thread's saved answers — unrelated documents must not
+        // inherit decisions they have nothing to do with.
+        if (cq.docPath !== item.docPath) {
+          continue;
+        }
         cq.meta = { ...(cq.meta || {}), answerHistory: capped };
         const stored = byId.get(cq.id);
         if (stored) {

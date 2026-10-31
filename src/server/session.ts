@@ -502,6 +502,7 @@ export class ServerSessionManager {
           stateManager: this.deps.stateManager,
           projectPath: this.deps.projectPath,
           executeTurn: this.createAnswerExecuteTurn(),
+          isBusy: () => this.busy,
           runChangeImpact: (phaseId) => this.runChangeImpactForApproval(phaseId) ?? Promise.resolve([])
         },
         itemId,
