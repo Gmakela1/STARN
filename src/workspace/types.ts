@@ -59,6 +59,12 @@ export type PortalItemType = 'question' | 'parked' | 'flag' | 'nonconformance';
 
 export type PortalItemSeverity = 'blocking' | 'normal';
 
+/** Board #52 — one applied answer in an item's saved history. */
+export interface PortalAnswerHistoryEntry {
+  text: string;
+  at: string;
+}
+
 export interface PortalItem {
   id: string;
   type: PortalItemType;

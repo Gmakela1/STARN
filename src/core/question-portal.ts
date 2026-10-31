@@ -1,4 +1,4 @@
-import { PortalItem, PortalItemType } from '../workspace/types.js';
+import { PortalItem, PortalItemType, PortalAnswerHistoryEntry } from '../workspace/types.js';
 import { ProjectStateManager, defaultAutopilotState } from '../workspace/state.js';
 
 export type PortalItemInput = Omit<PortalItem, 'id' | 'createdAt' | 'updatedAt' | 'status'>;
@@ -135,6 +135,15 @@ export function answerPortalItem(manager: ProjectStateManager, id: string, answe
   item.answer = answer;
   item.status = 'answered';
   item.updatedAt = new Date().toISOString();
+  // Board #52 — append the applied answer to the item's saved history so any
+  // follow-up question reopened on this thread keeps the full Q&A record.
+  const priorHistory = Array.isArray(item.meta?.answerHistory)
+    ? (item.meta!.answerHistory as PortalAnswerHistoryEntry[])
+    : [];
+  item.meta = {
+    ...(item.meta || {}),
+    answerHistory: [...priorHistory, { text: answer, at: item.updatedAt }]
+  };
   manager.saveState(state);
   return item;
 }

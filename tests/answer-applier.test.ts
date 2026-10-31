@@ -247,6 +247,52 @@ describe('applyAnswer', () => {
     expect(result.updatedItem.answer).toBe('12V nominal');
   });
 
+  it('follow-up: counter-questions inherit the applied answer history (board #52)', async () => {
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What is the max voltage?',
+      source: 'autopilot'
+    });
+
+    executeTurnMock.mockImplementation(async (opts: {
+      userPrompt: string;
+      forceSpecialistId: string;
+      signal?: AbortSignal;
+      onQuestions?: (items: Array<{
+        type: 'question';
+        severity: 'normal';
+        docPath: string;
+        title: string;
+        detail?: string;
+        source: 'autopilot';
+      }>) => void;
+    }) => {
+      if (opts.onQuestions) {
+        opts.onQuestions([
+          { type: 'question', severity: 'normal', docPath: 'docs/CONOPS.md', title: 'Q1. What gauge wire?', source: 'autopilot' }
+        ]);
+      }
+      return makeTurnResult({
+        specialistId: 'conops',
+        criticResult: { passed: true, score: 9.0, summary: 'pass', strengths: [], weaknesses: [], actionableGuidance: '' }
+      });
+    });
+
+    const result = await applyAnswer(deps, item.id, '12V nominal');
+
+    // The follow-up item keeps the full saved answer history.
+    expect(result.counterQuestions[0].meta?.answerHistory).toEqual([
+      { text: '12V nominal', at: expect.any(String) }
+    ]);
+    // The answered item itself also records the answer in its history.
+    const stored = stateMgr.getState().portalItems!.find(i => i.id === item.id)!;
+    expect(stored.meta?.answerHistory).toEqual([
+      { text: '12V nominal', at: expect.any(String) }
+    ]);
+  });
+
   it('re-apply to an already-answered item throws (stale rejection)', async () => {
     // First, add and answer an item
     const item = addPortalItem(stateMgr, {

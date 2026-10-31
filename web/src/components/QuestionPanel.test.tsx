@@ -408,4 +408,49 @@ describe('QuestionPanel', () => {
     expect(consoleSpy).not.toHaveBeenCalled();
     consoleSpy.mockRestore();
   });
+
+  // ————— 16. Lifecycle colors + follow-up chip (design §3, board #52) —————
+  it('lifecycle: queued state chip is sky (icon + word, never color alone)', () => {
+    renderWithUser(<QuestionPanel {...baseProps({ answerStates: { A: { phase: 'queued' } } })} />);
+
+    const chip = screen.getByText('Queued — applies after this phase');
+    expect(chip.className).toContain('text-sky-300');
+    expect(chip.className).not.toContain('amber');
+  });
+
+  it('lifecycle: follow-up chip is amber with the word Follow-up when the item has answer history', () => {
+    const item = makeItem({
+      id: 'A',
+      meta: { answerHistory: [{ text: '42V nominal', at: '2025-01-01T00:00:00.000Z' }] },
+    });
+    renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
+
+    const chip = screen.getByText('Follow-up');
+    expect(chip.className).toContain('text-amber-300');
+    expect(chip.className).toContain('bg-amber-950/40');
+    expect(chip.className).toContain('border-amber-500/40');
+  });
+
+  it('lifecycle: no follow-up chip without answer history', () => {
+    renderWithUser(<QuestionPanel {...baseProps()} />);
+
+    expect(screen.queryByText('Follow-up')).not.toBeInTheDocument();
+  });
+
+  it('lifecycle: nav dots — amber pending, sky queued, rose parked', () => {
+    const A = makeItem({ id: 'A', title: 'Question A' }); // queued → sky
+    const B = makeItem({ id: 'B', title: 'Question B', type: 'parked' }); // parked → rose
+    const C = makeItem({ id: 'C', title: 'Question C' }); // pending → amber
+    renderWithUser(
+      <QuestionPanel
+        {...baseProps({ items: [A, B, C], answerStates: { A: { phase: 'queued' } } })}
+      />,
+    );
+
+    const dotOf = (name: string) =>
+      screen.getByRole('button', { name: new RegExp(name) }).querySelector('span.rounded-full');
+    expect(dotOf('Question A')?.className).toContain('bg-sky-400');
+    expect(dotOf('Question B')?.className).toContain('bg-rose-400');
+    expect(dotOf('Question C')?.className).toContain('bg-amber-400');
+  });
 });

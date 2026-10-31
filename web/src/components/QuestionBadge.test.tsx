@@ -153,4 +153,48 @@ describe('QuestionBadge', () => {
     expect(ref.current).toBeInstanceOf(HTMLButtonElement);
     expect(ref.current).toBe(screen.getByRole('button'));
   });
+
+  // ————— 7. Lifecycle colors (design §3, board #52) —————
+  it('nav dot is amber for pending, sky when any queued, rose when blocking', () => {
+    const dotClass = (props: { queuedCount: number; blockingCount: number }) => {
+      const { unmount } = render(
+        <QuestionBadge
+          count={2}
+          {...props}
+          resolvedCount={0}
+          surface="closed"
+          subdued={false}
+          onOpen={() => {}}
+        />,
+      );
+      const dot = screen
+        .getByRole('button')
+        .querySelector('span[aria-hidden="true"]');
+      const cls = dot?.className ?? '';
+      unmount();
+      return cls;
+    };
+
+    expect(dotClass({ queuedCount: 0, blockingCount: 0 })).toContain('bg-amber-400');
+    expect(dotClass({ queuedCount: 1, blockingCount: 0 })).toContain('bg-sky-400');
+    expect(dotClass({ queuedCount: 0, blockingCount: 1 })).toContain('bg-rose-400');
+  });
+
+  it('queued chip is sky, not amber', () => {
+    render(
+      <QuestionBadge
+        count={1}
+        queuedCount={2}
+        blockingCount={0}
+        resolvedCount={0}
+        surface="closed"
+        subdued={false}
+        onOpen={() => {}}
+      />,
+    );
+
+    const chip = screen.getByText('2 queued');
+    expect(chip.className).toContain('sky');
+    expect(chip.className).not.toContain('amber');
+  });
 });

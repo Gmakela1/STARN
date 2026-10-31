@@ -57,7 +57,15 @@ export default function QuestionBadge({
     .filter(Boolean)
     .join(', ');
 
-  const dotClass = blockingCount > 0 ? 'bg-rose-400' : 'bg-amber-400';
+  // §3 — lifecycle dot: rose when any parked/blocking item, sky when answers
+  // are queued/applying, amber for plain pending. The chip text always carries
+  // the status word, so color is never the only signal.
+  let dotClass = 'bg-amber-400';
+  if (blockingCount > 0) {
+    dotClass = 'bg-rose-400';
+  } else if (queuedCount > 0) {
+    dotClass = 'bg-sky-400';
+  }
 
   if (subdued) {
     return (
@@ -100,7 +108,7 @@ export default function QuestionBadge({
       </span>
       <span className="truncate text-xs font-medium text-amber-200">Needs Input</span>
       {queuedCount > 0 && (
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-300">
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-sky-700/50 bg-sky-950/40 px-2 py-0.5 text-[11px] font-semibold text-sky-300">
           <Clock3 className="h-3 w-3" aria-hidden />
           {queuedCount} queued
         </span>

@@ -135,6 +135,27 @@ describe('question portal store', () => {
     expect(answered.updatedAt > saved.updatedAt).toBe(true);
   });
 
+  it('answerPortalItem appends meta.answerHistory entries per applied answer (board #52)', () => {
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'Voltage?',
+      source: 'autopilot'
+    });
+
+    answerPortalItem(stateMgr, item.id, 'first answer');
+    answerPortalItem(stateMgr, item.id, 'second answer');
+
+    const stored = stateMgr.getState().portalItems!.find(i => i.id === item.id)!;
+    const history = stored.meta?.answerHistory as Array<{ text: string; at: string }>;
+    expect(Array.isArray(history)).toBe(true);
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({ text: 'first answer' });
+    expect(history[1]).toMatchObject({ text: 'second answer' });
+    expect(typeof history[0].at).toBe('string');
+  });
+
   it('dismissPortalItem sets status dismissed and bumps updatedAt', () => {
     const item = addPortalItem(stateMgr, {
       type: 'flag',

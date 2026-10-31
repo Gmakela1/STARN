@@ -39,7 +39,7 @@ export interface QuestionPanelProps {
 
 /** §1.4.1 — per-phase chip visuals, keyed off the AnswerPhase union (moved from QuestionBar). */
 const stateChip: Record<AnswerState['phase'], { icon: LucideIcon; label: string; cls: string; live?: boolean }> = {
-  queued: { icon: Clock3, label: 'Queued — applies after this phase', cls: 'border-amber-700/50 bg-amber-950/40 text-amber-300' },
+  queued: { icon: Clock3, label: 'Queued — applies after this phase', cls: 'border-sky-700/50 bg-sky-950/40 text-sky-300' },
   applying: { icon: Loader2, label: 'Applying…', cls: 'border-cyan-700/50 bg-cyan-950/40 text-cyan-300', live: true },
   applied: { icon: Check, label: 'Applied', cls: 'border-emerald-700/50 bg-emerald-950/40 text-emerald-300' },
   failed: { icon: TriangleAlert, label: "Couldn't apply", cls: 'border-rose-700/50 bg-rose-950/40 text-rose-300' }
@@ -540,6 +540,16 @@ export default function QuestionPanel({
           {item.title}
         </p>
 
+        {/* §3 board #52 — item returned as a follow-up after an applied answer.
+            The full Q&A history stays available on the item (meta.answerHistory). */}
+        {item.meta?.answerHistory && item.meta.answerHistory.length > 0 && (
+          <div className="mt-1.5">
+            <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-950/40 px-2.5 py-0.5 text-[11px] font-medium text-amber-300">
+              <RotateCcw className="h-3 w-3" aria-hidden /> Follow-up
+            </span>
+          </div>
+        )}
+
         {detailView && <div className="mt-1.5">{detailView}</div>}
 
         {isParked && item.gaps && item.gaps.length > 0 && (
@@ -744,8 +754,17 @@ export default function QuestionPanel({
         <div className="flex overflow-x-auto gap-1.5 border-b border-slate-800 px-3 py-1.5">
           {items.map(navItem => {
             const isActive = navItem.id === activeId;
-            const dotClass =
-              navItem.severity === 'blocking' || navItem.type === 'parked' ? 'bg-rose-400' : 'bg-amber-400';
+            // §3 — lifecycle dot: rose for parked/blocking, sky while an answer
+            // is queued/applying for that item, amber for plain pending. The
+            // chip text always carries the title, so color is never the only
+            // signal.
+            const queuedPhase = answerStates[navItem.id]?.phase;
+            let dotClass = 'bg-amber-400';
+            if (navItem.type === 'parked' || navItem.severity === 'blocking') {
+              dotClass = 'bg-rose-400';
+            } else if (queuedPhase === 'queued' || queuedPhase === 'applying') {
+              dotClass = 'bg-sky-400';
+            }
             return (
               <button
                 key={navItem.id}

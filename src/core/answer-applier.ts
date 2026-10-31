@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ProjectStateManager, ORDERED_WORKFLOW_PHASES } from '../workspace/state.js';
-import { PortalItem } from '../workspace/types.js';
+import { PortalItem, PortalAnswerHistoryEntry } from '../workspace/types.js';
 import { approveArtifact } from './approvals.js';
 import { addPortalItem, answerPortalItem } from './question-portal.js';
 
@@ -192,6 +192,26 @@ export async function applyAnswer(
       threadId
     });
     counterQuestions.push(newItem);
+  }
+
+  // 10. Board #52 — follow-up questions reopened after this answer inherit the
+  // item's full answer history, so the thread keeps its saved Q&A record.
+  // NOTE: getState() re-parses the store, so re-read fresh before saving —
+  // saving the earlier snapshot would wipe answerPortalItem's history append.
+  if (counterQuestions.length > 0) {
+    const history = updatedItem.meta?.answerHistory;
+    if (Array.isArray(history)) {
+      const fresh = stateManager.getState();
+      const byId = new Map((fresh.portalItems || []).map(i => [i.id, i]));
+      for (const cq of counterQuestions) {
+        cq.meta = { ...(cq.meta || {}), answerHistory: history as PortalAnswerHistoryEntry[] };
+        const stored = byId.get(cq.id);
+        if (stored) {
+          stored.meta = { ...(stored.meta || {}), answerHistory: history as PortalAnswerHistoryEntry[] };
+        }
+      }
+      stateManager.saveState(fresh);
+    }
   }
 
   return { updatedItem, affectedDocs, counterQuestions };

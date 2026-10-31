@@ -179,6 +179,17 @@ export interface IssuesSummary {
   openQuestionCount: number;
 }
 
+export interface PortalAnswerHistoryEntry {
+  text: string;
+  at: string;
+}
+
+export interface PortalItemMeta extends Record<string, unknown> {
+  archived?: boolean;
+  /** §3 board #52 — saved answers, appended server-side each time an answer applies. */
+  answerHistory?: PortalAnswerHistoryEntry[];
+}
+
 export interface PortalItem {
   id: string;
   type: 'question' | 'parked' | 'flag' | 'nonconformance';
@@ -194,7 +205,7 @@ export interface PortalItem {
   source: 'autopilot' | 'studio' | 'shop-floor';
   createdAt: string;
   updatedAt: string;
-  meta?: Record<string, unknown>;
+  meta?: PortalItemMeta;
 }
 
 export interface AutopilotStatusResponse {
