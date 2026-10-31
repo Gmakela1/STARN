@@ -1,8 +1,6 @@
-import { useState } from 'react';
-import { Loader2, Sparkles, Square } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Loader2, Rocket, Sparkles, Square } from 'lucide-react';
 import { describeAutopilotStartError } from '../lib/autopilotError';
-// React Bits (reactbits.dev) decorative border effect — see web/src/components/reactbits.
-import StarBorder from './reactbits/StarBorder';
 
 interface StartAutopilotButtonProps {
   /** True while the autopilot turn is running → render Stop instead of Start. */
@@ -31,6 +29,20 @@ export default function StartAutopilotButton({
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // One-shot idle→running transition flag: the rocket launch + spark burst
+  // fire only on the running edge, never on remount while already running.
+  const prevRunning = useRef(running);
+  const [launched, setLaunched] = useState(false);
+  useEffect(() => {
+    if (running && !prevRunning.current) {
+      prevRunning.current = true;
+      setLaunched(true);
+      const timer = setTimeout(() => setLaunched(false), 900);
+      return () => clearTimeout(timer);
+    }
+    if (!running) prevRunning.current = false;
+    return undefined;
+  }, [running]);
 
   const handleStart = async () => {
     setStarting(true);
@@ -82,16 +94,26 @@ export default function StartAutopilotButton({
       );
     }
     return (
-      <span className="relative flex shrink-0 items-center">
+      <span className="relative flex shrink-0 flex-col">
         <button
           type="button"
           onClick={() => void handleStop()}
           disabled={stopping}
-          className="flex min-h-[44px] shrink-0 items-center gap-1 rounded-md border border-rose-600/40 bg-rose-950/60 px-2.5 text-[11px] font-bold text-rose-300 transition hover:bg-rose-900/70 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex min-h-[56px] w-56 flex-col items-center justify-center gap-1 rounded-lg border border-rose-600/40 bg-rose-950/60 px-4 text-rose-300 transition hover:bg-rose-900/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:cursor-not-allowed disabled:opacity-40"
+          title="Stop auto-drafting"
           aria-label="Stop autopilot"
         >
-          <Square className="h-3 w-3 fill-current" aria-hidden />
-          Stop
+          {stopping ? (
+            <Square className="h-3 w-3 fill-current" aria-hidden />
+          ) : (
+            <Rocket className="h-6 w-6 fill-current" aria-hidden />
+          )}
+          <span className="text-[11px] font-bold tracking-wide">AUTOPILOT ACTIVE</span>
+          {/* Indeterminate 4px bar (aria-hidden redundancy next to the footer
+              LatticeLoader) — slides under reduced motion too, dimmed. */}
+          <span className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-rose-900/60" aria-hidden>
+            <span className="bar-slide-safe block h-full w-1/3 rounded-full bg-[#ff2a3c] motion-reduce:opacity-70" />
+          </span>
         </button>
         {error && (
           <span
@@ -135,34 +157,47 @@ export default function StartAutopilotButton({
   }
 
   return (
-    <span className="relative flex shrink-0 items-center">
-      {/* StarBorder (React Bits) renders the same <button>: classes, disabled
-          state, aria-label and handlers are forwarded unchanged; the canvas is
-          aria-hidden so the accessible name is untouched. */}
-      <StarBorder
-        as="button"
+    <span className="relative flex shrink-0 flex-col">
+      {/* 56px two-row cut-corner launch control (rocket redesign replaces the
+          StarBorder canvas border — decorative only, silhouette kept). */}
+      <button
         type="button"
         onClick={() => void handleStart()}
         disabled={starting}
-        className="cut-corner flex min-h-[44px] shrink-0 items-center gap-1 rounded-none bg-[#d61f2c] px-3.5 text-xs font-semibold text-white transition hover:bg-[#e11d3f] saber-on disabled:cursor-not-allowed disabled:opacity-40"
-        style={{ padding: '0.875rem' }}
-        backgroundColor="#d61f2c"
-        textColor="#ffffff"
-        color="#ff2a3c"
-        trailColor="#d9a441"
-        duration={6}
-        thickness={2}
-        glow={0.7}
-        radius={0}
+        className="cut-corner saber-on flex min-h-[56px] w-56 flex-col items-center justify-center gap-1 rounded-none bg-[#d61f2c] px-4 text-white transition hover:bg-[#e11d3f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:cursor-not-allowed disabled:opacity-40"
         aria-label="Launch autopilot auto-drafting"
+        title="Launch auto-drafting — drafts docs automatically between gates"
       >
         {starting ? (
-          <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+          <Loader2 className="h-6 w-6 animate-spin" aria-hidden />
         ) : (
-          <Sparkles className="h-3 w-3 fill-current motion-safe:animate-[sf-breathe_2.4s_ease-in-out_infinite]" aria-hidden />
+          <Rocket
+            className={[
+              'h-6 w-6 fill-current',
+              launched
+                ? 'rocket-launch-safe'
+                : 'motion-safe:animate-[sf-breathe_2.4s_ease-in-out_infinite]'
+            ].join(' ')}
+            aria-hidden
+          />
         )}
-        Launch Auto-Drafting
-      </StarBorder>
+        <span className="text-[11px] font-bold tracking-wide">
+          {starting ? 'IGNITING…' : 'LAUNCH AUTO-DRAFTING'}
+        </span>
+        {/* One-shot spark burst on the idle→running edge; lives on the outer
+            span so cut-corner clip-path cannot clip it at the button edge. */}
+        {launched && (
+          <span className="pointer-events-none absolute inset-0" aria-hidden="true">
+            {[0, 1, 2, 3, 4].map(i => (
+              <span
+                key={i}
+                className="spark-burst-safe absolute top-[-2px] block h-1.5 w-1.5 rounded-full bg-[#ffd28a]"
+                style={{ left: `${12 + i * 19}%` }}
+              />
+            ))}
+          </span>
+        )}
+      </button>
       {error && (
         <span
           role="alert"

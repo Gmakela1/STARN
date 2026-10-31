@@ -19,6 +19,42 @@ function renderControls(running = false) {
   );
 }
 
+describe('StartAutopilotButton — full variant rocket redesign', () => {
+  it('renders a plain 56px cut-corner button (no StarBorder wrapper) with rocket + idle label', () => {
+    const { container } = renderControls();
+    const button = screen.getByRole('button', { name: 'Launch autopilot auto-drafting' });
+    expect(button.tagName).toBe('BUTTON');
+    expect(button).toHaveClass('min-h-[56px]', 'cut-corner', 'rounded-none');
+    expect(button.querySelector('.lucide-rocket')).not.toBeNull();
+    expect(button.querySelector('.lucide-sparkles')).toBeNull();
+    expect(button.textContent).toContain('LAUNCH AUTO-DRAFTING');
+    // StarBorder's decorative canvas is gone with the wrapper.
+    expect(container.querySelector('canvas')).toBeNull();
+  });
+
+  it('switches to the rose 56px stop control with the indeterminate bar while running', () => {
+    renderControls(true);
+    const button = screen.getByRole('button', { name: 'Stop autopilot' });
+    expect(button).toHaveClass('min-h-[56px]', 'w-56');
+    expect(button.textContent).toContain('AUTOPILOT ACTIVE');
+    expect(button.querySelector('.h-1')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Launch autopilot auto-drafting' })).not.toBeInTheDocument();
+  });
+
+  it('shows the IGNITING… label while the start request is pending', async () => {
+    let resolveStart: () => void = () => {};
+    start.mockImplementation(() => new Promise<void>(res => { resolveStart = res; }));
+    const { user } = renderControls();
+
+    const button = screen.getByRole('button', { name: 'Launch autopilot auto-drafting' });
+    await user.click(button);
+    expect(button.textContent).toContain('IGNITING…');
+
+    resolveStart();
+    await waitFor(() => expect(button.textContent).toContain('LAUNCH AUTO-DRAFTING'));
+  });
+});
+
 describe('StartAutopilotButton — start flow', () => {
   it('button is disabled while the start request is pending', async () => {
     let resolveStart: () => void = () => {};
