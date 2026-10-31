@@ -76,7 +76,7 @@ export interface PromptBarProps {
   menuBackground?: string;
   sparkColor?: string;
   sparkBoost?: number;
-  width?: number;
+  width?: number | string;
   radius?: number;
   maxRows?: number;
   morphDuration?: number;
@@ -84,6 +84,9 @@ export interface PromptBarProps {
   tilt?: number;
   pressScale?: number;
   className?: string;
+  /** STARN integration channel: text produced outside the bar (e.g. voice
+   * transcripts) is appended to the internal draft when `seq` changes. */
+  injectedDraft?: { text: string; seq: number } | null;
 }
 
 type Row = {
@@ -241,7 +244,8 @@ const PromptBar: React.FC<PromptBarProps> = ({
   squash = 0.12,
   tilt = 8,
   pressScale = 0.96,
-  className = ''
+  className = '',
+  injectedDraft = null
 }) => {
   const reduce = useReducedMotion();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -335,6 +339,15 @@ const PromptBar: React.FC<PromptBarProps> = ({
     el.style.height = `${Math.min(el.scrollHeight, max)}px`;
     el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
   }, [draft, maxRows]);
+
+  // STARN integration: append externally-produced text (voice transcripts)
+  // to the internal draft whenever the injection seq advances.
+  const lastInjectionRef = useRef(-1);
+  useEffect(() => {
+    if (!injectedDraft || injectedDraft.seq === lastInjectionRef.current) return;
+    lastInjectionRef.current = injectedDraft.seq;
+    setDraft(d => (d.trim() ? `${d.trimEnd()} ${injectedDraft.text}` : injectedDraft.text));
+  }, [injectedDraft]);
 
   useEffect(
     () => () => {
@@ -509,6 +522,10 @@ const PromptBar: React.FC<PromptBarProps> = ({
     if (listening) {
       dictation.current += 1;
       setListening(false);
+      // STARN adaptation: the stop click also notifies the host recorder via
+      // onDictate (the host ends the recording and injects the transcript
+      // through injectedDraft, since this return path drops the value).
+      latest.current.onDictate?.();
       return;
     }
     const seq = ++dictation.current;
@@ -570,7 +587,7 @@ const PromptBar: React.FC<PromptBarProps> = ({
           '--pb-bg': background,
           '--pb-ink': color,
           '--pb-menu': menuBackground,
-          '--pb-w': `${width}px`,
+          '--pb-w': typeof width === 'number' ? `${width}px` : width,
           '--pb-radius': `${radius}px`,
           '--pb-spark': sparkColor,
           '--pb-press': pressScale

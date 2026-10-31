@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import {
-  Send,
-  Square,
   FileText,
   Pencil,
   Eye,
@@ -16,7 +14,6 @@ import {
   Paperclip,
   ChevronDown,
   Check,
-  Mic,
   BookOpen,
   FolderOpen,
   FilePen,
@@ -53,6 +50,7 @@ import StartAutopilotButton from '../components/StartAutopilotButton';
 // React Bits (reactbits.dev) decorative effect — see web/src/components/reactbits.
 import DotGrid from '../components/reactbits/DotGrid';
 import LatticeLoader from '../components/reactbits/LatticeLoader/LatticeLoader';
+import PromptBar from '../components/reactbits/PromptBar/PromptBar';
 import { deriveQueuedAnswerStates } from '../lib/queuedStates';
 import {
   applyAnchorHighlight,
@@ -393,7 +391,14 @@ export default function DevelopmentView({
   }, [agentsWorking]);
 
   // --- Chat state ---
-  const [prompt, setPrompt] = useState('');
+  // The draft lives inside PromptBar (React Bits). Externally-produced text
+  // (voice transcripts) is appended to it through the injectedDraft channel.
+  const [voiceInjection, setVoiceInjection] = useState<{ text: string; seq: number } | null>(null);
+  const voiceSeqRef = useRef(0);
+  const appendVoiceInjection = useCallback((text: string) => {
+    voiceSeqRef.current += 1;
+    setVoiceInjection({ text, seq: voiceSeqRef.current });
+  }, []);
   const chatEndRef = useRef<HTMLDivElement>(null);
   // §8.1 — lifted question-surface state (D7): 'closed' | 'open' | 'minimized'
   // plus the general dismissal set. The badge and the right-pane panel both
@@ -492,6 +497,55 @@ export default function DevelopmentView({
   // Voice recorder
   const { recording, startRecording, stopRecording, error: voiceError } = useVoiceRecorder();
 
+  // --- PromptBar dictate ↔ recorder bridge ---
+  // PromptBar's dictate button starts a dictation by calling onDictate and
+  // keeps its listening UI up while the returned promise is pending. The
+  // promise resolves when the recorder stops by itself (Alt release, mic
+  // error); a second dictate click reaches onDictate again (stop path) and
+  // ends the recorder, with the transcript delivered via injectedDraft.
+  const dictateActiveRef = useRef(false);
+  const dictateSawRecordingRef = useRef(false);
+  const dictateResolverRef = useRef<((value: string | undefined) => void) | null>(null);
+
+  const clearDictation = useCallback(() => {
+    dictateActiveRef.current = false;
+    dictateSawRecordingRef.current = false;
+    const resolve = dictateResolverRef.current;
+    dictateResolverRef.current = null;
+    resolve?.(undefined);
+  }, []);
+
+  const handleDictate = useCallback(async (): Promise<string | undefined> => {
+    if (recording) {
+      // PromptBar stop click: end the recorder here; the transcript arrives
+      // via the injectedDraft channel (the stop path drops returned values).
+      dictateActiveRef.current = false;
+      dictateResolverRef.current = null;
+      const text = await stopRecording();
+      if (text) appendVoiceInjection(text);
+      return undefined;
+    }
+    if (busy || checkpoint !== null) return undefined;
+    dictateActiveRef.current = true;
+    dictateSawRecordingRef.current = false;
+    startRecording();
+    return new Promise<string | undefined>(resolve => {
+      dictateResolverRef.current = resolve;
+    });
+  }, [recording, busy, checkpoint, startRecording, stopRecording, appendVoiceInjection]);
+
+  useEffect(() => {
+    if (recording) {
+      dictateSawRecordingRef.current = true;
+      return;
+    }
+    // Recorder stopped outside the dictate flow (Alt release, mic error,
+    // unmount of the recorder) — release PromptBar's listening UI.
+    if (dictateActiveRef.current && (dictateSawRecordingRef.current || voiceError)) {
+      clearDictation();
+    }
+  }, [recording, voiceError, clearDictation]);
+
   // Alt-hold-to-record key listener. Only while the question panel is closed:
   // when it is open, QuestionPanel owns the Alt treatment for answer drafts
   // (exactly one window-level owner, no double recording).
@@ -505,7 +559,7 @@ export default function DevelopmentView({
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.key === 'Alt' && recording && !e.ctrlKey) {
         stopRecording().then(text => {
-          if (text) setPrompt(prev => prev + text);
+          if (text) appendVoiceInjection(text);
         });
       }
     };
@@ -517,7 +571,7 @@ export default function DevelopmentView({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [busy, checkpoint, surface, recording, startRecording, stopRecording]);
+  }, [busy, checkpoint, surface, recording, startRecording, stopRecording, appendVoiceInjection]);
 
   // §8.8 — Ctrl+. (or Meta+.) toggles the question panel: open ↔ minimized
   // (and opens from closed). The !e.altKey guard blocks AltGr layouts that
@@ -567,11 +621,11 @@ export default function DevelopmentView({
     return () => { cancelled = true; };
   }, [portalItems, answerStates]);
 
-  const submit = async () => {
-    const text = prompt.trim();
-    if (!text || busy) return;
-    setPrompt('');
-    await sendTurn(text, { activePhase: selectedPhase });
+  /** PromptBar onSend → existing turn pipeline (detail extras ignored for now). */
+  const handlePromptSend = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || busy || checkpoint !== null) return;
+    await sendTurn(trimmed, { activePhase: selectedPhase });
     await refreshDoc();
     await onProjectChanged();
   };
@@ -1160,69 +1214,45 @@ export default function DevelopmentView({
               </div>
             )}
             <div className="flex items-end gap-2">
-              <textarea
-                value={prompt}
-                onChange={e => setPrompt(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    void submit();
-                  }
-                }}
-                disabled={busy || checkpoint !== null}
-                placeholder={checkpoint ? 'Resolve the pending checkpoint above first…' : 'Message the agent… (Enter to send, Shift+Enter for newline)'}
-                aria-label="Message the agent"
-                className="min-h-[44px] flex-1 resize-none rounded-lg border border-[#3b4658] bg-[#05070c] px-3 py-2.5 text-sm text-[#e8edf5] placeholder:text-[#6e7d92] focus:border-[#ff2a3c] focus:outline-none disabled:opacity-50"
-              />
-              {/* Autopilot start/stop (icon variant, 44px) — left of mic, per §3 */}
+              {/* Autopilot start/stop (icon variant, 44px) — outside/left of PromptBar, per §3 */}
               <StartAutopilotButton
                 size="icon"
                 running={!!autopilotStatus?.running}
                 onStart={async () => { await api.autopilotStart(); }}
                 onStop={async () => { await api.autopilotStop(); }}
               />
-              {/* Mic button */}
-              <button
-                onClick={() => {
-                  if (recording) {
-                    stopRecording().then(text => {
-                      if (text) setPrompt(prev => prev + text);
-                    });
-                  } else {
-                    startRecording();
-                  }
+              {/* PromptBar (React Bits) — owns the composer: textarea, attach
+                  menu, dictate toggle and the send↔stop morphing button. */}
+              <PromptBar
+                className="min-w-0 flex-1"
+                width="100%"
+                radius={14}
+                background="#11151d"
+                menuBackground="#0d1017"
+                color="#e8edf5"
+                sparkColor="#ff2a3c"
+                busy={busy}
+                placeholder={
+                  checkpoint
+                    ? 'Resolve the pending checkpoint above first…'
+                    : project
+                      ? `Tell the ${project.name} agent what to do next… (Enter to send)`
+                      : 'Message the agent… (Enter to send, Shift+Enter for newline)'
+                }
+                sources={[
+                  { key: 'example', name: 'Quality example', description: 'Upload for the selected phase', attach: true }
+                ]}
+                commands={[]}
+                models={[]}
+                efforts={[]}
+                onSend={text => void handlePromptSend(text)}
+                onStop={() => void abortTurn()}
+                onAttach={() => {
+                  fileInputRef.current?.click();
                 }}
-                disabled={busy || checkpoint !== null}
-                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-colors ${
-                  recording
-                    ? 'bg-rose-600 text-white motion-safe:animate-pulse'
-                    : 'border border-[#3b4658] bg-[#11151d] text-[#a8b3c4] hover:border-[#ff2a3c] hover:text-[#ff2a3c]'
-                }`}
-                aria-label={recording ? 'Stop recording' : 'Record voice message'}
-                title="Click or hold Alt to record"
-              >
-                <Mic className="h-4 w-4" aria-hidden />
-              </button>
-              {busy ? (
-                <button
-                  onClick={() => void abortTurn()}
-                  className="flex h-[44px] w-[44px] items-center justify-center rounded-lg border border-rose-800 bg-rose-950/60 text-rose-300 transition hover:bg-rose-900/60"
-                  aria-label="Abort current turn"
-                  title="Abort current turn"
-                >
-                  <Square className="h-4 w-4" aria-hidden />
-                </button>
-              ) : (
-                <button
-                  onClick={() => void submit()}
-                  disabled={!prompt.trim() || checkpoint !== null}
-                  className="cut-corner-sm flex h-[44px] w-[44px] items-center justify-center rounded-lg bg-[#d61f2c] text-white transition hover:bg-[#e11d3f] disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label="Send message"
-                  title="Send message"
-                >
-                  <Send className="h-4 w-4" aria-hidden />
-                </button>
-              )}
+                onDictate={handleDictate}
+                injectedDraft={voiceInjection}
+              />
             </div>
           </div>
         </footer>

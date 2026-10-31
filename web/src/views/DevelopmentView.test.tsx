@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, screen } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import { renderWithUser, cleanup } from '../test/render';
 import DevelopmentView from './DevelopmentView';
 import { useAutopilotEvents } from '../hooks/useAutopilotEvents';
+import { api } from '../api/client';
 import type { ChatEntry, ActivityMeta } from '../api/useTurnStream';
 import type { ProjectInfo, PortalItem } from '../types/api';
+
+const mockedApi = vi.mocked(api);
 
 vi.mock('../api/client', () => ({
   api: {
@@ -114,13 +117,15 @@ function makeTurnStream(overrides: TurnStreamOverrides = {}) {
 }
 
 function renderView(overrides: TurnStreamOverrides = {}, project: ProjectInfo | null = makeProject()) {
-  return renderWithUser(
+  const turnStream = makeTurnStream(overrides);
+  const view = renderWithUser(
     <DevelopmentView
-      turnStream={makeTurnStream(overrides)}
+      turnStream={turnStream}
       project={project}
       onProjectChanged={vi.fn()}
     />
   );
+  return { ...view, turnStream };
 }
 
 // ————— React Bits LatticeLoader in the chat footer —————
@@ -172,6 +177,69 @@ describe('DevelopmentView agents-working loader', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// ————— PromptBar composer (React Bits) —————
+describe('DevelopmentView PromptBar composer', () => {
+  it('sends the typed prompt through the existing turn pipeline on Enter', async () => {
+    const { user, turnStream } = renderView({ busy: false });
+    const textarea = screen.getByLabelText('Prompt');
+    await user.type(textarea, 'draft the shopping list');
+    await user.keyboard('{Enter}');
+    await waitFor(() => {
+      expect(turnStream.sendTurn).toHaveBeenCalledWith('draft the shopping list', { activePhase: '' });
+    });
+    // PromptBar clears its internal draft after sending.
+    await waitFor(() => {
+      expect((textarea as HTMLTextAreaElement).value).toBe('');
+    });
+  });
+
+  it('morphs the send button into Stop while busy', () => {
+    renderView({ busy: true });
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Send' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the autopilot icon button outside the PromptBar (44px targets)', () => {
+    renderView({ busy: false });
+    expect(screen.getByRole('button', { name: 'Launch autopilot auto-drafting' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Send message' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record voice message' })).not.toBeInTheDocument();
+  });
+
+  it('dictate button starts the recorder and flips to “Stop dictation”', async () => {
+    const { user } = renderView({ busy: false });
+    await user.click(screen.getByRole('button', { name: 'Dictate' }));
+    expect(voiceMock.startRecording).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Stop dictation' })).toBeInTheDocument();
+  });
+
+  it('second dictate click stops the recorder and injects the transcript', async () => {
+    const { user, rerender } = renderView({ busy: false });
+    await user.click(screen.getByRole('button', { name: 'Dictate' }));
+    voiceMock.recording = true;
+    rerender(
+      <DevelopmentView turnStream={makeTurnStream({ busy: false })} project={makeProject()} onProjectChanged={vi.fn()} />
+    );
+    await user.click(screen.getByRole('button', { name: 'Stop dictation' }));
+    await waitFor(() => {
+      expect(voiceMock.stopRecording).toHaveBeenCalledTimes(1);
+    });
+    const textarea = screen.getByLabelText('Prompt') as HTMLTextAreaElement;
+    await waitFor(() => {
+      expect(textarea.value).toBe('Transcribed answer text');
+    });
+  });
+
+  it('surfaces the autopilot start error as an alert above the composer', async () => {
+    mockedApi.autopilotStart.mockRejectedValueOnce(new Error('A turn is already in progress'));
+    const { user } = renderView({ busy: false });
+    await user.click(screen.getByRole('button', { name: 'Launch autopilot auto-drafting' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Couldn't start auto-drafting — a turn is already running. Press Stop or wait, then retry."
+    );
   });
 });
 
