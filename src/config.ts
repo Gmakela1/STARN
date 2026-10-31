@@ -127,12 +127,19 @@ export function transcriptionEnabled(file: UserConfigFile, env: NodeJS.ProcessEn
 
 /**
  * Resolves the speech-to-text model for voice dictation. Env override wins
- * over the config file; default is openai/whisper-large-v3.
+ * over the config file; default is openai/whisper-large-v3. Invalid values
+ * (not a model slug) fall back to the next source or the default.
  */
+export function isValidVoiceInputModel(value: string): boolean {
+  return /^[\w./-]+$/.test(value);
+}
+
 export function voiceInputModel(file: UserConfigFile, env: NodeJS.ProcessEnv = process.env): string {
   const envVal = env.STARN_VOICE_INPUT_MODEL?.trim();
-  if (envVal) return envVal;
-  return file.voiceInput?.model?.trim() || DEFAULT_VOICE_INPUT_MODEL;
+  if (envVal && isValidVoiceInputModel(envVal)) return envVal;
+  const fileVal = file.voiceInput?.model?.trim();
+  if (fileVal && isValidVoiceInputModel(fileVal)) return fileVal;
+  return DEFAULT_VOICE_INPUT_MODEL;
 }
 
 /**

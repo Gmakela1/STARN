@@ -45,4 +45,23 @@ describe('voiceInputModel setting (config round-trip)', () => {
     const config = loadConfig(tempGlobalDir);
     expect(config.voiceInputModel).toBe('openai/whisper-large-v3');
   });
+
+  it('falls back to the default for invalid slug env values', () => {
+    process.env.STARN_VOICE_INPUT_MODEL = 'not a model id!';
+    const config = loadConfig(tempGlobalDir);
+    expect(config.voiceInputModel).toBe('openai/whisper-large-v3');
+  });
+
+  it('falls back to the default for invalid slug config-file values', () => {
+    saveUserConfig({ voiceInput: { model: 'bad/slug with spaces' } }, tempGlobalDir);
+    const config = loadConfig(tempGlobalDir);
+    expect(config.voiceInputModel).toBe('openai/whisper-large-v3');
+  });
+
+  it('invalid env falls back to a valid config-file value', () => {
+    saveUserConfig({ voiceInput: { model: 'openai/whisper-large-v3' } }, tempGlobalDir);
+    process.env.STARN_VOICE_INPUT_MODEL = 'bad model!';
+    const config = loadConfig(tempGlobalDir);
+    expect(config.voiceInputModel).toBe('openai/whisper-large-v3');
+  });
 });

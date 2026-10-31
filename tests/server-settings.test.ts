@@ -202,6 +202,19 @@ describe('settings + providers API', () => {
     expect(get2.json.data.voiceInputModel).toBe('openai/gpt-4o-mini-transcribe');
   });
 
+  it('PUT invalid voiceInputModel → 400 and keeps previous value', async () => {
+    const before = session.voiceInputModel;
+    const put = await request(server, 'PUT', '/api/settings', { voiceInputModel: 'not a model id!' });
+    expect(put.status).toBe(400);
+    expect(session.voiceInputModel).toBe(before);
+  });
+
+  it('applySettings rejects invalid voiceInputModel and keeps the previous value', async () => {
+    session.applySettings({ voiceInputModel: 'openai/gpt-4o-mini-transcribe' });
+    expect(() => session.applySettings({ voiceInputModel: 'bad/slug with spaces' })).toThrow(/voice input model/i);
+    expect(session.voiceInputModel).toBe('openai/gpt-4o-mini-transcribe');
+  });
+
   it('session.transcribeAudio posts the configured STT model', async () => {
     await session.applySettings({ voiceInputModel: 'openai/gpt-4o-mini-transcribe' });
     const captured: any[] = [];

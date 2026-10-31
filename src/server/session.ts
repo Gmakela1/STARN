@@ -8,7 +8,7 @@ import { resolvePendingCheckpoint, CheckpointDecision, PendingCheckpoint } from 
 import { ChatMessage } from '../openrouter/types.js';
 import { ChatClient } from '../openrouter/types.js';
 import { OpenRouterClient } from '../openrouter/client.js';
-import { Assignments, DEFAULT_VOICE_INPUT_MODEL, MODEL_ROLES, OPENROUTER_PROVIDER_ID, ProviderConfig, validateAssignments } from '../config.js';
+import { Assignments, DEFAULT_VOICE_INPUT_MODEL, isValidVoiceInputModel, MODEL_ROLES, OPENROUTER_PROVIDER_ID, ProviderConfig, validateAssignments } from '../config.js';
 import { allProviders, createProviderClient, createRoleClients, RoleClients } from '../models/role-clients.js';
 import { ProjectStateManager } from '../workspace/state.js';
 import { ToolRegistry } from '../tools/registry.js';
@@ -212,8 +212,14 @@ export class ServerSessionManager {
     if (typeof update.autopilotEnabled === 'boolean') {
       this._autopilotEnabled = update.autopilotEnabled;
     }
-    if (typeof update.voiceInputModel === 'string' && update.voiceInputModel.trim()) {
-      this._voiceInputModel = update.voiceInputModel.trim();
+    if (typeof update.voiceInputModel === 'string') {
+      const model = update.voiceInputModel.trim();
+      if (model && !isValidVoiceInputModel(model)) {
+        throw new Error(`Invalid voice input model "${model}": expected a model slug like "openai/whisper-large-v3"`);
+      }
+      if (model) {
+        this._voiceInputModel = model;
+      }
     }
     this.roleClients = this.buildRoleClients();
   }
