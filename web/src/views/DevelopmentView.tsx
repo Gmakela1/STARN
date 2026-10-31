@@ -170,7 +170,7 @@ function feedIconFor(m: ActivityMeta, text: string): LucideIcon {
 function dotTone(m: ActivityMeta, opts: { live: boolean; held: boolean }): string {
   if (m.kind === 'error') return 'bg-rose-400';
   if (opts.held || m.stopped) return 'bg-amber-400';
-  if (m.kind === 'complete') return 'bg-[#2c5e3b]';
+  if (m.kind === 'complete') return 'bg-[#8b5cf6]';
   if (opts.live) return 'bg-[#ff2a3c] ring-2 ring-[#ff2a3c]/30 motion-safe:animate-pulse';
   return 'bg-[#2a3342]';
 }
@@ -264,8 +264,8 @@ function LegacySystemNote({ entry }: { entry: ChatEntry }) {
 
   if (/^(Draft approved|Saved|✔ Uploaded)/i.test(stripped)) {
     return (
-      <div className="flex items-start gap-2 rounded-md border border-[#35714a]/60 bg-[#0f2318]/30 px-3 py-1.5 text-xs text-[#86efac]">
-        <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0 text-[#86efac]" aria-hidden />
+      <div className="flex items-start gap-2 rounded-md border border-[#8b5cf6]/60 bg-[#2e1065]/30 px-3 py-1.5 text-xs text-[#e8edf5]">
+        <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0 text-[#e8edf5]" aria-hidden />
         <p className="break-words">{stripped}</p>
       </div>
     );
@@ -897,7 +897,7 @@ export default function DevelopmentView({
     }
     if (phase.status === 'COMPLETED') {
       return (
-        <span className="rounded bg-[#0f2318] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#86efac] border border-[#35714a] shrink-0">
+        <span className="rounded bg-[#2e1065] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#e8edf5] border border-[#8b5cf6] shrink-0">
           Completed
         </span>
       );
@@ -1381,7 +1381,7 @@ export default function DevelopmentView({
                 <button
                   onClick={() => void saveDraft()}
                   disabled={saving}
-                  className="flex min-h-[40px] items-center gap-1.5 rounded-lg bg-[#2c5e3b] px-3 text-xs font-semibold text-white transition hover:bg-[#35714a] disabled:opacity-40"
+                  className="flex min-h-[40px] items-center gap-1.5 rounded-lg bg-[#7c3aed] px-3 text-xs font-semibold text-white transition hover:bg-[#8b5cf6] disabled:opacity-40"
                 >
                   {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Save className="h-3.5 w-3.5" aria-hidden />}
                   Save
@@ -1398,7 +1398,7 @@ export default function DevelopmentView({
               <button
                 onClick={() => void approvePhase()}
                 disabled={approving}
-                className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#35714a] px-3 text-xs font-semibold text-[#86efac] transition hover:bg-[#0f2318] disabled:opacity-40"
+                className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#8b5cf6] px-3 text-xs font-semibold text-[#c4b5fd] transition hover:bg-[#2e1065] disabled:opacity-40"
               >
                 {approving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <BadgeCheck className="h-3.5 w-3.5" aria-hidden />}
                 Approve phase
@@ -1438,13 +1438,13 @@ export default function DevelopmentView({
         </header>
 
         {uploadNotice && (
-          <p className={`border-b px-4 py-1.5 text-xs ${uploadNotice.startsWith('✔') ? 'border-[#35714a]/60 bg-[#0f2318]/40 text-[#86efac]' : 'border-rose-800/60 bg-rose-950/40 text-rose-300'}`}>
+          <p className={`border-b px-4 py-1.5 text-xs ${uploadNotice.startsWith('✔') ? 'border-[#8b5cf6]/60 bg-[#2e1065]/40 text-[#e8edf5]' : 'border-rose-800/60 bg-rose-950/40 text-rose-300'}`}>
             {uploadNotice}
           </p>
         )}
 
         {docNotice && (
-          <p className="border-b border-[#35714a]/60 bg-[#0f2318]/40 px-4 py-1.5 text-xs text-[#86efac]" role="status">
+          <p className="border-b border-[#8b5cf6]/60 bg-[#2e1065]/40 px-4 py-1.5 text-xs text-[#e8edf5]" role="status">
             {docNotice}
           </p>
         )}

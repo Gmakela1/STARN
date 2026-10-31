@@ -80,8 +80,8 @@ export default function IssuesAndQuestionsView({ onPushToAgent }: IssuesAndQuest
         )}
 
         {summary && summary.issues.length === 0 && (
-          <div className="flex flex-col items-center gap-3 rounded-xl border border-[#35714a]/40 bg-[#0f2318]/20 p-10 text-center">
-            <div className="flex items-center gap-2 rounded-full border border-[#35714a]/40 bg-[#2c5e3b]/40 px-4 py-1.5 font-mono text-xs font-bold uppercase tracking-wider text-[#86efac] shadow-md shadow-[#0f2318]/40">
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-[#8b5cf6]/40 bg-[#2e1065]/20 p-10 text-center">
+            <div className="flex items-center gap-2 rounded-full border border-[#8b5cf6]/40 bg-[#7c3aed]/40 px-4 py-1.5 font-mono text-xs font-bold uppercase tracking-wider text-[#e8edf5] shadow-md shadow-[#2e1065]/40">
               <CheckCircle2 className="h-4 w-4" aria-hidden /> System nominal
             </div>
             <p className="text-sm font-medium text-[#e8edf5]">No open defects or unresolved questions</p>

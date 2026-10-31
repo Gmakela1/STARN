@@ -41,7 +41,7 @@ export interface QuestionPanelProps {
 const stateChip: Record<AnswerState['phase'], { icon: LucideIcon; label: string; cls: string; live?: boolean }> = {
   queued: { icon: Clock3, label: 'Queued — applies after this phase', cls: 'border-violet-700/50 bg-violet-950/40 text-violet-300' },
   applying: { icon: Loader2, label: 'Applying…', cls: 'border-[#ff2a3c]/45 bg-[#1a0208] text-[#ffb3bd]', live: true },
-  applied: { icon: Check, label: 'Applied', cls: 'border-[#35714a]/50 bg-[#0f2318]/40 text-[#86efac]' },
+  applied: { icon: Check, label: 'Applied', cls: 'border-[#8b5cf6]/50 bg-[#2e1065]/40 text-[#e8edf5]' },
   failed: { icon: TriangleAlert, label: "Couldn't apply", cls: 'border-rose-700/50 bg-rose-950/40 text-rose-300' }
 };
 
@@ -521,8 +521,8 @@ export default function QuestionPanel({
   if (!item) {
     body = (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#35714a]/60 bg-[#0f2318]/40">
-          <CheckCircle2 className="h-8 w-8 text-[#86efac]" aria-hidden />
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#8b5cf6]/60 bg-[#2e1065]/40">
+          <CheckCircle2 className="h-8 w-8 text-[#e8edf5]" aria-hidden />
         </div>
         <div>
           <p className="text-sm font-medium text-[#e8edf5]">All questions resolved</p>
@@ -558,7 +558,7 @@ export default function QuestionPanel({
       cardTone = 'border-l-[#3b4658] bg-[#0d1017]/70';
       labelText = 'Resolved ✓';
       labelClass = 'text-[#a8b3c4]';
-      iconClass = 'text-[#86efac]';
+      iconClass = 'text-[#c4b5fd]';
       LabelIcon = Check;
     }
 
@@ -719,7 +719,7 @@ export default function QuestionPanel({
           {dwellActive ? (
             <div
               role="status"
-              className="flex min-h-[96px] items-center gap-2 rounded-lg border border-[#35714a]/60 bg-[#0f2318]/40 px-3 py-2.5 text-sm font-medium text-[#86efac]"
+              className="flex min-h-[96px] items-center gap-2 rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 py-2.5 text-sm font-medium text-[#e8edf5]"
             >
               <Check className="h-4 w-4" aria-hidden /> Resolved ✓
             </div>

@@ -149,7 +149,7 @@ export default function LibraryView() {
           </p>
         )}
         {notice && (
-          <p className="rounded-lg border border-[#35714a] bg-[#0f2318]/50 px-3 py-2 text-sm text-[#86efac]" role="status">
+          <p className="rounded-lg border border-[#8b5cf6] bg-[#2e1065]/50 px-3 py-2 text-sm text-[#e8edf5]" role="status">
             {notice}
           </p>
         )}

@@ -389,7 +389,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
           <p className="rounded-lg border border-rose-900 bg-rose-950/50 px-3 py-2 text-sm text-rose-200" role="alert">{error}</p>
         )}
         {notice && (
-          <p className="rounded-lg border border-[#35714a] bg-[#0f2318]/50 px-3 py-2 text-sm text-[#86efac]" role="status">{notice}</p>
+          <p className="rounded-lg border border-[#8b5cf6] bg-[#2e1065]/50 px-3 py-2 text-sm text-[#e8edf5]" role="status">{notice}</p>
         )}
 
         {/* Project Switcher Card */}
@@ -611,7 +611,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                     )}
                     <span className="text-sm" role="status">
                       {list && 'error' in list && <span className="text-rose-300">{list.error}</span>}
-                      {Array.isArray(list) && <span className="text-[#86efac]">{list.length} models available</span>}
+                      {Array.isArray(list) && <span className="text-[#c4b5fd]">{list.length} models available</span>}
                       {roles.length > 0 && <span className="ml-2 text-[#a8b3c4]">Used by: {roles.join(', ')}</span>}
                     </span>
                   </div>
@@ -829,7 +829,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-[#e8edf5]">Tavily API Key</span>
                 {hasTavilyKey && (
-                  <span className="rounded bg-[#0f2318] px-2 py-0.5 text-[10px] font-medium text-[#86efac] border border-[#35714a]">
+                  <span className="rounded bg-[#2e1065] px-2 py-0.5 text-[10px] font-medium text-[#c4b5fd] border border-[#8b5cf6]">
                     Stored on server
                   </span>
                 )}
@@ -852,7 +852,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-[#e8edf5]">Brave Search API Key</span>
                 {hasBraveKey && (
-                  <span className="rounded bg-[#0f2318] px-2 py-0.5 text-[10px] font-medium text-[#86efac] border border-[#35714a]">
+                  <span className="rounded bg-[#2e1065] px-2 py-0.5 text-[10px] font-medium text-[#c4b5fd] border border-[#8b5cf6]">
                     Stored on server
                   </span>
                 )}
@@ -890,7 +890,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                 </button>
                 <span className="text-xs text-[#a8b3c4]">Test uses the key you typed; Save to keep it.</span>
                 {searchProbeResult && (
-                  <span className={`text-xs ${searchProbeResult.success ? 'text-[#86efac]' : 'text-rose-400'}`} role="status">
+                  <span className={`text-xs ${searchProbeResult.success ? 'text-[#e8edf5]' : 'text-rose-400'}`} role="status">
                     {searchProbeResult.success
                       ? `Connected (${searchProbeResult.latencyMs}ms)`
                       : `Connection failed: ${searchProbeResult.error}`}

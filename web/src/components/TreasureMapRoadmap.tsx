@@ -28,7 +28,7 @@ interface ConnectorArrowProps {
 }
 
 const ConnectorArrow: React.FC<ConnectorArrowProps> = ({ dir, active }) => {
-  const colorClass = active ? 'text-[#86efac]' : 'text-[#6e7d92]';
+  const colorClass = active ? 'text-[#c4b5fd]' : 'text-[#6e7d92]';
 
   if (dir === 'right') {
     return (
@@ -99,8 +99,8 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase, hideHeader 
     let ringClass = 'bg-[#11151d] text-[#a8b3c4] border-[#3b4658]';
 
     if (isCompleted) {
-      borderClass = 'border-[#35714a]/40 bg-[#0f2318]/20 shadow-[#0f2318]/50 shadow-sm';
-      ringClass = 'bg-[#2c5e3b]/20 text-[#86efac] border-[#35714a]/50';
+      borderClass = 'border-[#8b5cf6]/40 bg-[#2e1065]/20 shadow-[#2e1065]/50 shadow-sm';
+      ringClass = 'bg-[#7c3aed]/20 text-[#e8edf5] border-[#8b5cf6]/50';
     } else if (isInProgress) {
       borderClass = 'border-violet-600 bg-violet-950/30 shadow-violet-900/30 shadow-md';
       ringClass = 'bg-violet-500 text-[#05070c] font-bold border-violet-400';
@@ -130,7 +130,11 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase, hideHeader 
       <div
         key={phase.id}
         {...interactiveProps}
-        className={`group relative flex h-full flex-col justify-between rounded-xl border p-3.5 transition-all ${borderClass} ${
+        className={`group relative flex h-full flex-col justify-between rounded-xl border p-3.5 ${borderClass} ${
+          isCompleted
+            ? 'transition-colors duration-200 hover:bg-[#2e1065]/85 hover:border-[#8b5cf6]/70 motion-reduce:transition-none motion-reduce:hover:bg-[#2e1065]/20 motion-reduce:hover:border-[#8b5cf6]/40'
+            : 'transition-all'
+        } ${
           isClickable
             ? 'cursor-pointer hover:border-[#ff2a3c] hover:shadow-lg hover:shadow-[#1a0208]/40 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]'
             : ''
@@ -147,7 +151,7 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase, hideHeader 
           {/* Status Badge */}
           <div className="flex items-center gap-1">
             {isCompleted && (
-              <span className="inline-flex items-center gap-1 rounded bg-[#0f2318] px-2 py-0.5 text-[10px] font-semibold text-[#86efac] border border-[#35714a]/40">
+              <span className="inline-flex items-center gap-1 rounded bg-[#2e1065] px-2 py-0.5 text-[10px] font-semibold text-[#e8edf5] border border-[#8b5cf6]/40">
                 <CircleCheck className="h-3 w-3" /> Approved
               </span>
             )}

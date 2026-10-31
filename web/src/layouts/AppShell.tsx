@@ -247,8 +247,8 @@ export default function AppShell() {
             )}
             <div className="flex items-center justify-between text-xs">
               <span className="text-[#a8b3c4]">AI Assistant:</span>
-              <span className="font-semibold text-[#86efac] flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-[#2c5e3b]" />
+              <span className="font-semibold text-[#c4b5fd] flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-[#a78bfa]" />
                 {turnStream.busy ? 'Working…' : 'Ready'}
               </span>
             </div>

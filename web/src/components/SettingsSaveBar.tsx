@@ -28,7 +28,7 @@ export interface SettingsSaveBarProps {
 }
 
 const statusTone: Record<SettingsSaveBarStatus['kind'], string> = {
-  success: 'text-[#86efac]',
+  success: 'text-[#e8edf5]',
   warning: 'text-amber-200',
   error: 'text-rose-300'
 };

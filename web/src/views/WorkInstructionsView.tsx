@@ -20,7 +20,7 @@ const WI_STATUS_TONE: Record<string, string> = {
   'NOT-STARTED': 'bg-[#11151d] text-[#a8b3c4]',
   'IN-PROGRESS': 'bg-violet-950/80 text-violet-300',
   'BLOCKED': 'bg-rose-950/80 text-rose-300',
-  'COMPLETE': 'bg-[#0f2318] text-[#86efac]'
+  'COMPLETE': 'bg-[#2e1065] text-[#e8edf5]'
 };
 
 function progressOf(wi: WorkInstruction): number {
@@ -235,7 +235,7 @@ export default function WorkInstructionsView() {
                   <p className="mt-0.5 truncate text-xs text-[#a8b3c4]">{wi.title}</p>
                   <div className="mt-1.5 flex items-center gap-2">
                     <div className="h-1 flex-1 overflow-hidden rounded-full bg-[#11151d]" aria-hidden>
-                      <div className={`h-full rounded-full ${pct === 100 ? 'bg-[#2c5e3b]' : 'bg-violet-500'}`} style={{ width: `${pct}%` }} />
+                      <div className={`h-full rounded-full ${pct === 100 ? 'bg-[#8b5cf6]' : 'bg-violet-500'}`} style={{ width: `${pct}%` }} />
                     </div>
                     <span className="text-[11px] text-[#a8b3c4]">{pct}%</span>
                   </div>
@@ -326,7 +326,7 @@ export default function WorkInstructionsView() {
                           shopMode ? 'h-16 w-16' : 'h-11 w-11'
                         } ${
                           step.checked
-                            ? 'border-[#35714a] bg-[#2c5e3b] text-white shadow-md shadow-[#0f2318]/40'
+                            ? 'border-[#8b5cf6] bg-[#7c3aed] text-white shadow-md shadow-[#2e1065]/40'
                             : 'border-[#3b4658] bg-[#05070c] text-transparent hover:border-[#ff2a3c]'
                         }`}
                       >
@@ -436,7 +436,7 @@ export default function WorkInstructionsView() {
                 </button>
               </div>
               {uploadNotice && (
-                <p className="mt-2 text-xs text-[#86efac]" role="status">{uploadNotice}</p>
+                <p className="mt-2 text-xs text-[#e8edf5]" role="status">{uploadNotice}</p>
               )}
               {detail.artifacts.length > 0 ? (
                 <ul className="mt-3 space-y-1">

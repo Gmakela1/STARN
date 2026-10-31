@@ -1,4 +1,4 @@
-import { Printer, X, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { Printer, X, AlertTriangle, BadgeCheck, ShieldAlert } from 'lucide-react';
 import { DashboardData } from '../types/api';
 
 interface ExecutiveBriefingModalProps {
@@ -31,7 +31,7 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
       {/* Sticky Action Toolbar (Hidden in Print) */}
       <header className="sticky top-0 z-10 flex min-h-[60px] items-center justify-between border-b border-[#2a3342] bg-[#0d1017]/90 px-6 py-3 no-print">
         <div className="flex items-center gap-3">
-          <div className="h-3 w-3 rounded-full bg-[#2c5e3b]" />
+          <div className="h-3 w-3 rounded-full bg-[#8b5cf6]" />
           <h2 className="text-sm font-bold text-white">2-Page Executive Briefing & Audit Report</h2>
           <span className="rounded bg-[#11151d] px-2 py-0.5 text-xs font-mono text-[#a8b3c4]">
             Print-Ready Letter (8.5" x 11")
@@ -152,7 +152,7 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
                   <div className="text-[10px] font-semibold uppercase text-slate-500">Net Variance</div>
                   <div
                     className={`mt-0.5 font-mono text-base font-black ${
-                      fin.netVariance > 0 ? 'text-rose-700' : 'text-[#2c5e3b]'
+                      fin.netVariance > 0 ? 'text-rose-700' : 'text-violet-700'
                     }`}
                   >
                     {fin.netVariance > 0 ? '+' : ''}
@@ -185,7 +185,7 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
                         <div
                           className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-mono font-bold ${
                             isApproved
-                              ? 'bg-[#2c5e3b] text-white'
+                              ? 'bg-[#7c3aed] text-white'
                               : isActive
                               ? 'bg-violet-600 text-white'
                               : isPending
@@ -231,7 +231,7 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
                       <td className="p-1.5 font-mono text-slate-600">{p.artifactPath}</td>
                       <td className="p-1.5 text-center">
                         {p.status === 'COMPLETED' ? (
-                          <span className="font-bold text-[#2c5e3b]">Approved</span>
+                          <span className="inline-flex items-center gap-1 font-bold text-violet-700"><BadgeCheck className="h-3 w-3" aria-hidden /> Approved</span>
                         ) : p.status === 'IN_PROGRESS' ? (
                           <span className="font-bold text-violet-700">In Progress</span>
                         ) : p.status === 'PENDING_REVIEW' ? (
@@ -255,7 +255,7 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
                 5. Critical Non-Conformances & Builder Questions
               </h3>
               {nonConformances.length === 0 && openQuestions.length === 0 ? (
-                <div className="p-2.5 rounded bg-[#0f2318]/10 border border-[#35714a]/40 text-[11px] text-[#2c5e3b] font-medium">
+                <div className="p-2.5 rounded bg-[#2e1065]/10 border border-[#8b5cf6]/40 text-[11px] text-violet-700 font-medium">
                   ✔ Zero open hardware non-conformances or unaddressed builder questions.
                 </div>
               ) : (

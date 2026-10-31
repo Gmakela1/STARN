@@ -85,7 +85,7 @@ export default function DigitalTwinView() {
               readiness from the shop floor will overlay as a heatmap once the renderer lands.
             </p>
             {modelName && (
-              <p className="mt-2 font-mono text-[11px] text-[#86efac]">{modelName}</p>
+              <p className="mt-2 font-mono text-[11px] text-[#c4b5fd]">{modelName}</p>
             )}
           </div>
           <input
@@ -147,7 +147,7 @@ export default function DigitalTwinView() {
                   </div>
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#11151d]" aria-hidden>
                     <div
-                      className={`h-full rounded-full ${ss.defects > 0 ? 'bg-rose-500' : pct === 100 ? 'bg-[#2c5e3b]' : 'bg-violet-500'}`}
+                      className={`h-full rounded-full ${ss.defects > 0 ? 'bg-rose-500' : pct === 100 ? 'bg-[#8b5cf6]' : 'bg-violet-500'}`}
                       style={{ width: `${Math.max(pct, 4)}%` }}
                     />
                   </div>

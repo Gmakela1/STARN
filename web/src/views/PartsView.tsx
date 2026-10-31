@@ -30,7 +30,7 @@ const STATUS_TONE: Record<string, string> = {
   Identified: 'bg-[#11151d] text-[#a8b3c4]',
   Ordered: 'bg-violet-950/80 text-violet-300 border border-violet-700/40',
   Shipped: 'bg-violet-950/80 text-violet-300 border border-violet-700/40',
-  Received: 'bg-[#0f2318] text-[#86efac] border border-[#35714a]/40',
+  Received: 'bg-[#2e1065] text-[#e8edf5] border border-[#8b5cf6]/40',
   'Bench Tested': 'bg-teal-950/80 text-teal-200 border border-teal-700/50',
   Consumed: 'bg-purple-950/80 text-purple-300 border border-purple-800/40'
 };
@@ -241,7 +241,7 @@ export default function PartsView() {
           </div>
           <div className="rounded-lg border border-[#2a3342] bg-[#0d1017]/70 p-3">
             <div className="text-[11px] font-semibold uppercase tracking-wider text-[#a8b3c4]">Net Budget Variance</div>
-            <div className={`text-xl font-bold ${bomData.financials.netVariance > 0 ? 'text-rose-400' : 'text-[#86efac]'}`}>
+            <div className={`text-xl font-bold ${bomData.financials.netVariance > 0 ? 'text-rose-400' : 'text-[#e8edf5]'}`}>
               {bomData.financials.netVariance > 0 ? '+' : ''}
               {money(bomData.financials.netVariance)}
             </div>
@@ -251,7 +251,7 @@ export default function PartsView() {
             <div className="flex items-center gap-2">
               <div className="h-2 flex-1 rounded-full bg-[#11151d] overflow-hidden">
                 <div
-                  className="h-full bg-[#2c5e3b] transition-all duration-300"
+                  className="h-full bg-[#7c3aed]/60 transition-all duration-300"
                   style={{ width: `${Math.min(100, Math.max(0, bomData.financials.procurementProgressPercent))}%` }}
                 />
               </div>
@@ -335,7 +335,7 @@ export default function PartsView() {
                             <td className="px-3 py-2.5 text-[#a8b3c4]">{cand.specs}</td>
                             <td className="px-3 py-2.5 text-center">
                               {cand.satisfies === 'compliant' && (
-                                <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold bg-[#0f2318] text-[#86efac] border border-[#35714a]/40">
+                                <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold bg-[#2e1065] text-[#e8edf5] border border-[#8b5cf6]/40">
                                   <CheckCircle2 className="h-3 w-3" /> Compliant
                                 </span>
                               )}
@@ -648,7 +648,7 @@ export default function PartsView() {
                             ) : (
                               <span
                                 className={`font-semibold ${
-                                  item.variance > 0 ? 'text-rose-400' : 'text-[#86efac]'
+                                  item.variance > 0 ? 'text-rose-400' : 'text-[#e8edf5]'
                                 }`}
                               >
                                 {item.variance > 0 ? '+' : ''}
@@ -666,7 +666,7 @@ export default function PartsView() {
                                 <button
                                   onClick={() => void commitEdit()}
                                   title="Save changes"
-                                  className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded bg-[#2c5e3b]/80 text-white hover:bg-[#2c5e3b]"
+                                  className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded bg-[#7c3aed] text-white hover:bg-[#8b5cf6]"
                                 >
                                   <Check className="h-4 w-4" />
                                 </button>

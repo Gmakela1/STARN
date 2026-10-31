@@ -126,7 +126,7 @@ export default function QuestionBadge({
       )}
       {resolvedCount > 0 && (
         <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-[#a8b3c4]">
-          <CheckCircle2 className="h-3 w-3 text-[#86efac]/80" aria-hidden />
+          <CheckCircle2 className="h-3 w-3 text-[#e8edf5]/80" aria-hidden />
           {resolvedCount} resolved
         </span>
       )}

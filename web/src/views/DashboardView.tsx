@@ -377,12 +377,12 @@ export default function DashboardView({
             </div>
             <p className="mt-2 text-2xl font-bold text-[#e8edf5]">{money(fin.totalActual)}</p>
           </div>
-          <div className={`rounded-xl border p-4 ${varianceOver ? 'border-rose-900/70 bg-rose-950/30' : 'border-[#35714a]/70 bg-[#0f2318]/30'}`}>
+          <div className={`rounded-xl border p-4 ${varianceOver ? 'border-rose-900/70 bg-rose-950/30' : 'border-[#8b5cf6]/70 bg-[#2e1065]/30'}`}>
             <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[#a8b3c4]">
-              {varianceOver ? <TrendingUp className="h-3.5 w-3.5 text-rose-400" aria-hidden /> : <TrendingDown className="h-3.5 w-3.5 text-[#86efac]" aria-hidden />}
+              {varianceOver ? <TrendingUp className="h-3.5 w-3.5 text-rose-400" aria-hidden /> : <TrendingDown className="h-3.5 w-3.5 text-[#e8edf5]" aria-hidden />}
               Net variance
             </div>
-            <p className={`mt-2 text-2xl font-bold ${varianceOver ? 'text-rose-300' : 'text-[#86efac]'}`}>
+            <p className={`mt-2 text-2xl font-bold ${varianceOver ? 'text-rose-300' : 'text-[#e8edf5]'}`}>
               {varianceOver ? '+' : ''}{money(fin.netVariance)}
             </p>
           </div>
@@ -413,7 +413,7 @@ export default function DashboardView({
                 title={`${p.name} — ${p.status}`}
                 className={`h-1.5 flex-1 rounded-full transition-colors ${
                   p.status === 'COMPLETED'
-                    ? 'bg-[#2c5e3b]'
+                    ? 'bg-[#7c3aed]/70'
                     : p.status === 'IN_PROGRESS'
                       ? 'bg-[#ff2a3c] motion-safe:animate-pulse'
                       : p.status === 'PENDING_REVIEW'

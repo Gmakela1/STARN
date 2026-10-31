@@ -20,9 +20,9 @@ export interface RunStateClusterProps {
 const STATE_VIEW: Record<RunState, { word: string; text: string }> = {
   working: { word: 'Working…', text: 'text-[#ffb3bd]' },
   waiting: { word: 'Waiting for your answer', text: 'text-amber-300' },
-  finished: { word: 'Finished', text: 'text-[#86efac]' },
+  finished: { word: 'Finished', text: 'text-[#e8edf5]' },
   failed: { word: 'Needs attention', text: 'text-rose-300' },
-  ready: { word: 'Agents Ready', text: 'text-[#86efac]' },
+  ready: { word: 'Agents Ready', text: 'text-[#c4b5fd]' },
 };
 
 function markerFor(runState: RunState): ReactNode {
@@ -32,11 +32,11 @@ function markerFor(runState: RunState): ReactNode {
     case 'waiting':
       return <MessageSquare className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden />;
     case 'finished':
-      return <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[#86efac]" aria-hidden />;
+      return <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[#e8edf5]" aria-hidden />;
     case 'failed':
       return <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-rose-300" aria-hidden />;
     default:
-      return <span className="h-2 w-2 shrink-0 rounded-full bg-[#2c5e3b]" aria-hidden />;
+      return <span className="h-2 w-2 shrink-0 rounded-full bg-[#a78bfa]" aria-hidden />;
   }
 }
 

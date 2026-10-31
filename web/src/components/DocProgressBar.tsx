@@ -123,7 +123,7 @@ export default function DocProgressBar({
           <div className="flex h-full w-full">
             {greenPct > 0 && (
               <div
-                className="h-full border-t border-[#35714a] bg-[#2c5e3b] transition-all"
+                className="h-full border-t border-[#8b5cf6] bg-[#7c3aed]/60 transition-all"
                 style={{ width: `${greenPct}%` }}
               />
             )}
@@ -160,14 +160,14 @@ export default function DocProgressBar({
           <div className="space-y-2">
             {/* Approved row */}
             <div className="flex items-center gap-2 text-xs">
-              <span className="h-2 w-2 rounded-full bg-[#2c5e3b]" aria-hidden />
+              <span className="h-2 w-2 rounded-full bg-[#8b5cf6]" aria-hidden />
               <span className="flex-1 text-[#a8b3c4]">Approved</span>
               <span className="font-mono text-[#e8edf5] font-semibold tabular-nums">
                 {progress.approved}
               </span>
               <div className="h-2 w-16 overflow-hidden rounded bg-[#171c26]">
                 <div
-                  className="h-full border-t border-[#35714a] bg-[#2c5e3b]"
+                  className="h-full border-t border-[#8b5cf6] bg-[#7c3aed]/60"
                   style={{
                     width: `${total > 0 ? (progress.approved / total) * 100 : 0}%`,
                   }}

@@ -136,7 +136,7 @@ export default function Markdown({ content }: { content: string }) {
               <span
                 aria-hidden
                 className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
-                  done ? 'border-[#35714a] bg-[#0f2318]/60 text-[#86efac]' : 'border-[#3b4658] bg-[#0d1017]'
+                  done ? 'border-[#8b5cf6] bg-[#2e1065]/60 text-[#e8edf5]' : 'border-[#3b4658] bg-[#0d1017]'
                 }`}
               >
                 {done ? '✓' : ''}

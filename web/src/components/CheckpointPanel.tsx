@@ -99,7 +99,7 @@ export default function CheckpointPanel({ checkpoint, onResolved, onRevisionRequ
           <button
             onClick={() => void decide('approve')}
             disabled={submitting !== null}
-            className="flex min-h-[44px] items-center gap-2 rounded-lg bg-[#2c5e3b] px-4 text-sm font-semibold text-white shadow-md shadow-[#0f2318]/40 transition hover:bg-[#35714a] disabled:opacity-40"
+            className="flex min-h-[44px] items-center gap-2 rounded-lg bg-[#7c3aed] px-4 text-sm font-semibold text-white shadow-md shadow-[#2e1065]/40 transition hover:bg-[#8b5cf6] disabled:opacity-40"
           >
             {submitting === 'approve' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <CheckCircle2 className="h-4 w-4" aria-hidden />}
             Approve & record
