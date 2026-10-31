@@ -458,7 +458,9 @@ export default function DevelopmentView({
   // Voice recorder
   const { recording, startRecording, stopRecording, error: voiceError } = useVoiceRecorder();
 
-  // Alt-hold-to-record key listener
+  // Alt-hold-to-record key listener. Only while the question panel is closed:
+  // when it is open, QuestionPanel owns the Alt treatment for answer drafts
+  // (exactly one window-level owner, no double recording).
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Alt' && !e.repeat && !recording) {
@@ -472,7 +474,7 @@ export default function DevelopmentView({
         });
       }
     };
-    if (!busy && checkpoint === null) {
+    if (!busy && checkpoint === null && surface === 'closed') {
       window.addEventListener('keydown', handleKeyDown);
       window.addEventListener('keyup', handleKeyUp);
     }
@@ -480,7 +482,7 @@ export default function DevelopmentView({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [busy, checkpoint, recording, startRecording, stopRecording]);
+  }, [busy, checkpoint, surface, recording, startRecording, stopRecording]);
 
   // §8.8 — Ctrl+. (or Meta+.) toggles the question panel: open ↔ minimized
   // (and opens from closed). The !e.altKey guard blocks AltGr layouts that

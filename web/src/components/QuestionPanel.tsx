@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   Check,
@@ -7,6 +7,7 @@ import {
   Loader2,
   Maximize2,
   MessageSquare,
+  Mic,
   RotateCcw,
   TriangleAlert,
   X
@@ -14,6 +15,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { AnswerState, PortalItem } from '../types/api';
 import { renderDetail } from '../lib/portalDetail';
+import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 
 export interface QuestionPanelProps {
   surface: 'closed' | 'open' | 'minimized';
@@ -241,6 +243,55 @@ export default function QuestionPanel({
   useEffect(() => {
     if (showEmptyState) returnDocRef.current?.focus();
   }, [showEmptyState]);
+
+  // Voice input (§2): same treatment as the doc composer — a mic button plus
+  // Alt-hold-to-talk; transcribed text appends into the active answer draft.
+  const { recording, startRecording, stopRecording, error: voiceError } = useVoiceRecorder();
+
+  /**
+   * Voice is live only while the panel is open on an answerable item
+   * (not parked, not queued/applying, not in the resolved dwell).
+   * DevelopmentView suppresses its own Alt listener while this panel is open,
+   * so exactly one window-level owner exists.
+   */
+  const voiceItemId = surface === 'open' ? activeId : null;
+  const voiceItem = voiceItemId !== null ? items.find(i => i.id === voiceItemId) ?? null : null;
+  const voicePhase = voiceItem ? answerStates[voiceItem.id]?.phase : undefined;
+  const voiceActive =
+    voiceItem !== null &&
+    voiceItem.type !== 'parked' &&
+    voicePhase !== 'queued' &&
+    voicePhase !== 'applying' &&
+    voicePhase !== 'applied' &&
+    recentlyResolved[voiceItem.id] === undefined;
+
+  const appendVoiceText = useCallback((id: string, text: string) => {
+    setDrafts(prev => ({ ...prev, [id]: (prev[id] ?? '') + text }));
+  }, []);
+
+  // Alt-hold-to-record key listener (same shape as the doc composer's).
+  useEffect(() => {
+    if (!voiceActive) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Alt' && !e.repeat) {
+        startRecording();
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Alt') {
+        void stopRecording().then(text => {
+          const id = activeIdRef.current;
+          if (text && id) appendVoiceText(id, text);
+        });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [voiceActive, startRecording, stopRecording, appendVoiceText]);
 
   // Escape has exactly one window-level owner (spec §8.8): a non-empty draft
   // clears first, a second Escape closes; an empty composer (or a parked item,
@@ -553,21 +604,63 @@ export default function QuestionPanel({
               <Check className="h-4 w-4" aria-hidden /> Resolved ✓
             </div>
           ) : (
-            <textarea
-              id="question-panel-composer"
-              ref={composerRef}
-              value={drafts[item.id] ?? ''}
-              onChange={e => setDrafts(prev => ({ ...prev, [item.id]: e.target.value }))}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  void handleSubmit(item.id, drafts[item.id] ?? '');
-                }
-              }}
-              disabled={composingDisabled}
-              placeholder="Type your answer to the AI…"
-              className="min-h-[96px] w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-600/30 disabled:opacity-50"
-            />
+            <>
+              {/* Recording indicator + voice errors (§2, mirrors the doc composer) */}
+              {recording && (
+                <div
+                  role="status"
+                  className="flex items-center gap-2 rounded-md bg-rose-950/40 px-3 py-1.5 text-xs text-rose-300"
+                >
+                  <span className="inline-block h-2 w-2 rounded-full bg-rose-500 motion-safe:animate-pulse" aria-hidden />
+                  🎤 Recording… (release Alt to send)
+                </div>
+              )}
+              {voiceError && (
+                <p role="alert" className="rounded-md bg-rose-950/40 px-3 py-1.5 text-xs text-rose-300">
+                  {voiceError}
+                </p>
+              )}
+              <div className="flex items-end gap-2">
+                <textarea
+                  id="question-panel-composer"
+                  ref={composerRef}
+                  value={drafts[item.id] ?? ''}
+                  onChange={e => setDrafts(prev => ({ ...prev, [item.id]: e.target.value }))}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      void handleSubmit(item.id, drafts[item.id] ?? '');
+                    }
+                  }}
+                  disabled={composingDisabled}
+                  placeholder="Type your answer to the AI…"
+                  className="min-h-[96px] min-w-0 flex-1 resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-600/30 disabled:opacity-50"
+                />
+                {/* Mic button (§2): 44px touch target, click or hold Alt */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (recording) {
+                      void stopRecording().then(text => {
+                        if (text) appendVoiceText(item.id, text);
+                      });
+                    } else {
+                      startRecording();
+                    }
+                  }}
+                  disabled={composingDisabled}
+                  aria-label={recording ? 'Stop recording' : 'Record answer'}
+                  title={recording ? 'Release Alt or click to send' : 'Click or hold Alt to record'}
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 disabled:opacity-50 ${
+                    recording
+                      ? 'bg-rose-600 text-white motion-safe:animate-pulse'
+                      : 'border border-slate-700 bg-slate-800 text-slate-400 hover:border-sky-600 hover:text-sky-400'
+                  }`}
+                >
+                  <Mic className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+            </>
           )}
           {!dwellActive && (
             <p className="text-xs text-slate-500">Usually 1–3 sentences is enough.</p>

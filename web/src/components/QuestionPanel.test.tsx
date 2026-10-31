@@ -1,11 +1,26 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, screen, within } from '@testing-library/react';
+
+// Module-scope stable fixtures for the mocked voice recorder (§2 talk-to-text).
+const voiceMock = {
+  recording: false,
+  startRecording: vi.fn(),
+  stopRecording: vi.fn<(chunkMs?: number) => Promise<string | null>>(async () => 'Transcribed answer text'),
+  error: null as string | null,
+};
+vi.mock('../hooks/useVoiceRecorder', () => ({
+  useVoiceRecorder: vi.fn(() => voiceMock),
+}));
 import { cleanup, renderWithUser } from '../test/render';
 import QuestionPanel, { type QuestionPanelProps } from './QuestionPanel';
 import type { PortalItem } from '../types/api';
 
 afterEach(() => {
   cleanup();
+  voiceMock.recording = false;
+  voiceMock.error = null;
+  voiceMock.startRecording.mockClear();
+  voiceMock.stopRecording.mockClear();
 });
 
 /** Minimal valid PortalItem fixture. */
@@ -316,5 +331,81 @@ describe('QuestionPanel', () => {
     view.rerender(<QuestionPanel {...props} focusRequest={{ id: 'nope', token: 2 }} />);
 
     expect(onFocusDocument).not.toHaveBeenCalled();
+  });
+
+  // ————— 15. Voice input in the answer composer (design §2) —————
+  it('voice: renders the mic button with aria-label "Record answer"', () => {
+    renderWithUser(<QuestionPanel {...baseProps()} />);
+
+    expect(screen.getByRole('button', { name: 'Record answer' })).toBeInTheDocument();
+  });
+
+  it('voice: click mic starts recording; recording indicator becomes visible', async () => {
+    const view = renderWithUser(<QuestionPanel {...baseProps()} />);
+
+    const mic = screen.getByRole('button', { name: 'Record answer' });
+    await view.user.click(mic);
+    expect(voiceMock.startRecording).toHaveBeenCalledTimes(1);
+
+    // Simulate the hook flipping to recording state.
+    voiceMock.recording = true;
+    view.rerender(<QuestionPanel {...baseProps()} />);
+
+    expect(screen.getByText(/Recording…/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop recording' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record answer' })).not.toBeInTheDocument();
+  });
+
+  it('voice: stop appends the transcribed text into the answer textarea', async () => {
+    const view = renderWithUser(<QuestionPanel {...baseProps()} />);
+
+    const textarea = screen.getByLabelText('Your answer');
+    await view.user.type(textarea, 'typed ');
+
+    voiceMock.recording = true;
+    view.rerender(<QuestionPanel {...baseProps()} />);
+    await view.user.click(screen.getByRole('button', { name: 'Stop recording' }));
+
+    await vi.waitFor(() => {
+      expect((textarea as HTMLTextAreaElement).value).toBe('typed Transcribed answer text');
+    });
+    expect(voiceMock.stopRecording).toHaveBeenCalledTimes(1);
+  });
+
+  it('voice: Alt-hold starts and releasing appends the transcription', async () => {
+    renderWithUser(<QuestionPanel {...baseProps()} />);
+
+    fireEvent.keyDown(window, { key: 'Alt' });
+    expect(voiceMock.startRecording).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyUp(window, { key: 'Alt' });
+    await vi.waitFor(() => {
+      const textarea = screen.getByLabelText('Your answer') as HTMLTextAreaElement;
+      expect(textarea.value).toBe('Transcribed answer text');
+    });
+  });
+
+  it('voice: mic disabled while the composer is disabled (queued/applying)', () => {
+    renderWithUser(<QuestionPanel {...baseProps({ answerStates: { A: { phase: 'queued' } } })} />);
+
+    expect(screen.getByRole('button', { name: 'Record answer' })).toBeDisabled();
+  });
+
+  it('voice: no mic button when minimized or resolved dwell', () => {
+    const { rerender } = renderWithUser(<QuestionPanel {...baseProps({ surface: 'minimized' })} />);
+    expect(screen.queryByRole('button', { name: 'Record answer' })).not.toBeInTheDocument();
+
+    rerender(<QuestionPanel {...baseProps({ answerStates: { A: { phase: 'applied' } } })} />);
+    expect(screen.queryByRole('button', { name: 'Record answer' })).not.toBeInTheDocument();
+  });
+
+  it('voice: surfaces recorder errors without console errors', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    voiceMock.error = 'Microphone access denied';
+    renderWithUser(<QuestionPanel {...baseProps()} />);
+
+    expect(screen.getByText('Microphone access denied')).toBeInTheDocument();
+    expect(consoleSpy).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 });
