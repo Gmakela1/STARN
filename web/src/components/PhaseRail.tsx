@@ -1,10 +1,10 @@
 import { ReactNode, useId, useState } from 'react';
-import { Check, Circle, CircleSlash2, Hourglass, Info, Loader2, Lock, Sparkles } from 'lucide-react';
+import { Check, Circle, CircleSlash2, Eye, Hourglass, Info, Loader2, Lock, Sparkles } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { PhaseRailView } from '../lib/workflowState';
 
 /**
- * 5-state build-phase rail (design §5.F + §5.G + §6).
+ * 6-state build-phase rail (design §5.F + §5.G + §6).
  * One focusable button per phase; shape + icon + text per state (never color
  * alone); aria-current="step" on the single in-progress item; a legend toggle;
  * an sr-only count + sr-only legend vocabulary; and a narrow summary-chip
@@ -32,6 +32,7 @@ const LEGEND: Array<{ label: string; Icon: LucideIcon }> = [
   { label: 'Not started', Icon: Circle },
   { label: 'In progress', Icon: Loader2 },
   { label: 'Drafted — awaiting review', Icon: Hourglass },
+  { label: 'Completed — needs approval', Icon: Eye },
   { label: 'Approved', Icon: Check },
   { label: 'Error — needs attention', Icon: CircleSlash2 },
 ];
@@ -167,6 +168,12 @@ function markerForView(view: PhaseRailView): ReactNode {
       return (
         <span className={`${base} border-amber-400 bg-amber-500/40`}>
           <Hourglass className="h-2.5 w-2.5 text-amber-300" aria-hidden />
+        </span>
+      );
+    case 'needs-review':
+      return (
+        <span className={`${base} border-sky-400 bg-sky-500/25`}>
+          <Eye className="h-2.5 w-2.5 text-sky-300" aria-hidden />
         </span>
       );
     case 'approved':

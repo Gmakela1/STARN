@@ -249,4 +249,62 @@ describe('autopilot + portal API', () => {
     // Subsequent Start must not throw 'A turn is already in progress'.
     expect(() => session.autopilotStart()).not.toThrow();
   });
+
+  // ── Non-gating semantics (design §6): open questions never stall the chain ──
+
+  it('14. chain proceeds past a doc with open questions; user approval clears the needs-review signal', async () => {
+    // Turn for conops flags an open question (as the real autopilot hook does)
+    // and writes the deliverable; the chain must keep running into architecture
+    // instead of parking or waiting for the question to be answered.
+    const turnCalls: string[] = [];
+    (session as any).makeExecuteTurn = () => async (opts: any) => {
+      turnCalls.push(opts.forceSpecialistId);
+      if (opts.forceSpecialistId === 'conops') {
+        fs.writeFileSync(
+          path.join(tempDir, 'docs', 'CONOPS.md'),
+          '# CONOPS\n\n## Open Questions\n\n- [ ] What is the operating envelope?\n',
+          'utf-8'
+        );
+        opts.onQuestions?.([
+          {
+            type: 'question',
+            severity: 'normal',
+            docPath: 'docs/CONOPS.md',
+            title: 'What is the operating envelope?',
+            source: 'autopilot'
+          }
+        ]);
+        return makeTurnResult('conops');
+      }
+      // Second phase reached: abort so the chain ends deterministically.
+      return { ...makeTurnResult('architecture'), aborted: true };
+    };
+
+    expect(() => session.autopilotStart()).not.toThrow();
+    await vi.waitFor(() => {
+      expect(session.busy).toBe(false);
+    }, { timeout: 5000, interval: 30 });
+
+    // Chain advanced past conops into architecture despite the open question.
+    expect(turnCalls).toContain('conops');
+    expect(turnCalls).toContain('architecture');
+    expect(turnCalls.indexOf('architecture')).toBeGreaterThan(turnCalls.indexOf('conops'));
+
+    // Doc passed (auto-approved by the critic path); question stays OPEN — a
+    // review flag, not a chain blocker.
+    const st = stateManager.getState();
+    expect(st.autopilot.docStatus['conops']).toBe('auto-approved');
+    const portal = await request(server, 'GET', '/api/portal');
+    const question = portal.json.data.items.find((i: any) => i.type === 'question');
+    expect(question).toBeDefined();
+    expect(question.status).toBe('open');
+
+    // User approval (POST /api/docs/conops/approve) clears the autopilot
+    // docStatus marker so the web 'Completed — needs approval' state resolves.
+    session.runChangeImpactForApproval = async () => [];
+    const approved = await request(server, 'POST', '/api/docs/conops/approve');
+    expect(approved.status).toBe(200);
+    const after = stateManager.getState();
+    expect(after.autopilot.docStatus['conops']).toBe('idle');
+  });
 });

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { railStateFor } from './workflowState';
+import { docNeedsApproval, railStateFor } from './workflowState';
 
 // Design §5.F — mapping table (real states → 5-state rail) plus the literal
 // precedence order. Real literals verified against src/core/autopilot.ts
 // (AutopilotDocStatus) and web/src/types/api.ts (RoadmapStatus).
 describe('railStateFor', () => {
   // Every row of the design's mapping table + precedence conflicts. First match wins.
-  it.each<[Record<string, string | boolean | undefined>, string]>([
+  it.each<[Record<string, string | number | boolean | undefined>, string]>([
     // 1. parked → error-parked
     [{ docStatus: 'parked' }, 'error-parked'],
     // precedence: parked beats COMPLETED / docExists
@@ -22,10 +22,27 @@ describe('railStateFor', () => {
     // precedence: drafting beats LOCKED
     [{ docStatus: 'drafting', roadmapStatus: 'LOCKED' }, 'in-progress'],
 
+  // 3. passed | auto-approved + open questions flagged on the doc, user not
+  // approved yet → needs-review (design §6 "Completed, needs approval"; wins
+  // over draft). docStatus passed/auto-approved persists until the user
+  // approves (server clears it on approve), so it is the not-user-approved signal.
+  [{ docStatus: 'passed', openQuestions: 2 }, 'needs-review'],
+  [{ docStatus: 'auto-approved', openQuestions: 1 }, 'needs-review'],
+  // wins over draft even with docExists + PENDING_REVIEW
+  [{ docStatus: 'passed', docExists: true, roadmapStatus: 'PENDING_REVIEW', openQuestions: 3 }, 'needs-review'],
+  [{ docStatus: 'auto-approved', docExists: true, roadmapStatus: 'PENDING_REVIEW', openQuestions: 1 }, 'needs-review'],
+  // still needs-review when the artifact was auto-approved (roadmap COMPLETED)
+  [{ docStatus: 'auto-approved', roadmapStatus: 'COMPLETED', openQuestions: 1 }, 'needs-review'],
+  // parked beats needs-review
+  [{ docStatus: 'parked', openQuestions: 2 }, 'error-parked'],
+  // drafting beats needs-review
+  [{ docStatus: 'drafting', openQuestions: 2 }, 'in-progress'],
+
     // 3. auto-approved → approved (+auto); passed → approved
     [{ docStatus: 'auto-approved' }, 'approved'],
     [{ docStatus: 'passed' }, 'approved'],
-    // precedence: auto-approved beats roadmap IN_PROGRESS
+    // openQuestions 0/absent → plain approved
+    [{ docStatus: 'passed', openQuestions: 0 }, 'approved'],
     [{ docStatus: 'auto-approved', roadmapStatus: 'IN_PROGRESS' }, 'approved'],
     [{ docStatus: 'passed', roadmapStatus: 'COMPLETED' }, 'approved'],
 
@@ -76,5 +93,28 @@ describe('railStateFor', () => {
     expect(railStateFor({ roadmapStatus: 'LOCKED' })).toMatchObject({ state: 'not-started', locked: true });
     expect(railStateFor({ roadmapStatus: 'PENDING' }).locked).toBe(false);
     expect(railStateFor({}).locked).toBe(false);
+  });
+
+  // Design §6 — 4th state: "Completed, needs approval".
+  it('marks autopilot-completed docs with open questions as needs-review with the exact label', () => {
+    const passed = railStateFor({ docStatus: 'passed', openQuestions: 2 });
+    expect(passed.state).toBe('needs-review');
+    expect(passed.label).toBe('Completed — needs approval');
+    expect(passed.auto).toBe(false);
+    const auto = railStateFor({ docStatus: 'auto-approved', openQuestions: 1 });
+    expect(auto.state).toBe('needs-review');
+    expect(auto.auto).toBe(true);
+  });
+
+  it('docNeedsApproval: autopilot completed + open questions flagged on the doc', () => {
+    expect(docNeedsApproval({ docStatus: 'passed', openQuestions: 1 })).toBe(true);
+    expect(docNeedsApproval({ docStatus: 'auto-approved', openQuestions: 3 })).toBe(true);
+    // no questions → plain approved semantics
+    expect(docNeedsApproval({ docStatus: 'passed', openQuestions: 0 })).toBe(false);
+    expect(docNeedsApproval({ docStatus: 'auto-approved' })).toBe(false);
+    // not autopilot-completed → not this state (plain draft / approved / parked)
+    expect(docNeedsApproval({ docStatus: 'idle', openQuestions: 5 })).toBe(false);
+    expect(docNeedsApproval({ docStatus: 'drafting', openQuestions: 5 })).toBe(false);
+    expect(docNeedsApproval({ docStatus: 'parked', openQuestions: 5 })).toBe(false);
   });
 });

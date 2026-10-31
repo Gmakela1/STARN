@@ -11,6 +11,7 @@ const STATE_LABELS: Record<RailState, string> = {
   'not-started': 'Not started',
   'in-progress': 'In progress',
   drafted: 'Drafted — awaiting review',
+  'needs-review': 'Completed — needs approval',
   approved: 'Approved',
   'error-parked': 'Error — needs attention',
 };
@@ -94,7 +95,7 @@ describe('PhaseRail', () => {
     const { container } = render(<PhaseRail items={buildItems()} approvedCount={6} onSelect={vi.fn()} />);
     expect(screen.getByText('6 of 13 approved')).toBeInTheDocument();
     const srLegend = container.querySelector('ul[aria-label="Phase state legend"]')!;
-    expect(srLegend.querySelectorAll('li')).toHaveLength(5);
+    expect(srLegend.querySelectorAll('li')).toHaveLength(6);
     expect(srLegend.className).toContain('sr-only');
   });
 
@@ -121,5 +122,34 @@ describe('PhaseRail', () => {
     expect(
       screen.getByRole('button', { name: 'CONOPS — Locked — reopen the upstream document' }),
     ).toBeInTheDocument();
+  });
+
+  // Design §6 — needs-review dot: sky family + Eye icon + word in legend
+  // (never color alone).
+  it('renders the needs-review dot with an Eye icon in sky, distinct from in-progress cyan', () => {
+    const items = buildItems();
+    items[0] = { ...items[0], view: rv('needs-review') };
+    render(<PhaseRail items={items} approvedCount={6} onSelect={vi.fn()} />);
+
+    const dot = screen.getByRole('button', { name: 'CONOPS — Completed — needs approval' });
+    expect(dot).toBeInTheDocument();
+    const marker = dot.querySelector('svg.lucide-eye');
+    expect(marker).not.toBeNull();
+    // sky/cyan family — same hue family, different shade than approved emerald
+    expect(dot.querySelector('span')!.className).toContain('sky');
+    // distinct icon from in-progress (Loader2 spinner) and drafted (Hourglass)
+    expect(dot.querySelector('.lucide-loader-circle')).toBeNull();
+    expect(dot.querySelector('.lucide-hourglass')).toBeNull();
+  });
+
+  it('lists the needs-review label in the legend with its icon', async () => {
+    const { user } = renderWithUser(<PhaseRail items={buildItems()} approvedCount={6} onSelect={vi.fn()} />);
+    const toggle = screen.getByRole('button', { name: 'Show phase state legend' });
+    await user.click(toggle);
+    const popover = getPopover(toggle);
+    expect(within(popover).getByText('Completed — needs approval')).toBeInTheDocument();
+    // icon rendered next to the word (shape + word, not color alone)
+    const row = within(popover).getByText('Completed — needs approval').closest('li')!;
+    expect(row.querySelector('svg')).not.toBeNull();
   });
 });

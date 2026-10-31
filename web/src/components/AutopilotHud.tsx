@@ -77,7 +77,8 @@ export default function AutopilotHud({
     const view = railStateFor({
       docStatus: docStatus[phaseId] ?? 'idle',
       roadmapStatus: roadmapPhase?.status,
-      docExists: roadmapPhase?.docExists
+      docExists: roadmapPhase?.docExists,
+      openQuestions: roadmapPhase?.openQuestions
     });
     return {
       id: phaseId,

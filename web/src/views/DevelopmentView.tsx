@@ -43,6 +43,7 @@ import { AnswerState, DocData, PortalItem, ProjectInfo, RoadmapPhase } from '../
 import { useTurnStream, ChatEntry, ActivityMeta } from '../api/useTurnStream';
 import { useAutopilotEvents, AutopilotLiveEvent } from '../hooks/useAutopilotEvents';
 import Markdown from '../components/Markdown';
+import { docNeedsApproval } from '../lib/workflowState';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import CriticScorecard from '../components/CriticScorecard';
 import CheckpointPanel from '../components/CheckpointPanel';
@@ -883,6 +884,20 @@ export default function DevelopmentView({
 
   const renderStatusPill = (phase?: RoadmapPhase) => {
     if (!phase) return null;
+    // Design §6 — autopilot completed the doc and open questions are flagged:
+    // show the review state so the user can jump in and approve (option click
+    // selects the doc; the existing onSelect flow is the review entry point).
+    if (docNeedsApproval({
+      docStatus: autopilotStatus?.docStatus[phase.id],
+      openQuestions: phase.openQuestions
+    })) {
+      return (
+        <span className="rounded bg-sky-950/80 px-2 py-0.5 font-mono text-[10px] font-semibold text-sky-300 border border-sky-800 shrink-0 inline-flex items-center gap-1">
+          <Eye className="h-3 w-3" aria-hidden />
+          Completed — needs approval
+        </span>
+      );
+    }
     if (phase.status === 'COMPLETED') {
       return (
         <span className="rounded bg-emerald-950/80 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-300 border border-emerald-800 shrink-0">

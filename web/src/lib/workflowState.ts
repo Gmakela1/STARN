@@ -1,11 +1,17 @@
 /**
- * 5-state progress-rail mapper (design §5.F).
- * Collapses the real doc/roadmap signals into five honest rail states.
+ * Doc-state progress-rail mapper (design §5.F + §6).
+ * Collapses the real doc/roadmap signals into six honest rail states.
  * Real literals: AutopilotDocStatus (src/core/autopilot.ts) and
  * RoadmapStatus (web/src/types/api.ts).
  */
 
-export type RailState = 'not-started' | 'in-progress' | 'drafted' | 'approved' | 'error-parked';
+export type RailState =
+  | 'not-started'
+  | 'in-progress'
+  | 'drafted'
+  | 'needs-review'
+  | 'approved'
+  | 'error-parked';
 
 export interface PhaseRailView {
   state: RailState;
@@ -16,11 +22,27 @@ export interface PhaseRailView {
   label: string;
 }
 
-export function railStateFor(input: {
+export interface DocStateInput {
   docStatus?: string;
   roadmapStatus?: string;
   docExists?: boolean;
-}): PhaseRailView {
+  /** Open questions flagged on this doc (RoadmapPhase.openQuestions). */
+  openQuestions?: number;
+}
+
+/**
+ * Design §6 — "Completed, needs approval": the autopilot completed the doc
+ * (docStatus 'passed' | 'auto-approved') and open questions are flagged on it,
+ * so the user still has to review/approve. The autopilot docStatus marker
+ * persists until the user approves (the server clears it on approve), which is
+ * the "not user-approved" signal — a user-approved doc no longer carries it.
+ */
+export function docNeedsApproval(input: { docStatus?: string; openQuestions?: number }): boolean {
+  const completed = input.docStatus === 'passed' || input.docStatus === 'auto-approved';
+  return completed && (input.openQuestions ?? 0) > 0;
+}
+
+export function railStateFor(input: DocStateInput): PhaseRailView {
   const { docStatus, roadmapStatus, docExists } = input;
 
   // Precedence is literal — first match wins (design §5.F rules of precedence).
@@ -32,11 +54,19 @@ export function railStateFor(input: {
     return view('in-progress', 'In progress');
   }
 
-  // 3. auto-approved → approved (+auto); passed → approved
+  // 3. autopilot completed the doc:
+  //    open questions flagged → needs-review (§6, wins over draft);
+  //    otherwise approved.
   if (docStatus === 'auto-approved') {
+    if (docNeedsApproval(input)) {
+      return { state: 'needs-review', auto: true, locked: false, label: 'Completed — needs approval' };
+    }
     return { state: 'approved', auto: true, locked: false, label: 'Approved' };
   }
-  if (docStatus === 'passed') return view('approved', 'Approved');
+  if (docStatus === 'passed') {
+    if (docNeedsApproval(input)) return view('needs-review', 'Completed — needs approval');
+    return view('approved', 'Approved');
+  }
 
   // 4. roadmap COMPLETED → approved
   if (roadmapStatus === 'COMPLETED') return view('approved', 'Approved');

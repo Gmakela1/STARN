@@ -58,6 +58,15 @@ export const docsModule: RouteModule = {
             ? phaseId => deps.session!.runChangeImpactForApproval(phaseId)
             : undefined
         });
+        // Design §6 — the autopilot docStatus marker ('passed'|'auto-approved')
+        // is the web's "completed, needs approval" signal. User approval
+        // resolves that state: clear the marker so the UI shows plain
+        // approved. Chain gating is unaffected (prereqs use artifact approval).
+        const postState = deps.stateManager.getState();
+        if (postState.autopilot?.docStatus?.[phase.id]) {
+          postState.autopilot.docStatus[phase.id] = 'idle';
+          deps.stateManager.saveState(postState);
+        }
         const artifact = deps.stateManager.getState().artifacts.find(a => a.id === phase.id.toUpperCase());
         return ok(res, { artifact });
       }
