@@ -135,7 +135,7 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
       // Tools intentionally omitted: this call must not execute any tools.
       const rescue = await client.chatCompletion({ model, messages, signal });
       const rescueText = rescue.content || '';
-      if (rescueText.includes('# ')) {
+      if (/^#\s/m.test(rescueText)) {
         finalResponse = rescueText;
       } else {
         options.logger?.warn(

@@ -117,6 +117,62 @@ describe('runAgentToolLoop budget and forced final write', () => {
     expect(mockClient.chatCompletion).toHaveBeenCalledTimes(2);
   });
 
+  it('rescue reply with only a mid-sentence # marker is NOT adopted', async () => {
+    const ctx = makeCtx(tempDir);
+    const mockClient = {
+      chatCompletion: vi.fn(async (o: any) => {
+        const last = o.messages[o.messages.length - 1];
+        if (typeof last.content === 'string' && last.content.includes('Stop using tools')) {
+          // '# ' appears mid-sentence, not as a line-start heading.
+          return { content: 'Plan item 1: do the thing # 2 next. No heading here.', toolCalls: [] };
+        }
+        return toolCallTurn('t1');
+      })
+    } as any;
+
+    const result = await runAgentToolLoop({
+      client: mockClient,
+      model: 'test',
+      systemPrompt: 'sys',
+      userMessage: 'hi',
+      toolRegistry: new ToolRegistry(),
+      allowedTools: [],
+      context: ctx,
+      maxTurns: 1
+    });
+
+    expect(result.finalResponse).toBe('');
+    expect(mockClient.chatCompletion).toHaveBeenCalledTimes(2);
+  });
+
+  it('rescue reply with a line-start # heading IS adopted', async () => {
+    const ctx = makeCtx(tempDir);
+    const mockClient = {
+      chatCompletion: vi.fn(async (o: any) => {
+        const last = o.messages[o.messages.length - 1];
+        if (typeof last.content === 'string' && last.content.includes('Stop using tools')) {
+          // Leading heading wins even though '# ' also appears mid-sentence below.
+          return { content: '# Headed Rescue\n\nA note about # 2 in prose.', toolCalls: [] };
+        }
+        return toolCallTurn('t1');
+      })
+    } as any;
+
+    const result = await runAgentToolLoop({
+      client: mockClient,
+      model: 'test',
+      systemPrompt: 'sys',
+      userMessage: 'hi',
+      toolRegistry: new ToolRegistry(),
+      allowedTools: [],
+      context: ctx,
+      maxTurns: 1
+    });
+
+    expect(result.finalResponse).toBe('# Headed Rescue\n\nA note about # 2 in prose.');
+    expect(mockClient.chatCompletion).toHaveBeenCalledTimes(2);
+  });
+
   it('logs a warn with turn count, toolCallCount and docId on budget exhaustion', async () => {
     const ctx = makeCtx(tempDir);
     const warn = vi.fn();

@@ -299,8 +299,11 @@ export class AutopilotDriver {
         if (turnResult.error && !this._retriedPhase.has(phase.id)) {
           this._retriedPhase.add(phase.id);
           this.emit({ kind: 'status', message: `The first pass didn't produce a usable ${phase.name} document — retrying with clearer instructions…` });
+          const overrideSentence = phase.id === 'bom'
+            ? "\n\nOVERRIDES: Skip discovery reads and web_search entirely. Immediately write the Stage-1 grocery-list skeleton to docs/BOM.md with a # heading, then finish your reply with the document."
+            : '';
           const retryResult = await executeTurn({
-            userPrompt: `You previously failed to produce the ${phase.name} deliverable. This is a retry.\n\nCRITICAL: You MUST write the file docs/${phase.id.toUpperCase()}.md using fs_write. Your response MUST be the complete document content starting with a level-1 heading (#).\n\nDo NOT return commentary, explanations, or summaries. Only the document itself.\n\nOVERRIDES: Skip discovery reads and web_search entirely. Immediately write the Stage-1 grocery-list skeleton to docs/BOM.md with a # heading, then finish your reply with the document.`,
+            userPrompt: `You previously failed to produce the ${phase.name} deliverable. This is a retry.\n\nCRITICAL: You MUST write the file docs/${phase.id.toUpperCase()}.md using fs_write. Your response MUST be the complete document content starting with a level-1 heading (#).\n\nDo NOT return commentary, explanations, or summaries. Only the document itself.${overrideSentence}`,
             forceSpecialistId: phase.id,
             signal,
             onQuestions: (items) => {

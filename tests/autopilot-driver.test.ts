@@ -476,9 +476,56 @@ describe('AutopilotDriver', () => {
     // conops is the first phase; its second executeTurn call is the retry.
     const retryOpts = executeTurnMock.mock.calls[1][0];
     expect(retryOpts.forceSpecialistId).toBe('conops');
-    expect(retryOpts.userPrompt).toContain('Skip discovery reads and web_search entirely');
-    expect(retryOpts.userPrompt).toContain('Immediately write the Stage-1 grocery-list skeleton');
-    expect(retryOpts.userPrompt).toContain('finish your reply with the document');
+    // Generic retry encouragement is present.
+    expect(retryOpts.userPrompt).toContain('This is a retry');
+    expect(retryOpts.userPrompt).toContain('Do NOT return commentary');
+    // BOM-specific overrides must NOT leak into a conops retry.
+    expect(retryOpts.userPrompt).not.toContain('OVERRIDES:');
+    expect(retryOpts.userPrompt).not.toContain('Skip discovery reads and web_search entirely');
+    expect(retryOpts.userPrompt).not.toContain('Immediately write the Stage-1 grocery-list skeleton');
+    expect(retryOpts.userPrompt).not.toContain('docs/BOM.md');
     expect(capturedEvents.some(e => e.kind === 'status' && String(e.message).includes('retrying'))).toBe(true);
+  });
+
+  // ── Test 12: BOM retry keeps the Stage-1 skeleton overrides ─────────────
+
+  it('keeps the Stage-1 skeleton overrides in a bom-phase retry prompt', async () => {
+    // Pre-approve every phase before bom so bom is the first phase to run.
+    for (const phaseId of ['conops', 'architecture', 'icd', 'capabilities', 'requirements']) {
+      await preApprovePhase(tmpDir, stateMgr, phaseId);
+    }
+    let bomCalls = 0;
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string; userPrompt?: string }) => {
+      if (opts.forceSpecialistId !== 'bom') {
+        writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nAuto-generated.`);
+        return makeTurnResult(opts.forceSpecialistId);
+      }
+      bomCalls++;
+      if (bomCalls === 1) {
+        // First pass: model returned commentary → error result.
+        return makeTurnResult('bom', { error: true, requiresReview: false, criticResult: undefined });
+      }
+      // Retry: succeeds and writes the doc.
+      writeDoc(tmpDir, 'bom', '# BOM\n\nRetry deliverable.');
+      return makeTurnResult('bom');
+    });
+
+    const driver = createDriver();
+    driver.start();
+
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    expect(bomCalls).toBeGreaterThanOrEqual(2);
+    // Find the bom retry call: the second executeTurn call for bom.
+    const bomRetryCall = executeTurnMock.mock.calls
+      .filter((c: any[]) => c[0].forceSpecialistId === 'bom')[1];
+    expect(bomRetryCall).toBeDefined();
+    expect(bomRetryCall[0].forceSpecialistId).toBe('bom');
+    expect(bomRetryCall[0].userPrompt).toContain('OVERRIDES:');
+    expect(bomRetryCall[0].userPrompt).toContain('Skip discovery reads and web_search entirely');
+    expect(bomRetryCall[0].userPrompt).toContain('Immediately write the Stage-1 grocery-list skeleton');
+    expect(bomRetryCall[0].userPrompt).toContain('docs/BOM.md');
   });
 });
