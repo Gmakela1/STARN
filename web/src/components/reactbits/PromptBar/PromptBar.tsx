@@ -15,6 +15,10 @@ import React, {
   type ReactNode
 } from 'react';
 import { animate, useMotionValue, useMotionValueEvent, useReducedMotion } from 'motion/react';
+// STARN adaptation: repository-doc rows reuse lucide glyphs + the shared
+// library file type from the server API contract.
+import { FileText, Upload } from 'lucide-react';
+import type { LibraryFileEntry } from '../../../types/api';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
   ArrowDown01Icon,
@@ -37,6 +41,10 @@ export interface PromptBarSource {
   description?: string;
   icon?: ReactNode | IconSvgElement;
   attach?: boolean;
+  /** STARN: when set, picking the row prepends this directive sentence
+   * (e.g. "Use reference/<name> as the primary reference…") to the draft
+   * instead of appending a literal @-token. */
+  inject?: string;
 }
 
 export interface PromptBarCommand {
@@ -60,6 +68,12 @@ export interface PromptBarSendDetail {
 export interface PromptBarProps {
   placeholder?: string;
   sources?: PromptBarSource[];
+  /** STARN: repository docs (reference/) behind the 'Attach from repository…'
+   * submenu; when non-empty that special row is shown at the top. */
+  repoDocs?: LibraryFileEntry[];
+  /** STARN: deep-link callback fired by the 'Upload new document…' row
+   * (Vault → Library upload zone); the row renders only when provided. */
+  onUploadNavigate?: () => void;
   commands?: PromptBarCommand[];
   models?: PromptBarModel[];
   defaultModel?: string;
@@ -99,6 +113,7 @@ type Row = {
   tag?: string;
   icon?: ReactNode | IconSvgElement;
   attach?: boolean;
+  inject?: string;
 };
 type Token = { kind: 'at' | 'slash'; query: string; start: number };
 type Latest = Pick<PromptBarProps, 'onSend' | 'onStop' | 'onAttach' | 'onDictate' | 'onEffortChange'>;
@@ -170,7 +185,11 @@ const parseToken = (draft: string): Token | null => {
 };
 
 const renderIcon = (icon: ReactNode | IconSvgElement, size: number) =>
-  isValidElement(icon) ? icon : <HugeiconsIcon icon={icon as IconSvgElement} size={size} strokeWidth={1.8} />;
+  isValidElement(icon)
+    ? icon
+    : icon
+      ? <HugeiconsIcon icon={icon as IconSvgElement} size={size} strokeWidth={1.8} />
+      : null;
 
 function SendGlyph({ busy, morphDuration, squash, tilt }: SendGlyphProps) {
   const reduce = useReducedMotion();
@@ -224,6 +243,8 @@ const STYLE = `
 const PromptBar: React.FC<PromptBarProps> = ({
   placeholder = 'Ask anything',
   sources = DEFAULT_SOURCES,
+  repoDocs,
+  onUploadNavigate,
   commands = DEFAULT_COMMANDS,
   models = DEFAULT_MODELS,
   defaultModel = '',
@@ -268,6 +289,7 @@ const PromptBar: React.FC<PromptBarProps> = ({
   const [attachments, setAttachments] = useState<string[]>([]);
   const [modelKey, setModelKey] = useState(defaultModel);
   const [plusOpen, setPlusOpen] = useState(false);
+  const [repoDocOpen, setRepoDocOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const [effortOpen, setEffortOpen] = useState(false);
   const [effortIndex, setEffortIndex] = useState(() => {
@@ -284,11 +306,41 @@ const PromptBar: React.FC<PromptBarProps> = ({
   const open = plusOpen ? 'at' : (token?.kind ?? (modelOpen ? 'model' : effortOpen ? 'effort' : null));
   const query = plusOpen ? '' : (token?.query ?? '');
   const list = useMemo<Row[]>(() => {
-    if (open === 'at') return sources.filter(s => s.name.toLowerCase().includes(query));
+    if (open === 'at') {
+      // STARN: repo-doc submenu — references rendered as rows with inject strings.
+      if (repoDocOpen) {
+        return (repoDocs ?? []).map(r => ({
+          key: r.name,
+          name: r.name,
+          description: 'reference/ · repository doc',
+          icon: <FileText className="h-4 w-4" />,
+          inject: `Use reference/${r.name} as the primary reference for this request.`
+        }));
+      }
+      // STARN: special rows at the top of the source list.
+      const extras: Row[] = [];
+      if (repoDocs && repoDocs.length > 0) {
+        extras.push({
+          key: '__repo_attach',
+          name: 'Attach from repository…',
+          description: 'Pick a doc in reference/',
+          icon: <FileText className="h-4 w-4" />
+        });
+      }
+      if (onUploadNavigate) {
+        extras.push({
+          key: '__upload',
+          name: 'Upload new document…',
+          description: 'Vault → Library upload zone',
+          icon: <Upload className="h-4 w-4" />
+        });
+      }
+      return [...extras, ...sources.filter(s => s.name.toLowerCase().includes(query))];
+    }
     if (open === 'slash') return commands.filter(c => c.name.replace(/^\//, '').toLowerCase().startsWith(query));
     if (open === 'model') return models;
     return [];
-  }, [open, query, sources, commands, models]);
+  }, [open, query, sources, commands, models, repoDocs, onUploadNavigate, repoDocOpen]);
   const cursor = Math.min(active, Math.max(0, list.length - 1));
   const canSend = draft.trim().length > 0 || attachments.length > 0;
   const armed = busy || canSend;
@@ -300,6 +352,7 @@ const PromptBar: React.FC<PromptBarProps> = ({
     setPlusOpen(false);
     setModelOpen(false);
     setEffortOpen(false);
+    setRepoDocOpen(false);
   }, []);
 
   useLayoutEffect(() => {
@@ -494,6 +547,19 @@ const PromptBar: React.FC<PromptBarProps> = ({
       focusInput();
       return;
     }
+    // STARN: special rows intercept before the attach/@-token branches.
+    if (row.key === '__repo_attach') {
+      setRepoDocOpen(true);
+      setActive(0);
+      return;
+    }
+    if (row.key === '__upload') {
+      closeMenus();
+      setDismissed(false);
+      onUploadNavigate?.();
+      focusInput();
+      return;
+    }
     const head = token ? draft.slice(0, token.start) : draft;
     if (row.attach) {
       setDraft(head);
@@ -502,11 +568,16 @@ const PromptBar: React.FC<PromptBarProps> = ({
         setAttachments(a => [...a, ...(Array.isArray(files) ? files : [files])]);
       });
     } else if (open === 'at') {
-      setDraft(`${head}@${row.name} `);
+      if (row.inject) {
+        setDraft(`${head}${row.inject} `);
+      } else {
+        setDraft(`${head}@${row.name} `);
+      }
     } else {
       setDraft(`${head}${row.name} `);
     }
     setPlusOpen(false);
+    setRepoDocOpen(false);
     setDismissed(false);
     focusInput();
   };
@@ -767,7 +838,6 @@ const PromptBar: React.FC<PromptBarProps> = ({
             closeMenus();
             setActive(0);
           }}
-          onFocus={closeMenus}
           onKeyDown={onKeyDown}
         />
 
@@ -783,6 +853,7 @@ const PromptBar: React.FC<PromptBarProps> = ({
               setModelOpen(false);
               setEffortOpen(false);
               setActive(0);
+              setRepoDocOpen(false);
               setPlusOpen(v => !v);
               focusInput();
             }}

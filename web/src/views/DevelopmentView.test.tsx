@@ -22,6 +22,11 @@ vi.mock('../api/client', () => ({
     submitPortalAnswer: vi.fn().mockResolvedValue({ queued: true }),
     dismissPortalItem: vi.fn().mockResolvedValue({ success: true }),
     uploadExample: vi.fn().mockResolvedValue({ path: 'x', filename: 'x.md' }),
+    fetchLibrary: vi.fn().mockResolvedValue({
+      // Stable fixture: repository docs surface in the PromptBar source picker.
+      references: [{ name: 'hardware-spec.md', size: 120, modified: '2025-01-01' }],
+      examples: {}
+    }),
     saveDoc: vi.fn().mockResolvedValue({ path: 'x' }),
     approveDoc: vi.fn().mockResolvedValue({ artifact: null })
   }
@@ -194,6 +199,13 @@ describe('DevelopmentView PromptBar composer', () => {
     await waitFor(() => {
       expect((textarea as HTMLTextAreaElement).value).toBe('');
     });
+  });
+
+  it('lists repository docs as injectable sources in the composer menu', async () => {
+    const { user } = renderView({ busy: false });
+    await user.click(screen.getByRole('button', { name: 'Add files and sources' }));
+    expect(await screen.findByRole('option', { name: /hardware-spec\.md/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Attach from repository…/ })).toBeInTheDocument();
   });
 
   it('morphs the send button into Stop while busy', () => {

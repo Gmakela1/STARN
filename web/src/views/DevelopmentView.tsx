@@ -35,7 +35,15 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
-import { AnswerState, DocData, PortalItem, ProjectInfo, RoadmapPhase } from '../types/api';
+import {
+  AnswerState,
+  DocData,
+  LibraryFileEntry,
+  PortalItem,
+  ProjectInfo,
+  RoadmapPhase
+} from '../types/api';
+import type { PromptBarSource } from '../components/reactbits/PromptBar/PromptBar';
 import { useTurnStream, ChatEntry, ActivityMeta } from '../api/useTurnStream';
 import { useAutopilotEvents, AutopilotLiveEvent } from '../hooks/useAutopilotEvents';
 import Markdown from '../components/Markdown';
@@ -286,8 +294,9 @@ export interface DevelopmentViewProps {
   initialPhase?: string;
   /** Workstream C/D: deep-link into the question panel (consumed once). */
   initialQuestionId?: string;
-  /** Workstream C/D: state-based return path to the queue (design BC-5). */
-  onNavigate?: (tab: string) => void;
+  /** Workstream C/D: state-based return path to the queue (design BC-5).
+   * Optional second arg selects a Vault sub-tab (e.g. ('vault','library')). */
+  onNavigate?: (tab: string, subTab?: string) => void;
 }
 
 export default function DevelopmentView({
@@ -295,7 +304,8 @@ export default function DevelopmentView({
   project,
   onProjectChanged,
   initialPhase,
-  initialQuestionId
+  initialQuestionId,
+  onNavigate
 }: DevelopmentViewProps) {
   const { entries, busy, status, toolActivity, checkpoint, sendTurn, abortTurn, clearCheckpoint, appendEntry } = turnStream;
 
@@ -629,6 +639,38 @@ export default function DevelopmentView({
     await refreshDoc();
     await onProjectChanged();
   };
+
+  // --- Repository docs (reference/) for the PromptBar source picker ---
+  // Fetched once per project (refetch on project change). Failures leave the
+  // picker without repo rows — reference docs are optional picker content.
+  const [repoDocs, setRepoDocs] = useState<LibraryFileEntry[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .fetchLibrary()
+      .then(res => {
+        if (!cancelled) setRepoDocs(res.references);
+      })
+      .catch(() => {
+        // Picker content only — safe to stay empty.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [project?.id]);
+  const promptSources = useMemo<PromptBarSource[]>(
+    () => [
+      { key: 'example', name: 'Quality example', description: 'Upload for the selected phase', attach: true },
+      ...repoDocs.map(r => ({
+        key: `repo:${r.name}`,
+        name: r.name,
+        description: 'reference/ · repository doc',
+        icon: <FileText className="h-4 w-4" />,
+        inject: `Use reference/${r.name} as the primary reference for this request.`
+      }))
+    ],
+    [repoDocs]
+  );
 
   // --- Document panel state ---
   const [roadmap, setRoadmap] = useState<RoadmapPhase[]>([]);
@@ -1239,9 +1281,9 @@ export default function DevelopmentView({
                       ? `Tell the ${project.name} agent what to do next… (Enter to send)`
                       : 'Message the agent… (Enter to send, Shift+Enter for newline)'
                 }
-                sources={[
-                  { key: 'example', name: 'Quality example', description: 'Upload for the selected phase', attach: true }
-                ]}
+                sources={promptSources}
+                repoDocs={repoDocs}
+                onUploadNavigate={() => onNavigate?.('vault', 'library')}
                 commands={[]}
                 models={[]}
                 efforts={[]}

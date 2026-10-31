@@ -272,7 +272,11 @@ export default function AppShell() {
             initialPhase={studioPhase}
             initialQuestionId={studioQuestionId}
             // Workstream C/D: state-based return path to the queue (design BC-5).
-            onNavigate={(t) => setTab(t as TabId)}
+            // Optional second arg selects a Vault sub-tab (PromptBar upload deep-link).
+            onNavigate={(t, sub) => {
+              setTab(t as TabId);
+              if (t === 'vault' && sub) setVaultSubTab(sub as VaultSubTab);
+            }}
           />
         )}
 
