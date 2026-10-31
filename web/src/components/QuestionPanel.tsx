@@ -338,6 +338,17 @@ export default function QuestionPanel({
     if (!recording) pillRecordingRef.current = false;
   }, [recording]);
 
+  // Mic-denial seam: the pill's internal listening state is self-managed, so
+  // when the recorder reports an error out-of-band (e.g. getUserMedia denied
+  // after onStart), the pill would stay "pressed" with a fake waveform.
+  // Bumping a remount key on error forces a fresh idle pill, and the pill is
+  // disabled while the error is showing (the next startRecording attempt —
+  // e.g. Alt-hold — clears the error and re-enables it).
+  const [voiceAttempt, setVoiceAttempt] = useState(0);
+  useEffect(() => {
+    if (voiceError) setVoiceAttempt(n => n + 1);
+  }, [voiceError]);
+
   /**
    * Voice is live only while the panel is open on an answerable item
    * (not parked, not queued/applying, not in the resolved dwell).
@@ -751,7 +762,7 @@ export default function QuestionPanel({
                 </div>
               )}
               {voiceError && (
-                <p role="alert" className="rounded-md bg-rose-950/40 px-3 py-1.5 text-xs text-rose-300">
+                <p role="status" aria-live="polite" className="rounded-md bg-rose-950/40 px-3 py-1.5 text-xs text-rose-300">
                   {voiceError}
                 </p>
               )}
@@ -778,12 +789,13 @@ export default function QuestionPanel({
                     recorder stays in useVoiceRecorder; 44px hit target via
                     the pill's reach + waveform expansion. */}
                 <VoicePill
+                  key={`voice-attempt-${voiceAttempt}`}
                   ariaLabel="Record answer"
                   mode="toggle"
                   reactive="simulated"
                   accentColor="#ff2a3c"
                   background="#11151d"
-                  disabled={composingDisabled}
+                  disabled={composingDisabled || voiceError !== null}
                   onStart={() => {
                     pillRecordingRef.current = true;
                     if (!recordingRef.current) startRecording();

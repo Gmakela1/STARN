@@ -544,6 +544,28 @@ describe('QuestionPanel', () => {
     consoleSpy.mockRestore();
   });
 
+  it('voice: recorder error after a pill start remounts the pill idle and disables it while shown', async () => {
+    const view = renderWithUser(<QuestionPanel {...baseProps()} />);
+
+    await view.user.click(screen.getByRole('button', { name: 'Record answer' }));
+    expect(voiceMock.startRecording).toHaveBeenCalledTimes(1);
+
+    // The recorder reports mic denial out-of-band (async getUserMedia
+    // failure): voiceError appears while the pill's internal listening is
+    // still up with its simulated waveform.
+    voiceMock.error = 'Microphone access denied';
+    view.rerender(<QuestionPanel {...baseProps()} />);
+
+    // The error is announced politely next to the pill.
+    const error = screen.getByText('Microphone access denied');
+    expect(error).toHaveAttribute('aria-live', 'polite');
+
+    // Remount key + disabled: the stale pressed state is gone.
+    const pill = screen.getByRole('button', { name: 'Record answer' });
+    expect(pill).toHaveAttribute('aria-pressed', 'false');
+    expect(pill).toBeDisabled();
+  });
+
   it('voice: closing the panel while recording stops the recorder and keeps the transcript', async () => {
     const view = renderWithUser(<QuestionPanel {...baseProps()} />);
 

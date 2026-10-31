@@ -70,6 +70,9 @@ export interface PromptBarProps {
   onSend?: (text: string, detail: PromptBarSendDetail) => void;
   onStop?: () => void;
   onAttach?: () => string | string[] | void | Promise<string | string[] | void>;
+  /** STARN host bridge: DevelopmentView.handleDictate resolves on recorder
+   * stop out-of-band; stop click path re-delivers via injectedDraft — see
+   * DevelopmentView dictate bridge before changing onDictate contract. */
   onDictate?: () => string | void | Promise<string | void>;
   background?: string;
   color?: string;

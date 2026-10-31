@@ -1500,11 +1500,15 @@ export default function DevelopmentView({
           </div>
         </header>
 
-        {uploadNotice && (
-          <p className={`border-b px-4 py-1.5 text-xs ${uploadNotice.startsWith('✔') ? 'border-[#8b5cf6]/60 bg-[#2e1065]/40 text-[#e8edf5]' : 'border-rose-800/60 bg-rose-950/40 text-rose-300'}`}>
-            {uploadNotice}
-          </p>
-        )}
+        {/* Upload outcome (picked/failed) — the live region stays mounted so
+            screen readers announce notice changes reliably. */}
+        <span aria-live="polite">
+          {uploadNotice && (
+            <p className={`border-b px-4 py-1.5 text-xs ${uploadNotice.startsWith('✔') ? 'border-[#8b5cf6]/60 bg-[#2e1065]/40 text-[#e8edf5]' : 'border-rose-800/60 bg-rose-950/40 text-rose-300'}`}>
+              {uploadNotice}
+            </p>
+          )}
+        </span>
 
         {docNotice && (
           <p className="border-b border-[#8b5cf6]/60 bg-[#2e1065]/40 px-4 py-1.5 text-xs text-[#e8edf5]" role="status">
