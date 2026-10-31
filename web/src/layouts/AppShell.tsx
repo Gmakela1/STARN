@@ -157,7 +157,7 @@ export default function AppShell() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-slate-950 text-slate-100">
+    <div className="flex h-full flex-col star-field bg-[#05070c] text-[#e8edf5]">
       {/* Merged top bar — brand · tabs · run-state cluster */}
       <TopBar
         project={project}
@@ -179,19 +179,19 @@ export default function AppShell() {
       {/* Mobile Navigation Drawer (< 1024px) */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 z-50 flex flex-col bg-slate-950/95 backdrop-blur-lg lg:hidden"
+          className="fixed inset-0 z-50 flex flex-col bg-[#05070c]/95 backdrop-blur-lg lg:hidden"
           role="dialog"
           aria-modal="true"
           aria-label="Mobile Navigation Drawer"
         >
           {/* Drawer Header */}
-          <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+          <div className="flex items-center justify-between border-b border-[#2a3342] px-4 py-3">
             <div className="flex items-center gap-2.5">
-              <Satellite className="h-6 w-6 text-cyan-400" aria-hidden />
+              <Satellite className="h-6 w-6 text-[#ff2a3c]" aria-hidden />
               <div>
                 <span className="text-sm font-black tracking-widest text-white uppercase">STARN</span>
                 {project && (
-                  <p className="text-[11px] text-slate-400 truncate max-w-[220px]">
+                  <p className="text-[11px] text-[#a8b3c4] truncate max-w-[220px]">
                     {project.name}
                   </p>
                 )}
@@ -200,7 +200,7 @@ export default function AppShell() {
             <button
               type="button"
               onClick={() => setMobileMenuOpen(false)}
-              className="flex min-h-[48px] min-w-[48px] items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white"
+              className="flex min-h-[48px] min-w-[48px] items-center justify-center rounded-xl border border-[#3b4658] bg-[#11151d] text-[#a8b3c4] hover:bg-[#171c26] hover:text-white"
               aria-label="Close navigation menu"
             >
               <X className="h-6 w-6" aria-hidden />
@@ -221,14 +221,14 @@ export default function AppShell() {
                   }}
                   className={`flex min-h-[48px] w-full items-center gap-4 rounded-xl px-4 py-3.5 text-left transition-colors ${
                     active
-                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold shadow-sm'
-                      : 'bg-slate-900/60 text-slate-300 hover:bg-slate-800 border border-slate-800/80 active:bg-slate-800/90'
+                      ? 'cut-corner-sm bg-[#1a0208] text-[#ffb3bd] border border-[#ff2a3c]/45 font-semibold shadow-sm'
+                      : 'bg-[#0d1017]/70 text-[#a8b3c4] hover:bg-[#11151d] border border-[#2a3342]/80 active:bg-[#11151d]/90'
                   }`}
                 >
-                  <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-cyan-400' : 'text-slate-400'}`} aria-hidden />
+                  <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-[#ff2a3c]' : 'text-[#a8b3c4]'}`} aria-hidden />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-semibold leading-tight">{label}</div>
-                    <div className="text-xs text-slate-400 leading-tight mt-0.5 truncate">{tagline}</div>
+                    <div className="text-xs text-[#a8b3c4] leading-tight mt-0.5 truncate">{tagline}</div>
                   </div>
                 </button>
               );
@@ -236,17 +236,17 @@ export default function AppShell() {
           </nav>
 
           {/* Drawer Footer */}
-          <div className="border-t border-slate-800 p-4 space-y-2 bg-slate-900/40">
+          <div className="border-t border-[#2a3342] p-4 space-y-2 bg-[#0d1017]/70">
             {project && (
               <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">Current Phase:</span>
-                <span className="font-mono font-bold text-cyan-300 uppercase rounded bg-cyan-950/60 px-2.5 py-0.5 border border-cyan-500/30">
+                <span className="text-[#a8b3c4]">Current Phase:</span>
+                <span className="font-mono font-bold text-[#f0c060] uppercase rounded bg-[#11151d] px-2.5 py-0.5 border border-[#d9a441]/40">
                   {project.activePhase}
                 </span>
               </div>
             )}
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-400">AI Assistant:</span>
+              <span className="text-[#a8b3c4]">AI Assistant:</span>
               <span className="font-semibold text-emerald-300 flex items-center gap-1.5">
                 <span className="h-2 w-2 rounded-full bg-emerald-400" />
                 {turnStream.busy ? 'Working…' : 'Ready'}
@@ -257,7 +257,7 @@ export default function AppShell() {
       )}
 
       {/* Active Hub View */}
-      <main key={projectRevision} className="min-h-0 flex-1 overflow-hidden">
+      <main key={projectRevision} className="relative z-10 min-h-0 flex-1 overflow-hidden">
         {tab === 'dashboard' && (
           <DashboardView onNavigate={(t) => setTab(t as TabId)} onOpenQuestion={handleOpenQuestion} />
         )}
@@ -279,8 +279,8 @@ export default function AppShell() {
         {tab === 'build' && (
           <div className="flex h-full flex-col">
             {/* Build Sub-Navigation Bar */}
-            <div className="flex items-center gap-2 border-b border-slate-800 bg-slate-900/60 px-4 py-2 backdrop-blur overflow-x-auto shrink-0">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500 mr-1 shrink-0">
+            <div className="flex items-center gap-2 border-b border-[#2a3342] bg-[#0d1017]/70 px-4 py-2 backdrop-blur overflow-x-auto shrink-0">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-[#6e7d92] mr-1 shrink-0">
                 Floor:
               </span>
               <div className="flex items-center gap-2">
@@ -293,8 +293,8 @@ export default function AppShell() {
                       onClick={() => setBuildSubTab(id)}
                       className={`flex min-h-[36px] items-center gap-2 rounded-full px-3.5 py-1 text-xs font-medium transition-all whitespace-nowrap ${
                         active
-                          ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm font-semibold'
-                          : 'bg-slate-800/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-slate-700/50'
+                          ? 'bg-[#1a0208] text-[#ffb3bd] border border-[#ff2a3c]/45 shadow-sm font-semibold'
+                          : 'bg-[#11151d]/60 text-[#a8b3c4] hover:bg-[#11151d] hover:text-[#e8edf5] border border-[#3b4658]/50'
                       }`}
                     >
                       <SubIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -324,8 +324,8 @@ export default function AppShell() {
         {tab === 'vault' && (
           <div className="flex h-full flex-col">
             {/* Vault Sub-Navigation Bar */}
-            <div className="flex items-center gap-2 border-b border-slate-800 bg-slate-900/60 px-4 py-2 backdrop-blur overflow-x-auto shrink-0">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500 mr-1 shrink-0">
+            <div className="flex items-center gap-2 border-b border-[#2a3342] bg-[#0d1017]/70 px-4 py-2 backdrop-blur overflow-x-auto shrink-0">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-[#6e7d92] mr-1 shrink-0">
                 Vault:
               </span>
               <div className="flex items-center gap-2">
@@ -338,8 +338,8 @@ export default function AppShell() {
                       onClick={() => setVaultSubTab(id)}
                       className={`flex min-h-[36px] items-center gap-2 rounded-full px-3.5 py-1 text-xs font-medium transition-all whitespace-nowrap ${
                         active
-                          ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm font-semibold'
-                          : 'bg-slate-800/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-slate-700/50'
+                          ? 'bg-[#1a0208] text-[#ffb3bd] border border-[#ff2a3c]/45 shadow-sm font-semibold'
+                          : 'bg-[#11151d]/60 text-[#a8b3c4] hover:bg-[#11151d] hover:text-[#e8edf5] border border-[#3b4658]/50'
                       }`}
                     >
                       <SubIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />

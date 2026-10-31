@@ -1,6 +1,6 @@
 @import 'tailwindcss';
 
-/* Dark slate theme baseline — applied before React mounts to prevent FOUC */
+/* Dark obsidian theme baseline — applied before React mounts to prevent FOUC */
 html,
 body,
 #root {
@@ -10,10 +10,87 @@ body,
   color: #f8fafc;
 }
 
-/* Subtle warm dot-matrix CAD grid background */
+/* ===== Sith Fabricator tokens + recipes ===== */
+:root {
+  --sf-void: #05070c; --sf-panel: #0d1017; --sf-raised: #11151d;
+  --sf-hover: #171c26; --sf-border-weak: #2a3342; --sf-border-strong: #3b4658;
+  --sf-text: #e8edf5; --sf-text-2: #a8b3c4; --sf-text-mut: #6e7d92;
+  --sf-power: #ff2a3c; --sf-power-btn: #d61f2c; --sf-brass: #d9a441;
+}
+
+/* Nebula wash: two radial-gradients + void base on html/body/#root (static, no cost) */
+html, body, #root {
+  background-color: var(--sf-void);
+  background-image:
+    radial-gradient(1200px 800px at 85% -10%, rgba(255,42,60,0.055), transparent 60%),
+    radial-gradient(1000px 700px at -10% 110%, rgba(217,164,65,0.045), transparent 60%);
+  color: var(--sf-text);
+}
+
+/* Layered star-field: two box-shadow star layers on ONE element, GPU-cheap
+   (paints once; no per-star DOM; disable under reduced motion). */
+.star-field::before,
+.star-field::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+}
+.star-field::before { /* far stars: 1px, dim */
+  box-shadow: 17vw 8vh 0 0 #94a3b833, 63vw 4vh 0 0 #94a3b822, 42vw 22vh 0 0 #cbd5e11f,
+    88vw 31vh 0 0 #94a3b833, 9vw 47vh 0 0 #cbd5e11f, 71vw 55vh 0 0 #94a3b822,
+    29vw 66vh 0 0 #94a3b833, 94vw 74vh 0 0 #cbd5e11f, 5vw 85vh 0 0 #94a3b822,
+    55vw 93vh 0 0 #94a3b833, 36vw 38vh 0 0 #cbd5e11f, 78vw 12vh 0 0 #94a3b822;
+  border-radius: 9999px; width: 1px; height: 1px;
+}
+.star-field::after { /* near stars: 2px, brighter, slow drift */
+  box-shadow: 24vw 15vh 0 1px #e2e8f066, 69vw 41vh 0 1px #e2e8f044, 12vw 58vh 0 1px #e2e8f066,
+    83vw 68vh 0 1px #e2e8f044, 47vw 81vh 0 1px #e2e8f066, 91vw 22vh 0 1px #e2e8f044,
+    33vw 5vh 0 1px #e2e8f044, 58vw 28vh 0 1px #e2e8f066;
+  border-radius: 9999px; width: 2px; height: 2px;
+  animation: sf-drift 240s linear infinite;
+}
+@keyframes sf-drift { to { transform: translate3d(-40px, -25px, 0); } }
+
+/* Blueprint grid for empty panes: brass hairline grid + faint crimson datum */
+.bp-grid {
+  background-color: var(--sf-panel);
+  background-image:
+    linear-gradient(rgba(217,164,65,0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(217,164,65,0.07) 1px, transparent 1px),
+    linear-gradient(rgba(255,42,60,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,42,60,0.05) 1px, transparent 1px);
+  background-size: 96px 96px, 96px 96px, 24px 24px, 24px 24px;
+}
+
+/* Lightsaber ignition: running state. Blade grows + rim-glow breathes. */
+@keyframes saber-ignite {
+  0%   { box-shadow: 0 0 0 0 rgba(255,42,60,0); transform: scaleY(0.2); opacity: .6; }
+  35%  { box-shadow: 0 0 12px 2px rgba(255,42,60,.8), 0 0 32px 6px rgba(255,42,60,.35); transform: scaleY(1); opacity: 1; }
+  100% { box-shadow: 0 0 8px 1px rgba(255,42,60,.55), 0 0 22px 4px rgba(255,42,60,.22); transform: scaleY(1); opacity: 1; }
+}
+.saber-on { animation: saber-ignite 420ms cubic-bezier(.2,.9,.3,1.2) both; }
+.saber-breathe { animation: sf-breathe 2.4s ease-in-out 420ms infinite; }
+@keyframes sf-breathe {
+  0%,100% { box-shadow: 0 0 8px 1px rgba(255,42,60,.55), 0 0 22px 4px rgba(255,42,60,.22); }
+  50%     { box-shadow: 0 0 14px 3px rgba(255,42,60,.8),  0 0 36px 8px rgba(255,42,60,.35); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .saber-on, .saber-breathe, .star-field::after { animation: none; }
+  .star-field::after { transform: none; }
+}
+
+/* Imperial angularity: notched corner clip for primary buttons + panels */
+.cut-corner { clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
+.cut-corner-sm { clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px); }
+/* clip-path clips the box-shadow focus ring — inner outline fallback (§6 risk 2) */
+.cut-corner:focus-visible,
+.cut-corner-sm:focus-visible {
+  outline: 2px solid var(--sf-power);
+  outline-offset: -3px;
+}
+
+/* Subtle warm dot-matrix CAD grid background (brass dots) */
 .bg-cad-grid {
-  background-color: #0b0f17;
-  background-image: radial-gradient(rgba(56, 189, 248, 0.08) 1px, transparent 1px);
+  background-color: var(--sf-void);
+  background-image: radial-gradient(rgba(217, 164, 65, 0.08) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 
@@ -24,34 +101,36 @@ body,
   letter-spacing: 0.03em;
 }
 
-/* Accessible high-contrast focus rings */
+/* Accessible high-contrast focus rings — crimson power, 2px void gap */
 *:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px #0b0f17, 0 0 0 4px #06b6d4;
+  box-shadow: 0 0 0 2px var(--sf-void), 0 0 0 4px var(--sf-power);
 }
 
 /* Thin dark scrollbars */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #1e293b transparent;
+  scrollbar-color: var(--sf-border-strong) transparent;
 }
 *::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 *::-webkit-scrollbar-thumb {
-  background-color: #1e293b;
+  background-color: var(--sf-border-strong);
   border-radius: 4px;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
 }
 
-/* Markdown-ish rendering inside chat bubbles and doc previews */
+/* Markdown-ish rendering inside chat bubbles and doc previews.
+   Opaque panel bg occludes the star-field (stars must not show behind markdown). */
 .doc-prose {
   line-height: 1.65;
   font-size: 0.875rem;
-  color: #e2e8f0;
+  color: #e8edf5;
+  background-color: var(--sf-panel);
 }
 .doc-prose h1,
 .doc-prose h2,
@@ -68,7 +147,7 @@ body,
   font-size: 1.1rem;
 }
 .doc-prose code {
-  background: #1e293b;
+  background: var(--sf-raised);
   padding: 0.1em 0.35em;
   border-radius: 4px;
   font-size: 0.8em;
@@ -86,8 +165,8 @@ body,
   font-size: 0.8rem;
 }
 .doc-prose th {
-  background: #111827;
-  color: #cbd5e1;
+  background: var(--sf-hover);
+  color: #a8b3c4;
 }
 
 /* ========================================================================= */

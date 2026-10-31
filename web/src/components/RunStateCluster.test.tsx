@@ -58,7 +58,7 @@ describe('RunStateCluster', () => {
     const { container } = render(<RunStateCluster runState="working" />);
     const root = container.querySelector('[data-run-state="working"]') as HTMLElement;
     expect(root.textContent).toBe('Working…');
-    expect(container.querySelector('[class*="bg-cyan-950/60"]')).toBeNull();
+    expect(container.querySelector('[class*="bg-[#1a0208]"]')).toBeNull();
     expect(container.querySelector('[class*="max-w-[180px]"]')).toBeNull();
   });
 

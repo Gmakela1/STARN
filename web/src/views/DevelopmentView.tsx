@@ -169,8 +169,8 @@ function dotTone(m: ActivityMeta, opts: { live: boolean; held: boolean }): strin
   if (m.kind === 'error') return 'bg-rose-400';
   if (opts.held || m.stopped) return 'bg-amber-400';
   if (m.kind === 'complete') return 'bg-emerald-400';
-  if (opts.live) return 'bg-cyan-400 ring-2 ring-cyan-400/30 motion-safe:animate-pulse';
-  return 'bg-slate-600';
+  if (opts.live) return 'bg-[#ff2a3c] ring-2 ring-[#ff2a3c]/30 motion-safe:animate-pulse';
+  return 'bg-[#2a3342]';
 }
 
 /** §6.3 — activity prose with emphasized phase names. */
@@ -180,7 +180,7 @@ function renderActivityText(m: ActivityMeta, text: string) {
     return (
       <>
         {before}
-        <span className="text-slate-300 font-medium">{m.phaseName}</span>
+        <span className="text-[#a8b3c4] font-medium">{m.phaseName}</span>
         {after}
       </>
     );
@@ -224,14 +224,14 @@ function ActivityFeedEntry({ entry, isLive, running }: { entry: ChatEntry; isLiv
   const Icon = feedIconFor(m, entry.text);
   return (
     <div
-      className={`relative flex items-start gap-2 py-[3px] pl-5 pr-2 text-xs leading-relaxed hover:rounded-md hover:bg-slate-900/40 ${isLive ? 'opacity-100' : 'opacity-80'}`}
+      className={`relative flex items-start gap-2 py-[3px] pl-5 pr-2 text-xs leading-relaxed hover:rounded-md hover:bg-[#0d1017]/70 ${isLive ? 'opacity-100' : 'opacity-80'}`}
     >
       <span aria-hidden className={`absolute left-1 top-[9px] h-1.5 w-1.5 rounded-full ${tone}`} />
-      <Icon className="mt-[1px] h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
-      <p className="min-w-0 flex-1 break-words text-slate-400">
+      <Icon className="mt-[1px] h-3.5 w-3.5 shrink-0 text-[#6e7d92]" aria-hidden />
+      <p className="min-w-0 flex-1 break-words text-[#a8b3c4]">
         {renderActivityText(m, entry.text)}
         {live && (
-          <span className="ml-2 inline-block self-center rounded-full border border-cyan-800/60 bg-cyan-950/60 px-2 py-px align-middle text-[10px] font-medium text-cyan-300">
+          <span className="ml-2 inline-block self-center rounded-full border border-[#ff2a3c]/45 bg-[#1a0208] px-2 py-px align-middle text-[10px] font-medium text-[#ffb3bd]">
             auto-drafting
           </span>
         )}
@@ -271,9 +271,9 @@ function LegacySystemNote({ entry }: { entry: ChatEntry }) {
 
   return (
     <div className="relative flex items-start gap-2 py-[3px] pl-5 pr-2 text-xs leading-relaxed">
-      <span aria-hidden className="absolute left-1 top-[9px] h-1.5 w-1.5 rounded-full bg-slate-600" />
-      <Activity className="mt-[1px] h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
-      <p className="min-w-0 flex-1 break-words text-slate-400">{stripped}</p>
+      <span aria-hidden className="absolute left-1 top-[9px] h-1.5 w-1.5 rounded-full bg-[#2a3342]" />
+      <Activity className="mt-[1px] h-3.5 w-3.5 shrink-0 text-[#6e7d92]" aria-hidden />
+      <p className="min-w-0 flex-1 break-words text-[#a8b3c4]">{stripped}</p>
     </div>
   );
 }
@@ -908,7 +908,7 @@ export default function DevelopmentView({
       );
     }
     return (
-      <span className="rounded bg-slate-800 px-2 py-0.5 font-mono text-[10px] font-medium text-slate-400 border border-slate-700 shrink-0">
+      <span className="rounded bg-[#11151d] px-2 py-0.5 font-mono text-[10px] font-medium text-[#a8b3c4] border border-[#3b4658] shrink-0">
         Not Drafted
       </span>
     );
@@ -923,16 +923,16 @@ export default function DevelopmentView({
       <section
         aria-label="Agent conversation"
         style={leftStyle}
-        className={`relative flex min-h-0 flex-col border-r border-slate-800 ${leftIsRail ? 'overflow-hidden' : ''}`}
+        className={`relative flex min-h-0 flex-col border-r border-[#2a3342] ${leftIsRail ? 'overflow-hidden' : ''}`}
       >
         {/* §5.I — collapse / Zen strip (lg+ only; below lg the chat stays single-pane) */}
-        <div className="hidden h-8 shrink-0 items-center gap-1 border-b border-slate-800 bg-slate-900/40 px-2 lg:flex">
+        <div className="hidden h-8 shrink-0 items-center gap-1 border-b border-[#2a3342] bg-[#0d1017]/70 px-2 lg:flex">
           <button
             type="button"
             onClick={() => setLeftCollapsed(true)}
             aria-label="Collapse conversation pane"
             title="Collapse conversation pane"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
           >
             <PanelLeftClose className="h-4 w-4" aria-hidden />
           </button>
@@ -942,7 +942,7 @@ export default function DevelopmentView({
               onClick={() => setZenPane(null)}
               aria-label="Exit focus conversation pane"
               title="Exit focus conversation pane"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
             >
               <Minimize2 className="h-4 w-4" aria-hidden />
             </button>
@@ -952,7 +952,7 @@ export default function DevelopmentView({
               onClick={() => setZenPane('left')}
               aria-label="Focus conversation pane"
               title="Focus conversation pane"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
             >
               <Maximize2 className="h-4 w-4" aria-hidden />
             </button>
@@ -960,7 +960,7 @@ export default function DevelopmentView({
         </div>
 
         {leftIsRail && (
-          <div className="absolute inset-0 z-30 hidden w-11 flex-col items-center justify-center gap-2 bg-slate-900/95 lg:flex">
+          <div className="absolute inset-0 z-30 hidden w-11 flex-col items-center justify-center gap-2 bg-[#0d1017]/95 lg:flex">
             <button
               type="button"
               onClick={() => {
@@ -969,7 +969,7 @@ export default function DevelopmentView({
               }}
               aria-label="Expand conversation pane"
               title="Expand conversation pane"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
             >
               <PanelLeftOpen className="h-4 w-4" aria-hidden />
             </button>
@@ -979,14 +979,14 @@ export default function DevelopmentView({
         <div ref={feedScrollRef} id="studio-feed" className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 relative">
           {entries.length === 0 && !busy && (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-500/30 bg-cyan-950/50">
-                <Bot className="h-7 w-7 text-cyan-400" aria-hidden />
+              <div className="bp-grid flex h-14 w-14 items-center justify-center rounded-2xl border border-[#ff2a3c]/45 bg-[#1a0208]">
+                <Bot className="h-7 w-7 text-[#ff2a3c]" aria-hidden />
               </div>
               <div>
-                <p className="text-sm font-medium text-slate-200">
+                <p className="text-sm font-medium text-[#e8edf5]">
                   {project ? `Let's build ${project.name}` : 'Engineering Studio ready'}
                 </p>
-                <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-400">
+                <p className="mt-1 max-w-sm text-xs leading-relaxed text-[#a8b3c4]">
                   Tell the AI in plain words what you want next — “draft the shopping list”,
                   “check electrical safety”, or “write the step-by-step guide for ACTION-03”.
                   It will research, draft, and ask for your approval before saving.
@@ -1016,18 +1016,18 @@ export default function DevelopmentView({
                 className={`max-w-[92%] rounded-xl border p-3 ${
                   entry.role === 'user'
                     ? 'ml-auto border-sky-900/60 bg-sky-950/40'
-                    : 'border-slate-800 bg-slate-900/70'
+                    : 'border-[#2a3342] bg-[#0d1017]/70'
                 }`}
               >
-                <header className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                <header className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#a8b3c4]">
                   {entry.role === 'user' ? (
                     <><User className="h-3.5 w-3.5" aria-hidden /> You</>
                   ) : (
                     <>
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-cyan-500/20 ring-1 ring-cyan-500/40">
-                        <Bot className="h-2.5 w-2.5 text-cyan-300" aria-hidden />
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#1a0208] ring-1 ring-[#ff2a3c]/45">
+                        <Bot className="h-2.5 w-2.5 text-[#ffb3bd]" aria-hidden />
                       </span>
-                      <span className="text-cyan-300">{entry.specialistName ?? 'AI Studio'}</span>
+                      <span className="text-[#ffb3bd]">{entry.specialistName ?? 'AI Studio'}</span>
                       {entry.aborted && <span className="text-rose-400 normal-case">· aborted</span>}
                     </>
                   )}
@@ -1043,12 +1043,12 @@ export default function DevelopmentView({
           })}
 
           {busy && (
-            <div className="flex items-center gap-2.5 rounded-xl border border-cyan-800/60 bg-cyan-950/40 p-3 text-xs text-cyan-200" role="status">
-              <Loader2 className="h-4 w-4 animate-spin text-cyan-400" aria-hidden />
+            <div className="flex items-center gap-2.5 rounded-xl border border-[#ff2a3c]/45 bg-[#1a0208]/80 p-3 text-xs text-[#ffb3bd]" role="status">
+              <Loader2 className="h-4 w-4 animate-spin text-[#ff2a3c] saber-on" aria-hidden />
               <span className="font-semibold">{status ?? 'AI is working…'}</span>
               {toolActivity && (
-                <span className="flex min-w-0 items-center gap-1.5 rounded-lg border border-cyan-700/50 bg-slate-950/60 px-2.5 py-1 text-[11px] text-cyan-100">
-                  <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-cyan-400" aria-hidden />
+                <span className="flex min-w-0 items-center gap-1.5 rounded-lg border border-[#ff2a3c]/45 bg-[#05070c]/60 px-2.5 py-1 text-[11px] text-[#ffb3bd]">
+                  <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[#ff2a3c]" aria-hidden />
                   <span className="truncate">{formatToolCall(toolActivity, {}).text}</span>
                 </span>
               )}
@@ -1097,7 +1097,7 @@ export default function DevelopmentView({
         />
 
         {/* Input bar */}
-        <footer className="border-t border-slate-800 bg-slate-900/60 p-3">
+        <footer className="border-t border-[#2a3342] bg-[#0d1017]/70 p-3">
           <div className="flex flex-col gap-2">
             {/* Recording indicator */}
             {recording && (
@@ -1124,7 +1124,7 @@ export default function DevelopmentView({
                 disabled={busy || checkpoint !== null}
                 placeholder={checkpoint ? 'Resolve the pending checkpoint above first…' : 'Message the agent… (Enter to send, Shift+Enter for newline)'}
                 aria-label="Message the agent"
-                className="min-h-[44px] flex-1 resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-600 focus:outline-none disabled:opacity-50"
+                className="min-h-[44px] flex-1 resize-none rounded-lg border border-[#3b4658] bg-[#05070c] px-3 py-2.5 text-sm text-[#e8edf5] placeholder:text-[#6e7d92] focus:border-[#ff2a3c] focus:outline-none disabled:opacity-50"
               />
               {/* Mic button */}
               <button
@@ -1141,7 +1141,7 @@ export default function DevelopmentView({
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${
                   recording
                     ? 'bg-rose-600 text-white motion-safe:animate-pulse'
-                    : 'border border-slate-700 bg-slate-800 text-slate-400 hover:border-sky-600 hover:text-sky-400'
+                    : 'border border-[#3b4658] bg-[#11151d] text-[#a8b3c4] hover:border-[#ff2a3c] hover:text-[#ff2a3c]'
                 }`}
                 aria-label={recording ? 'Stop recording' : 'Record voice message'}
                 title="Click or hold Alt to record"
@@ -1225,7 +1225,7 @@ export default function DevelopmentView({
         className={`relative hidden min-h-0 flex-col lg:flex ${rightIsRail ? 'overflow-hidden' : ''}`}
       >
         {rightIsRail && (
-          <div className="absolute inset-0 z-30 hidden w-11 flex-col items-center justify-center gap-2 bg-slate-900/95 lg:flex">
+          <div className="absolute inset-0 z-30 hidden w-11 flex-col items-center justify-center gap-2 bg-[#0d1017]/95 lg:flex">
             <button
               type="button"
               onClick={() => {
@@ -1234,15 +1234,15 @@ export default function DevelopmentView({
               }}
               aria-label="Expand document pane"
               title="Expand document pane"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
             >
               <PanelRightOpen className="h-4 w-4" aria-hidden />
             </button>
           </div>
         )}
 
-        <header ref={headerRef} className="flex h-12 items-center gap-2 border-b border-slate-800 bg-slate-900/40 px-3">
-          <FileText className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+        <header ref={headerRef} className="flex h-12 items-center gap-2 border-b border-[#2a3342] bg-[#0d1017]/70 px-3">
+          <FileText className="h-4 w-4 shrink-0 text-[#6e7d92]" aria-hidden />
 
           {/* Custom Document Selector Popover */}
           <div ref={dropdownRef} className="relative">
@@ -1251,7 +1251,7 @@ export default function DevelopmentView({
               onClick={() => setDocDropdownOpen(v => !v)}
               aria-haspopup="listbox"
               aria-expanded={docDropdownOpen}
-              className={`flex min-h-[40px] items-center gap-2.5 rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm font-medium text-slate-100 hover:bg-slate-900 transition-colors cursor-pointer ${headerCompact ? 'w-10 justify-center' : ''}`}
+              className={`flex min-h-[40px] items-center gap-2.5 rounded-lg border border-[#3b4658] bg-[#05070c] px-3 text-sm font-medium text-[#e8edf5] hover:bg-[#0d1017] transition-colors cursor-pointer ${headerCompact ? 'w-10 justify-center' : ''}`}
             >
               {!headerCompact && (
                 <span className="truncate max-w-[180px] sm:max-w-[240px]">
@@ -1259,13 +1259,13 @@ export default function DevelopmentView({
                 </span>
               )}
               {renderStatusPill(selectedPhaseInfo)}
-              <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${docDropdownOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`h-4 w-4 text-[#a8b3c4] transition-transform ${docDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {docDropdownOpen && (
               <div
                 role="listbox"
-                className="absolute left-0 top-full z-50 mt-1 max-h-80 w-80 sm:w-96 overflow-y-auto rounded-xl border border-slate-700 bg-slate-950 p-1.5 shadow-2xl space-y-1"
+                className="absolute left-0 top-full z-50 mt-1 max-h-80 w-80 sm:w-96 overflow-y-auto rounded-xl border border-[#3b4658] bg-[#05070c] p-1.5 shadow-2xl space-y-1"
               >
                 {roadmap.map((p, idx) => {
                   const isSelected = p.id === selectedPhase;
@@ -1286,11 +1286,11 @@ export default function DevelopmentView({
                       className={`flex min-h-[44px] cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 text-xs transition-colors ${
                         isSelected
                           ? 'bg-sky-950/70 text-sky-200 border border-sky-800/60 font-semibold'
-                          : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+                          : 'text-[#a8b3c4] hover:bg-[#0d1017] hover:text-white'
                       }`}
                     >
                       <div className="flex items-center gap-2 truncate">
-                        <span className="font-mono text-slate-500 text-[10px] w-4">{idx + 1}.</span>
+                        <span className="font-mono text-[#6e7d92] text-[10px] w-4">{idx + 1}.</span>
                         <span className="truncate">{p.name}</span>
                       </div>
                       <div className="shrink-0 flex items-center gap-1.5">
@@ -1325,7 +1325,7 @@ export default function DevelopmentView({
               disabled={uploadingExample || busy}
               aria-label="Attach a quality example"
               title="Attach a quality example"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40 disabled:opacity-40"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
             >
               {uploadingExample ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Paperclip className="h-4 w-4" aria-hidden />}
             </button>
@@ -1336,7 +1336,7 @@ export default function DevelopmentView({
             />
             <button
               onClick={() => void refreshDoc()}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
               aria-label="Refresh document"
               title="Refresh document"
             >
@@ -1345,7 +1345,7 @@ export default function DevelopmentView({
             {doc && !editing && (
               <button
                 onClick={() => { setDraft(doc.content); setEditing(true); }}
-                className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-slate-700 px-3 text-xs font-medium text-slate-300 transition hover:bg-slate-800"
+                className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#3b4658] px-3 text-xs font-medium text-[#a8b3c4] transition hover:bg-[#11151d]"
               >
                 <Pencil className="h-3.5 w-3.5" aria-hidden /> Edit
               </button>
@@ -1362,7 +1362,7 @@ export default function DevelopmentView({
                 </button>
                 <button
                   onClick={() => { setEditing(false); setDraft(doc?.content ?? ''); }}
-                  className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-slate-700 px-3 text-xs text-slate-300 transition hover:bg-slate-800"
+                  className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#3b4658] px-3 text-xs text-[#a8b3c4] transition hover:bg-[#11151d]"
                 >
                   <Eye className="h-3.5 w-3.5" aria-hidden /> Cancel
                 </button>
@@ -1383,7 +1383,7 @@ export default function DevelopmentView({
               onClick={() => setDocCollapsed(true)}
               aria-label="Collapse document pane"
               title="Collapse document pane"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
             >
               <PanelRightClose className="h-4 w-4" aria-hidden />
             </button>
@@ -1393,7 +1393,7 @@ export default function DevelopmentView({
                 onClick={() => setZenPane(null)}
                 aria-label="Exit focus"
                 title="Exit focus"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
               >
                 <Minimize2 className="h-4 w-4" aria-hidden />
               </button>
@@ -1403,7 +1403,7 @@ export default function DevelopmentView({
                 onClick={() => setZenPane('right')}
                 aria-label="Focus document pane"
                 title="Focus document pane"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
               >
                 <Maximize2 className="h-4 w-4" aria-hidden />
               </button>
@@ -1440,21 +1440,21 @@ export default function DevelopmentView({
               onChange={e => setDraft(e.target.value)}
               spellCheck={false}
               aria-label="Document editor"
-              className="h-full w-full resize-none bg-slate-950 p-4 font-mono text-[13px] leading-relaxed text-slate-200 focus:outline-none"
+              className="h-full w-full resize-none bg-[#05070c] p-4 font-mono text-[13px] leading-relaxed text-[#e8edf5] focus:outline-none"
             />
           ) : doc ? (
             <div className={`px-6 py-4 ${docHasTable ? '' : 'max-w-[72ch]'}`}>
-              <p className="mb-3 font-mono text-[11px] text-slate-500">{doc.path}</p>
+              <p className="mb-3 font-mono text-[11px] text-[#6e7d92]">{doc.path}</p>
               <Markdown content={doc.content} />
             </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-              <FileText className="h-8 w-8 text-slate-700" aria-hidden />
-              <p className="text-sm text-slate-400">
+              <FileText className="h-8 w-8 text-[#3b4658]" aria-hidden />
+              <p className="text-sm text-[#a8b3c4]">
                 {docError ? 'No document yet for this phase.' : 'Loading…'}
               </p>
               {docError && (
-                <p className="max-w-xs text-xs leading-relaxed text-slate-500">
+                <p className="max-w-xs text-xs leading-relaxed text-[#6e7d92]">
                   Ask the agent to draft it — e.g. “create the {selectedPhaseInfo?.name ?? 'document'}”.
                 </p>
               )}

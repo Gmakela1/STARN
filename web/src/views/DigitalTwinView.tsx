@@ -73,14 +73,14 @@ export default function DigitalTwinView() {
   return (
     <div className="grid h-full grid-cols-1 lg:grid-cols-[1fr_320px]">
       {/* Viewport */}
-      <section className="relative flex min-h-[320px] flex-col items-center justify-center border-r border-slate-800 bg-gradient-to-b from-slate-950 to-slate-900 p-6" aria-label="3D viewport">
+      <section className="bp-grid relative flex min-h-[320px] flex-col items-center justify-center border-r border-[#2a3342] bg-gradient-to-b from-[#05070c] to-[#0d1017] p-6" aria-label="3D viewport">
         <div
-          className="flex max-w-md flex-col items-center gap-4 rounded-2xl border border-dashed border-slate-700 bg-slate-950/60 p-8 text-center"
+          className="flex max-w-md flex-col items-center gap-4 rounded-2xl border border-dashed border-[#3b4658] bg-[#05070c]/60 p-8 text-center"
         >
           <Box className="h-12 w-12 text-sky-500/70" aria-hidden />
           <div>
-            <h2 className="text-sm font-bold text-slate-200">Digital twin viewport</h2>
-            <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
+            <h2 className="text-sm font-bold text-[#e8edf5]">Digital twin viewport</h2>
+            <p className="mt-1.5 text-xs leading-relaxed text-[#6e7d92]">
               Upload a GLTF/GLB model of the system to anchor the spatial digital twin. Subsystem
               readiness from the shop floor will overlay as a heatmap once the renderer lands.
             </p>
@@ -106,32 +106,32 @@ export default function DigitalTwinView() {
             {uploading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <UploadCloud className="h-4 w-4" aria-hidden />}
             Upload GLTF / GLB model
           </button>
-          {notice && <p className="text-xs text-slate-400" role="status">{notice}</p>}
+          {notice && <p className="text-xs text-[#a8b3c4]" role="status">{notice}</p>}
         </div>
       </section>
 
       {/* Subsystem explorer */}
       <aside className="min-h-0 overflow-y-auto" aria-label="Subsystem readiness">
-        <header className="border-b border-slate-800 px-4 py-3">
-          <h2 className="flex items-center gap-2 text-sm font-bold text-slate-200">
+        <header className="border-b border-[#2a3342] px-4 py-3">
+          <h2 className="flex items-center gap-2 text-sm font-bold text-[#e8edf5]">
             <Boxes className="h-4 w-4 text-sky-400" aria-hidden /> Subsystem readiness
           </h2>
-          <p className="mt-0.5 text-[11px] text-slate-500">
+          <p className="mt-0.5 text-[11px] text-[#6e7d92]">
             {icdApproved ? 'Derived from the approved ICD and shop-floor progress' : 'Populates as the ICD and work instructions mature'}
           </p>
         </header>
 
         {readiness === null ? (
-          <div className="flex items-center justify-center gap-2 p-6 text-xs text-slate-500" role="status">
+          <div className="flex items-center justify-center gap-2 p-6 text-xs text-[#6e7d92]" role="status">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading…
           </div>
         ) : readiness.length === 0 ? (
-          <p className="p-6 text-center text-xs leading-relaxed text-slate-500">
+          <p className="p-6 text-center text-xs leading-relaxed text-[#6e7d92]">
             No subsystem execution data yet. Work instructions tagged with subsystems (SS-01, SS-02…)
             will appear here with live readiness as steps complete.
           </p>
         ) : (
-          <ul className="divide-y divide-slate-800/70">
+          <ul className="divide-y divide-[#2a3342]/70">
             {readiness.map(ss => {
               const pct = ss.actions === 0 ? 0 : Math.round((ss.complete / ss.actions) * 100);
               return (
@@ -143,9 +143,9 @@ export default function DigitalTwinView() {
                         {ss.defects} defect{ss.defects > 1 ? 's' : ''}
                       </span>
                     )}
-                    <span className="ml-auto text-xs text-slate-400">{ss.complete}/{ss.actions} actions</span>
+                    <span className="ml-auto text-xs text-[#a8b3c4]">{ss.complete}/{ss.actions} actions</span>
                   </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800" aria-hidden>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#11151d]" aria-hidden>
                     <div
                       className={`h-full rounded-full ${ss.defects > 0 ? 'bg-rose-500' : pct === 100 ? 'bg-emerald-500' : 'bg-sky-500'}`}
                       style={{ width: `${Math.max(pct, 4)}%` }}

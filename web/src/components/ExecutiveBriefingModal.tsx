@@ -27,13 +27,13 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
   const openQuestions = issues.filter(i => i.type === 'open_question');
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-slate-950/90 backdrop-blur-md overflow-y-auto briefing-modal-backdrop">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#05070c]/70 backdrop-blur-md overflow-y-auto briefing-modal-backdrop">
       {/* Sticky Action Toolbar (Hidden in Print) */}
-      <header className="sticky top-0 z-10 flex min-h-[60px] items-center justify-between border-b border-slate-800 bg-slate-900/90 px-6 py-3 no-print">
+      <header className="sticky top-0 z-10 flex min-h-[60px] items-center justify-between border-b border-[#2a3342] bg-[#0d1017]/90 px-6 py-3 no-print">
         <div className="flex items-center gap-3">
           <div className="h-3 w-3 rounded-full bg-emerald-400" />
           <h2 className="text-sm font-bold text-white">2-Page Executive Briefing & Audit Report</h2>
-          <span className="rounded bg-slate-800 px-2 py-0.5 text-xs font-mono text-slate-300">
+          <span className="rounded bg-[#11151d] px-2 py-0.5 text-xs font-mono text-[#a8b3c4]">
             Print-Ready Letter (8.5" x 11")
           </span>
         </div>
@@ -48,7 +48,7 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
           </button>
           <button
             onClick={onClose}
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-[#3b4658] bg-[#11151d] text-[#a8b3c4] hover:bg-[#171c26] hover:text-white transition-colors"
           >
             <X className="h-5 w-5" />
           </button>

@@ -18,7 +18,7 @@ export interface RunStateClusterProps {
 }
 
 const STATE_VIEW: Record<RunState, { word: string; text: string }> = {
-  working: { word: 'Working…', text: 'text-cyan-300' },
+  working: { word: 'Working…', text: 'text-[#ffb3bd]' },
   waiting: { word: 'Waiting for your answer', text: 'text-amber-300' },
   finished: { word: 'Finished', text: 'text-emerald-300' },
   failed: { word: 'Needs attention', text: 'text-rose-300' },
@@ -28,7 +28,7 @@ const STATE_VIEW: Record<RunState, { word: string; text: string }> = {
 function markerFor(runState: RunState): ReactNode {
   switch (runState) {
     case 'working':
-      return <Loader2 className="h-3.5 w-3.5 shrink-0 text-cyan-300 motion-safe:animate-spin" aria-hidden />;
+      return <Loader2 className="h-3.5 w-3.5 shrink-0 text-[#ff2a3c] saber-on motion-safe:animate-spin" aria-hidden />;
     case 'waiting':
       return <MessageSquare className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden />;
     case 'finished':

@@ -104,9 +104,9 @@ export default function PaneSplitter({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onKeyDown={handleKeyDown}
-      className="group flex w-2 shrink-0 cursor-col-resize items-center justify-center bg-slate-900 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+      className="group flex w-2 shrink-0 cursor-col-resize items-center justify-center bg-[#0d1017] hover:bg-[#11151d] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/60"
     >
-      <span className="h-8 w-0.5 rounded-full bg-slate-700 group-hover:bg-cyan-500/60" aria-hidden />
+      <span className="h-8 w-0.5 rounded-full bg-[#3b4658] group-hover:bg-[#ff2a3c]/60" aria-hidden />
     </div>
   );
 }

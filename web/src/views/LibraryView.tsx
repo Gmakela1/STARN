@@ -113,7 +113,7 @@ export default function LibraryView() {
 
   if (loading && !library) {
     return (
-      <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-400">
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-[#a8b3c4]">
         <Loader2 className="h-4 w-4 animate-spin" /> Loading project library…
       </div>
     );
@@ -129,15 +129,15 @@ export default function LibraryView() {
           <div className="flex items-center gap-2.5">
             <FolderArchive className="h-6 w-6 text-sky-400" />
             <div>
-              <h1 className="text-lg font-bold text-slate-100">Project Library</h1>
-              <p className="text-xs text-slate-400">
+              <h1 className="text-lg font-bold text-[#e8edf5]">Project Library</h1>
+              <p className="text-xs text-[#a8b3c4]">
                 Manage reference documents (ICDs, datasheets, spec sheets) and custom quality examples.
               </p>
             </div>
           </div>
           <button
             onClick={() => void load()}
-            className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-slate-700 px-3 text-xs font-medium text-slate-300 hover:bg-slate-800"
+            className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#3b4658] px-3 text-xs font-medium text-[#a8b3c4] hover:bg-[#11151d]"
           >
             <RefreshCw className="h-4 w-4" /> Refresh
           </button>
@@ -155,12 +155,12 @@ export default function LibraryView() {
         )}
 
         {/* 1. Reference Documents Section */}
-        <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+        <section className="space-y-4 rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-bold text-slate-200">Reference Documents</h2>
-              <p className="text-xs text-slate-400">
-                Stored in <code className="font-mono text-slate-300">reference/</code>. The agent inspects these to ground designs in real hardware specifications.
+              <h2 className="text-sm font-bold text-[#e8edf5]">Reference Documents</h2>
+              <p className="text-xs text-[#a8b3c4]">
+                Stored in <code className="font-mono text-[#a8b3c4]">reference/</code>. The agent inspects these to ground designs in real hardware specifications.
               </p>
             </div>
 
@@ -196,25 +196,25 @@ export default function LibraryView() {
               const f = e.dataTransfer.files?.[0];
               if (f) void handleReferenceUpload(f);
             }}
-            className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-700 bg-slate-950/40 p-4 text-center hover:border-sky-500 transition-colors"
+            className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-[#3b4658] bg-[#05070c]/40 p-4 text-center hover:border-sky-500 transition-colors"
           >
-            <FileText className="h-6 w-6 text-slate-500 mb-1" />
-            <p className="text-xs text-slate-300">
+            <FileText className="h-6 w-6 text-[#6e7d92] mb-1" />
+            <p className="text-xs text-[#a8b3c4]">
               Drag &amp; drop reference documents here (.pdf, .txt, .md, .csv, images)
             </p>
           </div>
 
           {/* Reference List */}
           {(!library?.references || library.references.length === 0) ? (
-            <p className="py-2 text-center text-xs text-slate-500">No reference documents uploaded yet.</p>
+            <p className="py-2 text-center text-xs text-[#6e7d92]">No reference documents uploaded yet.</p>
           ) : (
-            <div className="divide-y divide-slate-800 border-t border-slate-800">
+            <div className="divide-y divide-[#2a3342] border-t border-[#2a3342]">
               {library.references.map(ref => (
                 <div key={ref.name} className="flex min-h-[44px] items-center justify-between gap-3 py-2">
                   <div className="flex items-center gap-2.5 truncate">
                     <FileText className="h-4 w-4 text-sky-400 shrink-0" />
-                    <span className="font-mono text-xs text-slate-200 truncate">{ref.name}</span>
-                    <span className="text-[11px] text-slate-500 shrink-0">{formatBytes(ref.size)}</span>
+                    <span className="font-mono text-xs text-[#e8edf5] truncate">{ref.name}</span>
+                    <span className="text-[11px] text-[#6e7d92] shrink-0">{formatBytes(ref.size)}</span>
                   </div>
                   <button
                     onClick={() => void handleDeleteReference(ref.name)}
@@ -232,12 +232,12 @@ export default function LibraryView() {
         </section>
 
         {/* 2. Specialist Quality Examples Section */}
-        <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+        <section className="space-y-4 rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-bold text-slate-200">Custom Quality Examples</h2>
-              <p className="text-xs text-slate-400">
-                Stored in <code className="font-mono text-slate-300">examples/&lt;specialist&gt;/</code>. Used by specialists &amp; critic to match standard of quality.
+              <h2 className="text-sm font-bold text-[#e8edf5]">Custom Quality Examples</h2>
+              <p className="text-xs text-[#a8b3c4]">
+                Stored in <code className="font-mono text-[#a8b3c4]">examples/&lt;specialist&gt;/</code>. Used by specialists &amp; critic to match standard of quality.
               </p>
             </div>
 
@@ -246,7 +246,7 @@ export default function LibraryView() {
                 value={selectedSpecialist}
                 onChange={e => setSelectedSpecialist(e.target.value)}
                 aria-label="Select specialist to upload example for"
-                className="min-h-[44px] rounded-lg border border-slate-700 bg-slate-950 px-2.5 text-xs text-slate-200 focus:border-sky-500 focus:outline-none"
+                className="min-h-[44px] rounded-lg border border-[#3b4658] bg-[#05070c] px-2.5 text-xs text-[#e8edf5] focus:border-[#ff2a3c] focus:outline-none"
               >
                 {roadmap.map(p => (
                   <option key={p.id} value={p.id}>
@@ -279,7 +279,7 @@ export default function LibraryView() {
           </div>
 
           {exampleSpecialists.length === 0 ? (
-            <p className="py-4 text-center text-xs text-slate-500">
+            <p className="py-4 text-center text-xs text-[#6e7d92]">
               No custom quality examples uploaded yet. Drop example documents in the Development view or use the button above.
             </p>
           ) : (
@@ -288,21 +288,21 @@ export default function LibraryView() {
                 const files = library?.examples[specId] || [];
                 const phaseName = roadmap.find(p => p.id === specId)?.name ?? specId.toUpperCase();
                 return (
-                  <div key={specId} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-2">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                  <div key={specId} className="rounded-lg border border-[#2a3342] bg-[#05070c]/60 p-3 space-y-2">
+                    <div className="flex items-center justify-between border-b border-[#2a3342] pb-1.5">
                       <span className="font-bold text-xs uppercase tracking-wider text-sky-400">
-                        {phaseName} <span className="font-mono text-slate-500 text-[10px]">({specId})</span>
+                        {phaseName} <span className="font-mono text-[#6e7d92] text-[10px]">({specId})</span>
                       </span>
-                      <span className="text-[11px] text-slate-400">{files.length} example{files.length === 1 ? '' : 's'}</span>
+                      <span className="text-[11px] text-[#a8b3c4]">{files.length} example{files.length === 1 ? '' : 's'}</span>
                     </div>
 
-                    <div className="divide-y divide-slate-800/60">
+                    <div className="divide-y divide-[#2a3342]/60">
                       {files.map(ex => (
                         <div key={ex.name} className="flex min-h-[44px] items-center justify-between gap-2 py-1">
                           <div className="flex items-center gap-2 truncate">
                             <FileText className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                            <span className="font-mono text-xs text-slate-200 truncate">{ex.name}</span>
-                            <span className="text-[11px] text-slate-500 shrink-0">{formatBytes(ex.size)}</span>
+                            <span className="font-mono text-xs text-[#e8edf5] truncate">{ex.name}</span>
+                            <span className="text-[11px] text-[#6e7d92] shrink-0">{formatBytes(ex.size)}</span>
                           </div>
                           <button
                             onClick={() => void handleDeleteExample(specId, ex.name)}

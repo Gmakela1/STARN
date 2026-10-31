@@ -100,13 +100,13 @@ export function TopBar({
   onNavigateToDashboard
 }: TopBarProps) {
   return (
-    <header className="relative z-40 flex h-14 shrink-0 items-center gap-3 border-b border-slate-800 bg-slate-900/80 px-4 backdrop-blur-md">
+    <header className="relative z-40 flex h-14 shrink-0 items-center gap-3 border-b border-[#2a3342] bg-[#0d1017]/85 px-4 backdrop-blur-md">
       {/* Left — hamburger (< lg) + brand + project */}
       <div className="flex shrink-0 items-center gap-3">
         <button
           type="button"
           onClick={onToggleMobileMenu}
-          className="flex min-h-[48px] min-w-[48px] items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors lg:hidden shrink-0"
+          className="flex min-h-[48px] min-w-[48px] items-center justify-center rounded-xl border border-[#3b4658] bg-[#11151d] text-[#a8b3c4] hover:bg-[#171c26] hover:text-white transition-colors lg:hidden shrink-0"
           aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
           aria-expanded={mobileMenuOpen}
         >
@@ -114,13 +114,13 @@ export function TopBar({
         </button>
 
         <div className="flex items-center gap-2 min-w-0">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/30">
-            <Satellite className="h-4 w-4 text-cyan-400" aria-hidden />
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#1a0208] border border-[#ff2a3c]/40">
+            <Satellite className="h-4 w-4 text-[#ff2a3c]" aria-hidden />
           </div>
           <div className="min-w-0">
             <h1 className="text-[11px] font-black tracking-widest text-white uppercase leading-tight">STARN</h1>
             <p
-              className="text-[11px] font-medium text-slate-300 truncate max-w-[120px] xl:max-w-[200px] leading-tight"
+              className="text-[11px] font-medium text-[#a8b3c4] truncate max-w-[120px] xl:max-w-[200px] leading-tight"
               title={project?.name}
             >
               {project ? project.name : 'Connecting to project…'}
@@ -149,13 +149,13 @@ export function TopBar({
               aria-label={badgeVisible ? `${label}, ${openQuestions} needs input` : `${label} — ${tagline}`}
               className={`group flex shrink-0 items-center gap-1 rounded-xl px-2 py-1.5 text-xs font-medium transition-all ${
                 active
-                  ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shadow-sm'
-                  : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200 border border-transparent'
+                  ? 'cut-corner-sm bg-[#1a0208] text-[#ffb3bd] border border-[#ff2a3c]/45 shadow-sm'
+                  : 'text-[#a8b3c4] hover:bg-[#11151d]/60 hover:text-[#e8edf5] border border-transparent'
               }`}
             >
               <Icon
                 className={`h-4 w-4 shrink-0 transition-colors ${
-                  active ? 'text-cyan-400' : 'text-slate-400 group-hover:text-slate-200'
+                  active ? 'text-[#ff2a3c]' : 'text-[#a8b3c4] group-hover:text-[#e8edf5]'
                 }`}
                 aria-hidden
               />

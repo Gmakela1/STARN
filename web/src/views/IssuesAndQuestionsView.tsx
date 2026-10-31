@@ -46,7 +46,7 @@ export default function IssuesAndQuestionsView({ onPushToAgent }: IssuesAndQuest
 
   if (!summary && !error) {
     return (
-      <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-500" role="status">
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-[#6e7d92]" role="status">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Scanning project for open issues…
       </div>
     );
@@ -60,14 +60,14 @@ export default function IssuesAndQuestionsView({ onPushToAgent }: IssuesAndQuest
       <div className="mx-auto max-w-4xl space-y-6">
         <header className="flex items-center gap-3">
           <div>
-            <h1 className="text-lg font-bold text-slate-100">Questions, Actions &amp; Issues Flagged</h1>
-            <p className="mt-0.5 text-xs text-slate-400">
+            <h1 className="text-lg font-bold text-[#e8edf5]">Questions, Actions &amp; Issues Flagged</h1>
+            <p className="mt-0.5 text-xs text-[#a8b3c4]">
               {summary ? `${summary.nonConformanceCount} open non-conformance(s) · ${summary.openQuestionCount} open question(s)` : '—'}
             </p>
           </div>
           <button
             onClick={() => void load()}
-            className="ml-auto flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200"
+            className="ml-auto flex h-10 w-10 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5]"
             aria-label="Refresh issues"
             title="Refresh issues"
           >
@@ -84,8 +84,8 @@ export default function IssuesAndQuestionsView({ onPushToAgent }: IssuesAndQuest
             <div className="flex items-center gap-2 rounded-full border border-emerald-600/40 bg-emerald-900/40 px-4 py-1.5 font-mono text-xs font-bold uppercase tracking-wider text-emerald-300 shadow-md shadow-emerald-950/40">
               <CheckCircle2 className="h-4 w-4" aria-hidden /> System nominal
             </div>
-            <p className="text-sm font-medium text-slate-200">No open defects or unresolved questions</p>
-            <p className="max-w-sm text-xs leading-relaxed text-slate-400">
+            <p className="text-sm font-medium text-[#e8edf5]">No open defects or unresolved questions</p>
+            <p className="max-w-sm text-xs leading-relaxed text-[#a8b3c4]">
               The project documents are clear and consistent. Flag any problem on the shop floor
               and it will appear here for the AI to help resolve.
             </p>
@@ -105,16 +105,16 @@ export default function IssuesAndQuestionsView({ onPushToAgent }: IssuesAndQuest
                     {issue.actionId ?? 'DEFECT'}
                   </span>
                   {issue.subsystem && (
-                    <span className="rounded-full bg-slate-800 px-2.5 py-0.5 font-mono text-[11px] text-slate-300">
+                    <span className="rounded-full bg-[#11151d] px-2.5 py-0.5 font-mono text-[11px] text-[#a8b3c4]">
                       {issue.subsystem}
                     </span>
                   )}
-                  <span className="ml-auto font-mono text-[11px] text-slate-500">{issue.source}</span>
+                  <span className="ml-auto font-mono text-[11px] text-[#6e7d92]">{issue.source}</span>
                 </header>
-                <h3 className="mt-2 text-sm font-semibold text-slate-100">{issue.title}</h3>
-                <p className="mt-1 text-sm leading-relaxed text-slate-300">{issue.description}</p>
+                <h3 className="mt-2 text-sm font-semibold text-[#e8edf5]">{issue.title}</h3>
+                <p className="mt-1 text-sm leading-relaxed text-[#a8b3c4]">{issue.description}</p>
                 {issue.evidence && issue.evidence !== '—' && (
-                  <p className="mt-1.5 flex items-center gap-1.5 font-mono text-[11px] text-slate-400">
+                  <p className="mt-1.5 flex items-center gap-1.5 font-mono text-[11px] text-[#a8b3c4]">
                     <ImageIcon className="h-3.5 w-3.5" aria-hidden /> {issue.evidence}
                   </p>
                 )}
@@ -149,9 +149,9 @@ export default function IssuesAndQuestionsView({ onPushToAgent }: IssuesAndQuest
                   <span className="rounded-full bg-amber-950/80 px-2.5 py-0.5 font-mono text-[11px] font-bold text-amber-300">
                     {issue.title}
                   </span>
-                  <span className="ml-auto font-mono text-[11px] text-slate-500">{issue.source}</span>
+                  <span className="ml-auto font-mono text-[11px] text-[#6e7d92]">{issue.source}</span>
                 </header>
-                <p className="mt-2 text-sm leading-relaxed text-slate-300">{issue.description}</p>
+                <p className="mt-2 text-sm leading-relaxed text-[#a8b3c4]">{issue.description}</p>
                 <div className="mt-3">
                   <button
                     onClick={() => void push(issue)}

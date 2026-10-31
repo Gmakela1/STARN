@@ -98,7 +98,7 @@ export default function DashboardView({
 
   if (loading && !data) {
     return (
-      <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-500" role="status">
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-[#6e7d92]" role="status">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading program status…
       </div>
     );
@@ -110,7 +110,7 @@ export default function DashboardView({
         <p className="text-sm text-rose-300">{error}</p>
         <button
           onClick={() => void load()}
-          className="flex min-h-[44px] items-center gap-2 rounded-lg border border-slate-700 px-4 text-sm text-slate-300 hover:bg-slate-800"
+          className="flex min-h-[44px] items-center gap-2 rounded-lg border border-[#3b4658] px-4 text-sm text-[#a8b3c4] hover:bg-[#11151d]"
         >
           <RefreshCw className="h-4 w-4" aria-hidden /> Retry
         </button>
@@ -139,25 +139,25 @@ export default function DashboardView({
       // S9: autopilot OFF → shop-floor only + CTA
       return (
         <div className="space-y-3 p-4">
-          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-center">
-            <p className="text-sm text-slate-300">
+          <div className="rounded-lg border border-[#2a3342] bg-[#0d1017]/70 p-4 text-center">
+            <p className="text-sm text-[#a8b3c4]">
               Start Autopilot to auto-draft all 13 documents.
             </p>
             <button
               onClick={() => {}}
-              className="mt-3 rounded-lg bg-cyan-600 px-4 py-2 text-xs font-bold text-white hover:bg-cyan-500"
+              className="cut-corner mt-3 rounded-none bg-[#d61f2c] px-4 py-2 text-xs font-bold text-white hover:bg-[#e11d3f]"
             >
               Start Autopilot
             </button>
           </div>
           {shopFloorFlags.length > 0 && (
             <>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 px-1">Shop Floor Flags</h3>
-              <ul className="divide-y divide-slate-800/70">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-[#a8b3c4] px-1">Shop Floor Flags</h3>
+              <ul className="divide-y divide-[#2a3342]/70">
                 {shopFloorFlags.slice(0, 4).map(issue => (
                   <li key={issue.id} className="flex items-center gap-3 px-1 py-2">
                     <Flag className="h-3.5 w-3.5 shrink-0 text-rose-400" aria-hidden />
-                    <p className="min-w-0 flex-1 truncate text-sm text-slate-300">{issue.title}</p>
+                    <p className="min-w-0 flex-1 truncate text-sm text-[#a8b3c4]">{issue.title}</p>
                   </li>
                 ))}
               </ul>
@@ -180,9 +180,9 @@ export default function DashboardView({
           <h3 className={`flex items-center gap-1.5 px-1 py-1 text-xs font-bold uppercase tracking-wider ${color}`}>
             {icon}
             {label}
-            <span className="ml-auto font-mono text-[11px] font-normal text-slate-500">{items.length}</span>
+            <span className="ml-auto font-mono text-[11px] font-normal text-[#6e7d92]">{items.length}</span>
           </h3>
-          <div role="list" className="divide-y divide-slate-800/70" onKeyDown={handleRowKeydown}>
+          <div role="list" className="divide-y divide-[#2a3342]/70" onKeyDown={handleRowKeydown}>
             {items.slice(0, 4).map(item => (
               <div key={item.id} role="listitem">
                 <button
@@ -193,19 +193,19 @@ export default function DashboardView({
                     if (onOpenQuestion) onOpenQuestion(item.id);
                     else if (route && onNavigate) onNavigate(route);
                   }}
-                  className="flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-slate-800/40 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-sky-500/40"
+                  className="flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-[#11151d]/40 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#ff2a3c]/60"
                 >
                   <div className="min-w-0 flex-1 space-y-0.5">
-                    <div className="text-[11px] font-mono text-slate-500">
+                    <div className="text-[11px] font-mono text-[#6e7d92]">
                       STARN · needs input · {item.docPath ? fileBase(item.docPath) : 'unknown'}
                     </div>
-                    <div className="truncate text-sm text-slate-200">{item.title}</div>
+                    <div className="truncate text-sm text-[#e8edf5]">{item.title}</div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5 self-center">
-                    <span className="text-[11px] text-slate-500 tabular-nums">
+                    <span className="text-[11px] text-[#6e7d92] tabular-nums">
                       {relativeTime(item.createdAt)}
                     </span>
-                    <ArrowRight className="h-3 w-3 text-slate-600" aria-hidden />
+                    <ArrowRight className="h-3 w-3 text-[#6e7d92]" aria-hidden />
                   </div>
                 </button>
               </div>
@@ -219,10 +219,10 @@ export default function DashboardView({
       <div className="space-y-2 p-2">
         {renderTier(blockingItems, <CircleAlert className="h-3.5 w-3.5" aria-hidden />, 'text-rose-300', 'Blocking', 'development')}
         {renderTier(parkedItems, <AlertTriangle className="h-3.5 w-3.5" aria-hidden />, 'text-rose-300', 'Parked', 'development')}
-        {renderTier(questionItems, <MessageSquare className="h-3.5 w-3.5" aria-hidden />, 'text-cyan-300', 'Needs Input', 'development')}
-        {renderTier(flagItems, <Flag className="h-3.5 w-3.5" aria-hidden />, 'text-slate-400', 'Shop Floor Flags', 'build')}
+        {renderTier(questionItems, <MessageSquare className="h-3.5 w-3.5" aria-hidden />, 'text-[#ffb3bd]', 'Needs Input', 'development')}
+        {renderTier(flagItems, <Flag className="h-3.5 w-3.5" aria-hidden />, 'text-[#a8b3c4]', 'Shop Floor Flags', 'build')}
         {topItems.length === 0 && (
-          <p className="px-4 py-6 text-center text-xs text-slate-500">
+          <p className="px-4 py-6 text-center text-xs text-[#6e7d92]">
             All systems nominal. 🎉
           </p>
         )}
@@ -238,17 +238,17 @@ export default function DashboardView({
   };
 
   return (
-    <div className="h-full overflow-y-auto p-4 lg:p-6 bg-slate-950 text-slate-100">
+    <div className="h-full overflow-y-auto p-4 lg:p-6 bg-[#05070c] text-[#e8edf5]">
       <div className="mx-auto max-w-6xl space-y-6">
         {/* Project Overview / Charter Card */}
-        <section aria-label="Project overview and charter" className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 backdrop-blur-sm">
+        <section aria-label="Project overview and charter" className="rounded-2xl border border-[#2a3342] bg-[#0d1017]/70 p-6 backdrop-blur-sm">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-1.5 flex-1 min-w-[280px]">
               <div className="flex items-center gap-2">
                 <span className="rounded bg-sky-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-sky-300 border border-sky-500/30">
                   SYSTEM OVERVIEW &amp; CHARTER
                 </span>
-                <span className="rounded bg-slate-800 px-2 py-0.5 font-mono text-[11px] text-slate-300">
+                <span className="rounded bg-[#11151d] px-2 py-0.5 font-mono text-[11px] text-[#a8b3c4]">
                   Gate: [{project.activePhase.toUpperCase()}]
                 </span>
               </div>
@@ -259,7 +259,7 @@ export default function DashboardView({
               <button
                 id="export-briefing-btn"
                 onClick={() => setShowBriefingModal(true)}
-                className="flex min-h-[44px] items-center gap-2 rounded-xl bg-cyan-600 px-4 text-xs font-bold text-white shadow-md hover:bg-cyan-500 transition-all cursor-pointer"
+                className="cut-corner flex min-h-[44px] items-center gap-2 rounded-none bg-[#d61f2c] px-4 text-xs font-bold text-white shadow-md hover:bg-[#e11d3f] transition-all cursor-pointer"
               >
                 <FileText className="h-4 w-4" />
                 Export 2-Page Executive Briefing
@@ -269,22 +269,22 @@ export default function DashboardView({
 
           {/* Body: Charter Subsections Grid (if present), or Fallback Prose */}
           {project.charter && project.charter.length > 0 ? (
-            <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-800/80 pt-4">
+            <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-[#2a3342]/80 pt-4">
               {project.charter.map((section, idx) => (
-                <div key={idx} className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-4">
+                <div key={idx} className="rounded-xl border border-[#2a3342]/80 bg-[#05070c]/60 p-4">
                   <h2 className="text-xs font-bold uppercase tracking-wider text-sky-400 mb-1.5">
                     {section.heading}
                   </h2>
-                  <div className="text-sm leading-relaxed text-slate-200">
+                  <div className="text-sm leading-relaxed text-[#e8edf5]">
                     <Markdown content={section.body} />
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="mt-4 pt-3 border-t border-slate-800/80">
+            <div className="mt-4 pt-3 border-t border-[#2a3342]/80">
               {project.summarySource === 'none' ? (
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-[#a8b3c4]">
                   No overview yet. Start the CONOPS intake in Development to define the project.
                 </p>
               ) : (
@@ -294,7 +294,7 @@ export default function DashboardView({
                   </p>
                   <button
                     onClick={() => setShowFullSummary(!showFullSummary)}
-                    className="flex min-h-[44px] items-center gap-1.5 text-xs font-mono font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
+                    className="flex min-h-[44px] items-center gap-1.5 text-xs font-mono font-bold text-[#ff2a3c] hover:text-[#ffb3bd] transition-colors"
                     aria-expanded={showFullSummary}
                     aria-controls="charter-full-text"
                   >
@@ -310,7 +310,7 @@ export default function DashboardView({
                       showFullSummary ? 'max-h-[999px]' : 'max-h-0'
                     }`}
                   >
-                    <p className="whitespace-pre-line text-sm leading-relaxed text-slate-200">
+                    <p className="whitespace-pre-line text-sm leading-relaxed text-[#e8edf5]">
                       {project.summary}
                     </p>
                   </div>
@@ -325,20 +325,20 @@ export default function DashboardView({
 
         {/* Financial rollup cards */}
         <section aria-label="Financial rollup" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              <Wallet className="h-3.5 w-3.5" aria-hidden /> Estimated budget
+          <div className="rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-4">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[#a8b3c4]">
+              <Wallet className="h-3.5 w-3.5 text-[#d9a441]" aria-hidden /> Estimated budget
             </div>
-            <p className="mt-2 text-2xl font-bold text-slate-100">{money(fin.totalEstimated)}</p>
+            <p className="mt-2 text-2xl font-bold text-[#e8edf5]">{money(fin.totalEstimated)}</p>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              <Receipt className="h-3.5 w-3.5" aria-hidden /> Actual spend
+          <div className="rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-4">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[#a8b3c4]">
+              <Receipt className="h-3.5 w-3.5 text-[#d9a441]" aria-hidden /> Actual spend
             </div>
-            <p className="mt-2 text-2xl font-bold text-slate-100">{money(fin.totalActual)}</p>
+            <p className="mt-2 text-2xl font-bold text-[#e8edf5]">{money(fin.totalActual)}</p>
           </div>
           <div className={`rounded-xl border p-4 ${varianceOver ? 'border-rose-900/70 bg-rose-950/30' : 'border-emerald-900/70 bg-emerald-950/30'}`}>
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[#a8b3c4]">
               {varianceOver ? <TrendingUp className="h-3.5 w-3.5 text-rose-400" aria-hidden /> : <TrendingDown className="h-3.5 w-3.5 text-emerald-400" aria-hidden />}
               Net variance
             </div>
@@ -346,19 +346,19 @@ export default function DashboardView({
               {varianceOver ? '+' : ''}{money(fin.netVariance)}
             </p>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              <PackageCheck className="h-3.5 w-3.5" aria-hidden /> Parts received
+          <div className="rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-4">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[#a8b3c4]">
+              <PackageCheck className="h-3.5 w-3.5 text-[#d9a441]" aria-hidden /> Parts received
             </div>
-            <p className="mt-2 text-2xl font-bold text-slate-100">{fin.procurementProgressPercent}%</p>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800" aria-hidden>
+            <p className="mt-2 text-2xl font-bold text-[#e8edf5]">{fin.procurementProgressPercent}%</p>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#11151d]" aria-hidden>
               <div className="h-full rounded-full bg-sky-500" style={{ width: `${fin.procurementProgressPercent}%` }} />
             </div>
           </div>
         </section>
 
         {/* Compact build progress — replaces full TreasureMapRoadmap */}
-        <section aria-label="Build progress" className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 backdrop-blur-sm">
+        <section aria-label="Build progress" className="rounded-2xl border border-[#2a3342] bg-[#0d1017]/70 p-5 backdrop-blur-sm">
           <div
             className="flex items-center gap-[2px]"
             role="progressbar"
@@ -375,29 +375,29 @@ export default function DashboardView({
                   p.status === 'COMPLETED'
                     ? 'bg-emerald-500'
                     : p.status === 'IN_PROGRESS'
-                      ? 'bg-cyan-500 motion-safe:animate-pulse'
+                      ? 'bg-[#ff2a3c] motion-safe:animate-pulse'
                       : p.status === 'PENDING_REVIEW'
                         ? 'bg-amber-500'
-                        : 'bg-slate-800'
+                        : 'bg-[#11151d]'
                 }`}
               />
             ))}
           </div>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <span className="hidden sm:flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+              <span className="hidden sm:flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#1a0208] text-[#ffb3bd] border border-[#ff2a3c]/45">
                 <Compass className="h-4 w-4" aria-hidden />
               </span>
               <div className="min-w-0">
-                <p className="font-mono text-[11px] font-bold text-slate-400">
+                <p className="font-mono text-[11px] font-bold text-[#a8b3c4]">
                   PHASE {completed + 1} OF 13 · GATE [{activePhaseId.toUpperCase()}]
                 </p>
                 {nextMilestone && (
-                  <p className="mt-0.5 truncate text-sm text-slate-200">
-                    <span className="font-bold text-cyan-300">
+                  <p className="mt-0.5 truncate text-sm text-[#e8edf5]">
+                    <span className="font-bold text-[#ffb3bd]">
                       Next: {nextMilestone.name}
                     </span>
-                    <span className="hidden md:inline text-slate-400">
+                    <span className="hidden md:inline text-[#a8b3c4]">
                       {' '}— {PHASE_SUBTITLES[nextMilestone.id] || 'Milestone Deliverable'}
                     </span>
                   </p>
@@ -407,7 +407,7 @@ export default function DashboardView({
             {onNavigate && (
               <button
                 onClick={() => onNavigate('roadmap')}
-                className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors min-h-[44px]"
+                className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold text-[#ffb3bd] bg-[#1a0208] border border-[#ff2a3c]/45 hover:bg-[#1a0208]/70 transition-colors min-h-[44px]"
               >
                 <MapPin className="h-3.5 w-3.5" aria-hidden />
                 Full Roadmap
@@ -418,23 +418,23 @@ export default function DashboardView({
         </section>
 
         {/* S8/S9: Ranked action pane — replaces "Open Issues & Questions" */}
-        <section aria-label="Open actions" className="rounded-xl border border-slate-800 bg-slate-900/40">
-          <header className="border-b border-slate-800 px-4 py-3">
-            <h2 className="text-sm font-bold text-slate-200">
+        <section aria-label="Open actions" className="rounded-xl border border-[#2a3342] bg-[#0d1017]/70">
+          <header className="border-b border-[#2a3342] px-4 py-3">
+            <h2 className="text-sm font-bold text-[#e8edf5]">
               Open Actions
               {data.portalSummary && (() => {
                 const ps = data.portalSummary!;
                 const total = ps.blocking + ps.parked + ps.questions + ps.flags;
                 return (
-                  <span className="ml-2 text-xs font-normal text-slate-400">
+                  <span className="ml-2 text-xs font-normal text-[#a8b3c4]">
                     ({total} ·{' '}
                     {ps.blocking > 0 && <span className="text-rose-300">{ps.blocking} blocking</span>}
                     {ps.blocking > 0 && ps.parked > 0 && <span>, </span>}
                     {ps.parked > 0 && <span className="text-rose-300">{ps.parked} parked</span>}
                     {(ps.blocking > 0 || ps.parked > 0) && ps.questions > 0 && <span>, </span>}
-                    {ps.questions > 0 && <span className="text-cyan-300">{ps.questions} needs input</span>}
+                    {ps.questions > 0 && <span className="text-[#ffb3bd]">{ps.questions} needs input</span>}
                     {(ps.blocking > 0 || ps.parked > 0 || ps.questions > 0) && ps.flags > 0 && <span>, </span>}
-                    {ps.flags > 0 && <span className="text-slate-400">{ps.flags} flags</span>}
+                    {ps.flags > 0 && <span className="text-[#a8b3c4]">{ps.flags} flags</span>}
                     )
                   </span>
                 );

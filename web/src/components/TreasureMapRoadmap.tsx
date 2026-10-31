@@ -28,7 +28,7 @@ interface ConnectorArrowProps {
 }
 
 const ConnectorArrow: React.FC<ConnectorArrowProps> = ({ dir, active }) => {
-  const colorClass = active ? 'text-emerald-400' : 'text-slate-700';
+  const colorClass = active ? 'text-emerald-400' : 'text-[#6e7d92]';
 
   if (dir === 'right') {
     return (
@@ -95,15 +95,15 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase, hideHeader 
     const isPendingReview = phase.status === 'PENDING_REVIEW';
     const isLocked = phase.status === 'LOCKED';
 
-    let borderClass = 'border-slate-800 bg-slate-900/60';
-    let ringClass = 'bg-slate-800 text-slate-400 border-slate-700';
+    let borderClass = 'border-[#2a3342] bg-[#0d1017]/70';
+    let ringClass = 'bg-[#11151d] text-[#a8b3c4] border-[#3b4658]';
 
     if (isCompleted) {
       borderClass = 'border-emerald-500/40 bg-emerald-950/20 shadow-emerald-950/50 shadow-sm';
       ringClass = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50';
     } else if (isInProgress) {
       borderClass = 'border-sky-500 bg-sky-950/30 shadow-sky-900/30 shadow-md';
-      ringClass = 'bg-sky-500 text-slate-950 font-bold border-sky-400';
+      ringClass = 'bg-sky-500 text-[#05070c] font-bold border-sky-400';
     } else if (isPendingReview) {
       borderClass = 'border-amber-500/50 bg-amber-950/20';
       ringClass = 'bg-amber-500/20 text-amber-300 border-amber-500/50';
@@ -132,7 +132,7 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase, hideHeader 
         {...interactiveProps}
         className={`group relative flex h-full flex-col justify-between rounded-xl border p-3.5 transition-all ${borderClass} ${
           isClickable
-            ? 'cursor-pointer hover:border-cyan-400 hover:shadow-lg hover:shadow-cyan-950/40 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400'
+            ? 'cursor-pointer hover:border-[#ff2a3c] hover:shadow-lg hover:shadow-[#1a0208]/40 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]'
             : ''
         }`}
       >
@@ -162,12 +162,12 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase, hideHeader 
               </span>
             )}
             {isLocked && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-slate-600">
+              <span className="inline-flex items-center gap-1 text-[10px] text-[#6e7d92]">
                 <Lock className="h-3 w-3" />
               </span>
             )}
             {!isCompleted && !isInProgress && !isPendingReview && !isLocked && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-slate-500">
+              <span className="inline-flex items-center gap-1 text-[10px] text-[#6e7d92]">
                 <CircleDashed className="h-3 w-3" /> Pending
               </span>
             )}
@@ -176,12 +176,12 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase, hideHeader 
 
         {/* Phase Details */}
         <div className="mt-2.5">
-          <h4 className="text-sm font-bold text-slate-100 group-hover:text-cyan-300 transition-colors">{phase.name}</h4>
-          <p className="text-[10px] font-medium text-cyan-300/80 leading-tight truncate">
+          <h4 className="text-sm font-bold text-[#e8edf5] group-hover:text-[#ffb3bd] transition-colors">{phase.name}</h4>
+          <p className="text-[10px] font-medium text-[#ffb3bd]/80 leading-tight truncate">
             {PHASE_SUBTITLES[phase.id] || 'Milestone Deliverable'}
           </p>
           <p
-            className="mt-0.5 font-mono text-[11px] text-slate-400 truncate"
+            className="mt-0.5 font-mono text-[11px] text-[#a8b3c4] truncate"
             title={phase.artifactPath}
           >
             {displayPath(phase.artifactPath)}
@@ -189,14 +189,14 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase, hideHeader 
         </div>
 
         {/* Footer Badges: Critic Score & Open Questions */}
-        <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-800/60 pt-2">
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-[#2a3342]/60 pt-2">
           {phase.criticScore !== undefined ? (
-            <span className="inline-flex items-center gap-1 rounded bg-slate-800/90 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300 border border-amber-500/20">
+            <span className="inline-flex items-center gap-1 rounded bg-[#11151d]/90 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300 border border-amber-500/20">
               <Award className="h-3 w-3 text-amber-400" />
               {phase.criticScore.toFixed(1)}/10
             </span>
           ) : (
-            <span className="text-[10px] text-slate-600">—</span>
+            <span className="text-[10px] text-[#6e7d92]">—</span>
           )}
 
           {phase.openQuestions > 0 && (
@@ -211,14 +211,14 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase, hideHeader 
   };
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 backdrop-blur-sm">
+    <div className="rounded-2xl border border-[#2a3342] bg-[#0d1017]/70 p-5 backdrop-blur-sm">
       {!hideHeader && (
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               Program Roadmap
             </h3>
-            <p className="text-xs text-slate-400">Each approved deliverable unlocks the next phase.</p>
+            <p className="text-xs text-[#a8b3c4]">Each approved deliverable unlocks the next phase.</p>
           </div>
         </div>
       )}

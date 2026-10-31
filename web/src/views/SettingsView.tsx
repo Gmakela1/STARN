@@ -67,7 +67,7 @@ interface ProviderDraft extends ProviderInput {
 }
 
 const inputClass =
-  'mt-1.5 min-h-[44px] w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none';
+  'mt-1.5 min-h-[44px] w-full rounded-lg border border-[#3b4658] bg-[#05070c] px-3 text-sm text-[#e8edf5] placeholder:text-[#6e7d92] focus:border-[#ff2a3c] focus:outline-none';
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'provider';
 
@@ -371,7 +371,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
 
   if (!settings && !error) {
     return (
-      <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-400" role="status">
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-[#a8b3c4]" role="status">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading settings…
       </div>
     );
@@ -382,7 +382,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
       <div className="mx-auto max-w-2xl space-y-5">
         <header className="flex items-center gap-2.5">
           <Settings2 className="h-5 w-5 text-sky-400" aria-hidden />
-          <h1 className="text-lg font-bold text-slate-100">Settings</h1>
+          <h1 className="text-lg font-bold text-[#e8edf5]">Settings</h1>
         </header>
 
         {error && (
@@ -393,16 +393,16 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
         )}
 
         {/* Project Switcher Card */}
-        <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4" aria-labelledby="project-heading">
+        <section className="space-y-4 rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-4" aria-labelledby="project-heading">
           <div className="flex items-center justify-between gap-3">
-            <h2 id="project-heading" className="text-sm font-bold text-slate-200">Active Project</h2>
+            <h2 id="project-heading" className="text-sm font-bold text-[#e8edf5]">Active Project</h2>
             <button
               type="button"
               onClick={() => {
                 setBrowseOpen(v => !v);
                 if (!browseOpen && !browsePath) void loadFolders(settings?.projectPath);
               }}
-              className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-slate-700 px-3 text-sm text-slate-200 hover:bg-slate-800"
+              className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#3b4658] px-3 text-sm text-[#e8edf5] hover:bg-[#11151d]"
             >
               <FolderOpen className="h-4 w-4 text-sky-400" aria-hidden />
               {browseOpen ? 'Hide folder browser' : 'Browse folders…'}
@@ -411,7 +411,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
 
           <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
             <div>
-              <label htmlFor="known-project-select" className="text-xs font-medium text-slate-300">
+              <label htmlFor="known-project-select" className="text-xs font-medium text-[#a8b3c4]">
                 Known projects
               </label>
               <select
@@ -442,14 +442,14 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
 
           {/* Expandable filesystem browser panel */}
           {browseOpen && (
-            <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-3.5 space-y-3">
+            <div className="rounded-lg border border-[#2a3342] bg-[#05070c]/80 p-3.5 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-mono text-xs text-slate-300 break-all">{browsePath}</span>
+                <span className="font-mono text-xs text-[#a8b3c4] break-all">{browsePath}</span>
                 {parentBrowsePath && (
                   <button
                     type="button"
                     onClick={() => void loadFolders(parentBrowsePath)}
-                    className="flex min-h-[44px] items-center gap-1 rounded border border-slate-700 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800"
+                    className="flex min-h-[44px] items-center gap-1 rounded border border-[#3b4658] px-2.5 py-1 text-xs text-[#e8edf5] hover:bg-[#11151d]"
                   >
                     <ChevronUp className="h-3.5 w-3.5" /> Up
                   </button>
@@ -457,7 +457,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
               </div>
 
               <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
+                <Search className="absolute left-3 top-3 h-4 w-4 text-[#6e7d92]" />
                 <input
                   type="text"
                   placeholder="Filter folders..."
@@ -466,27 +466,27 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                     setSearchQuery(e.target.value);
                     void loadFolders(browsePath, e.target.value);
                   }}
-                  className="min-h-[44px] w-full rounded-lg border border-slate-700 bg-slate-900 pl-9 pr-3 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+                  className="min-h-[44px] w-full rounded-lg border border-[#3b4658] bg-[#0d1017] pl-9 pr-3 text-sm text-[#e8edf5] placeholder:text-[#6e7d92] focus:border-[#ff2a3c] focus:outline-none"
                 />
               </div>
 
-              <div className="max-h-56 overflow-y-auto space-y-1 divide-y divide-slate-800/40">
+              <div className="max-h-56 overflow-y-auto space-y-1 divide-y divide-[#2a3342]/40">
                 {browsingLoading ? (
-                  <div className="py-4 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                  <div className="py-4 text-center text-xs text-[#a8b3c4] flex items-center justify-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" /> Loading folders…
                   </div>
                 ) : folders.length === 0 ? (
-                  <p className="py-2 text-center text-xs text-slate-500">No subdirectories found.</p>
+                  <p className="py-2 text-center text-xs text-[#6e7d92]">No subdirectories found.</p>
                 ) : (
                   folders.map(f => (
                     <div
                       key={f.path}
                       onClick={() => void loadFolders(f.path)}
-                      className="flex min-h-[44px] cursor-pointer items-center justify-between gap-2 rounded px-2 hover:bg-slate-900 transition-colors"
+                      className="flex min-h-[44px] cursor-pointer items-center justify-between gap-2 rounded px-2 hover:bg-[#171c26] transition-colors"
                     >
                       <div className="flex items-center gap-2 truncate">
                         <Folder className="h-4 w-4 text-sky-400 shrink-0" />
-                        <span className="text-sm text-slate-200 truncate">{f.name}</span>
+                        <span className="text-sm text-[#e8edf5] truncate">{f.name}</span>
                       </div>
                       {f.isProject && (
                         <span className="rounded bg-sky-950 px-2 py-0.5 font-mono text-[10px] font-bold text-sky-300 border border-sky-800">
@@ -498,13 +498,13 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                 )}
               </div>
 
-              <div className="border-t border-slate-800 pt-3 flex flex-wrap items-center gap-2">
+              <div className="border-t border-[#2a3342] pt-3 flex flex-wrap items-center gap-2">
                 <input
                   type="text"
                   value={customPathInput}
                   onChange={e => setCustomPathInput(e.target.value)}
                   placeholder="Paste or type path..."
-                  className="min-h-[44px] flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100 font-mono placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+                  className="min-h-[44px] flex-1 rounded-lg border border-[#3b4658] bg-[#0d1017] px-3 text-sm text-[#e8edf5] font-mono placeholder:text-[#6e7d92] focus:border-[#ff2a3c] focus:outline-none"
                 />
                 <button
                   type="button"
@@ -520,21 +520,21 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
         </section>
 
         <div role="group" aria-labelledby="ai-group-h" className="space-y-5 pb-4">
-        <h2 id="ai-group-h" className="text-xs font-semibold uppercase tracking-wide text-slate-400">AI &amp; automation</h2>
+        <h2 id="ai-group-h" className="text-xs font-semibold uppercase tracking-wide text-[#d9a441]">AI &amp; automation</h2>
 
         {/* Providers */}
-        <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4" aria-labelledby="providers-heading">
+        <section className="space-y-4 rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-4" aria-labelledby="providers-heading">
           <div className="flex items-center justify-between gap-3">
-            <h2 id="providers-heading" className="text-sm font-bold text-slate-200">Providers</h2>
+            <h2 id="providers-heading" className="text-sm font-bold text-[#e8edf5]">Providers</h2>
             <button
               type="button"
               onClick={addProvider}
-              className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-slate-700 px-3 text-sm text-slate-200 hover:bg-slate-800"
+              className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#3b4658] px-3 text-sm text-[#e8edf5] hover:bg-[#11151d]"
             >
               <Plus className="h-4 w-4" aria-hidden /> Add provider
             </button>
           </div>
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-[#a8b3c4]">
             OpenRouter plus any OpenAI-compatible server (Ollama, LM Studio, llama.cpp). STARN connects to them; it does not start them.
           </p>
 
@@ -544,23 +544,23 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
               const roles = assignedRoles(p.id);
               const saved = settings?.providers.some(s => s.id === p.id);
               return (
-                <li key={`${p.id}-${i}`} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                <li key={`${p.id}-${i}`} className="rounded-lg border border-[#2a3342] bg-[#05070c]/60 p-3">
                   {p.builtIn ? (
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <p className="text-sm font-semibold text-slate-100">OpenRouter</p>
-                        <p className="font-mono text-xs text-slate-400">{p.baseUrl}</p>
-                        <p className="text-xs text-slate-400">{p.hasKey ? 'API key configured' : 'No API key (set OPENROUTER_API_KEY)'}</p>
+                        <p className="text-sm font-semibold text-[#e8edf5]">OpenRouter</p>
+                        <p className="font-mono text-xs text-[#a8b3c4]">{p.baseUrl}</p>
+                        <p className="text-xs text-[#a8b3c4]">{p.hasKey ? 'API key configured' : 'No API key (set OPENROUTER_API_KEY)'}</p>
                       </div>
                     </div>
                   ) : (
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div>
-                        <label htmlFor={`prov-name-${i}`} className="text-xs font-medium text-slate-300">Name</label>
+                        <label htmlFor={`prov-name-${i}`} className="text-xs font-medium text-[#a8b3c4]">Name</label>
                         <input id={`prov-name-${i}`} value={p.name} onChange={e => updateProvider(i, { name: e.target.value })} className={inputClass} />
                       </div>
                       <div>
-                        <label htmlFor={`prov-url-${i}`} className="text-xs font-medium text-slate-300">Base URL (API root)</label>
+                        <label htmlFor={`prov-url-${i}`} className="text-xs font-medium text-[#a8b3c4]">Base URL (API root)</label>
                         <input
                           id={`prov-url-${i}`}
                           value={p.baseUrl}
@@ -570,7 +570,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                         />
                       </div>
                       <div className="sm:col-span-2">
-                        <label htmlFor={`prov-key-${i}`} className="text-xs font-medium text-slate-300">API key (optional)</label>
+                        <label htmlFor={`prov-key-${i}`} className="text-xs font-medium text-[#a8b3c4]">API key (optional)</label>
                         <input
                           id={`prov-key-${i}`}
                           type="password"
@@ -590,7 +590,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                       onClick={() => void fetchModels(p.id)}
                       disabled={!saved || testing === p.id}
                       title={saved ? undefined : 'Save first to test this provider'}
-                      className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-slate-700 px-3 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                      className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#3b4658] px-3 text-sm text-[#e8edf5] hover:bg-[#11151d] disabled:opacity-50"
                     >
                       {testing === p.id ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <PlugZap className="h-4 w-4" aria-hidden />}
                       Test connection
@@ -604,7 +604,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                         }}
                         disabled={roles.length > 0}
                         title={roles.length > 0 ? `Assigned to: ${roles.join(', ')}` : undefined}
-                        className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-slate-700 px-3 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                        className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#3b4658] px-3 text-sm text-[#e8edf5] hover:bg-[#11151d] disabled:opacity-50"
                       >
                         <Trash2 className="h-4 w-4" aria-hidden /> Remove
                       </button>
@@ -612,7 +612,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                     <span className="text-sm" role="status">
                       {list && 'error' in list && <span className="text-rose-300">{list.error}</span>}
                       {Array.isArray(list) && <span className="text-emerald-300">{list.length} models available</span>}
-                      {roles.length > 0 && <span className="ml-2 text-slate-400">Used by: {roles.join(', ')}</span>}
+                      {roles.length > 0 && <span className="ml-2 text-[#a8b3c4]">Used by: {roles.join(', ')}</span>}
                     </span>
                   </div>
                 </li>
@@ -622,11 +622,11 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
         </section>
 
         {/* Document Transcription */}
-        <section aria-labelledby="transcription-heading" className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+        <section aria-labelledby="transcription-heading" className="rounded-xl border border-[#2a3342] bg-[#0d1017]/80 p-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 id="transcription-heading" className="text-sm font-bold text-slate-200">Document Transcription</h2>
-              <p className="mt-1 text-xs leading-relaxed text-slate-400">
+              <h2 id="transcription-heading" className="text-sm font-bold text-[#e8edf5]">Document Transcription</h2>
+              <p className="mt-1 text-xs leading-relaxed text-[#a8b3c4]">
                 When on, scanned PDFs without text (manuals, datasheets) are read by the Document OCR model. Cost: ~$0.0005/page on the
                 recommended model — a 25-page manual ≈ $0.05. Local models (Ollama / LM Studio) cost $0/token.
               </p>
@@ -638,7 +638,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                 setAiStatus(null);
                 setTranscriptionEnabled(v => !v);
               }}
-              className={`relative flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${transcriptionEnabled ? 'bg-cyan-600' : 'bg-slate-700'}`}
+              className={`relative flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${transcriptionEnabled ? 'bg-[#d61f2c]' : 'bg-[#171c26]'}`}
               aria-label="Toggle document transcription"
             >
               <span className={`absolute h-5 w-5 rounded-full bg-white transition-transform ${transcriptionEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
@@ -648,8 +648,8 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
 
         {/* Assignments */}
         {assignments && (
-          <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4" aria-labelledby="assign-heading">
-            <h2 id="assign-heading" className="text-sm font-bold text-slate-200">Model assignments</h2>
+          <section className="space-y-4 rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-4" aria-labelledby="assign-heading">
+            <h2 id="assign-heading" className="text-sm font-bold text-[#e8edf5]">Model assignments</h2>
             {dirtyProviders && (
               <p className="text-sm text-amber-200">Save provider changes before assigning roles to new providers.</p>
             )}
@@ -662,12 +662,12 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                 setAssignments(cur => (cur ? { ...cur, [role]: { ...cur[role], ...patch } } : cur));
               };
               return (
-                <div key={role} className="grid gap-3 border-t border-slate-800 pt-3 first:border-t-0 first:pt-0 sm:grid-cols-[8rem_1fr_1.5fr]">
+                <div key={role} className="grid gap-3 border-t border-[#2a3342] pt-3 first:border-t-0 first:pt-0 sm:grid-cols-[8rem_1fr_1.5fr]">
                   <div>
-                    <p className="pt-2 text-sm font-semibold text-slate-100">{label}</p>
+                    <p className="pt-2 text-sm font-semibold text-[#e8edf5]">{label}</p>
                   </div>
                   <div>
-                    <label htmlFor={`assign-prov-${role}`} className="text-xs font-medium text-slate-300">Provider</label>
+                    <label htmlFor={`assign-prov-${role}`} className="text-xs font-medium text-[#a8b3c4]">Provider</label>
                     <select
                       id={`assign-prov-${role}`}
                       value={a.providerId}
@@ -683,7 +683,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                     </select>
                   </div>
                   <div>
-                    <label htmlFor={`assign-model-${role}`} className="text-xs font-medium text-slate-300">Model</label>
+                    <label htmlFor={`assign-model-${role}`} className="text-xs font-medium text-[#a8b3c4]">Model</label>
                     {options && options.length > 0 ? (
                       <select id={`assign-model-${role}`} value={a.model} onChange={e => setA({ model: e.target.value })} className={inputClass}>
                         {!options.includes(a.model) && <option value={a.model}>{a.model || 'Select a model'}</option>}
@@ -701,7 +701,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                       />
                     )}
                   </div>
-                  {note && <p className="text-xs text-slate-400 sm:col-span-3">{note}</p>}
+                  {note && <p className="text-xs text-[#a8b3c4] sm:col-span-3">{note}</p>}
                 </div>
               );
             })}
@@ -709,40 +709,40 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
         )}
 
         {/* Autopilot */}
-        <section aria-labelledby="autopilot-heading" className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+        <section aria-labelledby="autopilot-heading" className="rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-4">
           <div className="flex items-center gap-2">
-            <Bot className="h-4 w-4 text-cyan-400" />
-            <h2 id="autopilot-heading" className="text-sm font-bold text-slate-200">Autopilot</h2>
+            <Bot className="h-4 w-4 text-[#ff2a3c]" />
+            <h2 id="autopilot-heading" className="text-sm font-bold text-[#e8edf5]">Autopilot</h2>
           </div>
-          <p className="text-xs text-slate-400">AI auto-drafts all 13 documents end-to-end with minimal human interference.</p>
+          <p className="text-xs text-[#a8b3c4]">AI auto-drafts all 13 documents end-to-end with minimal human interference.</p>
           <div className="flex items-start justify-between gap-4 mt-3">
             <div>
-              <p className="text-sm font-semibold text-slate-200">Master Autopilot Toggle</p>
-              <p className="mt-1 text-xs text-slate-400">When enabled, the specialist chain auto-runs on project creation or phase transitions.</p>
+              <p className="text-sm font-semibold text-[#e8edf5]">Master Autopilot Toggle</p>
+              <p className="mt-1 text-xs text-[#a8b3c4]">When enabled, the specialist chain auto-runs on project creation or phase transitions.</p>
             </div>
             <button role="switch" aria-checked={autopilotEnabled}
               onClick={() => {
                 setAiStatus(null);
                 setAutopilotEnabled(v => !v);
               }}
-              className={`relative flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${autopilotEnabled ? 'bg-cyan-600' : 'bg-slate-700'}`}
+              className={`relative flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${autopilotEnabled ? 'bg-[#d61f2c]' : 'bg-[#171c26]'}`}
               aria-label="Toggle autopilot">
               <span className={`absolute h-5 w-5 rounded-full bg-white transition-transform ${autopilotEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
             </button>
           </div>
           {/* Deferred token-budget slot */}
-          <div className="mt-3 rounded-lg border border-dashed border-slate-700 bg-slate-950/40 p-4 opacity-40 pointer-events-none">
-            <p className="text-xs font-semibold text-slate-400">Per-doc token budget &amp; model-based cost estimate</p>
-            <p className="mt-1 text-[11px] text-slate-500">Coming in a future release.</p>
+          <div className="mt-3 rounded-lg border border-dashed border-[#3b4658] bg-[#05070c]/40 p-4 opacity-40 pointer-events-none">
+            <p className="text-xs font-semibold text-[#a8b3c4]">Per-doc token budget &amp; model-based cost estimate</p>
+            <p className="mt-1 text-[11px] text-[#6e7d92]">Coming in a future release.</p>
           </div>
         </section>
 
         {/* Speech-to-text (voice input) */}
-        <section aria-labelledby="stt-heading" className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-          <h2 id="stt-heading" className="text-sm font-bold text-slate-200">Speech-to-text (voice input)</h2>
-          <p className="mt-1 text-xs text-slate-400">Used for voice dictation in the Studio and question answers.</p>
+        <section aria-labelledby="stt-heading" className="rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-4">
+          <h2 id="stt-heading" className="text-sm font-bold text-[#e8edf5]">Speech-to-text (voice input)</h2>
+          <p className="mt-1 text-xs text-[#a8b3c4]">Used for voice dictation in the Studio and question answers.</p>
           <div className="mt-3">
-            <label htmlFor="voice-input-model" className="text-xs font-medium text-slate-300">Model</label>
+            <label htmlFor="voice-input-model" className="text-xs font-medium text-[#a8b3c4]">Model</label>
             <select
               id="voice-input-model"
               value={voiceInputModel}
@@ -761,7 +761,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-[#6e7d92]">
               {sttModels.find(m => m.id === voiceInputModel)?.description || 'Runs on OpenRouter (built-in provider).'}
             </p>
           </div>
@@ -777,7 +777,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
           status={aiStatus}
           extra={
             draftingDirty ? (
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-[#a8b3c4]">
                 When you change the Drafting model, STARN does a quick test to confirm it can use tools. This can take a few seconds.
               </p>
             ) : undefined
@@ -788,12 +788,12 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
         </div>
 
         {/* Web Search & Hardware Sourcing */}
-        <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+        <section className="space-y-4 rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-4">
           <div className="flex items-center gap-2">
             <Globe className="h-4 w-4 text-sky-400" />
-            <h2 className="text-sm font-bold text-slate-200">Web Search & Hardware Sourcing</h2>
+            <h2 className="text-sm font-bold text-[#e8edf5]">Web Search & Hardware Sourcing</h2>
           </div>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-[#a8b3c4]">
             Enables the BOM specialist to search the internet for component datasheets, prices, and vendor links.
           </p>
 
@@ -802,7 +802,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
               <label
                 key={opt.value}
                 className={`flex cursor-pointer flex-col rounded-lg border p-3 transition-colors ${
-                  searchProvider === opt.value ? 'border-sky-500 bg-sky-950/30' : 'border-slate-800 bg-slate-950 hover:border-slate-700'
+                  searchProvider === opt.value ? 'border-sky-500 bg-sky-950/30' : 'border-[#2a3342] bg-[#05070c] hover:border-[#3b4658]'
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -817,17 +817,17 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                     }}
                     className="accent-sky-500"
                   />
-                  <span className="text-xs font-semibold text-slate-200">{opt.title}</span>
+                  <span className="text-xs font-semibold text-[#e8edf5]">{opt.title}</span>
                 </div>
-                <span className="mt-1 text-[11px] text-slate-400">{opt.blurb}</span>
+                <span className="mt-1 text-[11px] text-[#a8b3c4]">{opt.blurb}</span>
               </label>
             ))}
           </div>
 
           {searchProvider === 'tavily' && (
-            <div className="space-y-1.5 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+            <div className="space-y-1.5 rounded-lg border border-[#2a3342] bg-[#05070c]/60 p-3">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-200">Tavily API Key</span>
+                <span className="font-semibold text-[#e8edf5]">Tavily API Key</span>
                 {hasTavilyKey && (
                   <span className="rounded bg-emerald-950 px-2 py-0.5 text-[10px] font-medium text-emerald-300 border border-emerald-800">
                     Stored on server
@@ -848,9 +848,9 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
           )}
 
           {searchProvider === 'brave' && (
-            <div className="space-y-1.5 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+            <div className="space-y-1.5 rounded-lg border border-[#2a3342] bg-[#05070c]/60 p-3">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-200">Brave Search API Key</span>
+                <span className="font-semibold text-[#e8edf5]">Brave Search API Key</span>
                 {hasBraveKey && (
                   <span className="rounded bg-emerald-950 px-2 py-0.5 text-[10px] font-medium text-emerald-300 border border-emerald-800">
                     Stored on server
@@ -883,12 +883,12 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                   type="button"
                   onClick={() => void handleProbeSearch()}
                   disabled={probingSearch}
-                  className="flex min-h-[44px] items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 text-xs font-semibold text-slate-200 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 disabled:opacity-50"
+                  className="flex min-h-[44px] items-center gap-2 rounded-lg border border-[#3b4658] bg-[#0d1017] px-4 text-xs font-semibold text-[#e8edf5] transition hover:bg-[#11151d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:opacity-50"
                 >
                   {probingSearch ? <Loader2 className="h-4 w-4 animate-spin text-sky-400" /> : <PlugZap className="h-4 w-4" />}
                   Test search connection
                 </button>
-                <span className="text-xs text-slate-400">Test uses the key you typed; Save to keep it.</span>
+                <span className="text-xs text-[#a8b3c4]">Test uses the key you typed; Save to keep it.</span>
                 {searchProbeResult && (
                   <span className={`text-xs ${searchProbeResult.success ? 'text-emerald-400' : 'text-rose-400'}`} role="status">
                     {searchProbeResult.success
@@ -904,15 +904,15 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
         </section>
 
         {settings && (
-          <section className="space-y-2.5 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-            <h2 className="text-sm font-bold text-slate-200">Session</h2>
-            <p className="flex items-center gap-2 text-sm text-slate-400">
-              <FolderOpen className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+          <section className="space-y-2.5 rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-4">
+            <h2 className="text-sm font-bold text-[#e8edf5]">Session</h2>
+            <p className="flex items-center gap-2 text-sm text-[#a8b3c4]">
+              <FolderOpen className="h-4 w-4 shrink-0 text-[#6e7d92]" aria-hidden />
               <span className="font-mono">{settings.projectPath}</span>
             </p>
-            <p className="flex items-center gap-2 text-sm text-slate-400">
-              <Network className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
-              Serving on port <span className="font-mono text-slate-200">{settings.port}</span>
+            <p className="flex items-center gap-2 text-sm text-[#a8b3c4]">
+              <Network className="h-4 w-4 shrink-0 text-[#6e7d92]" aria-hidden />
+              Serving on port <span className="font-mono text-[#e8edf5]">{settings.port}</span>
             </p>
           </section>
         )}

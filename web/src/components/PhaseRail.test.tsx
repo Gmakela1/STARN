@@ -126,7 +126,7 @@ describe('PhaseRail', () => {
 
   // Design §6 — needs-review dot: sky family + Eye icon + word in legend
   // (never color alone).
-  it('renders the needs-review dot with an Eye icon in sky, distinct from in-progress cyan', () => {
+  it('renders the needs-review dot with an Eye icon in sky, distinct from in-progress crimson', () => {
     const items = buildItems();
     items[0] = { ...items[0], view: rv('needs-review') };
     render(<PhaseRail items={items} approvedCount={6} onSelect={vi.fn()} />);

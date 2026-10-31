@@ -40,13 +40,13 @@ export default function CheckpointPanel({ checkpoint, onResolved, onRevisionRequ
 
   return (
     <aside
-      className="rounded-xl border border-cyan-700/60 bg-gradient-to-br from-cyan-950/60 to-slate-950/80 p-3 shadow-lg shadow-cyan-950/40"
+      className="rounded-xl border border-[#ff2a3c]/45 bg-gradient-to-br from-[#1a0208]/80 to-[#05070c]/80 p-3 shadow-lg shadow-[#1a0208]/40"
       aria-label="Pending human checkpoint"
     >
-      <p className="text-xs font-bold uppercase tracking-wider text-cyan-300">
+      <p className="text-xs font-bold uppercase tracking-wider text-[#ffb3bd]">
         ◈ Checkpoint — {checkpoint.specialistName} draft awaiting your review
       </p>
-      <p className="mt-0.5 text-[11px] leading-relaxed text-slate-400">
+      <p className="mt-0.5 text-[11px] leading-relaxed text-[#a8b3c4]">
         Review the draft below, then approve it, request changes, or discard it. Nothing is
         saved to the project until you approve.
       </p>
@@ -65,7 +65,7 @@ export default function CheckpointPanel({ checkpoint, onResolved, onRevisionRequ
 
       {showFeedback ? (
         <div className="mt-3 space-y-2">
-          <label htmlFor="checkpoint-feedback" className="text-xs font-medium text-slate-300">
+          <label htmlFor="checkpoint-feedback" className="text-xs font-medium text-[#a8b3c4]">
             Revision guidance for the specialist
           </label>
           <textarea
@@ -74,7 +74,7 @@ export default function CheckpointPanel({ checkpoint, onResolved, onRevisionRequ
             onChange={e => setFeedback(e.target.value)}
             rows={3}
             placeholder="e.g. Section 3 needs torque specs for every fastener…"
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-600 focus:outline-none"
+            className="w-full rounded-lg border border-[#3b4658] bg-[#0d1017] px-3 py-2 text-sm text-[#e8edf5] placeholder:text-[#6e7d92] focus:border-[#ff2a3c] focus:outline-none"
           />
           <div className="flex gap-2">
             <button
@@ -88,7 +88,7 @@ export default function CheckpointPanel({ checkpoint, onResolved, onRevisionRequ
             <button
               onClick={() => setShowFeedback(false)}
               disabled={submitting !== null}
-              className="min-h-[44px] rounded-lg border border-slate-700 px-4 text-sm text-slate-300 transition hover:bg-slate-800"
+              className="min-h-[44px] rounded-lg border border-[#3b4658] px-4 text-sm text-[#a8b3c4] transition hover:bg-[#11151d]"
             >
               Cancel
             </button>
@@ -115,7 +115,7 @@ export default function CheckpointPanel({ checkpoint, onResolved, onRevisionRequ
           <button
             onClick={() => void decide('discard')}
             disabled={submitting !== null}
-            className="flex min-h-[44px] items-center gap-2 rounded-lg border border-slate-700 px-4 text-sm text-slate-400 transition hover:border-rose-800 hover:text-rose-300"
+            className="flex min-h-[44px] items-center gap-2 rounded-lg border border-[#3b4658] px-4 text-sm text-[#a8b3c4] transition hover:border-rose-800 hover:text-rose-300"
           >
             {submitting === 'discard' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Trash2 className="h-4 w-4" aria-hidden />}
             Discard draft

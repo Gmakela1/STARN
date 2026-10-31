@@ -26,19 +26,19 @@ export default function CriticScorecard({ result, compact }: { result: CriticRes
         <span className={`text-sm font-bold ${tone.text}`}>
           Critic {result.passed ? 'PASS' : 'FAIL'} — {result.score.toFixed(1)}/10
         </span>
-        <div className="ml-auto h-1.5 w-24 overflow-hidden rounded-full bg-slate-800" aria-hidden>
+        <div className="ml-auto h-1.5 w-24 overflow-hidden rounded-full bg-[#11151d]" aria-hidden>
           <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${pct}%` }} />
         </div>
       </div>
 
-      {result.summary && <p className="mt-2 text-xs leading-relaxed text-slate-300">{result.summary}</p>}
+      {result.summary && <p className="mt-2 text-xs leading-relaxed text-[#a8b3c4]">{result.summary}</p>}
 
       {!compact && (
         <div className="mt-2 space-y-2">
           {result.strengths?.length > 0 && (
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-400">Strengths</p>
-              <ul className="mt-0.5 ml-4 list-disc space-y-0.5 text-xs text-slate-300 marker:text-emerald-700">
+              <ul className="mt-0.5 ml-4 list-disc space-y-0.5 text-xs text-[#a8b3c4] marker:text-emerald-700">
                 {result.strengths.map((s, i) => <li key={i}>{s}</li>)}
               </ul>
             </div>
@@ -46,7 +46,7 @@ export default function CriticScorecard({ result, compact }: { result: CriticRes
           {result.weaknesses?.length > 0 && (
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-400">Weaknesses</p>
-              <ul className="mt-0.5 ml-4 list-disc space-y-0.5 text-xs text-slate-300 marker:text-rose-700">
+              <ul className="mt-0.5 ml-4 list-disc space-y-0.5 text-xs text-[#a8b3c4] marker:text-rose-700">
                 {result.weaknesses.map((w, i) => <li key={i}>{w}</li>)}
               </ul>
             </div>

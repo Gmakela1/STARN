@@ -17,7 +17,7 @@ import { StepComment, WorkInstruction } from '../types/api';
 import Markdown from '../components/Markdown';
 
 const WI_STATUS_TONE: Record<string, string> = {
-  'NOT-STARTED': 'bg-slate-800 text-slate-300',
+  'NOT-STARTED': 'bg-[#11151d] text-[#a8b3c4]',
   'IN-PROGRESS': 'bg-sky-950/80 text-sky-300',
   'BLOCKED': 'bg-rose-950/80 text-rose-300',
   'COMPLETE': 'bg-emerald-950/80 text-emerald-300'
@@ -177,7 +177,7 @@ export default function WorkInstructionsView() {
 
   if (actions === null) {
     return (
-      <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-500" role="status">
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-[#6e7d92]" role="status">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading shop floor…
       </div>
     );
@@ -186,9 +186,9 @@ export default function WorkInstructionsView() {
   if (actions.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-        <Wrench className="h-10 w-10 text-slate-700" aria-hidden />
-        <p className="text-sm text-slate-400">No work instructions yet.</p>
-        <p className="max-w-sm text-xs leading-relaxed text-slate-500">
+        <Wrench className="h-10 w-10 text-[#3b4658]" aria-hidden />
+        <p className="text-sm text-[#a8b3c4]">No work instructions yet.</p>
+        <p className="max-w-sm text-xs leading-relaxed text-[#6e7d92]">
           Once the build sequence is approved, ask the agent to “write the work instruction for
           ACTION-01” and it will appear here as an executable checklist.
         </p>
@@ -201,12 +201,12 @@ export default function WorkInstructionsView() {
   return (
     <div className="grid h-full grid-cols-1 md:grid-cols-[280px_1fr]">
       {/* Action list */}
-      <aside className="min-h-0 overflow-y-auto border-r border-slate-800 bg-slate-900/30" aria-label="Work instructions">
-        <header className="flex items-center justify-between border-b border-slate-800 px-3 py-2.5">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">Actions</h2>
+      <aside className="min-h-0 overflow-y-auto border-r border-[#2a3342] bg-[#0d1017]/50" aria-label="Work instructions">
+        <header className="flex items-center justify-between border-b border-[#2a3342] px-3 py-2.5">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-[#a8b3c4]">Actions</h2>
           <button
             onClick={() => void loadList()}
-            className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+            className="flex h-10 w-10 items-center justify-center rounded-lg text-[#a8b3c4] hover:bg-[#11151d] hover:text-[#e8edf5]"
             aria-label="Refresh list"
           >
             <RefreshCw className="h-3.5 w-3.5" aria-hidden />
@@ -222,22 +222,22 @@ export default function WorkInstructionsView() {
                 <button
                   onClick={() => setSelectedId(wi.actionId)}
                   className={`block w-full border-l-2 px-3 py-2.5 text-left transition ${
-                    active ? 'border-sky-400 bg-slate-800/70' : 'border-transparent hover:bg-slate-900/70'
+                    active ? 'border-sky-400 bg-[#11151d]/70' : 'border-transparent hover:bg-[#0d1017]/70'
                   }`}
                 >
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-bold text-sky-300">{wi.actionId}</span>
                     {defect && <TriangleAlert className="h-3.5 w-3.5 text-rose-400" aria-label="Open non-conformance" />}
-                    <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold ${WI_STATUS_TONE[wi.status.toUpperCase()] ?? 'bg-slate-800 text-slate-400'}`}>
+                    <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold ${WI_STATUS_TONE[wi.status.toUpperCase()] ?? 'bg-[#11151d] text-[#a8b3c4]'}`}>
                       {wi.status || '—'}
                     </span>
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-slate-300">{wi.title}</p>
+                  <p className="mt-0.5 truncate text-xs text-[#a8b3c4]">{wi.title}</p>
                   <div className="mt-1.5 flex items-center gap-2">
-                    <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-800" aria-hidden>
+                    <div className="h-1 flex-1 overflow-hidden rounded-full bg-[#11151d]" aria-hidden>
                       <div className={`h-full rounded-full ${pct === 100 ? 'bg-emerald-500' : 'bg-sky-500'}`} style={{ width: `${pct}%` }} />
                     </div>
-                    <span className="text-[11px] text-slate-400">{pct}%</span>
+                    <span className="text-[11px] text-[#a8b3c4]">{pct}%</span>
                   </div>
                 </button>
               </li>
@@ -249,13 +249,13 @@ export default function WorkInstructionsView() {
       {/* Detail */}
       <section className="min-h-0 overflow-y-auto" aria-label="Work instruction detail">
         {!detail ? (
-          <div className="flex h-full items-center justify-center text-sm text-slate-500">Select an action…</div>
+          <div className="flex h-full items-center justify-center text-sm text-[#6e7d92]">Select an action…</div>
         ) : (
           <div className="mx-auto max-w-3xl space-y-4 p-4 lg:p-6">
             <header>
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-bold text-slate-100">{detail.title}</h1>
-                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${WI_STATUS_TONE[detail.status.toUpperCase()] ?? 'bg-slate-800 text-slate-300'}`}>
+                <h1 className="text-lg font-bold text-[#e8edf5]">{detail.title}</h1>
+                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${WI_STATUS_TONE[detail.status.toUpperCase()] ?? 'bg-[#11151d] text-[#a8b3c4]'}`}>
                   {detail.status}
                 </span>
                 <button
@@ -263,8 +263,8 @@ export default function WorkInstructionsView() {
                   onClick={() => setShopMode(v => !v)}
                   className={`ml-auto flex min-h-[44px] items-center gap-2 rounded-lg border px-4 text-sm font-semibold transition ${
                     shopMode
-                      ? 'border-cyan-500/60 bg-cyan-600 text-white shadow-md shadow-cyan-950/40 hover:bg-cyan-500'
-                      : 'border-cyan-700/70 bg-cyan-950/50 text-cyan-300 hover:bg-cyan-900/60'
+                      ? 'border-[#ff2a3c]/60 bg-[#d61f2c] text-white shadow-md shadow-[#1a0208]/40 hover:bg-[#e11d3f]'
+                      : 'border-[#ff2a3c]/45 bg-[#1a0208]/80 text-[#ffb3bd] hover:bg-[#1a0208]'
                   }`}
                   aria-pressed={shopMode}
                   title={shopMode ? 'Switch back to Desktop view' : 'Switch to high-contrast Shop Floor Mode'}
@@ -273,10 +273,10 @@ export default function WorkInstructionsView() {
                   {shopMode ? 'Shop Mode ON' : 'Shop Floor Mode'}
                 </button>
               </div>
-              <p className="mt-1 flex flex-wrap gap-3 text-xs text-slate-400">
-                <span>Gate: <span className="font-semibold text-slate-300">{detail.milestoneGate || '—'}</span></span>
-                <span>Subsystem: <span className="font-mono font-semibold text-slate-300">{detail.subsystem || '—'}</span></span>
-                <span className="font-mono text-slate-500">{detail.filePath}</span>
+              <p className="mt-1 flex flex-wrap gap-3 text-xs text-[#a8b3c4]">
+                <span>Gate: <span className="font-semibold text-[#a8b3c4]">{detail.milestoneGate || '—'}</span></span>
+                <span>Subsystem: <span className="font-mono font-semibold text-[#a8b3c4]">{detail.subsystem || '—'}</span></span>
+                <span className="font-mono text-[#6e7d92]">{detail.filePath}</span>
               </p>
             </header>
 
@@ -290,27 +290,27 @@ export default function WorkInstructionsView() {
                 <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-300">
                   <TriangleAlert className="h-4 w-4" aria-hidden /> Open non-conformance
                 </p>
-                <p className="mt-1.5 text-sm text-slate-200">{detail.nonConformance.defectDescription}</p>
+                <p className="mt-1.5 text-sm text-[#e8edf5]">{detail.nonConformance.defectDescription}</p>
                 {detail.nonConformance.defectEvidence && detail.nonConformance.defectEvidence !== '—' && (
-                  <p className="mt-1 flex items-center gap-1.5 font-mono text-[11px] text-slate-400">
+                  <p className="mt-1 flex items-center gap-1.5 font-mono text-[11px] text-[#a8b3c4]">
                     <ImageIcon className="h-3.5 w-3.5" aria-hidden /> {detail.nonConformance.defectEvidence}
                   </p>
                 )}
-                <p className="mt-1.5 text-xs text-slate-400">
-                  Route this defect to the AI agent from the <span className="font-semibold text-slate-300">Questions &amp; Issues</span> tab for impact analysis and a repair procedure.
+                <p className="mt-1.5 text-xs text-[#a8b3c4]">
+                  Route this defect to the AI agent from the <span className="font-semibold text-[#a8b3c4]">Questions &amp; Issues</span> tab for impact analysis and a repair procedure.
                 </p>
               </aside>
             )}
 
             {/* Checklist */}
-            <section className="rounded-xl border border-slate-800 bg-slate-900/40">
-              <header className="flex items-center justify-between border-b border-slate-800 px-4 py-2.5">
-                <h2 className="text-sm font-bold text-slate-200">Step-by-step checklist</h2>
-                <span className="text-xs text-slate-400">
+            <section className="rounded-xl border border-[#2a3342] bg-[#0d1017]/70">
+              <header className="flex items-center justify-between border-b border-[#2a3342] px-4 py-2.5">
+                <h2 className="text-sm font-bold text-[#e8edf5]">Step-by-step checklist</h2>
+                <span className="text-xs text-[#a8b3c4]">
                   {detail.steps.filter(s => s.checked).length} / {detail.steps.length} complete
                 </span>
               </header>
-              <ol className="divide-y divide-slate-800/70">
+              <ol className="divide-y divide-[#2a3342]/70">
                 {detail.steps.map((step, stepIdx) => {
                   const stepComments = stepAnnotations[stepIdx]?.comments ?? [];
                   const stepFlagged = stepAnnotations[stepIdx]?.flagged ?? false;
@@ -327,7 +327,7 @@ export default function WorkInstructionsView() {
                         } ${
                           step.checked
                             ? 'border-emerald-500 bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
-                            : 'border-slate-500 bg-slate-950 text-transparent hover:border-cyan-400'
+                            : 'border-[#3b4658] bg-[#05070c] text-transparent hover:border-[#ff2a3c]'
                         }`}
                       >
                         {togglingIndex === step.index ? (
@@ -340,7 +340,7 @@ export default function WorkInstructionsView() {
                       <div className="flex flex-col items-center gap-1 pt-0.5">
                         <button
                           onClick={() => toggleComments(stepIdx)}
-                          className="text-xs text-slate-500 hover:text-cyan-400 transition-colors p-1"
+                          className="text-xs text-[#6e7d92] hover:text-[#ff2a3c] transition-colors p-1"
                           aria-label={`${stepComments.length} comments`}
                           aria-expanded={openComments === stepIdx}
                         >
@@ -351,13 +351,13 @@ export default function WorkInstructionsView() {
                           onClick={() => handleFlag(stepIdx)}
                           aria-pressed={stepFlagged}
                           aria-label={stepFlagged ? 'Clear shop floor flag' : 'Flag this step'}
-                          className={`p-1 rounded transition-colors ${stepFlagged ? 'text-rose-400 bg-rose-950/40' : 'text-slate-600 hover:text-slate-400'}`}
+                          className={`p-1 rounded transition-colors ${stepFlagged ? 'text-rose-400 bg-rose-950/40' : 'text-[#6e7d92] hover:text-[#a8b3c4]'}`}
                         >
                           <Flag className="h-3.5 w-3.5" />
                         </button>
                       </div>
                       <div className="min-w-0 flex-1 pt-1">
-                        <p className={`${shopMode ? 'text-base font-medium leading-relaxed' : 'text-sm leading-relaxed'} ${step.checked ? 'text-slate-500 line-through decoration-slate-700' : 'text-slate-200'}`}>
+                        <p className={`${shopMode ? 'text-base font-medium leading-relaxed' : 'text-sm leading-relaxed'} ${step.checked ? 'text-[#6e7d92] line-through decoration-[#3b4658]' : 'text-[#e8edf5]'}`}>
                           <span className="font-semibold">{step.label}:</span> {step.text}
                         </p>
                         {step.gated && (
@@ -366,15 +366,15 @@ export default function WorkInstructionsView() {
                           </span>
                         )}
                         {openComments === stepIdx && (
-                          <div className="mt-2 rounded-lg bg-slate-900/60 p-2">
+                          <div className="mt-2 rounded-lg bg-[#0d1017]/70 p-2">
                             {stepComments.length === 0 ? (
-                              <p className="text-xs text-slate-500">No comments yet.</p>
+                              <p className="text-xs text-[#6e7d92]">No comments yet.</p>
                             ) : (
                               <ul className="space-y-2">
                                 {stepComments.slice(0, 3).map((c, i) => (
                                   <li key={`${c.at}-${i}`}>
-                                    <p className="text-xs text-slate-200">{c.text}</p>
-                                    <p className="mt-0.5 text-[10px] text-slate-500">
+                                    <p className="text-xs text-[#e8edf5]">{c.text}</p>
+                                    <p className="mt-0.5 text-[10px] text-[#6e7d92]">
                                       {c.author ? `${c.author} · ` : ''}{new Date(c.at).toLocaleString()}
                                     </p>
                                   </li>
@@ -382,7 +382,7 @@ export default function WorkInstructionsView() {
                               </ul>
                             )}
                             {stepComments.length > 3 && (
-                              <p className="mt-1 text-[11px] text-slate-500">{stepComments.length - 3} more…</p>
+                              <p className="mt-1 text-[11px] text-[#6e7d92]">{stepComments.length - 3} more…</p>
                             )}
                             <textarea
                               value={commentDraft}
@@ -394,7 +394,7 @@ export default function WorkInstructionsView() {
                                 }
                               }}
                               placeholder="Add a comment… Enter to send"
-                              className="mt-2 w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+                              className="mt-2 w-full resize-none rounded-lg border border-[#3b4658] bg-[#05070c] px-2 py-1.5 text-xs text-[#e8edf5] placeholder:text-[#6e7d92] focus:border-[#ff2a3c] focus:outline-none"
                             />
                             <button
                               onClick={() => void submitComment(stepIdx)}
@@ -413,9 +413,9 @@ export default function WorkInstructionsView() {
             </section>
 
             {/* Evidence upload */}
-            <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-4" aria-label="Evidence artifacts">
+            <section className="rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-4" aria-label="Evidence artifacts">
               <div className="flex flex-wrap items-center gap-3">
-                <h2 className="text-sm font-bold text-slate-200">Evidence artifacts</h2>
+                <h2 className="text-sm font-bold text-[#e8edf5]">Evidence artifacts</h2>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -441,13 +441,13 @@ export default function WorkInstructionsView() {
               {detail.artifacts.length > 0 ? (
                 <ul className="mt-3 space-y-1">
                   {detail.artifacts.map((a, i) => (
-                    <li key={i} className="flex items-center gap-2 font-mono text-xs text-slate-400">
-                      <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-600" aria-hidden /> {a}
+                    <li key={i} className="flex items-center gap-2 font-mono text-xs text-[#a8b3c4]">
+                      <Paperclip className="h-3.5 w-3.5 shrink-0 text-[#6e7d92]" aria-hidden /> {a}
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="mt-3 text-xs text-slate-500">
+                <p className="mt-3 text-xs text-[#6e7d92]">
                   No evidence linked in the document yet. Uploads land in the flat <span className="font-mono">artifacts/</span> folder with
                   deterministic names the agent can reference.
                 </p>
@@ -463,12 +463,12 @@ export default function WorkInstructionsView() {
                   }
                   setShowRaw(v => !v);
                 }}
-                className="text-xs font-medium text-slate-500 underline-offset-4 hover:text-slate-300 hover:underline"
+                className="text-xs font-medium text-[#6e7d92] underline-offset-4 hover:text-[#a8b3c4] hover:underline"
               >
                 {showRaw ? 'Hide full document' : 'Show full document'}
               </button>
               {showRaw && detail.content && (
-                <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                <div className="mt-3 rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-4">
                   <Markdown content={detail.content} />
                 </div>
               )}

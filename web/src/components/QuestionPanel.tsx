@@ -40,7 +40,7 @@ export interface QuestionPanelProps {
 /** §1.4.1 — per-phase chip visuals, keyed off the AnswerPhase union (moved from QuestionBar). */
 const stateChip: Record<AnswerState['phase'], { icon: LucideIcon; label: string; cls: string; live?: boolean }> = {
   queued: { icon: Clock3, label: 'Queued — applies after this phase', cls: 'border-sky-700/50 bg-sky-950/40 text-sky-300' },
-  applying: { icon: Loader2, label: 'Applying…', cls: 'border-cyan-700/50 bg-cyan-950/40 text-cyan-300', live: true },
+  applying: { icon: Loader2, label: 'Applying…', cls: 'border-[#ff2a3c]/45 bg-[#1a0208] text-[#ffb3bd]', live: true },
   applied: { icon: Check, label: 'Applied', cls: 'border-emerald-700/50 bg-emerald-950/40 text-emerald-300' },
   failed: { icon: TriangleAlert, label: "Couldn't apply", cls: 'border-rose-700/50 bg-rose-950/40 text-rose-300' }
 };
@@ -474,7 +474,7 @@ export default function QuestionPanel({
     const stripItem = items.find(i => i.id === activeId) ?? null;
     return (
       <div
-        className="absolute inset-x-0 bottom-0 z-30 flex h-[44px] items-center gap-2 border-t border-slate-800 bg-slate-900/95 px-3"
+        className="absolute inset-x-0 bottom-0 z-30 flex h-[44px] items-center gap-2 border-t border-[#2a3342] bg-[#0d1017]/95 px-3"
         role="region"
         aria-label="Questions from AI"
       >
@@ -483,7 +483,7 @@ export default function QuestionPanel({
           Questions from AI ({items.length})
         </span>
         {stripItem && (
-          <span className="min-w-0 flex-1 truncate text-[11px] text-slate-400">{stripItem.title}</span>
+          <span className="min-w-0 flex-1 truncate text-[11px] text-[#a8b3c4]">{stripItem.title}</span>
         )}
         <button
           ref={expandRef}
@@ -491,7 +491,7 @@ export default function QuestionPanel({
           onClick={onExpand}
           aria-label="Expand questions"
           title="Expand questions"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
         >
           <Maximize2 className="h-4 w-4" aria-hidden />
         </button>
@@ -500,7 +500,7 @@ export default function QuestionPanel({
           onClick={onClose}
           aria-label="Close questions"
           title="Close questions and return to document"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
         >
           <X className="h-4 w-4" aria-hidden />
         </button>
@@ -525,14 +525,14 @@ export default function QuestionPanel({
           <CheckCircle2 className="h-8 w-8 text-emerald-400" aria-hidden />
         </div>
         <div>
-          <p className="text-sm font-medium text-slate-200">All questions resolved</p>
-          <p className="mt-1 text-xs text-slate-500">No pending questions from the current run.</p>
+          <p className="text-sm font-medium text-[#e8edf5]">All questions resolved</p>
+          <p className="mt-1 text-xs text-[#6e7d92]">No pending questions from the current run.</p>
         </div>
         <button
           ref={returnDocRef}
           type="button"
           onClick={onClose}
-          className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-3 text-xs font-medium text-slate-300 transition hover:bg-slate-800 focus:ring-2 focus:ring-sky-500/40"
+          className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#3b4658] bg-[#0d1017] px-3 text-xs font-medium text-[#a8b3c4] transition hover:bg-[#11151d] focus:ring-2 focus:ring-[#ff2a3c]/60"
         >
           Return to document
         </button>
@@ -555,9 +555,9 @@ export default function QuestionPanel({
       iconClass = 'text-rose-400';
       LabelIcon = TriangleAlert;
     } else if (dwellActive) {
-      cardTone = 'border-l-slate-600 bg-slate-900/40';
+      cardTone = 'border-l-[#3b4658] bg-[#0d1017]/70';
       labelText = 'Resolved ✓';
-      labelClass = 'text-slate-400';
+      labelClass = 'text-[#a8b3c4]';
       iconClass = 'text-emerald-400';
       LabelIcon = Check;
     }
@@ -567,12 +567,12 @@ export default function QuestionPanel({
       const r = renderDetail(item.detail);
       const isOpen = showFull === item.id;
       if (r.bullets.length === 0 && !r.wasTruncated && r.overflow === 0) {
-        return <p className="text-xs leading-relaxed text-slate-300">{item.detail}</p>;
+        return <p className="text-xs leading-relaxed text-[#a8b3c4]">{item.detail}</p>;
       }
       return (
         <>
           {r.bullets.length > 0 && (
-            <ul className="list-disc space-y-1 pl-3.5 text-xs leading-relaxed text-slate-300">
+            <ul className="list-disc space-y-1 pl-3.5 text-xs leading-relaxed text-[#a8b3c4]">
               {r.bullets.map((b, i) => (
                 <li key={i} className="pl-0.5">
                   {b}
@@ -582,7 +582,7 @@ export default function QuestionPanel({
             </ul>
           )}
           {r.bullets.length === 0 && r.wasTruncated && (
-            <p className="line-clamp-2 text-xs leading-relaxed text-slate-300">{item.detail}</p>
+            <p className="line-clamp-2 text-xs leading-relaxed text-[#a8b3c4]">{item.detail}</p>
           )}
           {(r.overflow > 0 || r.wasTruncated) && !isOpen && (
             <button
@@ -594,7 +594,7 @@ export default function QuestionPanel({
             </button>
           )}
           {isOpen && (
-            <p className="mt-1.5 rounded-md border border-slate-800 bg-slate-950/60 p-2.5 text-xs leading-relaxed text-slate-400">
+            <p className="mt-1.5 rounded-md border border-[#2a3342] bg-[#05070c]/60 p-2.5 text-xs leading-relaxed text-[#a8b3c4]">
               {item.detail}
             </p>
           )}
@@ -609,7 +609,7 @@ export default function QuestionPanel({
             <LabelIcon className={`h-4 w-4 shrink-0 ${iconClass}`} aria-hidden />
             <span className={`text-xs font-bold ${labelClass}`}>{labelText}</span>
             {item.docPath && (
-              <span className="max-w-[120px] truncate text-[11px] font-mono text-slate-500">
+              <span className="max-w-[120px] truncate text-[11px] font-mono text-[#6e7d92]">
                 {item.docPath.split('/').pop()}
               </span>
             )}
@@ -622,7 +622,7 @@ export default function QuestionPanel({
                 // before the server call, so a server error can't resurrect it.
                 void onDismiss(item.id).catch(() => {});
               }}
-              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-500 transition hover:text-slate-300 focus:ring-2 focus:ring-sky-500/40"
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#6e7d92] transition hover:text-[#a8b3c4] focus:ring-2 focus:ring-[#ff2a3c]/60"
               aria-label="Dismiss"
             >
               <X className="h-3 w-3" aria-hidden />
@@ -630,7 +630,7 @@ export default function QuestionPanel({
           )}
         </div>
 
-        <p className="mt-1.5 text-sm font-bold text-slate-200" title={item.title}>
+        <p className="mt-1.5 text-sm font-bold text-[#e8edf5]" title={item.title}>
           {item.title}
         </p>
 
@@ -648,11 +648,11 @@ export default function QuestionPanel({
               <RotateCcw className="h-3 w-3" aria-hidden /> Follow-up
             </button>
             {showHistory[item.id] && (
-              <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-800 bg-slate-900/60 p-2">
+              <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-[#2a3342] bg-[#0d1017]/70 p-2">
                 {item.meta.answerHistory.map((entry, i) => (
-                  <li key={`${entry.at}-${i}`} className="text-[11px] text-slate-300">
-                    <time dateTime={entry.at} className="text-slate-500">{entry.at.slice(0, 10)}</time>{' '}
-                    <span className="text-slate-200">{entry.text}</span>
+                  <li key={`${entry.at}-${i}`} className="text-[11px] text-[#a8b3c4]">
+                    <time dateTime={entry.at} className="text-[#6e7d92]">{entry.at.slice(0, 10)}</time>{' '}
+                    <span className="text-[#e8edf5]">{entry.text}</span>
                   </li>
                 ))}
               </ul>
@@ -699,7 +699,7 @@ export default function QuestionPanel({
               onClick={() => {
                 if (item.docPath) onEditDoc(item.docPath);
               }}
-              className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-3 text-xs font-medium text-slate-300 transition hover:bg-slate-800 focus:ring-2 focus:ring-sky-500/40"
+              className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#3b4658] bg-[#0d1017] px-3 text-xs font-medium text-[#a8b3c4] transition hover:bg-[#11151d] focus:ring-2 focus:ring-[#ff2a3c]/60"
             >
               Edit Manually
             </button>
@@ -713,7 +713,7 @@ export default function QuestionPanel({
         answerStates[item.id]?.phase === 'queued' || answerStates[item.id]?.phase === 'applying';
       composer = (
         <div className="space-y-1.5">
-          <label htmlFor="question-panel-composer" className="text-xs font-semibold text-slate-300">
+          <label htmlFor="question-panel-composer" className="text-xs font-semibold text-[#a8b3c4]">
             Your answer
           </label>
           {dwellActive ? (
@@ -757,7 +757,7 @@ export default function QuestionPanel({
                   }}
                   disabled={composingDisabled}
                   placeholder="Type your answer to the AI…"
-                  className="min-h-[96px] min-w-0 flex-1 resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-600/30 disabled:opacity-50"
+                  className="min-h-[96px] min-w-0 flex-1 resize-y rounded-lg border border-[#3b4658] bg-[#05070c] px-3 py-2.5 text-sm text-[#e8edf5] placeholder:text-[#6e7d92] focus:border-[#ff2a3c] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/40 disabled:opacity-50"
                 />
                 {/* Mic button (§2): 44px touch target, click or hold Alt */}
                 <button
@@ -777,7 +777,7 @@ export default function QuestionPanel({
                   className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 disabled:opacity-50 ${
                     recording
                       ? 'bg-rose-600 text-white motion-safe:animate-pulse'
-                      : 'border border-slate-700 bg-slate-800 text-slate-400 hover:border-sky-600 hover:text-sky-400'
+                      : 'border border-[#3b4658] bg-[#11151d] text-[#a8b3c4] hover:border-sky-600 hover:text-sky-400'
                   }`}
                 >
                   <Mic className="h-4 w-4" aria-hidden />
@@ -786,7 +786,7 @@ export default function QuestionPanel({
             </>
           )}
           {!dwellActive && (
-            <p className="text-xs text-slate-500">Usually 1–3 sentences is enough.</p>
+            <p className="text-xs text-[#6e7d92]">Usually 1–3 sentences is enough.</p>
           )}
           {!dwellActive && submitError && (
             <p role="alert" className="mt-1.5 rounded-md border border-rose-800/60 bg-rose-950/40 px-2.5 py-1.5 text-xs text-rose-300">
@@ -806,22 +806,22 @@ export default function QuestionPanel({
       id="question-panel"
       role="region"
       aria-label="Questions from AI"
-      className="absolute inset-0 z-20 flex flex-col bg-slate-950 animate-panel-in"
+      className="absolute inset-0 z-20 flex flex-col bg-[#05070c] animate-panel-in"
     >
-      <header className="shrink-0 border-b border-slate-800 bg-slate-900/90 px-3 py-2">
+      <header className="shrink-0 border-b border-[#2a3342] bg-[#0d1017]/90 px-3 py-2">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <MessageSquare className="h-4 w-4 shrink-0 text-amber-400" aria-hidden />
-          <span className="text-sm font-bold text-slate-100">Questions from AI</span>
-          <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] font-bold tabular-nums text-cyan-300">
+          <span className="text-sm font-bold text-[#e8edf5]">Questions from AI</span>
+          <span className="rounded-full bg-[#11151d] px-2 py-0.5 text-[11px] font-bold tabular-nums text-[#ffb3bd]">
             {items.length}
           </span>
           {item?.docPath && (
-            <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-400">
+            <span className="rounded bg-[#11151d] px-1.5 py-0.5 font-mono text-[10px] text-[#a8b3c4]">
               {item.docPath.split('/').pop()}
             </span>
           )}
           {item?.section && (
-            <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">
+            <span className="rounded bg-[#11151d] px-1.5 py-0.5 text-[10px] font-medium text-[#a8b3c4]">
               asked while {item.section}
             </span>
           )}
@@ -831,7 +831,7 @@ export default function QuestionPanel({
             </span>
           )}
           {items.length >= 2 && (
-            <span className="text-[11px] font-mono text-slate-500 tabular-nums">
+            <span className="text-[11px] font-mono text-[#6e7d92] tabular-nums">
               {pagerIndex} of {items.length}
             </span>
           )}
@@ -855,7 +855,7 @@ export default function QuestionPanel({
               onClick={onClose}
               aria-label="Close questions"
               title="Close questions and return to document"
-              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus:ring-2 focus:ring-sky-500/40"
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
             >
               <X className="h-4 w-4" aria-hidden />
             </button>
@@ -864,7 +864,7 @@ export default function QuestionPanel({
       </header>
 
       {items.length >= 2 && (
-        <div className="flex overflow-x-auto gap-1.5 border-b border-slate-800 px-3 py-1.5">
+        <div className="flex overflow-x-auto gap-1.5 border-b border-[#2a3342] px-3 py-1.5">
           {items.map(navItem => {
             const isActive = navItem.id === activeId;
             // §3 — lifecycle dot: rose for parked/blocking, sky while an answer
@@ -890,7 +890,7 @@ export default function QuestionPanel({
                 className={`flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
                   isActive
                     ? 'border-sky-800/60 bg-sky-950/70 text-sky-200'
-                    : 'border-slate-800 bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                    : 'border-[#2a3342] bg-[#0d1017] text-[#a8b3c4] hover:bg-[#11151d] hover:text-[#e8edf5]'
                 }`}
               >
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} aria-hidden />
@@ -904,7 +904,7 @@ export default function QuestionPanel({
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">{body}</div>
 
       {composer && (
-        <footer className="shrink-0 border-t border-slate-800 bg-slate-900/60 p-3">{composer}</footer>
+        <footer className="shrink-0 border-t border-[#2a3342] bg-[#0d1017]/70 p-3">{composer}</footer>
       )}
     </div>
   );

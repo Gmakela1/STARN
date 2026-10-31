@@ -110,7 +110,7 @@ export default function DocProgressBar({
         aria-controls={popoverId}
         aria-label={progressLabel}
         onClick={() => setPopoverOpen((prev) => !prev)}
-        className="flex cursor-pointer items-center gap-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+        className="flex cursor-pointer items-center gap-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]"
       >
         <div
           role="progressbar"
@@ -118,7 +118,7 @@ export default function DocProgressBar({
           aria-valuemin={0}
           aria-valuemax={total}
           aria-label={progressLabel}
-          className="h-6 w-28 overflow-hidden rounded bg-slate-700 sm:w-36"
+          className="h-6 w-28 overflow-hidden rounded bg-[#171c26] sm:w-36"
         >
           <div className="flex h-full w-full">
             {greenPct > 0 && (
@@ -139,7 +139,7 @@ export default function DocProgressBar({
             )}
           </div>
         </div>
-        <span className="hidden text-[11px] font-semibold text-slate-300 tabular-nums lg:inline">
+        <span className="hidden text-[11px] font-semibold text-[#a8b3c4] tabular-nums lg:inline">
           Docs {progress.approved}/{total}
         </span>
       </button>
@@ -151,9 +151,9 @@ export default function DocProgressBar({
           id={popoverId}
           role="dialog"
           aria-label="Project status details"
-          className="absolute top-full right-0 z-50 mt-2 w-72 rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl sm:left-auto max-sm:left-0 max-sm:right-0"
+          className="absolute top-full right-0 z-50 mt-2 w-72 rounded-lg border border-[#3b4658] bg-[#0d1017] p-4 shadow-xl sm:left-auto max-sm:left-0 max-sm:right-0"
         >
-          <h3 className="mb-3 text-sm font-bold text-slate-200">
+          <h3 className="mb-3 text-sm font-bold text-[#e8edf5]">
             Document progress
           </h3>
 
@@ -161,11 +161,11 @@ export default function DocProgressBar({
             {/* Approved row */}
             <div className="flex items-center gap-2 text-xs">
               <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
-              <span className="flex-1 text-slate-300">Approved</span>
-              <span className="font-mono text-slate-100 font-semibold tabular-nums">
+              <span className="flex-1 text-[#a8b3c4]">Approved</span>
+              <span className="font-mono text-[#e8edf5] font-semibold tabular-nums">
                 {progress.approved}
               </span>
-              <div className="h-2 w-16 overflow-hidden rounded bg-slate-700">
+              <div className="h-2 w-16 overflow-hidden rounded bg-[#171c26]">
                 <div
                   className="h-full bg-emerald-500"
                   style={{
@@ -178,11 +178,11 @@ export default function DocProgressBar({
             {/* Drafted row */}
             <div className="flex items-center gap-2 text-xs">
               <span className="h-2 w-2 rounded-full bg-sky-600" aria-hidden />
-              <span className="flex-1 text-slate-300">Drafted</span>
-              <span className="font-mono text-slate-100 font-semibold tabular-nums">
+              <span className="flex-1 text-[#a8b3c4]">Drafted</span>
+              <span className="font-mono text-[#e8edf5] font-semibold tabular-nums">
                 {progress.drafted}
               </span>
-              <div className="h-2 w-16 overflow-hidden rounded bg-slate-700">
+              <div className="h-2 w-16 overflow-hidden rounded bg-[#171c26]">
                 <div
                   className="h-full"
                   style={{
@@ -197,15 +197,15 @@ export default function DocProgressBar({
             {/* Not started row */}
             <div className="flex items-center gap-2 text-xs">
               <span
-                className="h-2 w-2 rounded-full bg-slate-600"
+                className="h-2 w-2 rounded-full bg-[#2a3342]"
                 aria-hidden
               />
-              <span className="flex-1 text-slate-300">Not started</span>
-              <span className="font-mono text-slate-100 font-semibold tabular-nums">
+              <span className="flex-1 text-[#a8b3c4]">Not started</span>
+              <span className="font-mono text-[#e8edf5] font-semibold tabular-nums">
                 {progress.notStarted}
               </span>
-              <div className="h-2 w-16 overflow-hidden rounded bg-slate-700">
-                <div className="h-full bg-slate-600" style={{ width: '100%' }} />
+              <div className="h-2 w-16 overflow-hidden rounded bg-[#171c26]">
+                <div className="h-full bg-[#2a3342]" style={{ width: '100%' }} />
               </div>
             </div>
           </div>
@@ -214,7 +214,7 @@ export default function DocProgressBar({
           <button
             type="button"
             onClick={onNavigateToDashboard}
-            className="mt-3 w-full rounded-lg border border-cyan-500/40 bg-cyan-950/50 px-3 py-2 text-xs font-semibold text-cyan-300 transition-colors hover:bg-cyan-900/60"
+            className="mt-3 w-full rounded-lg border border-[#ff2a3c]/45 bg-[#1a0208]/60 px-3 py-2 text-xs font-semibold text-[#ffb3bd] transition-colors hover:bg-[#1a0208]/90"
           >
             View full status report
           </button>

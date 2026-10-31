@@ -45,13 +45,13 @@ export function SettingsSaveBar(props: SettingsSaveBarProps) {
   const stateText = dirty ? `Unsaved changes: ${dirtyParts.join(', ')}` : cleanText;
 
   return (
-    <div className="sticky bottom-0 space-y-2 border-t border-slate-800 bg-slate-950/95 p-3 backdrop-blur">
+    <div className="sticky bottom-0 space-y-2 border-t border-[#2a3342] bg-[#05070c]/95 p-3 backdrop-blur">
       {extra}
       <div role="status" aria-live="polite" className="text-sm">
         {showSuccess ? (
           <p className={statusTone.success}>{status.text}</p>
         ) : (
-          <p className={dirty ? 'text-amber-200' : 'text-slate-400'}>{stateText}</p>
+          <p className={dirty ? 'text-amber-200' : 'text-[#a8b3c4]'}>{stateText}</p>
         )}
       </div>
       {status && !showSuccess && (
@@ -75,7 +75,7 @@ export function SettingsSaveBar(props: SettingsSaveBarProps) {
           <button
             type="button"
             onClick={onDiscard}
-            className={`min-h-[44px] rounded-lg border border-slate-700 px-4 text-sm text-slate-200 hover:bg-slate-800 ${buttonFocus}`}
+            className={`min-h-[44px] rounded-lg border border-[#3b4658] px-4 text-sm text-[#e8edf5] hover:bg-[#11151d] ${buttonFocus}`}
           >
             Discard
           </button>

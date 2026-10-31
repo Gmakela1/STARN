@@ -81,7 +81,7 @@ export default function StartAutopilotButton({
         type="button"
         onClick={() => void handleStart()}
         disabled={starting}
-        className="flex min-h-[44px] shrink-0 items-center gap-1 rounded-md bg-cyan-600 px-3.5 text-xs font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40"
+        className="cut-corner flex min-h-[44px] shrink-0 items-center gap-1 rounded-none bg-[#d61f2c] px-3.5 text-xs font-semibold text-white transition hover:bg-[#e11d3f] saber-on disabled:cursor-not-allowed disabled:opacity-40"
         aria-label="Start autopilot auto-drafting"
       >
         {starting ? (

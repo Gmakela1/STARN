@@ -76,7 +76,7 @@ export default function QuestionBadge({
         aria-controls="question-panel"
         aria-label={statusLabel}
         ref={buttonRef}
-        className="flex h-8 w-full items-center gap-2 border-t border-slate-800 bg-slate-900/60 px-3 opacity-60 transition hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+        className="flex h-8 w-full items-center gap-2 border-t border-[#2a3342] bg-[#0d1017]/70 px-3 opacity-60 transition hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/60"
       >
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} aria-hidden />
         <span className="truncate text-[11px] font-medium text-amber-300">
@@ -94,7 +94,7 @@ export default function QuestionBadge({
       aria-controls="question-panel"
       aria-label={statusLabel}
       ref={buttonRef}
-      className={`flex min-h-[44px] w-full items-center gap-2 border-l-2 bg-slate-900/80 px-3 transition hover:bg-slate-800/80 focus:outline-none focus:ring-2 focus:ring-sky-500/40 ${
+      className={`flex min-h-[44px] w-full items-center gap-2 border-l-2 bg-[#0d1017]/90 px-3 transition hover:bg-[#11151d]/80 focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/60 ${
         blockingCount > 0 ? 'border-rose-500' : 'border-amber-500'
       }`}
     >
@@ -118,20 +118,20 @@ export default function QuestionBadge({
           className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums ${
             blockingCount > 0
               ? 'border border-rose-800 bg-rose-950/60 text-rose-200'
-              : 'bg-slate-800 text-cyan-300'
+              : 'bg-[#11151d] text-[#ffb3bd]'
           }`}
         >
           {count}
         </span>
       )}
       {resolvedCount > 0 && (
-        <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-slate-400">
+        <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-[#a8b3c4]">
           <CheckCircle2 className="h-3 w-3 text-emerald-400/80" aria-hidden />
           {resolvedCount} resolved
         </span>
       )}
       <ChevronDown
-        className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${surface !== 'closed' ? 'rotate-180' : ''}`}
+        className={`h-4 w-4 shrink-0 text-[#6e7d92] transition-transform ${surface !== 'closed' ? 'rotate-180' : ''}`}
         aria-hidden
       />
     </button>

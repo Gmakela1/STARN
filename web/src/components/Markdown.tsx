@@ -20,7 +20,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
     if (token.startsWith('`')) {
       nodes.push(<code key={key}>{token.slice(1, -1)}</code>);
     } else if (token.startsWith('**')) {
-      nodes.push(<strong key={key} className="font-semibold text-slate-50">{token.slice(2, -2)}</strong>);
+      nodes.push(<strong key={key} className="font-semibold text-[#e8edf5]">{token.slice(2, -2)}</strong>);
     } else if (token.startsWith('*')) {
       nodes.push(<em key={key}>{token.slice(1, -1)}</em>);
     } else if (match[5] !== undefined && match[6] !== undefined) {
@@ -89,7 +89,7 @@ export default function Markdown({ content }: { content: string }) {
       while (i < lines.length && !lines[i].startsWith('```')) buf.push(lines[i++]);
       i++; // closing fence
       blocks.push(
-        <pre key={key} className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900 p-3 text-xs text-slate-300">
+        <pre key={key} className="overflow-x-auto rounded-lg border border-[#2a3342] bg-[#0d1017] p-3 text-xs text-[#a8b3c4]">
           {buf.join('\n')}
         </pre>
       );
@@ -116,7 +116,7 @@ export default function Markdown({ content }: { content: string }) {
 
     // Horizontal rule
     if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) {
-      blocks.push(<hr key={key} className="my-3 border-slate-800" />);
+      blocks.push(<hr key={key} className="my-3 border-[#2a3342]" />);
       i++;
       continue;
     }
@@ -136,12 +136,12 @@ export default function Markdown({ content }: { content: string }) {
               <span
                 aria-hidden
                 className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
-                  done ? 'border-emerald-600 bg-emerald-900/60 text-emerald-300' : 'border-slate-600 bg-slate-900'
+                  done ? 'border-emerald-600 bg-emerald-900/60 text-emerald-300' : 'border-[#3b4658] bg-[#0d1017]'
                 }`}
               >
                 {done ? '✓' : ''}
               </span>
-              <span className={done ? 'text-slate-400 line-through decoration-slate-600' : ''}>
+              <span className={done ? 'text-[#a8b3c4] line-through decoration-[#6e7d92]' : ''}>
                 {renderInline(task[2], itemKey)}
               </span>
             </li>
@@ -152,7 +152,7 @@ export default function Markdown({ content }: { content: string }) {
         i++;
       }
       blocks.push(
-        <ul key={key} className="my-2 ml-4 list-disc space-y-1 marker:text-slate-600">
+        <ul key={key} className="my-2 ml-4 list-disc space-y-1 marker:text-[#6e7d92]">
           {items}
         </ul>
       );
@@ -189,5 +189,5 @@ export default function Markdown({ content }: { content: string }) {
     );
   }
 
-  return <div className="doc-prose text-slate-200">{blocks}</div>;
+  return <div className="doc-prose text-[#e8edf5]">{blocks}</div>;
 }

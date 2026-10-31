@@ -57,7 +57,7 @@ export default function PhaseRail({
       aria-label={`${item.name} — ${item.view.label}`}
       title={`${item.name} — ${item.view.label}`}
       aria-current={item.isActive ? 'step' : undefined}
-      className="flex h-5 w-5 min-h-[24px] min-w-[24px] items-center justify-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+      className="flex h-5 w-5 min-h-[24px] min-w-[24px] items-center justify-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/60"
     >
       {markerForView(item.view)}
     </button>
@@ -76,7 +76,7 @@ export default function PhaseRail({
           aria-expanded={legendOpen}
           aria-controls={popoverId}
           title="Phase states"
-          className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950/60 px-2.5 text-[11px] font-mono text-slate-300 transition hover:bg-slate-900 hover:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+          className="flex h-8 items-center gap-1.5 rounded-lg border border-[#2a3342] bg-[#05070c]/60 px-2.5 text-[11px] font-mono text-[#a8b3c4] transition hover:bg-[#0d1017] hover:text-[#e8edf5] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/60"
         >
           <Check className="h-3 w-3 text-emerald-400" aria-hidden />
           {approvedCount}/{total} · {firstActive?.name ?? ''}
@@ -95,7 +95,7 @@ export default function PhaseRail({
             aria-controls={popoverId}
             aria-label="Show phase state legend"
             title="Phase states"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-800 hover:text-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#6e7d92] transition hover:bg-[#11151d] hover:text-[#a8b3c4] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/60"
           >
             <Info className="h-4 w-4" aria-hidden />
           </button>
@@ -105,11 +105,11 @@ export default function PhaseRail({
       {legendOpen && (
         <div
           id={popoverId}
-          className="absolute right-0 top-full z-50 mt-1 w-64 rounded-xl border border-slate-700 bg-slate-950 p-2 shadow-2xl"
+          className="absolute right-0 top-full z-50 mt-1 w-64 rounded-xl border border-[#3b4658] bg-[#05070c] p-2 shadow-2xl"
         >
           {narrow && (
             <>
-              <p className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              <p className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-[#6e7d92]">
                 Build phases
               </p>
               <ol role="list" className="mb-2 flex items-center gap-[6px] px-1">
@@ -119,14 +119,14 @@ export default function PhaseRail({
               </ol>
             </>
           )}
-          <p className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          <p className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-[#6e7d92]">
             Phase states
           </p>
           <ul role="list" className="space-y-1">
             {LEGEND.map(({ label, Icon }) => (
-              <li key={label} className="flex items-center gap-2.5 px-1 py-0.5 text-xs text-slate-300">
-                <span className="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border border-slate-600">
-                  <Icon className="h-3 w-3 text-slate-400" aria-hidden />
+              <li key={label} className="flex items-center gap-2.5 px-1 py-0.5 text-xs text-[#a8b3c4]">
+                <span className="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border border-[#3b4658]">
+                  <Icon className="h-3 w-3 text-[#a8b3c4]" aria-hidden />
                 </span>
                 {label}
               </li>
@@ -153,15 +153,15 @@ function markerForView(view: PhaseRailView): ReactNode {
   switch (view.state) {
     case 'not-started':
       return (
-        <span className={`${base} border-slate-600 bg-transparent ${view.locked ? 'relative' : ''}`}>
-          <Circle className="h-3 w-3 text-slate-600" aria-hidden />
-          {view.locked && <Lock className="absolute -right-1 -top-1 h-2 w-2 text-slate-400" aria-hidden />}
+        <span className={`${base} border-[#3b4658] bg-transparent ${view.locked ? 'relative' : ''}`}>
+          <Circle className="h-3 w-3 text-[#6e7d92]" aria-hidden />
+          {view.locked && <Lock className="absolute -right-1 -top-1 h-2 w-2 text-[#a8b3c4]" aria-hidden />}
         </span>
       );
     case 'in-progress':
       return (
-        <span className={`${base} border-cyan-400 bg-cyan-500/20`}>
-          <Loader2 className="h-2.5 w-2.5 text-cyan-300 motion-safe:animate-spin" aria-hidden />
+        <span className={`${base} border-[#ff2a3c] bg-[#ff2a3c]/15`}>
+          <Loader2 className="h-2.5 w-2.5 text-[#ff2a3c] motion-safe:animate-spin" aria-hidden />
         </span>
       );
     case 'drafted':

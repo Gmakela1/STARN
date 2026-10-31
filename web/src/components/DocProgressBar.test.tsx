@@ -269,7 +269,7 @@ describe('DocProgressBar component', () => {
     expect(trigger).toContainElement(label);
     expect(label.className).toContain('text-[11px]');
     expect(label.className).toContain('font-semibold');
-    expect(label.className).toContain('text-slate-300');
+    expect(label.className).toContain('text-[#a8b3c4]');
     expect(label.className).toContain('tabular-nums');
     // hidden below lg
     expect(label.className).toContain('hidden');
