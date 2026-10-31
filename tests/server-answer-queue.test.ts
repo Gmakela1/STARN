@@ -308,6 +308,41 @@ describe('server answer queue', () => {
     }
   });
 
+  it('g1. GET /portal marks queued answers with meta.answerQueued; cleared after drain', async () => {
+    const item = addItem();
+
+    // Busy turn: answer queues, item is open, portal list carries the queued
+    // marker so a page reload can rebuild the chip from data.
+    (session as any).beginTurn();
+    try {
+      await request(server, 'POST', `/api/portal/${item.id}/answer`, { answer: item.answer });
+      const queued = await request(server, 'GET', '/api/portal?status=open');
+      const decorated = queued.json.data.items.find((i: any) => i.id === item.id);
+      expect(decorated?.meta?.answerQueued).toBe(true);
+      expect(decorated?.status).toBe('open');
+    } finally {
+      (session as any).endTurn();
+    }
+
+    // Drain: the pending entry leaves the queue, so the marker disappears.
+    await (session as any).runQueuedAnswers();
+    const after = await request(server, 'GET', '/api/portal');
+    const drained = after.json.data.items.find((i: any) => i.id === item.id);
+    expect(drained).toBeDefined();
+    expect(drained?.meta?.answerQueued).toBeUndefined();
+  });
+
+  it('g2. idle answer apply leaves no queued marker in the portal list', async () => {
+    const item = addItem();
+
+    await request(server, 'POST', `/api/portal/${item.id}/answer`, { answer: item.answer });
+    await vi.waitFor(() => expect(applyAnswerMock).toHaveBeenCalledTimes(1));
+
+    const res = await request(server, 'GET', '/api/portal');
+    const listed = res.json.data.items.find((i: any) => i.id === item.id);
+    expect(listed?.meta?.answerQueued).toBeUndefined();
+  });
+
   it('f2. POST /answer returns 200 {applied:true} when idle', async () => {
     const item = addItem();
 

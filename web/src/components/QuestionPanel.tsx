@@ -48,6 +48,69 @@ const stateChip: Record<AnswerState['phase'], { icon: LucideIcon; label: string;
 /** Length of the "Resolved ✓" dwell after an answer is applied (§1.6.3). */
 const DWELL_MS = 8000;
 
+// Board #53A — typed-but-unsubmitted answer drafts must survive close/reopen,
+// panel unmount (project switch), and page reloads. A module-level store holds
+// drafts per item id; when localStorage is available (it can throw in private
+// mode, so every access is guarded) it mirrors the store, capped to the newest
+// 20 drafts of 4KB each.
+const DRAFTS_STORAGE_KEY = 'starn.questionDrafts.v1';
+const DRAFT_STORE_CAP = 20;
+const DRAFT_MAX_LENGTH = 4096;
+
+let draftStore: Record<string, string> = (() => {
+  try {
+    const raw = window.localStorage.getItem(DRAFTS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    const entries = Object.entries(parsed as Record<string, unknown>).filter(
+      ([id, text]) => typeof id === 'string' && typeof text === 'string'
+    ) as Array<[string, string]>;
+    return Object.fromEntries(entries);
+  } catch {
+    return {};
+  }
+})();
+
+function persistDraftStore(): void {
+  try {
+    const entries = Object.entries(draftStore).slice(-DRAFT_STORE_CAP);
+    const trimmed: Record<string, string> = {};
+    for (const [id, text] of entries) {
+      trimmed[id] = text.length > DRAFT_MAX_LENGTH ? text.slice(0, DRAFT_MAX_LENGTH) : text;
+    }
+    draftStore = trimmed;
+    window.localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(trimmed));
+  } catch {
+    // Storage unavailable (private mode, quota) — the module store still holds
+    // the drafts for this page session.
+  }
+}
+
+function writeDraft(id: string, text: string): void {
+  if (!id) return;
+  draftStore = { ...draftStore, [id]: text };
+  persistDraftStore();
+}
+
+function dropDraft(id: string): void {
+  if (!(id in draftStore)) return;
+  const next = { ...draftStore };
+  delete next[id];
+  draftStore = next;
+  persistDraftStore();
+}
+
+/** Test seam: clears the module draft store and its persisted mirror. */
+export function resetQuestionDraftsForTests(): void {
+  draftStore = {};
+  try {
+    window.localStorage.removeItem(DRAFTS_STORAGE_KEY);
+  } catch {
+    // Ignore — nothing to clear.
+  }
+}
+
 /** Most recently resolved item still in dwell — used when the open pool is empty. */
 function latestResolvedItem(resolved: Record<string, { item: PortalItem; until: number }>): PortalItem | null {
   let latest: { item: PortalItem; until: number } | null = null;
@@ -79,7 +142,9 @@ export default function QuestionPanel({
   focusRequest
 }: QuestionPanelProps) {
   const [activeId, setActiveId] = useState<string>(items[0]?.id ?? '');
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  // Board #53A — drafts seed from the module store so close/reopen, unmount,
+  // and page reload all restore the typed-but-unsubmitted answer.
+  const [drafts, setDrafts] = useState<Record<string, string>>({ ...draftStore });
   const [showFull, setShowFull] = useState<string | null>(null);
   const [retryText, setRetryText] = useState<Record<string, string>>({});
   /** Per-item expansion of the follow-up answer-history disclosure (§3 board #52). */
@@ -124,12 +189,13 @@ export default function QuestionPanel({
   }, [items]);
 
   // Close = reset: the panel stays mounted but the spec resets selection,
-  // composer drafts, expander, and the dwell snapshot when it returns to the
-  // document (close vs minimize, §8.2).
+  // expander, and the dwell snapshot when it returns to the document (close vs
+  // minimize, §8.2). Board #53A — composer drafts are NOT wiped on close; they
+  // live in the module draft store (survives unmount and reload) and are
+  // cleared only on successful submit.
   useEffect(() => {
     if (surface !== 'closed') return;
     setActiveId(items[0]?.id ?? '');
-    setDrafts({});
     setShowFull(null);
     setSubmitError(null);
     setRecentlyResolved({});
@@ -271,7 +337,9 @@ export default function QuestionPanel({
     recentlyResolved[voiceItem.id] === undefined;
 
   const appendVoiceText = useCallback((id: string, text: string) => {
-    setDrafts(prev => ({ ...prev, [id]: (prev[id] ?? '') + text }));
+    const combined = (draftsRef.current[id] ?? '') + text;
+    writeDraft(id, combined);
+    setDrafts(prev => ({ ...prev, [id]: combined }));
   }, []);
 
   // Alt-hold-to-record key listener (same shape as the doc composer's).
@@ -298,8 +366,9 @@ export default function QuestionPanel({
       window.removeEventListener('keyup', handleKeyUp);
       // Leaving the answerable state (panel closed or minimized, item parked/
       // queued/applied) must not orphan a hot MediaRecorder: stop it and flush
-      // the transcript into the item's draft. The append lands as a microtask,
-      // so it survives the close reset's synchronous setDrafts({}).
+      // the transcript into the item's draft. Board #53A — the append lands as
+      // a microtask and goes through the same draft store, so it survives a
+      // close that happens before the transcript resolves.
       if (recordingRef.current) {
         const id = activeIdRef.current;
         void stopRecording().then(text => {
@@ -319,6 +388,7 @@ export default function QuestionPanel({
       const id = activeIdRef.current;
       const draft = draftsRef.current[id]?.trim() ?? '';
       if (draft.length > 0) {
+        dropDraft(id);
         setDrafts(prev => {
           if (!prev[id]) return prev;
           const next = { ...prev };
@@ -340,15 +410,18 @@ export default function QuestionPanel({
     const phase = answerStates[id]?.phase;
     if (phase === 'queued' || phase === 'applying') return;
     setRetryText(prev => ({ ...prev, [id]: trimmed }));
-    setDrafts(prev => {
-      if (!(id in prev)) return prev;
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
     setSubmitError(null);
     try {
       await onSubmit(id, trimmed);
+      // Board #53A — the draft is wiped only on a successful submit; a failure
+      // keeps the text in the composer (retryText still replays it).
+      dropDraft(id);
+      setDrafts(prev => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Couldn't send your answer.");
     }
@@ -667,7 +740,10 @@ export default function QuestionPanel({
                   id="question-panel-composer"
                   ref={composerRef}
                   value={drafts[item.id] ?? ''}
-                  onChange={e => setDrafts(prev => ({ ...prev, [item.id]: e.target.value }))}
+                  onChange={e => {
+                    writeDraft(item.id, e.target.value);
+                    setDrafts(prev => ({ ...prev, [item.id]: e.target.value }));
+                  }}
                   onKeyDown={e => {
                     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                       e.preventDefault();

@@ -51,6 +51,7 @@ import QuestionBadge from '../components/QuestionBadge';
 import QuestionPanel from '../components/QuestionPanel';
 import PaneSplitter from '../components/PaneSplitter';
 import { describeAutopilotStartError } from '../lib/autopilotError';
+import { deriveQueuedAnswerStates } from '../lib/queuedStates';
 import {
   applyAnchorHighlight,
   clearAnchorHighlights,
@@ -388,6 +389,16 @@ export default function DevelopmentView({
   }, [surface]);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [answerStates, setAnswerStates] = useState<Record<string, AnswerState>>({});
+
+  // Board #53B — reload recovery: SSE answer frames are point-in-time and
+  // never backfilled, so an answer that was queued before a reload must be
+  // rebuilt from portal data. The server marks items with a pending queue
+  // entry (meta.answerQueued) on the portal list payload; live frames always
+  // win (the derive helper never downgrades an existing state).
+  useEffect(() => {
+    setAnswerStates(prev => deriveQueuedAnswerStates(portalItems, prev));
+  }, [portalItems]);
+
   const portalItemsRef = useRef(portalItems);
   useEffect(() => {
     portalItemsRef.current = portalItems;

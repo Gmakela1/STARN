@@ -74,6 +74,16 @@ export class AnswerQueue {
     return this.pending.length;
   }
 
+  /**
+   * Board #53B — ids of pending entries in FIFO order. The server portal list
+   * uses this to decorate items whose answer is queued/applying, so a page
+   * reload rebuilds the queued chip from data (answer frames are never
+   * SSE-backfilled). Pure accessor; no I/O.
+   */
+  get pendingItemIds(): string[] {
+    return this.pending.map(e => e.itemId);
+  }
+
   get isDraining(): boolean {
     return this.draining;
   }

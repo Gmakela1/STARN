@@ -202,6 +202,31 @@ describe('AnswerQueue', () => {
     expect(queue.pendingCount).toBe(0);
   });
 
+  it('pendingItemIds lists pending ids in FIFO order and clears as entries drain', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(r => { release = r; });
+    const queue = new AnswerQueue({
+      apply: async () => {
+        await gate;
+        return { ok: true, item: answeredItem('a'), affectedDocs: [] };
+      },
+      onFrame: () => {}
+    });
+
+    expect(queue.pendingItemIds).toEqual([]);
+    queue.enqueue('a', 'x');
+    queue.enqueue('b', 'y');
+    expect(queue.pendingItemIds).toEqual(['a', 'b']);
+
+    const draining = queue.drain();
+    // 'a' shifted off the pending list while its apply is in flight.
+    await Promise.resolve();
+    expect(queue.pendingItemIds).toEqual(['b']);
+    release();
+    await draining;
+    expect(queue.pendingItemIds).toEqual([]);
+  });
+
   it('emits applying → applied frames per item in FIFO order', async () => {
     const frames: AnswerFrameEvent[] = [];
     const queue = new AnswerQueue({

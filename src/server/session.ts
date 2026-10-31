@@ -446,6 +446,16 @@ export class ServerSessionManager {
   }
 
   /**
+   * Board #53B — ids of answers still pending in the answer queue (queued or
+   * mid-drain). The portal list decorates these items so a reload rebuilds the
+   * queued chip from data instead of answer frames, which are never
+   * SSE-backfilled on reconnect.
+   */
+  queuedAnswerItemIds(): string[] {
+    return this.answerQueue.pendingItemIds;
+  }
+
+  /**
    * Drains the answer queue while holding the busy guard, so a concurrent
    * POST /api/turns or /api/autopilot/start cannot slip past the busy check
    * while an answer apply is writing state. Used from the idle queueAnswer

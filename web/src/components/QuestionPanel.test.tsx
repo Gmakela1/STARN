@@ -12,11 +12,18 @@ vi.mock('../hooks/useVoiceRecorder', () => ({
   useVoiceRecorder: vi.fn(() => voiceMock),
 }));
 import { cleanup, renderWithUser } from '../test/render';
-import QuestionPanel, { type QuestionPanelProps } from './QuestionPanel';
+import QuestionPanel, { resetQuestionDraftsForTests, type QuestionPanelProps } from './QuestionPanel';
+import { deriveQueuedAnswerStates } from '../lib/queuedStates';
 import type { PortalItem } from '../types/api';
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // Board #53A — the module draft store (and its localStorage mirror) is shared
+  // across mounts. The recorder-flush microtask (stopRecording().then… append)
+  // is feature behavior on close/unmount, so let it land BEFORE the reset or
+  // it pollutes the next test's seeded drafts.
+  await new Promise(resolve => setTimeout(resolve, 0));
+  resetQuestionDraftsForTests();
   voiceMock.recording = false;
   voiceMock.error = null;
   voiceMock.startRecording.mockClear();
@@ -241,6 +248,77 @@ describe('QuestionPanel', () => {
   });
 
   // ————— 10. Retry replays submitted text —————
+  // ————— Board #53A: answer drafts survive close/reopen, unmount, reload —————
+  it('draft survives close → reopen of the panel', async () => {
+    const props = baseProps();
+    const view = renderWithUser(<QuestionPanel {...props} />);
+
+    const textarea = screen.getByLabelText('Your answer');
+    await view.user.type(textarea, 'typed but not sent');
+
+    // Close (surface 'closed' → panel renders nothing) then reopen.
+    view.rerender(<QuestionPanel {...props} surface="closed" />);
+    expect(screen.queryByLabelText('Your answer')).not.toBeInTheDocument();
+    view.rerender(<QuestionPanel {...props} />);
+
+    expect(screen.getByLabelText('Your answer')).toHaveValue('typed but not sent');
+  });
+
+  it('draft survives unmount + remount (page reload) via the persisted store', async () => {
+    const props = baseProps();
+    const first = renderWithUser(<QuestionPanel {...props} />);
+
+    const textarea = screen.getByLabelText('Your answer');
+    await first.user.type(textarea, 'survives a reload');
+    first.unmount();
+
+    // Fresh mount, as after a full page reload (same module store + storage).
+    renderWithUser(<QuestionPanel {...baseProps()} />);
+    expect(screen.getByLabelText('Your answer')).toHaveValue('survives a reload');
+  });
+
+  it('successful submit clears the draft (state and persisted store)', async () => {
+    const props = baseProps();
+    const view = renderWithUser(<QuestionPanel {...props} />);
+
+    const textarea = screen.getByLabelText('Your answer');
+    await view.user.type(textarea, 'send this');
+    await view.user.keyboard('{Enter}');
+    expect(props.onSubmit).toHaveBeenCalledTimes(1);
+
+    expect(screen.getByLabelText('Your answer')).toHaveValue('');
+    // The store cleared too: a fresh mount shows no draft.
+    view.unmount();
+    renderWithUser(<QuestionPanel {...baseProps()} />);
+    expect(screen.getByLabelText('Your answer')).toHaveValue('');
+  });
+
+  it('failed submit keeps the draft in the composer', async () => {
+    const failing = vi.fn(async () => { throw new Error('nope'); });
+    const props = baseProps({ onSubmit: failing });
+    const view = renderWithUser(<QuestionPanel {...props} />);
+
+    const textarea = screen.getByLabelText('Your answer');
+    await view.user.type(textarea, 'keep me');
+    await view.user.keyboard('{Enter}');
+    await vi.waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+
+    expect(screen.getByLabelText('Your answer')).toHaveValue('keep me');
+  });
+
+  // ————— Board #53B: queued chip rebuilt from portal data after reload —————
+  it('item with meta.answerQueued renders the Queued chip after reload with no SSE frame', () => {
+    const item = makeItem({ id: 'A', meta: { answerQueued: true } });
+    // No answer frames ever fired in this fresh mount — chip state comes
+    // purely from the derived portal payload (server queue bookkeeping).
+    const answerStates = deriveQueuedAnswerStates([item]);
+    renderWithUser(
+      <QuestionPanel {...baseProps({ items: [item], answerStates })} />
+    );
+
+    expect(screen.getByText('Queued — applies after this phase')).toBeInTheDocument();
+  });
+
   it('failed answer: Retry button re-submits the previously submitted text', async () => {
     const props = baseProps();
     const view = renderWithUser(<QuestionPanel {...props} />);

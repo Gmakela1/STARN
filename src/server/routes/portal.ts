@@ -14,7 +14,19 @@ export const portalModule: RouteModule = {
       // Heal duplicates persisted by earlier runs before listing.
       archiveDuplicateOpenPortalItems(deps.stateManager);
       const items = listPortalItems(deps.stateManager, { status, type, phaseId });
-      return ok(res, { items });
+      // Board #53B — answers still pending in the session's answer queue are
+      // surfaced as item meta so a reload renders the queued chip from data
+      // (answer frames are excluded from SSE backfill). Decorated copies only:
+      // the pending marker is in-memory queue bookkeeping, never persisted.
+      const queuedIds = deps.session ? deps.session.queuedAnswerItemIds() : [];
+      if (queuedIds.length === 0) return ok(res, { items });
+      const queuedSet = new Set(queuedIds);
+      const decorated = items.map(item =>
+        queuedSet.has(item.id)
+          ? { ...item, meta: { ...(item.meta ?? {}), answerQueued: true } }
+          : item
+      );
+      return ok(res, { items: decorated });
     }
 
     if (segments[1] === 'portal' && segments.length === 4 && segments[3] === 'answer' && method === 'POST') {

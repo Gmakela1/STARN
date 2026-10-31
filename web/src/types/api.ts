@@ -192,6 +192,8 @@ export interface PortalItemMeta extends Record<string, unknown> {
   archived?: boolean;
   /** §3 board #52 — saved answers, appended server-side each time an answer applies. */
   answerHistory?: PortalAnswerHistoryEntry[];
+  /** Board #53B — answer is pending in the server answer queue (in-memory only). */
+  answerQueued?: boolean;
 }
 
 export interface PortalItem {
