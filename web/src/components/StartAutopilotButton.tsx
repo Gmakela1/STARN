@@ -3,6 +3,9 @@ import { Loader2, Rocket, Sparkles, Square } from 'lucide-react';
 import { describeAutopilotStartError } from '../lib/autopilotError';
 // React Bits (reactbits.dev) decorative border effect — see web/src/components/reactbits.
 import StarBorder from './reactbits/StarBorder';
+// React Bits (reactbits.dev) agents-working loader shown inside the running
+// composer button (see web/src/components/reactbits).
+import LatticeLoader from './reactbits/LatticeLoader/LatticeLoader';
 
 interface StartAutopilotButtonProps {
   /** True while the autopilot turn is running → render Stop instead of Start. */
@@ -82,27 +85,27 @@ export default function StartAutopilotButton({
             type="button"
             onClick={() => void handleStop()}
             disabled={stopping}
-            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-rose-600/40 bg-rose-950/60 text-rose-300 transition hover:bg-rose-900/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:cursor-not-allowed disabled:opacity-40"
-            title="Stop autopilot"
+            className="flex h-14 w-auto min-w-[56px] shrink-0 items-center justify-center gap-2 rounded-lg border border-rose-600/40 bg-rose-950/60 px-3 text-rose-300 transition hover:bg-rose-900/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Stop auto-drafting — click to stop"
             aria-label="Stop autopilot"
           >
             {launched ? (
               // Launch window: the rocket plays the one-shot launch on the
-              // idle→running edge before the running layout settles.
+              // idle→running edge before the loader settles in.
               <Rocket className="rocket-launch-safe h-5 w-5 fill-current" aria-hidden />
             ) : (
-              <Square className="h-4 w-4 fill-current" aria-hidden />
+              // Running state is content-bearing: the agents-working loader
+              // lives inside the button; clicking stops the autopilot turn.
+              <LatticeLoader
+                status="working"
+                label={stopping ? 'Stopping…' : 'Agents working…'}
+                cellSize={4}
+                gap={2}
+                fontSize={11}
+                showTimer={false}
+              />
             )}
           </button>
-          {/* Indeterminate 4px bar pinned to the bottom edge — held back during
-              the 900ms launch window so the launch plays before settling.
-              Static under reduced motion (index.css sets animation:none on
-              .bar-slide-safe), dimmed. */}
-          {!launched && (
-            <span className="pointer-events-none absolute inset-x-2 bottom-1 h-1 overflow-hidden rounded-full bg-rose-900/60" aria-hidden>
-              <span className="bar-slide-safe block h-full w-1/3 rounded-full bg-[#ff2a3c] motion-reduce:opacity-70" />
-            </span>
-          )}
           {/* One-shot spark burst on the idle→running edge; lives on the outer
               span so the rounded-lg button edge cannot clip the dots. */}
           {launched && (

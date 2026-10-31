@@ -90,17 +90,10 @@ html, body, #root {
 }
 .spark-burst-safe { animation: spark-burst 900ms ease-out 1; }
 
-/* Indeterminate running bar inside the rose autopilot button. */
-@keyframes bar-slide {
-  from { transform: translateX(-100%); }
-  to   { transform: translateX(300%); }
-}
-.bar-slide-safe { animation: bar-slide 1.2s ease-in-out infinite; }
-
 @media (prefers-reduced-motion: reduce) {
   .saber-on, .saber-breathe, .star-field::after { animation: none; }
   .star-field::after { transform: none; }
-  .rocket-launch-safe, .spark-burst-safe, .bar-slide-safe { animation: none; }
+  .rocket-launch-safe, .spark-burst-safe { animation: none; }
 }
 
 /* Imperial angularity: notched corner clip for primary buttons + panels */

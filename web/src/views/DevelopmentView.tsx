@@ -1229,8 +1229,10 @@ export default function DevelopmentView({
         {/* Input bar */}
         <footer className="border-t border-[#2a3342] bg-[#0d1017]/70 p-3">
           <div className="flex flex-col gap-2">
-            {/* LatticeLoader (React Bits) — agents-working indicator above the composer */}
-            {(agentsWorking || loaderFlash) && (
+            {/* LatticeLoader (React Bits) — agents-working indicator above the
+                composer; hidden while autopilot runs (the rocket button carries
+                the loader for autopilot turns). */}
+            {!autopilotStatus?.running && (agentsWorking || loaderFlash) && (
               <LatticeLoader
                 status={agentsWorking ? 'working' : 'done'}
                 pattern="spiral"
@@ -1454,15 +1456,8 @@ export default function DevelopmentView({
             >
               {uploadingExample ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Paperclip className="h-4 w-4" aria-hidden />}
             </button>
-            {/* Doc header keeps a global stop reachable while autopilot runs;
-                start lives solely in the chat composer (no duplicate Start surface). */}
-            {autopilotStatus?.running && (
-              <StartAutopilotButton
-                running={!!autopilotStatus?.running}
-                onStart={async () => { await api.autopilotStart(); }}
-                onStop={async () => { await api.autopilotStop(); }}
-              />
-            )}
+            {/* Autopilot start/stop live solely in the chat composer's rocket
+                button; the doc header keeps no autopilot control. */}
             <button
               onClick={() => void refreshDoc()}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"

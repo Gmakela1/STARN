@@ -140,7 +140,7 @@ describe('DevelopmentView agents-working loader', () => {
     expect(screen.getByText('Agents working…')).toBeInTheDocument();
   });
 
-  it('renders the loader while the autopilot status reports running', () => {
+  it('hides the footer loader while autopilot runs; the rocket button carries the loader', () => {
     autopilotState.status = {
       enabled: true,
       running: true,
@@ -149,8 +149,12 @@ describe('DevelopmentView agents-working loader', () => {
       passedCount: 0,
       totalPhases: 13
     };
-    renderView({ busy: false });
-    expect(screen.getByText('Agents working…')).toBeInTheDocument();
+    const { container } = renderView({ busy: false });
+    // The in-button loader shows the agents-working label…
+    const button = screen.getByRole('button', { name: 'Stop autopilot' });
+    expect(button.textContent).toContain('Agents working…');
+    // …while the footer loader (self-start) is hidden during autopilot.
+    expect(container.querySelector('.ll-root.self-start')).toBeNull();
   });
 
   it('is absent when idle', () => {

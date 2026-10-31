@@ -59,43 +59,44 @@ describe('StartAutopilotButton — composer variant (chat prompt box)', () => {
     expect(container.textContent).not.toContain('Launch Auto-Drafting');
   });
 
-  it('renders the 56x56 rose stop control while running and stops on click', async () => {
+  it('renders the 56x56 rose stop control with the in-button loader while running and stops on click', async () => {
     stop.mockResolvedValue(undefined);
     const { user } = renderComposer(true);
 
     const button = screen.getByRole('button', { name: 'Stop autopilot' });
-    expect(button).toHaveClass('h-14', 'w-14', 'border-rose-600/40', 'bg-rose-950/60');
-    expect(button.querySelector('.lucide-square')).not.toBeNull();
+    expect(button).toHaveClass('h-14', 'border-rose-600/40', 'bg-rose-950/60');
+    // The loader is content-bearing: the agents-working label lives inside
+    // the button, not in a bar below it.
+    expect(button.textContent).toContain('Agents working…');
+    expect(button.querySelector('.bar-slide-safe')).toBeNull();
     await user.click(button);
     await waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
   });
 
-  it('plays the one-shot rocket launch on the running edge, then settles into the bar layout', async () => {
+  it('plays the one-shot rocket launch on the running edge, then settles into the loader', async () => {
     const { rerender } = renderComposer(false);
     // Idle→running transition: the button fires its internal launched flag.
     rerender(<StartAutopilotButton running onStart={start} onStop={stop} size="composer" />);
 
     const button = screen.getByRole('button', { name: 'Stop autopilot' });
-    // The bar and burst live on the outer span (the control), not inside the
-    // button — the composer running branch renders them as siblings.
+    // The burst lives on the outer span (the control), not inside the
+    // button — the composer running branch renders it as a sibling.
     const control = button.parentElement as HTMLElement;
-    // Launch window: rocket-launch animation + spark burst visible, bar held
-    // back until the window closes.
+    // Launch window: rocket-launch animation + spark burst visible, loader
+    // held back until the window closes.
     expect(button.querySelector('.rocket-launch-safe')).not.toBeNull();
     expect(control.querySelector('.spark-burst-safe')).not.toBeNull();
-    expect(control.querySelector('.bar-slide-safe')).toBeNull();
+    expect(button.textContent).not.toContain('Agents working…');
 
-    // After the 900ms window the glyph is a static Square and the 4px bar
-    // renders pinned to the bottom edge of the control.
+    // After the 900ms window the loader renders inside the button.
     await waitFor(
-      () => expect(control.querySelector('.bar-slide-safe')).not.toBeNull(),
+      () => expect(button.textContent).toContain('Agents working…'),
       { timeout: 2000 }
     );
     expect(button.querySelector('.rocket-launch-safe')).toBeNull();
     expect(control.querySelector('.spark-burst-safe')).toBeNull();
-    const barTrack = control.querySelector('.absolute.bottom-1.inset-x-2');
-    expect(barTrack).not.toBeNull();
-    expect(button.querySelector('.lucide-square')).not.toBeNull();
+    expect(button.querySelector('.bar-slide-safe')).toBeNull();
+    expect(button.querySelector('.lucide-square')).toBeNull();
   });
 
   it('does not replay the launch on remount while already running', () => {
