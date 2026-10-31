@@ -31,6 +31,14 @@ export interface CriticEvaluateOptions {
    * verified URLs and budget variance. Absent/undefined → no stage block.
    */
   stageHint?: string;
+  /**
+   * Scoped evaluation directive (e.g. incorporation turns). When set, the
+   * critic prompt is narrowed to this aspect: the artifact was already
+   * approved, so the critic grades ONLY the scoped aspect and must not
+   * re-grade overall document quality. Baseline-binding and
+   * anti-fabrication guards remain in force. Absent → no directive block.
+   */
+  criticFocus?: string;
 }
 
 export interface CriticResult {
@@ -88,6 +96,15 @@ ${options.appliedEdits.map(e => `- [${e.path}] L${e.matchedLineRange.start}-${e.
     const isDelta = options.mode === 'delta';
     const priorScore = options.priorScore ?? 8.5;
 
+    // Scoped evaluation directive (e.g. incorporation turns): when set, the
+    // prompt is narrowed to this aspect — the artifact was already approved,
+    // so the critic must not re-grade overall quality. Injected into both
+    // prompt modes, alongside the stage-hint handling; baseline-binding and
+    // anti-fabrication guidelines stay in force.
+    const criticFocusSection = options.criticFocus
+      ? `\nSCOPED EVALUATION DIRECTIVE (overrides general grading scope): ${options.criticFocus}\nThe artifact was already approved; grade ONLY the scoped aspect. Baseline-binding and anti-fabrication guards still apply in full.\n`
+      : '';
+
     let prompt: string;
     if (isDelta) {
       let editsSummary = 'No specific edits recorded.';
@@ -121,6 +138,7 @@ CRITICAL DELTA REVIEW GUIDELINES:
 5. Score Anchoring Rule:
    If the edits cleanly and accurately address the feedback without introducing contradictions or hallucinations, score >= ${priorScore}/10 and pass (score >= 8.0). Only deduct points and fail if the edits themselves are defective, contradict the user's intent, or break internal document consistency.
 
+${criticFocusSection}
 ${baselineSection}
 DRAFT ARTIFACT TO EVALUATE:
 ${options.artifactContent}
@@ -152,7 +170,7 @@ CRITIC GUIDELINES:
 
 GRADING RUBRIC:
 ${options.rubric}
-${stageHintSection}
+${stageHintSection}${criticFocusSection}
 ${baselineSection}
 SECRET-SAUCE QUALITY EXAMPLES (Standard of Quality Reference):
 ${options.secretSauceExamples.map((ex, i) => `### Example ${i + 1}:\n${ex}`).join('\n\n')}

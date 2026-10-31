@@ -6,6 +6,7 @@ import { CoreRunner } from '../src/core/runner.js';
 import { ToolRegistry } from '../src/tools/registry.js';
 import { SpecialistRegistry } from '../src/specialists/registry.js';
 import { OpenRouterClient } from '../src/openrouter/client.js';
+import { CriticEvaluator } from '../src/core/critic.js';
 import { ProjectStateManager } from '../src/workspace/state.js';
 
 /**
@@ -134,6 +135,43 @@ describe('Core Runner autopilot hooks', () => {
 
     expect(classifierCalls).toBe(0);
     expect(result.specialistId).toBe('bom');
+  });
+
+  it('threads criticFocus into the critic evaluate call', async () => {
+    approveRequirements(stateMgr, tempDir);
+    installBomMock(tempDir, mockClient, {
+      draftContent: bomDocWithOpenQuestions([]),
+      criticResults: [{ passed: true, score: 9.0 }]
+    });
+    const evaluateSpy = vi.spyOn(CriticEvaluator.prototype, 'evaluate').mockResolvedValue({
+      passed: true,
+      score: 9.0,
+      summary: 'ok',
+      strengths: [],
+      weaknesses: [],
+      actionableGuidance: ''
+    });
+    let evaluateArg: any;
+    try {
+      await CoreRunner.executeTurn({
+        userPrompt: 'Draft the BOM',
+        projectPath: tempDir,
+        stateManager: stateMgr,
+        client: mockClient,
+        model: 'test-model',
+        toolRegistry,
+        specialistRegistry,
+        forceSpecialistId: 'bom',
+        sessionMessages: [],
+        criticFocus: 'SCOPED-TEST-DIRECTIVE'
+      });
+      // Capture before mockRestore — restoring clears recorded calls.
+      evaluateArg = evaluateSpy.mock.calls[0]?.[0] as any;
+    } finally {
+      evaluateSpy.mockRestore();
+    }
+    expect(evaluateArg).toBeDefined();
+    expect(evaluateArg.criticFocus).toBe('SCOPED-TEST-DIRECTIVE');
   });
 
   it('forceSpecialistId still produces a normal specialist TurnResult', async () => {

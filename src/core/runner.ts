@@ -72,6 +72,11 @@ export interface TurnOptions {
    * headless plain-text formatters; the terminal CLI injects chalk-styled ones.
    */
   formatters?: TurnFormatters;
+  /**
+   * Scoped evaluation directive threaded to the critic (e.g. incorporation
+   * turns grade ONLY answer incorporation, not the already-approved doc).
+   */
+  criticFocus?: string;
 }
 
 export interface TurnResult {
@@ -545,6 +550,9 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
             mode: isDeltaReview ? 'delta' : 'full',
             priorScore: isDeltaReview ? priorArtifactScore : undefined,
             userPrompt: isDeltaReview ? userPrompt : undefined,
+            // Scoped directive (e.g. incorporation turns): narrows the critic
+            // to the scoped aspect instead of re-grading the approved doc.
+            criticFocus: options.criticFocus,
             // Stage-aware critic: only the BOM package declares two-stage
             // drafting; its Stage-1 marker opts the draft out of Stage-2
             // criteria (verified URLs, variance). Other specialists: no hint.

@@ -32,6 +32,8 @@ export interface AutopilotDeps {
   executeTurn: (opts: {
     userPrompt: string;
     forceSpecialistId: string;
+    /** Scoped evaluation directive threaded to the critic (incorporation turns). */
+    criticFocus?: string;
     signal?: AbortSignal;
     onQuestions?: (items: Array<{
       type: 'question';
@@ -519,6 +521,9 @@ User answers below are pending incorporation: revise the document's normative te
 
 You MUST write the complete updated document to docs/${phaseId.toUpperCase()}.md using fs_write (or apply the edits with fs_edit). Your response must be the complete document content starting with a heading.`,
         forceSpecialistId: phaseId,
+        // The doc is already approved; scope the critic to incorporation
+        // accuracy so the turn is not re-graded against the full rubric.
+        criticFocus: 'Grade the incorporation turn on: (1) PRIMARY — each pending user answer accurately incorporated into normative text, no invented facts, block handled per instructions; (2) MANDATORY FULL-DOC CONSISTENCY SCAN — read the entire document and fail (score < 8.0) if the incorporation introduced any NEW contradiction, regression, or damage in ANY section; (3) baseline-binding and anti-fabrication guards apply in full. Do NOT deduct for imperfections that pre-date this turn and were not touched by the incorporation — those belong to the approved baseline and the normal phase flow, not this gate. Pass >= 8.0 when incorporation is accurate, complete, and the full-doc scan finds no new damage.',
         signal,
         onQuestions: (items) => {
           for (const item of items) {

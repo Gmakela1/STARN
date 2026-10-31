@@ -104,3 +104,56 @@ describe('CriticEvaluator stage hint + grounding carve-outs', () => {
     expect(captured[0]).toContain('honest flags, NOT vague placeholders');
   });
 });
+
+describe('CriticEvaluator scoped evaluation directive (criticFocus)', () => {
+  // Mirrors the hybrid incorporation directive from autopilot.ts
+  // (incorporatePendingAnswers) so the prompt test covers the real text.
+  const focus = 'Grade the incorporation turn on: (1) PRIMARY — each pending user answer accurately incorporated into normative text, no invented facts, block handled per instructions; (2) MANDATORY FULL-DOC CONSISTENCY SCAN — read the entire document and fail (score < 8.0) if the incorporation introduced any NEW contradiction, regression, or damage in ANY section; (3) baseline-binding and anti-fabrication guards apply in full. Do NOT deduct for imperfections that pre-date this turn and were not touched by the incorporation — those belong to the approved baseline and the normal phase flow, not this gate. Pass >= 8.0 when incorporation is accurate, complete, and the full-doc scan finds no new damage.';
+
+  it('full mode: injects the directive and keeps the baseline + anti-hallucination guards', async () => {
+    const captured: string[] = [];
+    const critic = makeCritic(captured);
+    await critic.evaluate(makeOptions({
+      artifactContent: '# BOM',
+      programBaselineDocuments: [{ id: 'REQ', path: 'docs/REQUIREMENTS.md', content: 'Approved baseline text.' }],
+      criticFocus: focus
+    }));
+    expect(captured[0]).toContain('SCOPED EVALUATION DIRECTIVE (overrides general grading scope)');
+    expect(captured[0]).toContain(focus);
+    expect(captured[0]).toContain('The artifact was already approved; grade ONLY the scoped aspect.');
+    expect(captured[0]).toContain('Baseline-binding and anti-fabrication guards still apply in full.');
+    // Hybrid gate: full-doc consistency scan + pre-existing-imperfection
+    // exclusion are both carried through into the prompt.
+    expect(captured[0]).toContain('MANDATORY FULL-DOC CONSISTENCY SCAN');
+    expect(captured[0]).toContain('fail (score < 8.0) if the incorporation introduced any NEW contradiction, regression, or damage in ANY section');
+    expect(captured[0]).toContain('Do NOT deduct for imperfections that pre-date this turn');
+    // Guards survive the scoped directive.
+    expect(captured[0]).toContain('Anti-Hallucination & Collaborative Integrity (CRITICAL)');
+    expect(captured[0]).toContain('APPROVED PROGRAM BASELINE');
+    expect(captured[0]).toContain('REMAINS the approved basis pending formal revision');
+  });
+
+  it('delta mode: injects the directive and keeps the non-regression guard', async () => {
+    const captured: string[] = [];
+    const critic = makeCritic(captured);
+    await critic.evaluate(makeOptions({
+      mode: 'delta',
+      artifactContent: '# BOM',
+      priorScore: 8.5,
+      userPrompt: 'incorporate answer',
+      programBaselineDocuments: [{ id: 'REQ', path: 'docs/REQUIREMENTS.md', content: 'Approved baseline text.' }],
+      criticFocus: focus
+    }));
+    expect(captured[0]).toContain('SCOPED EVALUATION DIRECTIVE (overrides general grading scope)');
+    expect(captured[0]).toContain(focus);
+    expect(captured[0]).toContain('Non-Regression & Anti-Hallucination');
+    expect(captured[0]).toContain('APPROVED PROGRAM BASELINE');
+  });
+
+  it('omits the directive block when no criticFocus is given', async () => {
+    const captured: string[] = [];
+    const critic = makeCritic(captured);
+    await critic.evaluate(makeOptions({ artifactContent: '# BOM' }));
+    expect(captured[0]).not.toContain('SCOPED EVALUATION DIRECTIVE');
+  });
+});

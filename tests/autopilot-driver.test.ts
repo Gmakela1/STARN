@@ -582,6 +582,36 @@ describe('AutopilotDriver', () => {
     expect(capturedEvents.some(e => e.kind === 'status' && (e as any).message.includes('Incorporating pending user answers'))).toBe(true);
   });
 
+  it('passes the scoped incorporation criticFocus to the incorporation executeTurn call', async () => {
+    const pendingContent = '# REQUIREMENTS\n\nApproved normative text.\n\n## User Answers (Pending Incorporation)\n\n**Bus current**\nAnswer: derive from motor max output at 72 V\n';
+    await preApprovePhase(tmpDir, stateMgr, 'conops');
+    await preApprovePhase(tmpDir, stateMgr, 'architecture');
+    await preApprovePhase(tmpDir, stateMgr, 'icd');
+    await preApprovePhase(tmpDir, stateMgr, 'capabilities');
+    await preApprovePhase(tmpDir, stateMgr, 'requirements', pendingContent);
+
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string }) => {
+      writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nDeliverable content.\n`);
+      return makeTurnResult(opts.forceSpecialistId);
+    });
+
+    const driver = createDriver();
+    driver.start();
+
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    const firstCall = executeTurnMock.mock.calls[0][0] as any;
+    expect(firstCall.forceSpecialistId).toBe('requirements');
+    // Hybrid incorporation gate: scoped primary + mandatory full-doc
+    // consistency scan + pre-existing-imperfection exclusion.
+    expect(firstCall.criticFocus).toContain('(1) PRIMARY — each pending user answer accurately incorporated');
+    expect(firstCall.criticFocus).toContain('MANDATORY FULL-DOC CONSISTENCY SCAN');
+    expect(firstCall.criticFocus).toContain('Do NOT deduct for imperfections that pre-date this turn');
+    expect(firstCall.criticFocus).toContain('Pass >= 8.0');
+  });
+
   it('leaves the pending block on disk and emits a status event when the incorporation turn errors', async () => {
     const pendingContent = '# REQUIREMENTS\n\nApproved normative text.\n\n## User Answers (Pending Incorporation)\n\n**Bus current**\nAnswer: derive from motor max output at 72 V\n';
     await preApprovePhase(tmpDir, stateMgr, 'conops');
