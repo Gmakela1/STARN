@@ -25,7 +25,7 @@ import { PHASE_SUBTITLES } from '../components/roadmapMeta';
 // React Bits (reactbits.dev) decorative effects — see web/src/components/reactbits.
 import Galaxy from '../components/reactbits/Galaxy';
 import ShinyText from '../components/reactbits/ShinyText';
-import StarBorder from '../components/reactbits/StarBorder';
+import StartAutopilotButton from '../components/StartAutopilotButton';
 
 const money = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -147,23 +147,21 @@ export default function DashboardView({
             <p className="text-sm text-[#a8b3c4]">
               Start Autopilot to auto-draft all 13 documents.
             </p>
-            <StarBorder
-              as="button"
-              type="button"
-              onClick={() => {}}
-              className="cut-corner mt-3 rounded-none bg-[#d61f2c] px-4 py-2 text-xs font-bold text-white hover:bg-[#e11d3f]"
-              style={{ padding: '0.5rem 1rem' }}
-              backgroundColor="#d61f2c"
-              textColor="#ffffff"
-              color="#ff2a3c"
-              trailColor="#d9a441"
-              duration={6}
-              thickness={2}
-              glow={0.7}
-              radius={0}
-            >
-              Start Autopilot
-            </StarBorder>
+            {/* Real start flow via StartAutopilotButton (board #57): disabled
+                while pending, 409 busy surfaced as inline alert, dashboard
+                reloaded on success so the pane switches to the live portal. */}
+            <div className="mt-3 flex justify-center">
+              <StartAutopilotButton
+                running={false}
+                onStart={async () => {
+                  await api.autopilotStart();
+                  await load();
+                }}
+                onStop={async () => {
+                  await api.autopilotStop();
+                }}
+              />
+            </div>
           </div>
           {shopFloorFlags.length > 0 && (
             <>
@@ -182,7 +180,7 @@ export default function DashboardView({
       );
     }
 
-    // 4-tier ranking: rose blocking → amber parked → cyan needs-input → slate shop-floor
+    // 4-tier ranking: rose blocking → amber parked → violet needs-input → slate shop-floor
     const blockingItems = topItems.filter((i: PortalItem) => i.severity === 'blocking' && i.status === 'open');
     const parkedItems = topItems.filter((i: PortalItem) => i.type === 'parked' && i.status === 'open');
     const questionItems = topItems.filter((i: PortalItem) => i.type === 'question' && i.status === 'open');

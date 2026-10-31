@@ -123,7 +123,7 @@ export default function DocProgressBar({
           <div className="flex h-full w-full">
             {greenPct > 0 && (
               <div
-                className="h-full bg-[#2c5e3b] transition-all"
+                className="h-full border-t border-[#35714a] bg-[#2c5e3b] transition-all"
                 style={{ width: `${greenPct}%` }}
               />
             )}
@@ -167,7 +167,7 @@ export default function DocProgressBar({
               </span>
               <div className="h-2 w-16 overflow-hidden rounded bg-[#171c26]">
                 <div
-                  className="h-full bg-[#2c5e3b]"
+                  className="h-full border-t border-[#35714a] bg-[#2c5e3b]"
                   style={{
                     width: `${total > 0 ? (progress.approved / total) * 100 : 0}%`,
                   }}
