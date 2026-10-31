@@ -3,7 +3,7 @@ import path from 'node:path';
 import { ProjectStateManager, ORDERED_WORKFLOW_PHASES, defaultAutopilotState } from '../workspace/state.js';
 import { PortalItem, PortalItemType, AutopilotState, ProjectState } from '../workspace/types.js';
 import { TurnResult } from './runner.js';
-import { approveArtifact } from './approvals.js';
+import { approveArtifact, parseAffectedPhaseIds } from './approvals.js';
 import { addPortalItem, answerPortalItem, listPortalItems } from './question-portal.js';
 import { Logger } from '../util/logger.js';
 
@@ -85,6 +85,80 @@ function stripPendingBlock(content: string): string {
   }
   // No later heading: the block extends to end of document.
   return head.trimEnd() + '\n';
+}
+
+const DIFF_MAX_LINES_PER_SECTION = 6;
+const DIFF_LINE_MAX_CHARS = 120;
+const DIFF_SUMMARY_MAX_CHARS = 1200;
+const FLAGGED_DETAILS_MAX_CHARS = 1000;
+
+/**
+ * Compact before/after diff summary for the ripple scan prompt: groups added
+ * ("+ ") / removed ("- ") lines by their nearest enclosing markdown heading.
+ * When no headings are identifiable, falls back to the first changed lines.
+ * Returns '' when the two contents are identical.
+ */
+function summarizeDiff(before: string, after: string): string {
+  if (before === after) return '';
+  const beforeLines = before.split('\n');
+  const afterLines = after.split('\n');
+  const beforeSet = new Set(beforeLines);
+  const afterSet = new Set(afterLines);
+
+  const headingOf = (lines: string[], idx: number): string | null => {
+    for (let j = idx; j >= 0; j--) {
+      if (/^#{1,6} /.test(lines[j])) return lines[j];
+    }
+    return null;
+  };
+
+  const entries: Array<{ heading: string | null; line: string }> = [];
+  afterLines.forEach((line, idx) => {
+    if (!beforeSet.has(line)) {
+      entries.push({ heading: headingOf(afterLines, idx), line: `+ ${line.trim().slice(0, DIFF_LINE_MAX_CHARS)}` });
+    }
+  });
+  beforeLines.forEach((line, idx) => {
+    if (!afterSet.has(line)) {
+      entries.push({ heading: headingOf(beforeLines, idx), line: `- ${line.trim().slice(0, DIFF_LINE_MAX_CHARS)}` });
+    }
+  });
+
+  const sections = new Map<string, string[]>();
+  for (const e of entries) {
+    const key = e.heading ?? '';
+    const lines = sections.get(key) ?? [];
+    if (lines.length < DIFF_MAX_LINES_PER_SECTION) lines.push(e.line);
+    sections.set(key, lines);
+  }
+  let summary = '';
+  for (const [heading, lines] of sections) {
+    summary += `${heading ? `${heading}: ` : ''}${lines.join(' | ')}; `;
+  }
+  summary = summary.trimEnd().replace(/; $/, '');
+  if (summary.length > DIFF_SUMMARY_MAX_CHARS) {
+    summary = summary.slice(0, DIFF_SUMMARY_MAX_CHARS) + '...';
+  }
+  return summary;
+}
+
+/**
+ * Extracts the ripple-report fragment that describes the flags for one doc
+ * (from its docs/<ID>.md reference to the next doc reference or the report
+ * end). Falls back to the whole report when the doc is not named.
+ */
+function flaggedDetailsForDoc(report: string, artifactId: string): string {
+  const docRe = /docs\/[A-Za-z0-9_-]+\.md/gi;
+  let m: RegExpExecArray | null;
+  while ((m = docRe.exec(report)) !== null) {
+    const raw = m[0].slice(5, -3).replace(/_/g, '').replace(/-/g, '').toLowerCase();
+    if (raw === artifactId.toLowerCase()) {
+      const next = docRe.exec(report);
+      const end = next ? next.index : report.length;
+      return report.slice(m.index, end).trim().slice(0, FLAGGED_DETAILS_MAX_CHARS);
+    }
+  }
+  return report.trim().slice(0, FLAGGED_DETAILS_MAX_CHARS);
 }
 
 /**
@@ -514,6 +588,10 @@ export class AutopilotDriver {
         `Autopilot: pending user answers found in docs/${phaseId.toUpperCase()}.md — running incorporation turn for ${phaseId} before the current phase`
       );
       this.emit({ kind: 'status', message: `Incorporating pending user answers in ${phase.name} before continuing…` });
+      // Capture the pre-turn content: the ripple scan only fires when the
+      // incorporation turn actually edited the document (no-op incorporations
+      // never ripple).
+      const beforeContent = readDocContent(projectPath, phaseId) ?? '';
       const result = await executeTurn({
         userPrompt: `USER ANSWERS PENDING INCORPORATION detected in docs/${phaseId.toUpperCase()}.md.
 
@@ -549,15 +627,96 @@ You MUST write the complete updated document to docs/${phaseId.toUpperCase()}.md
       // Guard: if the specialist turn left the block in place, strip it so
       // the chain never re-runs incorporation on a stale block forever.
       const docPath = path.join(projectPath, 'docs', `${phaseId.toUpperCase()}.md`);
+      // postTurnContent is the specialist's own edit footprint, read BEFORE
+      // the deterministic guard strip below — so a no-op incorporation that
+      // leaves the block untouched compares byte-identical to beforeContent.
+      let postTurnContent: string | null = null;
       try {
         const content = fs.readFileSync(docPath, 'utf-8');
+        postTurnContent = content;
         if (content.includes(PENDING_INCORPORATION_MARKER)) {
-          fs.writeFileSync(docPath, stripPendingBlock(content), 'utf-8');
+          const stripped = stripPendingBlock(content);
+          fs.writeFileSync(docPath, stripped, 'utf-8');
           logger?.info(`Autopilot: incorporation turn left the pending block in docs/${phaseId.toUpperCase()}.md — stripped it`);
         }
       } catch {
         // ignore: unreadable/missing doc — nothing to strip
       }
+      // Ripple scan gate (two triggers only): the incorporation turn just
+      // incorporated pending open-question answers (inherent to this path)
+      // AND the doc actually changed. No ripple on no-op incorporations.
+      if (postTurnContent === null || postTurnContent === beforeContent) {
+        continue;
+      }
+      const diff = summarizeDiff(beforeContent, postTurnContent);
+      if (!diff) {
+        continue;
+      }
+      await this.runRippleScan(phaseId, diff, signal);
+    }
+  }
+
+  /**
+   * Read-only ripple scan after a successful incorporation: runs the
+   * change-impact specialist (non-critic, no criticFocus) over the compact
+   * incorporation diff to flag downstream approved docs whose content is now
+   * discrepant, then runs ONE scoped fix turn per flagged doc with its owning
+   * specialist (the incorporation doc itself is excluded). One ripple turn
+   * per doc per run — no loops. Scan/fix failures are logged and surfaced via
+   * a status event, never fatal; the affected doc is separate from the
+   * incorporation doc, so nothing is stripped on failure.
+   */
+  private async runRippleScan(incorporatedPhaseId: string, diffSummaryText: string, signal?: AbortSignal): Promise<void> {
+    const { executeTurn, logger } = this.deps;
+    const artifactId = incorporatedPhaseId.toUpperCase();
+    let scanResult: TurnResult;
+    try {
+      scanResult = await executeTurn({
+        userPrompt: `UPSTREAM CHANGE DIFF in docs/${artifactId}.md (pending user answers incorporated): ${diffSummaryText}\n\nRead the downstream approved docs. Flag every document/section where this change creates a discrepancy, contradiction, or stale value. Output format: per affected doc — path, section heading, what is now discrepant, and the scoped update that would fix it. ANALYSIS ONLY — do NOT write or edit any document.`,
+        forceSpecialistId: 'change-impact',
+        signal,
+        onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
+        onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args })
+      });
+    } catch (err: any) {
+      logger?.warn(`Autopilot: ripple scan for docs/${artifactId}.md failed (${err?.message ?? String(err)})`);
+      this.emit({ kind: 'status', message: 'Ripple scan failed — continuing.' });
+      return;
+    }
+    if (scanResult?.error || scanResult?.criticFailed || scanResult?.aborted) {
+      logger?.warn(`Autopilot: ripple scan for docs/${artifactId}.md failed (${scanResult?.output?.slice(0, 120) || 'unknown error'})`);
+      this.emit({ kind: 'status', message: 'Ripple scan failed — continuing.' });
+      return;
+    }
+    const affectedPhaseIds = parseAffectedPhaseIds(scanResult.output)
+      .filter(id => id !== incorporatedPhaseId);
+    this.emit({ kind: 'status', message: `Ripple scan: ${affectedPhaseIds.length} documents flagged` });
+    for (const targetId of affectedPhaseIds) {
+      const targetPhase = ORDERED_WORKFLOW_PHASES.find(p => p.id === targetId)!;
+      if (signal?.aborted) {
+        return;
+      }
+      const details = flaggedDetailsForDoc(scanResult.output, targetPhase.id.toUpperCase());
+      let fixResult: TurnResult;
+      try {
+        fixResult = await executeTurn({
+          userPrompt: `CHANGE-IMPACT RIPPLE: docs/${artifactId}.md was updated (upstream decision change). Update ONLY these flagged sections: ${details}. Keep everything else untouched. You may ground fixes with your tools; if a fix requires changing an approved upstream baseline figure, apply the baseline-conflict protocol instead (keep figure binding, mark pending reconciliation, record Open Question). You MUST write the complete updated document to docs/${targetPhase.id.toUpperCase()}.md using fs_write (or apply the edits with fs_edit).`,
+          forceSpecialistId: targetId,
+          signal,
+          onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
+          onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args })
+        });
+      } catch (err: any) {
+        logger?.warn(`Autopilot: ripple fix turn for ${targetId} failed (${err?.message ?? String(err)})`);
+        this.emit({ kind: 'status', message: `Ripple fix for ${targetPhase.name} failed — continuing.` });
+        continue;
+      }
+      if (fixResult?.error || fixResult?.criticFailed) {
+        logger?.warn(`Autopilot: ripple fix turn for ${targetId} failed (${fixResult?.output?.slice(0, 120) || 'unknown error'})`);
+        this.emit({ kind: 'status', message: `Ripple fix for ${targetPhase.name} failed — continuing.` });
+        continue;
+      }
+      this.emit({ kind: 'status', message: `Ripple fix: docs/${targetPhase.id.toUpperCase()}.md updated` });
     }
   }
 

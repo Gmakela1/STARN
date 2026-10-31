@@ -685,4 +685,175 @@ describe('AutopilotDriver', () => {
     expect(capturedEvents.some(e => e.kind === 'status' && (e as any).message.includes('Incorporation turn for System Requirements failed'))).toBe(true);
     expect((capturedEvents.find(e => e.kind === 'complete') as any).reason).toBe('finished');
   });
+
+  // ── Ripple scan: change-impact flags cross-doc discrepancies after incorporation ──
+
+  const RIPPLE_REPORT = `## Change Impact Analysis
+
+**Source of change:** docs/REQUIREMENTS.md — Section "Bus Electrical"
+
+**Affected documents:**
+- docs/ARCHITECTURE.md — Section "Power Budget": stale 72 V bus figure — ARCH-FLAG-MARKER. Scoped fix: raise to 96 V.
+- docs/ICD.md — Section "Power Interface": stale 72 V bus figure — ICD-FLAG-MARKER. Scoped fix: raise to 96 V.
+`;
+
+  async function setupPendingRequirements(): Promise<void> {
+    const pendingContent = '# REQUIREMENTS\n\nApproved normative text. Motor bus at 72 V.\n\n## User Answers (Pending Incorporation)\n\n**Bus current**\nAnswer: derive from motor max output at 72 V\n';
+    await preApprovePhase(tmpDir, stateMgr, 'conops');
+    await preApprovePhase(tmpDir, stateMgr, 'architecture');
+    await preApprovePhase(tmpDir, stateMgr, 'icd');
+    await preApprovePhase(tmpDir, stateMgr, 'capabilities');
+    await preApprovePhase(tmpDir, stateMgr, 'requirements', pendingContent);
+  }
+
+  it('runs one change-impact ripple scan + scoped owning-specialist fix turns after a successful incorporation, excluding the incorporation doc', async () => {
+    await setupPendingRequirements();
+
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string }) => {
+      if (opts.forceSpecialistId === 'requirements') {
+        // Incorporation turn rewrites the doc (raises bus to 96 V).
+        writeDoc(tmpDir, 'requirements', '# REQUIREMENTS\n\nApproved normative text. Motor bus raised to 96 V.\n');
+        return makeTurnResult('requirements');
+      }
+      if (opts.forceSpecialistId === 'change-impact') {
+        return makeTurnResult('change-impact', { requiresReview: false, output: RIPPLE_REPORT });
+      }
+      writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nDeliverable content.\n`);
+      return makeTurnResult(opts.forceSpecialistId);
+    });
+
+    const driver = createDriver();
+    driver.start();
+
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    const calls: any[] = executeTurnMock.mock.calls.map(c => c[0]);
+
+    // Exactly one read-only change-impact scan turn, carrying the diff.
+    const scanCalls = calls.filter(c => c.forceSpecialistId === 'change-impact');
+    expect(scanCalls).toHaveLength(1);
+    expect(scanCalls[0].userPrompt).toContain('UPSTREAM CHANGE DIFF in docs/REQUIREMENTS.md');
+    expect(scanCalls[0].userPrompt).toContain('96 V');
+    expect(scanCalls[0].userPrompt).toContain('ANALYSIS ONLY');
+    // change-impact is non-critic — no criticFocus needed (62b4726).
+    expect(scanCalls[0].criticFocus).toBeUndefined();
+
+    // One scoped fix turn per flagged doc, owning specialist, report order.
+    expect(calls[2].forceSpecialistId).toBe('architecture');
+    expect(calls[2].userPrompt).toContain('CHANGE-IMPACT RIPPLE: docs/REQUIREMENTS.md was updated');
+    expect(calls[2].userPrompt).toContain('Power Budget');
+    expect(calls[2].userPrompt).toContain('ARCH-FLAG-MARKER');
+    expect(calls[2].userPrompt).not.toContain('ICD-FLAG-MARKER');
+    expect(calls[3].forceSpecialistId).toBe('icd');
+    expect(calls[3].userPrompt).toContain('ICD-FLAG-MARKER');
+    expect(calls[3].userPrompt).not.toContain('ARCH-FLAG-MARKER');
+
+    // The incorporation doc is excluded from ripple fix turns.
+    expect(calls.filter(c => c.forceSpecialistId === 'requirements')).toHaveLength(1);
+
+    // Status events.
+    expect(capturedEvents.some(e => e.kind === 'status' && (e as any).message.includes('Ripple scan: 2 documents flagged'))).toBe(true);
+    expect(capturedEvents.some(e => e.kind === 'status' && (e as any).message.includes('Ripple fix: docs/ARCHITECTURE.md updated'))).toBe(true);
+
+    // The chain then continues to the current phase (bom).
+    expect(calls[4].forceSpecialistId).toBe('bom');
+  });
+
+  it('continues the chain non-fatally when a ripple fix turn fails', async () => {
+    await setupPendingRequirements();
+    const loggerStub: any = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string }) => {
+      if (opts.forceSpecialistId === 'requirements') {
+        writeDoc(tmpDir, 'requirements', '# REQUIREMENTS\n\nApproved normative text. Motor bus raised to 96 V.\n');
+        return makeTurnResult('requirements');
+      }
+      if (opts.forceSpecialistId === 'change-impact') {
+        return makeTurnResult('change-impact', { requiresReview: false, output: RIPPLE_REPORT });
+      }
+      if (opts.forceSpecialistId === 'architecture') {
+        return { ...makeTurnResult('architecture'), error: true, output: 'ripple fix blew up' };
+      }
+      writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nDeliverable content.\n`);
+      return makeTurnResult(opts.forceSpecialistId);
+    });
+
+    const driver = createDriver({ logger: loggerStub as any });
+    driver.start();
+
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    // Failed fix is non-fatal: warned, status event, and the NEXT flagged doc
+    // still gets its fix turn; the chain completes.
+    expect(loggerStub.warn).toHaveBeenCalledWith(expect.stringContaining('ripple fix turn for architecture failed'));
+    expect(capturedEvents.some(e => e.kind === 'status' && (e as any).message.includes('Ripple fix for System Architecture & Subsystems failed'))).toBe(true);
+    const calls: any[] = executeTurnMock.mock.calls.map(c => c[0]);
+    expect(calls.some(c => c.forceSpecialistId === 'icd' && (c.userPrompt as string).includes('CHANGE-IMPACT RIPPLE'))).toBe(true);
+    expect((capturedEvents.find(e => e.kind === 'complete') as any).reason).toBe('finished');
+  });
+
+  it('runs no ripple fix turns when the change-impact scan flags nothing', async () => {
+    await setupPendingRequirements();
+
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string }) => {
+      if (opts.forceSpecialistId === 'requirements') {
+        writeDoc(tmpDir, 'requirements', '# REQUIREMENTS\n\nApproved normative text. Motor bus raised to 96 V.\n');
+        return makeTurnResult('requirements');
+      }
+      if (opts.forceSpecialistId === 'change-impact') {
+        return makeTurnResult('change-impact', { requiresReview: false, output: 'Everything up to date. No discrepancies found.' });
+      }
+      writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nDeliverable content.\n`);
+      return makeTurnResult(opts.forceSpecialistId);
+    });
+
+    const driver = createDriver();
+    driver.start();
+
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    const calls: any[] = executeTurnMock.mock.calls.map(c => c[0]);
+    expect(calls.filter(c => c.forceSpecialistId === 'change-impact')).toHaveLength(1);
+    expect(calls.some(c => typeof c.userPrompt === 'string' && c.userPrompt.includes('CHANGE-IMPACT RIPPLE'))).toBe(false);
+    expect(capturedEvents.some(e => e.kind === 'status' && (e as any).message.includes('Ripple scan: 0 documents flagged'))).toBe(true);
+    expect((capturedEvents.find(e => e.kind === 'complete') as any).reason).toBe('finished');
+  });
+
+  it('skips the ripple scan when the incorporation turn makes no edits (byte-identical doc)', async () => {
+    const pendingContent = '# REQUIREMENTS\n\nApproved normative text. Motor bus at 72 V.\n\n## User Answers (Pending Incorporation)\n\n**Bus current**\nAnswer: derive from motor max output at 72 V\n';
+    await preApprovePhase(tmpDir, stateMgr, 'conops');
+    await preApprovePhase(tmpDir, stateMgr, 'architecture');
+    await preApprovePhase(tmpDir, stateMgr, 'icd');
+    await preApprovePhase(tmpDir, stateMgr, 'capabilities');
+    await preApprovePhase(tmpDir, stateMgr, 'requirements', pendingContent);
+
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string }) => {
+      if (opts.forceSpecialistId === 'requirements') {
+        // No-op incorporation: rewrites the byte-identical pending content.
+        writeDoc(tmpDir, 'requirements', pendingContent);
+        return makeTurnResult('requirements');
+      }
+      writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nDeliverable content.\n`);
+      return makeTurnResult(opts.forceSpecialistId);
+    });
+
+    const driver = createDriver();
+    driver.start();
+
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    const calls: any[] = executeTurnMock.mock.calls.map(c => c[0]);
+    // No ripple on no-op incorporations.
+    expect(calls.some(c => c.forceSpecialistId === 'change-impact')).toBe(false);
+    expect(calls[1].forceSpecialistId).toBe('bom');
+    expect((capturedEvents.find(e => e.kind === 'complete') as any).reason).toBe('finished');
+  });
 });
