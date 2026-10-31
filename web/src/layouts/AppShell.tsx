@@ -164,8 +164,6 @@ export default function AppShell() {
         tab={tab}
         onSelectTab={setTab}
         runState={runState}
-        phase={runStatus?.currentPhaseId ?? project?.activePhase}
-        step={turnStream.status}
         runDetail={runDetail}
         runDetailTitle={runDetailTitle}
         connected={connected}

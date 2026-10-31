@@ -306,12 +306,12 @@ describe('QuestionPanel', () => {
 
   // ————— 13. Run-state echo in the panel header (design §5.A) —————
   it('run-state echo renders RunStateCluster when runState is provided', () => {
-    const props = baseProps({ runState: 'waiting', phaseName: 'requirements' });
+    const props = baseProps({ runState: 'waiting' });
     renderWithUser(<QuestionPanel {...props} />);
 
     const cluster = screen.getByRole('status', { name: 'Agent status: Waiting for your answer' });
     expect(cluster).toHaveAttribute('data-run-state', 'waiting');
-    expect(screen.getByText('requirements')).toBeInTheDocument();
+    expect(cluster.textContent).toBe('Waiting for your answer');
   });
 
   it('run-state echo is absent when runState is omitted', () => {

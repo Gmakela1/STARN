@@ -54,42 +54,18 @@ describe('RunStateCluster', () => {
     expect(container.querySelector('span.bg-emerald-400')?.getAttribute('class')).not.toContain('animate-pulse');
   });
 
-  it('renders the phase chip only when a phase is provided', () => {
-    const { rerender } = render(<RunStateCluster runState="working" />);
-    expect(screen.queryByText('SS-09')).toBeNull();
-
-    rerender(<RunStateCluster runState="working" phase="SS-09" />);
-    const chip = screen.getByText('SS-09');
-    expect(chip.className).toContain('bg-cyan-950/60');
-    expect(chip.className).toContain('text-cyan-300');
-    expect(chip.className).toContain('uppercase');
-  });
-
-  it('renders the step with truncation only when non-empty', () => {
-    const { rerender } = render(<RunStateCluster runState="working" step={null} />);
-    expect(screen.queryByText('Drafting the system spec')).toBeNull();
-
-    rerender(<RunStateCluster runState="working" step="Drafting the system spec" />);
-    const step = screen.getByText('Drafting the system spec');
-    expect(step.className).toContain('truncate');
-    expect(step.className).toContain('max-w-[180px]');
-  });
-
-  it('omits the step when it is an empty string', () => {
-    const { container } = render(<RunStateCluster runState="working" step="" />);
+  it('renders only the status word: no phase chip, no step text, no separators', () => {
+    const { container } = render(<RunStateCluster runState="working" />);
+    const root = container.querySelector('[data-run-state="working"]') as HTMLElement;
+    expect(root.textContent).toBe('Working…');
+    expect(container.querySelector('[class*="bg-cyan-950/60"]')).toBeNull();
     expect(container.querySelector('[class*="max-w-[180px]"]')).toBeNull();
   });
 
-  it('orders label, then phase chip, then step', () => {
-    const { container } = render(<RunStateCluster runState="working" phase="SS-09" step="Drafting" />);
-    const text = container.querySelector('[data-run-state="working"]')?.textContent ?? '';
-    const iLabel = text.indexOf('Working…');
-    const iPhase = text.indexOf('SS-09');
-    const iStep = text.indexOf('Drafting');
-    expect(iLabel).toBeGreaterThanOrEqual(0);
-    expect(iPhase).toBeGreaterThan(iLabel);
-    expect(iStep).toBeGreaterThan(iPhase);
-    expect(text).toContain('·');
+  it('keeps the failed detail as the only text', () => {
+    const { container } = render(<RunStateCluster runState="failed" detail="2 documents parked" />);
+    const root = container.querySelector('[data-run-state="failed"]') as HTMLElement;
+    expect(root.textContent).toBe('2 documents parked');
   });
 
   it('renders the failed detail instead of the generic word, with a tooltip and aria-label', () => {

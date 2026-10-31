@@ -38,7 +38,6 @@ export interface QuestionPanelProps {
   onBackToQueue?: () => void;
   /** Compact run-state echo in the panel header (§5.A); renders only when provided. */
   runState?: RunState;
-  phaseName?: string;
   /** Parent-driven deep-link focus (design §5.E); token prevents re-adoption. */
   focusRequest?: { id: string; token: number } | null;
 }
@@ -84,7 +83,6 @@ export default function QuestionPanel({
   onFocusDocument,
   onBackToQueue,
   runState,
-  phaseName,
   focusRequest
 }: QuestionPanelProps) {
   const [activeId, setActiveId] = useState<string>(items[0]?.id ?? '');
@@ -630,7 +628,7 @@ export default function QuestionPanel({
               {pagerIndex} of {items.length}
             </span>
           )}
-          {runState && <RunStateCluster runState={runState} phase={phaseName} />}
+          {runState && <RunStateCluster runState={runState} />}
           {onBackToQueue && (
             <button
               type="button"

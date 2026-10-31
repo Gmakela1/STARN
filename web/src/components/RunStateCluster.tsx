@@ -4,17 +4,13 @@ import type { RunState } from '../lib/runState';
 
 /**
  * Run-state cluster (design §5.H + §5.G + §6).
- * One line: [marker][label] · [phase chip] · [step].
+ * One line: [marker][label] (or the failed detail).
  * Every state carries a distinct icon AND a distinct word (never color alone);
  * the word is also exposed via `aria-label` so the icon choice is verifiable.
  */
 
 export interface RunStateClusterProps {
   runState: RunState;
-  /** Active-phase label; the chip renders only when present. */
-  phase?: string;
-  /** Current step from `turnStream.status`; renders only when non-empty. */
-  step?: string | null;
   /** Failed state only: says what is wrong instead of the generic word. */
   detail?: string;
   /** Failed state only: longer reason, exposed as a tooltip on the detail. */
@@ -44,12 +40,11 @@ function markerFor(runState: RunState): ReactNode {
   }
 }
 
-export default function RunStateCluster({ runState, phase, step, detail, detailTitle }: RunStateClusterProps) {
+export default function RunStateCluster({ runState, detail, detailTitle }: RunStateClusterProps) {
   const view = STATE_VIEW[runState];
   const hasDetail = runState === 'failed' && typeof detail === 'string' && detail.length > 0;
   const word = hasDetail ? detail : view.word;
   const wordTitle = hasDetail ? detailTitle : undefined;
-  const hasStep = typeof step === 'string' && step.length > 0;
 
   return (
     <span
@@ -64,26 +59,6 @@ export default function RunStateCluster({ runState, phase, step, detail, detailT
           {word}
         </span>
       </span>
-
-      {phase ? (
-        <>
-          <span aria-hidden className="text-slate-600">
-            ·
-          </span>
-          <span className="shrink-0 rounded border border-cyan-500/30 bg-cyan-950/60 px-1.5 py-px font-mono text-[11px] uppercase tracking-wide text-cyan-300">
-            {phase}
-          </span>
-        </>
-      ) : null}
-
-      {hasStep ? (
-        <>
-          <span aria-hidden className="text-slate-600">
-            ·
-          </span>
-          <span className="max-w-[180px] truncate text-[11px] text-slate-400">{step}</span>
-        </>
-      ) : null}
     </span>
   );
 }

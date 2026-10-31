@@ -120,15 +120,58 @@ describe('TopBar', () => {
     expect(cls).toContain('z-40');
   });
 
-  it('hides the active-phase pill when it duplicates the run-state phase chip', () => {
-    setup({ phase: 'SS-01' });
-    expect(screen.getAllByText('SS-01')).toHaveLength(1);
+  it('renders no document-name chips: neither the active phase nor a run-state phase/step', () => {
+    // project.activePhase is 'SS-01'; the old pill / cluster chip rendered it.
+    setup();
+    expect(screen.queryByText('SS-01')).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe('AI Ready');
   });
 
-  it('shows the active-phase pill when it differs from the run-state phase', () => {
-    setup({ phase: 'BOM' });
-    expect(screen.getByText('BOM')).toBeInTheDocument();
-    expect(screen.getByText('SS-01')).toBeInTheDocument();
+  it('compact brand block: h-7 w-7 logo box, 11px wordmark and project name with title', () => {
+    const { container } = setup();
+    const logo = container.querySelector('header svg.lucide-satellite') as SVGElement;
+    expect(logo.getAttribute('class')).toContain('h-4');
+    expect(logo.getAttribute('class')).toContain('w-4');
+    const box = logo.parentElement as HTMLElement;
+    expect(box.className).toContain('h-7');
+    expect(box.className).toContain('w-7');
+    expect(box.className).not.toContain('h-9');
+    expect(screen.getByRole('heading', { name: 'STARN' }).className).toContain('text-[11px]');
+    const name = screen.getByText('Tractor Project');
+    expect(name.className).toContain('text-[11px]');
+    expect(name.className).toContain('max-w-[120px]');
+    expect(name.className).toContain('xl:max-w-[200px]');
+    expect(name.className).toContain('truncate');
+    expect(name).toHaveAttribute('title', 'Tractor Project');
+  });
+
+  it('tabs never shrink or clip: every tab is shrink-0 + nowrap, tab list is min-w-0 flex-1', () => {
+    setup();
+    const tablist = screen.getByRole('tablist');
+    expect(tablist.className).toContain('min-w-0');
+    expect(tablist.className).toContain('flex-1');
+    const tabs = within(tablist).getAllByRole('tab');
+    expect(tabs).toHaveLength(5);
+    tabs.forEach(tab => {
+      expect(tab.className).toContain('shrink-0');
+      expect(tab.className).toContain('px-2');
+      expect(tab.className).toContain('py-1.5');
+      expect(tab.className).toContain('text-xs');
+    });
+    expect(tablist.className).toContain('gap-1');
+    expect(tablist.className).not.toContain('overflow-hidden');
+  });
+
+  it('right cluster is shrink-0 so it never overlaps the tabs', () => {
+    setup();
+    const cluster = screen.getByRole('progressbar').closest('[class*="shrink-0"]') as HTMLElement;
+    expect(cluster).not.toBeNull();
+    expect(cluster.closest('[role="tablist"]')).toBeNull();
+  });
+
+  it('shows the Docs label next to the progress bar in the top bar', () => {
+    setup({ progressDocStatus: { 'SS-01': 'passed' } });
+    expect(screen.getByText('Docs 1/13')).toBeInTheDocument();
   });
 
   it('forwards failed detail to the run-state cluster', () => {

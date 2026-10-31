@@ -725,7 +725,6 @@ export default function DevelopmentView({
     lastError: turnStream.error ?? null,
     passedCount: autopilotStatus?.passedCount ?? 0
   });
-  const phaseName = autopilotStatus?.currentPhaseId ?? undefined;
 
   /**
    * §5.C trigger handler — the panel emits onFocusDocument on chip/pager
@@ -1186,7 +1185,6 @@ export default function DevelopmentView({
             onFocusDocument={handleFocusDocument}
             onBackToQueue={() => onNavigate?.('dashboard')}
             runState={runState}
-            phaseName={phaseName}
             focusRequest={focusRequest}
           />
         )}

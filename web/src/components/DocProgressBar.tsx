@@ -110,7 +110,7 @@ export default function DocProgressBar({
         aria-controls={popoverId}
         aria-label={progressLabel}
         onClick={() => setPopoverOpen((prev) => !prev)}
-        className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+        className="flex cursor-pointer items-center gap-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
       >
         <div
           role="progressbar"
@@ -139,6 +139,9 @@ export default function DocProgressBar({
             )}
           </div>
         </div>
+        <span className="hidden text-[11px] font-semibold text-slate-300 tabular-nums lg:inline">
+          Docs {progress.approved}/{total}
+        </span>
       </button>
 
       {/* Popover */}
@@ -151,7 +154,7 @@ export default function DocProgressBar({
           className="absolute top-full right-0 z-50 mt-2 w-72 rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl sm:left-auto max-sm:left-0 max-sm:right-0"
         >
           <h3 className="mb-3 text-sm font-bold text-slate-200">
-            Project Status
+            Document progress
           </h3>
 
           <div className="space-y-2">

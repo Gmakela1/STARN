@@ -68,8 +68,6 @@ export interface TopBarProps {
   tab: TabId;
   onSelectTab: (t: TabId) => void;
   runState: RunState;
-  phase?: string;
-  step?: string | null;
   /** Failed-state explanation shown instead of the generic word. */
   runDetail?: string;
   runDetailTitle?: string;
@@ -90,8 +88,6 @@ export function TopBar({
   tab,
   onSelectTab,
   runState,
-  phase,
-  step,
   runDetail,
   runDetailTitle,
   connected,
@@ -103,10 +99,6 @@ export function TopBar({
   progressTotalPhases,
   onNavigateToDashboard
 }: TopBarProps) {
-  // The cluster already shows `phase`; only show the project stage pill when it differs.
-  const activePhase = project?.activePhase;
-  const showActivePhase = Boolean(activePhase) && activePhase !== phase;
-
   return (
     <header className="relative z-40 flex h-14 shrink-0 items-center gap-3 border-b border-slate-800 bg-slate-900/80 px-4 backdrop-blur-md">
       {/* Left — hamburger (< lg) + brand + project */}
@@ -121,14 +113,14 @@ export function TopBar({
           {mobileMenuOpen ? <X className="h-5 w-5" aria-hidden /> : <Menu className="h-5 w-5" aria-hidden />}
         </button>
 
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/30">
-            <Satellite className="h-5 w-5 text-cyan-400" aria-hidden />
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/30">
+            <Satellite className="h-4 w-4 text-cyan-400" aria-hidden />
           </div>
           <div className="min-w-0">
-            <h1 className="text-xs font-black tracking-widest text-white uppercase leading-tight">STARN</h1>
+            <h1 className="text-[11px] font-black tracking-widest text-white uppercase leading-tight">STARN</h1>
             <p
-              className="text-xs font-medium text-slate-300 truncate max-w-[160px] sm:max-w-xs md:max-w-sm leading-tight"
+              className="text-[11px] font-medium text-slate-300 truncate max-w-[120px] xl:max-w-[200px] leading-tight"
               title={project?.name}
             >
               {project ? project.name : 'Connecting to project…'}
@@ -141,7 +133,7 @@ export function TopBar({
       <div
         role="tablist"
         aria-label="Maker Lifecycle Hubs"
-        className="hidden min-w-0 flex-1 items-center gap-1.5 overflow-hidden lg:flex"
+        className="hidden min-w-0 flex-1 items-center gap-1 lg:flex"
       >
         {HUBS.map(({ id, label, tagline, icon: Icon }) => {
           const active = tab === id;
@@ -155,7 +147,7 @@ export function TopBar({
               onClick={() => onSelectTab(id)}
               title={tagline}
               aria-label={badgeVisible ? `${label}, ${openQuestions} needs input` : `${label} — ${tagline}`}
-              className={`group flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-all xl:text-sm ${
+              className={`group flex shrink-0 items-center gap-1 rounded-xl px-2 py-1.5 text-xs font-medium transition-all ${
                 active
                   ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shadow-sm'
                   : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200 border border-transparent'
@@ -181,7 +173,7 @@ export function TopBar({
         })}
       </div>
 
-      {/* Right — DocProgressBar + run-state cluster + active phase + connection (always visible) */}
+      {/* Right — DocProgressBar + run-state cluster + connection (always visible) */}
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         <DocProgressBar
           phases={progressPhases}
@@ -189,22 +181,7 @@ export function TopBar({
           totalPhases={progressTotalPhases}
           onNavigateToDashboard={onNavigateToDashboard}
         />
-        <RunStateCluster
-          runState={runState}
-          phase={phase}
-          step={step}
-          detail={runDetail}
-          detailTitle={runDetailTitle}
-        />
-
-        {showActivePhase && (
-          <span
-            className="inline-flex items-center rounded-full border border-cyan-500/40 bg-cyan-950/50 px-3 py-1 text-xs font-semibold text-cyan-300 shadow-sm"
-            title={`Active Project Stage: ${activePhase}`}
-          >
-            <span className="font-mono tracking-wide uppercase">{activePhase}</span>
-          </span>
-        )}
+        <RunStateCluster runState={runState} detail={runDetail} detailTitle={runDetailTitle} />
 
         {!connected && (
           <span

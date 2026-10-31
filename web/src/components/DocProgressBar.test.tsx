@@ -262,6 +262,36 @@ describe('DocProgressBar component', () => {
     expect(onNavigateToDashboard).toHaveBeenCalledTimes(1);
   });
 
+  it('renders a visible "Docs <approved>/<total>" label inside the trigger button', () => {
+    setup();
+    const label = screen.getByText('Docs 3/13');
+    const trigger = screen.getByRole('button', { name: /Project progress/ });
+    expect(trigger).toContainElement(label);
+    expect(label.className).toContain('text-[11px]');
+    expect(label.className).toContain('font-semibold');
+    expect(label.className).toContain('text-slate-300');
+    expect(label.className).toContain('tabular-nums');
+    // hidden below lg
+    expect(label.className).toContain('hidden');
+    expect(label.className).toContain('lg:inline');
+  });
+
+  it('label tracks approved/total and keeps the trigger aria-label unchanged', () => {
+    setup({ totalPhases: 10, phases: makePhases({ 'SS-01': { status: 'COMPLETED' } }) });
+    expect(screen.getByText('Docs 1/10')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Project progress: 1 of 10 documents approved' })).toBeInTheDocument();
+  });
+
+  it('clicking the label opens the popover titled "Document progress"', async () => {
+    const { user } = setup();
+    await user.click(screen.getByText('Docs 3/13'));
+    expect(screen.getByRole('heading', { name: 'Document progress' })).toBeInTheDocument();
+    expect(screen.queryByText('Project Status')).toBeNull();
+    expect(screen.getByText('Approved')).toBeInTheDocument();
+    expect(screen.getByText('Drafted')).toBeInTheDocument();
+    expect(screen.getByText('Not started')).toBeInTheDocument();
+  });
+
   it('aria-valuenow reflects approved docs, matching the label', () => {
     // 3 approved, 2 drafted -> aria-valuenow = 3
     setup();
