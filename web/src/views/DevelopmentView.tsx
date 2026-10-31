@@ -50,6 +50,7 @@ import QuestionBadge from '../components/QuestionBadge';
 import QuestionPanel from '../components/QuestionPanel';
 import PaneSplitter from '../components/PaneSplitter';
 import { deriveRunState } from '../lib/runState';
+import { describeAutopilotStartError } from '../lib/autopilotError';
 import {
   applyAnchorHighlight,
   clearAnchorHighlights,
@@ -776,6 +777,23 @@ export default function DevelopmentView({
     }
   };
 
+  // Autopilot start control (§5). Never swallow the failure: a held busy guard
+  // answers 409 and the mapped reason renders inline under the action cluster.
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+
+  const handleStartAutopilot = async () => {
+    setStarting(true);
+    setStartError(null);
+    try {
+      await api.autopilotStart();
+    } catch (err) {
+      setStartError(describeAutopilotStartError(err));
+    } finally {
+      setStarting(false);
+    }
+  };
+
   const loadRoadmap = useCallback(async () => {
     try {
       const phases = await api.fetchRoadmap();
@@ -1323,12 +1341,18 @@ export default function DevelopmentView({
               </button>
             ) : (
               <button
-                onClick={async () => { try { await api.autopilotStart(); } catch {} }}
-                className="flex h-8 shrink-0 items-center gap-1 rounded-md bg-cyan-600 px-2.5 text-[11px] font-bold text-white transition hover:bg-cyan-500"
-                aria-label="Start autopilot"
+                type="button"
+                onClick={() => void handleStartAutopilot()}
+                disabled={starting}
+                className="flex min-h-[44px] shrink-0 items-center gap-1 rounded-md bg-cyan-600 px-3.5 text-xs font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Start autopilot auto-drafting"
               >
-                <Play className="h-3 w-3 fill-current" aria-hidden />
-                Start
+                {starting ? (
+                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                ) : (
+                  <Play className="h-3 w-3 fill-current" aria-hidden />
+                )}
+                Start Auto-Drafting
               </button>
             )}
             <button
@@ -1407,6 +1431,15 @@ export default function DevelopmentView({
             )}
           </div>
         </header>
+
+        {startError && (
+          <p
+            role="alert"
+            className="border-b border-rose-800/60 bg-rose-950/40 px-4 py-1.5 text-xs text-rose-300"
+          >
+            {startError}
+          </p>
+        )}
 
         {uploadNotice && (
           <p className={`border-b px-4 py-1.5 text-xs ${uploadNotice.startsWith('✔') ? 'border-emerald-900/60 bg-emerald-950/40 text-emerald-300' : 'border-rose-800/60 bg-rose-950/40 text-rose-300'}`}>
