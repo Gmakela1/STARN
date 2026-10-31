@@ -52,6 +52,7 @@ import PaneSplitter from '../components/PaneSplitter';
 import StartAutopilotButton from '../components/StartAutopilotButton';
 // React Bits (reactbits.dev) decorative effect — see web/src/components/reactbits.
 import DotGrid from '../components/reactbits/DotGrid';
+import LatticeLoader from '../components/reactbits/LatticeLoader/LatticeLoader';
 import { deriveQueuedAnswerStates } from '../lib/queuedStates';
 import {
   applyAnchorHighlight,
@@ -370,6 +371,26 @@ export default function DevelopmentView({
   }, [appendEntry]);
 
   const { status: autopilotStatus, portalItems } = useAutopilotEvents(handleAutopilotEvent);
+
+  // --- React Bits LatticeLoader (chat footer) ---
+  // Shows while agents are working: `busy` covers critic/specialist turns
+  // (it is the closest busy state in view scope); autopilotStatus.running
+  // covers auto-draft runs. On working → idle, flashes 'done' for 2s.
+  const agentsWorking = busy || !!autopilotStatus?.running;
+  const [loaderFlash, setLoaderFlash] = useState(false);
+  const prevWorkingRef = useRef(false);
+  useEffect(() => {
+    if (agentsWorking) {
+      prevWorkingRef.current = true;
+      setLoaderFlash(false);
+      return;
+    }
+    if (!prevWorkingRef.current) return;
+    prevWorkingRef.current = false;
+    setLoaderFlash(true);
+    const timer = setTimeout(() => setLoaderFlash(false), 2000);
+    return () => clearTimeout(timer);
+  }, [agentsWorking]);
 
   // --- Chat state ---
   const [prompt, setPrompt] = useState('');
@@ -1114,6 +1135,18 @@ export default function DevelopmentView({
         {/* Input bar */}
         <footer className="border-t border-[#2a3342] bg-[#0d1017]/70 p-3">
           <div className="flex flex-col gap-2">
+            {/* LatticeLoader (React Bits) — agents-working indicator above the composer */}
+            {(agentsWorking || loaderFlash) && (
+              <LatticeLoader
+                status={agentsWorking ? 'working' : 'done'}
+                pattern="spiral"
+                color="#ff2a3c"
+                label="Agents working…"
+                doneLabel="Agents done"
+                showTimer={false}
+                className="self-start"
+              />
+            )}
             {/* Recording indicator */}
             {recording && (
               <div className="flex items-center gap-2 rounded-md bg-rose-950/40 px-3 py-1.5 text-xs text-rose-300">
