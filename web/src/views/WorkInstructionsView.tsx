@@ -228,7 +228,8 @@ export default function WorkInstructionsView() {
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-bold text-violet-300">{wi.actionId}</span>
                     {defect && <TriangleAlert className="h-3.5 w-3.5 text-rose-400" aria-label="Open non-conformance" />}
-                    <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold ${WI_STATUS_TONE[wi.status.toUpperCase()] ?? 'bg-[#11151d] text-[#a8b3c4]'}`}>
+                    <span className={`ml-auto inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${WI_STATUS_TONE[wi.status.toUpperCase()] ?? 'bg-[#11151d] text-[#a8b3c4]'}`}>
+                      {wi.status.toUpperCase() === 'COMPLETE' && <CheckCircle2 className="h-3 w-3" aria-hidden />}
                       {wi.status || '—'}
                     </span>
                   </div>

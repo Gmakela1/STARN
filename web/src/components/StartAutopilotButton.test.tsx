@@ -25,7 +25,7 @@ describe('StartAutopilotButton — start flow', () => {
     start.mockImplementation(() => new Promise<void>(res => { resolveStart = res; }));
     const { user } = renderControls();
 
-    const button = screen.getByRole('button', { name: 'Start autopilot auto-drafting' });
+    const button = screen.getByRole('button', { name: 'Launch autopilot auto-drafting' });
     await user.click(button);
     expect(button).toBeDisabled();
 
@@ -38,7 +38,7 @@ describe('StartAutopilotButton — start flow', () => {
     start.mockRejectedValue(new Error('A turn is already in progress'));
     const { user } = renderControls();
 
-    await user.click(screen.getByRole('button', { name: 'Start autopilot auto-drafting' }));
+    await user.click(screen.getByRole('button', { name: 'Launch autopilot auto-drafting' }));
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(/already running/i);
@@ -49,7 +49,7 @@ describe('StartAutopilotButton — start flow', () => {
     start.mockResolvedValueOnce(undefined);
     const { user } = renderControls();
 
-    const button = screen.getByRole('button', { name: 'Start autopilot auto-drafting' });
+    const button = screen.getByRole('button', { name: 'Launch autopilot auto-drafting' });
     await user.click(button);
     await screen.findByRole('alert');
 
@@ -67,7 +67,7 @@ describe('StartAutopilotButton — icon variant (chat composer)', () => {
 
   it('renders an icon-only 44x44 start button with accessible name', () => {
     const { container } = renderIcon();
-    const button = screen.getByRole('button', { name: 'Start autopilot auto-drafting' });
+    const button = screen.getByRole('button', { name: 'Launch autopilot auto-drafting' });
     expect(button).toHaveClass('h-11', 'w-11', 'rounded-lg');
     expect(button.textContent).not.toMatch(/start auto-drafting/i);
     expect(button.querySelector('svg')).not.toBeNull();
@@ -79,7 +79,7 @@ describe('StartAutopilotButton — icon variant (chat composer)', () => {
     start.mockImplementation(() => new Promise<void>(res => { resolveStart = res; }));
     const { user } = renderIcon();
 
-    const button = screen.getByRole('button', { name: 'Start autopilot auto-drafting' });
+    const button = screen.getByRole('button', { name: 'Launch autopilot auto-drafting' });
     await user.click(button);
     expect(button).toBeDisabled();
 

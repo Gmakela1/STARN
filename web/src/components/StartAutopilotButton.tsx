@@ -114,7 +114,7 @@ export default function StartAutopilotButton({
           disabled={starting}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-rose-700/40 bg-[#d61f2c] text-white transition hover:bg-[#e11d3f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:cursor-not-allowed disabled:opacity-40"
           title="Launch auto-drafting — drafts docs automatically between gates"
-          aria-label="Start autopilot auto-drafting"
+          aria-label="Launch autopilot auto-drafting"
         >
           {starting ? (
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -154,7 +154,7 @@ export default function StartAutopilotButton({
         thickness={2}
         glow={0.7}
         radius={0}
-        aria-label="Start autopilot auto-drafting"
+        aria-label="Launch autopilot auto-drafting"
       >
         {starting ? (
           <Loader2 className="h-3 w-3 animate-spin" aria-hidden />

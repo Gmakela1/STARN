@@ -24,11 +24,11 @@ describe('StarBorder', () => {
 
   it('forwards disabled and does not crash without canvas support', () => {
     render(
-      <StarBorder disabled aria-label="Start autopilot auto-drafting">
+      <StarBorder disabled aria-label="Launch autopilot auto-drafting">
         Start Auto-Drafting
       </StarBorder>
     );
-    expect(screen.getByRole('button', { name: 'Start autopilot auto-drafting' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Launch autopilot auto-drafting' })).toBeDisabled();
   });
 
   it('does not crash under prefers-reduced-motion: reduce', () => {
