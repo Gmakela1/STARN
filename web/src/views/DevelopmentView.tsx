@@ -38,6 +38,7 @@ import { api } from '../api/client';
 import {
   AnswerState,
   DocData,
+  DocDiff as DocDiffData,
   LibraryFileEntry,
   PortalItem,
   ProjectInfo,
@@ -47,6 +48,7 @@ import type { PromptBarSource } from '../components/reactbits/PromptBar/PromptBa
 import { useTurnStream, ChatEntry, ActivityMeta } from '../api/useTurnStream';
 import { useAutopilotEvents, AutopilotLiveEvent } from '../hooks/useAutopilotEvents';
 import Markdown from '../components/Markdown';
+import DocDiff from '../components/DocDiff';
 import { docNeedsApproval } from '../lib/workflowState';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import CriticScorecard from '../components/CriticScorecard';
@@ -701,6 +703,16 @@ export default function DevelopmentView({
   const [saving, setSaving] = useState(false);
   const [approving, setApproving] = useState(false);
   const [docNotice, setDocNotice] = useState<string | null>(null);
+  // Revised-doc diff view (plan 2026-10-31): toggle + lazily-fetched
+  // approved-vs-current snapshot. Fetched once per phase, on first toggle.
+  const [diffOpen, setDiffOpen] = useState(false);
+  const [docDiff, setDocDiff] = useState<DocDiffData | null>(null);
+  const [diffUnavailable, setDiffUnavailable] = useState(false);
+  useEffect(() => {
+    setDiffOpen(false);
+    setDocDiff(null);
+    setDiffUnavailable(false);
+  }, [selectedPhase]);
   // Header compact mode: below 500px the selector shows status pill + chevron
   // only (doc name hidden) so the h-12 header line never wraps.
   const headerRef = useRef<HTMLDivElement>(null);
@@ -974,6 +986,29 @@ export default function DevelopmentView({
   };
 
   const selectedPhaseInfo = roadmap.find(p => p.id === selectedPhase);
+  const selectedDocStatus = selectedPhaseInfo
+    ? autopilotStatus?.docStatus[selectedPhaseInfo.id]
+    : undefined;
+
+  /** Toggles the diff pane; lazily fetches the approved snapshot once. */
+  const toggleDiff = useCallback(async () => {
+    if (diffOpen) {
+      setDiffOpen(false);
+      return;
+    }
+    setDiffOpen(true);
+    if (docDiff || diffUnavailable || !selectedPhase) return;
+    try {
+      const d = await api.fetchDocDiff(selectedPhase);
+      if (d.approvedAvailable && d.approved !== null) {
+        setDocDiff(d);
+      } else {
+        setDiffUnavailable(true); // no archived approved snapshot to diff against
+      }
+    } catch {
+      setDiffUnavailable(true);
+    }
+  }, [diffOpen, docDiff, diffUnavailable, selectedPhase]);
 
   /**
    * §8.1/D1/D5 — select the roadmap phase whose artifact filename matches a
@@ -1504,6 +1539,16 @@ export default function DevelopmentView({
                 Approve phase
               </button>
             )}
+            {doc && !editing && selectedDocStatus === 'revised' && (
+              <button
+                onClick={() => void toggleDiff()}
+                aria-label="Toggle diff view"
+                title="Toggle diff view"
+                className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#3b4658] px-3 text-xs font-medium text-[#a8b3c4] transition hover:bg-[#11151d]"
+              >
+                Diff
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setDocCollapsed(true)}
@@ -1553,6 +1598,15 @@ export default function DevelopmentView({
           </p>
         )}
 
+        {/* Revised-doc banner (plan 2026-10-31) — shows on docStatus 'revised'
+            regardless of rail state; never collides with the uploadNotice
+            live region above. Wording switches when no snapshot archived. */}
+        {selectedDocStatus === 'revised' && (
+          <p className="border-b border-rose-800/60 bg-rose-950/40 px-4 py-1.5 text-xs text-rose-300" role="status">
+            {diffUnavailable ? 'Revised (original version not archived)' : 'Revised — changes since approval'}
+          </p>
+        )}
+
         {/* §5.B — drag/drop now lives on the doc body wrapper (the strip is folded) */}
         <div
           className="relative min-h-0 min-w-0 flex-1"
@@ -1575,7 +1629,14 @@ export default function DevelopmentView({
           ) : doc ? (
             <div className={`px-6 py-4 ${docHasTable ? '' : 'max-w-[72ch]'}`}>
               <p className="mb-3 font-mono text-[11px] text-[#6e7d92]">{doc.path}</p>
-              <Markdown content={doc.content} />
+              {/* Diff pane replaces the rendered doc while toggled on; the
+                  content equality check drops the pane when the doc was
+                  refreshed after the snapshot was fetched (stale guard). */}
+              {diffOpen && docDiff && doc.content === docDiff.current ? (
+                <DocDiff approved={docDiff.approved!} current={docDiff.current} />
+              ) : (
+                <Markdown content={doc.content} />
+              )}
             </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">

@@ -82,6 +82,14 @@ describe('computeProgress', () => {
     expect(result.notStarted).toBe(10);
   });
 
+  it('counts docStatus "revised" as approved (ripple-fixed doc stays in the approved segment)', () => {
+    const phases = makePhases();
+    const docStatus: Record<string, string> = { 'SS-01': 'revised' };
+    const result = computeProgress(phases, docStatus);
+    expect(result.approved).toBe(1);
+    expect(result.drafted).toBe(0);
+  });
+
   it('counts PENDING_REVIEW as drafted when not already approved', () => {
     const phases = makePhases({
       'SS-01': { status: 'PENDING_REVIEW' },

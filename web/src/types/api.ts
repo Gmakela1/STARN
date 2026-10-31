@@ -260,6 +260,15 @@ export interface DocData {
   status: string;
 }
 
+/** GET /api/docs/:phaseId/diff — raw approved-vs-current strings for the
+ * revised-doc diff view (hunks computed client-side). */
+export interface DocDiff {
+  phaseId: string;
+  approved: string | null;
+  current: string;
+  approvedAvailable: boolean;
+}
+
 export interface BomData {
   items: BomItem[];
   financials: BomFinancials;

@@ -4,6 +4,7 @@ import { resolvePhaseRef, resolveArtifactPaths } from '../../workspace/state.js'
 import { createVersionBackup } from '../../util/version-backup.js';
 import { approveArtifact } from '../../core/approvals.js';
 import { readJsonBody, ok, fail, safeReadFile, RouteModule } from './kit.js';
+import { findApprovedBackup } from '../approved-snapshot.js';
 
 export const docsModule: RouteModule = {
   name: 'docs',
@@ -27,6 +28,21 @@ export const docsModule: RouteModule = {
           path: path.relative(deps.projectPath, docPath).replace(/\\/g, '/'),
           content,
           status: artifact?.status ?? 'draft'
+        });
+      }
+
+      // Revised-doc diff view: raw strings only, hunks computed client-side.
+      if (method === 'GET' && segments[3] === 'diff') {
+        const current = docPath ? safeReadFile(docPath) : null;
+        if (current === null) return fail(res, 404, `No document on disk for phase ${phase.id}`);
+        const artifact = deps.stateManager.getState().artifacts.find(a => a.id === phase.id.toUpperCase());
+        const docName = path.basename(phase.artifactPath, path.extname(phase.artifactPath));
+        const approved = findApprovedBackup(deps.projectPath, docName, artifact?.approvedContentHash);
+        return ok(res, {
+          phaseId: phase.id,
+          approved,
+          current,
+          approvedAvailable: approved !== null
         });
       }
 

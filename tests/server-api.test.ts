@@ -226,6 +226,33 @@ describe('HTTP Server API', () => {
     expect(onDisk).toContain('Rewritten.');
   });
 
+  it('GET /api/docs/:phaseId/diff returns approved snapshot vs current', async () => {
+    const approved = '# BOM approved';
+    fs.writeFileSync(path.join(tempDir, 'docs', 'BOM.md'), approved, 'utf-8');
+    const hash = ProjectStateManager.computeContentHash(tempDir, 'docs/BOM.md');
+    // Archive the approved content the same way createVersionBackup does.
+    fs.mkdirSync(path.join(tempDir, '.starn', 'versions'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, '.starn', 'versions', 'BOM-2026-01-01T00-00-00-000Z.md'), approved, 'utf-8');
+    stateManager.recordArtifact({ id: 'BOM', title: 'BOM', path: 'docs/BOM.md', status: 'draft', approvedContentHash: hash! });
+    // Ripple fix changed the doc after approval.
+    fs.writeFileSync(path.join(tempDir, 'docs', 'BOM.md'), '# BOM revised', 'utf-8');
+
+    const res = await request(server, 'GET', '/api/docs/bom/diff');
+    expect(res.status).toBe(200);
+    expect(res.json.data.phaseId).toBe('bom');
+    expect(res.json.data.approved).toBe(approved);
+    expect(res.json.data.current).toBe('# BOM revised');
+    expect(res.json.data.approvedAvailable).toBe(true);
+  });
+
+  it('GET /api/docs/:phaseId/diff falls back to approved null when no archived snapshot matches', async () => {
+    stateManager.recordArtifact({ id: 'BOM', title: 'BOM', path: 'docs/BOM.md', status: 'draft', approvedContentHash: 'deadbeef' });
+    const res = await request(server, 'GET', '/api/docs/bom/diff');
+    expect(res.status).toBe(200);
+    expect(res.json.data.approved).toBeNull();
+    expect(res.json.data.approvedAvailable).toBe(false);
+  });
+
   it('POST /api/turns streams SSE events for a conversational turn', async () => {
     vi.spyOn(mockClient, 'chatCompletion').mockImplementation(async (opts: any) => {
       const sys = String(opts.messages[0]?.content ?? '');

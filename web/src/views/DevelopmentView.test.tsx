@@ -28,7 +28,8 @@ vi.mock('../api/client', () => ({
       examples: {}
     }),
     saveDoc: vi.fn().mockResolvedValue({ path: 'x' }),
-    approveDoc: vi.fn().mockResolvedValue({ artifact: null })
+    approveDoc: vi.fn().mockResolvedValue({ artifact: null }),
+    fetchDocDiff: vi.fn().mockResolvedValue({ phaseId: 'p1', approved: null, current: '', approvedAvailable: false })
   }
 }));
 
@@ -264,3 +265,71 @@ describe('DevelopmentView PromptBar composer', () => {
 
 // Silence unused-import lint noise for type-only re-exports used by future test groups.
 export type { ChatEntry, ActivityMeta };
+
+// ————— Revised-doc diff view (plan 2026-10-31) —————
+describe('DevelopmentView revised-doc diff view', () => {
+  /** Revised fixture: roadmap with one phase, autopilot docStatus 'revised'. */
+  function revisedSetup(docContent: string) {
+    mockedApi.fetchRoadmap.mockResolvedValue([
+      {
+        id: 'P1',
+        name: 'BOM',
+        artifactPath: 'docs/BOM.md',
+        docExists: true,
+        status: 'COMPLETED'
+      }
+    ] as never);
+    autopilotState.status = {
+      enabled: false,
+      running: false,
+      docStatus: { P1: 'revised' },
+      blocks: 0,
+      passedCount: 0,
+      totalPhases: 13
+    };
+    mockedApi.fetchDoc.mockResolvedValue({
+      phaseId: 'P1',
+      path: 'docs/BOM.md',
+      content: docContent,
+      status: 'approved'
+    } as never);
+  }
+
+  it('shows the revised banner and renders the diff on toggle with a lazy one-time fetch', async () => {
+    revisedSetup('line1\nline2 changed\nline3\nline4');
+    mockedApi.fetchDocDiff.mockResolvedValue({
+      phaseId: 'P1',
+      approved: 'line1\nline2\nline3',
+      current: 'line1\nline2 changed\nline3\nline4',
+      approvedAvailable: true
+    });
+    const { user } = renderView();
+    expect(await screen.findByText('Revised — changes since approval')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Toggle diff view' }));
+    expect(await screen.findByLabelText('Document diff')).toBeInTheDocument();
+    expect(mockedApi.fetchDocDiff).toHaveBeenCalledTimes(1);
+
+    // Off hides the pane; on again reuses the cached snapshot (no refetch).
+    await user.click(screen.getByRole('button', { name: 'Toggle diff view' }));
+    expect(screen.queryByLabelText('Document diff')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Toggle diff view' }));
+    expect(await screen.findByLabelText('Document diff')).toBeInTheDocument();
+    expect(mockedApi.fetchDocDiff).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to not-archived wording without a diff pane when no snapshot matches', async () => {
+    revisedSetup('current content');
+    mockedApi.fetchDocDiff.mockResolvedValue({
+      phaseId: 'P1',
+      approved: null,
+      current: 'current content',
+      approvedAvailable: false
+    });
+    const { user } = renderView();
+    expect(await screen.findByText('Revised — changes since approval')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Toggle diff view' }));
+    expect(await screen.findByText('Revised (original version not archived)')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Document diff')).toBeNull();
+  });
+});

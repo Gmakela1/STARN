@@ -38,7 +38,7 @@ const MODULES: Case[] = [
   {
     moduleName: 'docs',
     match: docsModule.match,
-    ownPaths: ['/api/docs/bom', '/api/docs/bom/approve', '/api/docs/fabrication/view'],
+    ownPaths: ['/api/docs/bom', '/api/docs/bom/approve', '/api/docs/bom/diff', '/api/docs/fabrication/view'],
     foreignPaths: ['/api/bom', '/api/docs', '/api/turns']
   },
   {

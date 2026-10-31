@@ -6,6 +6,7 @@ import {
   CheckpointDecisionResult,
   DashboardData,
   DocData,
+  DocDiff,
   IssuesSummary,
   PendingCheckpoint,
   PortalAnswerResult,
@@ -54,6 +55,9 @@ export const api = {
     call<{ path: string }>('PUT', `/api/docs/${encodeURIComponent(phaseId)}`, { content }),
   approveDoc: (phaseId: string) =>
     call<{ artifact: unknown }>('POST', `/api/docs/${encodeURIComponent(phaseId)}/approve`),
+  // Revised-doc diff view — approved snapshot vs current, raw strings.
+  fetchDocDiff: (phaseId: string) =>
+    call<DocDiff>('GET', `/api/docs/${encodeURIComponent(phaseId)}/diff`),
 
   // BOM & Trade Studies
   fetchBom: () => call<BomData>('GET', '/api/bom'),

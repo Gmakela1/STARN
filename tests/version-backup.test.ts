@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createVersionBackup } from '../src/util/version-backup.js';
+import { ProjectStateManager } from '../src/workspace/state.js';
+import { findApprovedBackup } from '../src/server/approved-snapshot.js';
 
 describe('createVersionBackup', () => {
   let projectDir: string;
@@ -61,5 +63,46 @@ describe('createVersionBackup', () => {
     // e.g. SOW-2026-09-16T14-22-03.963Z.md — colons replaced with dashes, ms dot preserved
     expect(basename).not.toContain(':');
     expect(basename).toMatch(/^SOW-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z\.md$/);
+  });
+});
+
+describe('findApprovedBackup', () => {
+  let projectDir: string;
+
+  beforeEach(() => {
+    projectDir = path.join(os.tmpdir(), 'starn-approved-snapshot-' + Date.now());
+    fs.mkdirSync(path.join(projectDir, 'docs'), { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  });
+
+  function sha256(projectPath: string, rel: string): string {
+    return ProjectStateManager.computeContentHash(projectPath, rel) as string;
+  }
+
+  it('returns the newest archived version matching the approved hash', () => {
+    const versions = path.join(projectDir, '.starn', 'versions');
+    fs.mkdirSync(versions, { recursive: true });
+    fs.writeFileSync(path.join(versions, 'CONOPS-2026-01-01T00-00-00-000Z.md'), '# old v1', 'utf-8');
+    fs.writeFileSync(path.join(versions, 'CONOPS-2026-01-02T00-00-00-000Z.md'), '# approved v2', 'utf-8');
+    fs.writeFileSync(path.join(versions, 'CONOPS-2026-01-03T00-00-00-000Z.md'), '# newer draft backup', 'utf-8');
+
+    const approved = findApprovedBackup(projectDir, 'CONOPS', sha256(projectDir, path.join('.starn', 'versions', 'CONOPS-2026-01-02T00-00-00-000Z.md')));
+    expect(approved).toBe('# approved v2');
+  });
+
+  it('returns null when no archived version matches (pruned/miss)', () => {
+    const versions = path.join(projectDir, '.starn', 'versions');
+    fs.mkdirSync(versions, { recursive: true });
+    fs.writeFileSync(path.join(versions, 'CONOPS-2026-01-01T00-00-00-000Z.md'), '# old v1', 'utf-8');
+    expect(findApprovedBackup(projectDir, 'CONOPS', 'deadbeef')).toBeNull();
+  });
+
+  it('returns null when the hash input or versions dir is missing', () => {
+    expect(findApprovedBackup(projectDir, 'CONOPS', null)).toBeNull();
+    expect(findApprovedBackup(projectDir, 'CONOPS', undefined)).toBeNull();
+    expect(findApprovedBackup(projectDir, 'CONOPS', 'abc')).toBeNull(); // no versions dir yet
   });
 });

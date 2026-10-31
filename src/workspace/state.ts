@@ -473,7 +473,7 @@ export class ProjectStateManager {
     // On approval, compute and store a SHA-256 content hash so re-approvals
     // can detect whether the document actually changed.
     if (artifact.status === 'approved') {
-      const hash = this.computeContentHash(this.projectPath, artifact.path);
+      const hash = ProjectStateManager.computeContentHash(this.projectPath, artifact.path);
       if (hash) {
         fullRecord.approvedContentHash = hash;
       }
@@ -511,8 +511,10 @@ export class ProjectStateManager {
   /**
    * Computes a SHA-256 hash of the file at the given artifact path.
    * Returns null if the file does not exist.
+   * Public static so server-side utilities (approved-snapshot) reuse the
+   * exact same hash the state manager stores in approvedContentHash.
    */
-  private computeContentHash(projectPath: string, artifactPath: string): string | null {
+  public static computeContentHash(projectPath: string, artifactPath: string): string | null {
     const full = path.join(projectPath, artifactPath);
     if (!fs.existsSync(full)) return null;
     const content = fs.readFileSync(full, 'utf-8');
@@ -604,7 +606,7 @@ export class ProjectStateManager {
     const state = this.getState();
     const art = state.artifacts.find(a => a.id.toUpperCase() === artifactId.toUpperCase());
     if (!art || !art.approvedContentHash) return false;
-    const currentHash = this.computeContentHash(this.projectPath, art.path);
+    const currentHash = ProjectStateManager.computeContentHash(this.projectPath, art.path);
     if (!currentHash) return false;
     return currentHash !== art.approvedContentHash;
   }
