@@ -1141,6 +1141,13 @@ export default function DevelopmentView({
                 aria-label="Message the agent"
                 className="min-h-[44px] flex-1 resize-none rounded-lg border border-[#3b4658] bg-[#05070c] px-3 py-2.5 text-sm text-[#e8edf5] placeholder:text-[#6e7d92] focus:border-[#ff2a3c] focus:outline-none disabled:opacity-50"
               />
+              {/* Autopilot start/stop (icon variant, 44px) — left of mic, per §3 */}
+              <StartAutopilotButton
+                size="icon"
+                running={!!autopilotStatus?.running}
+                onStart={async () => { await api.autopilotStart(); }}
+                onStop={async () => { await api.autopilotStop(); }}
+              />
               {/* Mic button */}
               <button
                 onClick={() => {
@@ -1153,7 +1160,7 @@ export default function DevelopmentView({
                   }
                 }}
                 disabled={busy || checkpoint !== null}
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-colors ${
                   recording
                     ? 'bg-rose-600 text-white motion-safe:animate-pulse'
                     : 'border border-[#3b4658] bg-[#11151d] text-[#a8b3c4] hover:border-[#ff2a3c] hover:text-[#ff2a3c]'
@@ -1344,11 +1351,15 @@ export default function DevelopmentView({
             >
               {uploadingExample ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Paperclip className="h-4 w-4" aria-hidden />}
             </button>
-            <StartAutopilotButton
-              running={!!autopilotStatus?.running}
-              onStart={async () => { await api.autopilotStart(); }}
-              onStop={async () => { await api.autopilotStop(); }}
-            />
+            {/* Doc header keeps a global stop reachable while autopilot runs;
+                start lives solely in the chat composer (no duplicate Start surface). */}
+            {autopilotStatus?.running && (
+              <StartAutopilotButton
+                running={!!autopilotStatus?.running}
+                onStart={async () => { await api.autopilotStart(); }}
+                onStop={async () => { await api.autopilotStop(); }}
+              />
+            )}
             <button
               onClick={() => void refreshDoc()}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"

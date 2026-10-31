@@ -58,6 +58,47 @@ describe('StartAutopilotButton — start flow', () => {
   });
 });
 
+describe('StartAutopilotButton — icon variant (chat composer)', () => {
+  function renderIcon(running = false) {
+    return renderWithUser(
+      <StartAutopilotButton running={running} onStart={start} onStop={stop} size="icon" />
+    );
+  }
+
+  it('renders an icon-only 44x44 start button with accessible name', () => {
+    const { container } = renderIcon();
+    const button = screen.getByRole('button', { name: 'Start autopilot auto-drafting' });
+    expect(button).toHaveClass('h-11', 'w-11', 'rounded-lg');
+    expect(button.textContent).not.toMatch(/start auto-drafting/i);
+    expect(button.querySelector('svg')).not.toBeNull();
+    expect(container.textContent).not.toContain('Start Auto-Drafting');
+  });
+
+  it('icon variant is disabled while the start request is pending', async () => {
+    let resolveStart: () => void = () => {};
+    start.mockImplementation(() => new Promise<void>(res => { resolveStart = res; }));
+    const { user } = renderIcon();
+
+    const button = screen.getByRole('button', { name: 'Start autopilot auto-drafting' });
+    await user.click(button);
+    expect(button).toBeDisabled();
+
+    resolveStart();
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it('icon variant renders a 44x44 rose stop control while running', async () => {
+    stop.mockResolvedValue(undefined);
+    const { user } = renderIcon(true);
+
+    const button = screen.getByRole('button', { name: 'Stop autopilot' });
+    expect(button).toHaveClass('h-11', 'w-11');
+    await user.click(button);
+    await waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
+  });
+});
+
 describe('StartAutopilotButton — stop flow (board #57: no silent catch)', () => {
   it('renders the Stop button while running and no alert on success', async () => {
     stop.mockResolvedValue(undefined);

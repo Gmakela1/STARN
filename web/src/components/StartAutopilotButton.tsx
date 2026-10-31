@@ -11,6 +11,9 @@ interface StartAutopilotButtonProps {
   onStart: () => Promise<void>;
   /** api.autopilotStop — rejections surface a role=alert (no silent catch). */
   onStop: () => Promise<void>;
+  /** 'full' (default): labelled pill for the doc header. 'icon': 44x44
+   * icon-only control for the chat composer (44px touch rule). */
+  size?: 'full' | 'icon';
 }
 
 /**
@@ -22,7 +25,8 @@ interface StartAutopilotButtonProps {
 export default function StartAutopilotButton({
   running,
   onStart,
-  onStop
+  onStop,
+  size = 'full'
 }: StartAutopilotButtonProps) {
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -53,17 +57,70 @@ export default function StartAutopilotButton({
   };
 
   if (running) {
+    if (size === 'icon') {
+      return (
+        <span className="relative flex shrink-0 items-center">
+          <button
+            type="button"
+            onClick={() => void handleStop()}
+            disabled={stopping}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-rose-600/40 bg-rose-950/60 text-rose-300 transition hover:bg-rose-900/70 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Stop autopilot"
+            aria-label="Stop autopilot"
+          >
+            <Square className="h-4 w-4 fill-current" aria-hidden />
+          </button>
+          {error && (
+            <span
+              role="alert"
+              className="absolute right-0 top-full z-10 mt-1 whitespace-nowrap rounded-md border border-rose-800/60 bg-rose-950/90 px-2 py-1 text-[11px] text-rose-300"
+            >
+              {error}
+            </span>
+          )}
+        </span>
+      );
+    }
     return (
       <span className="relative flex shrink-0 items-center">
         <button
           type="button"
           onClick={() => void handleStop()}
           disabled={stopping}
-          className="flex h-8 shrink-0 items-center gap-1 rounded-md border border-rose-600/40 bg-rose-950/60 px-2.5 text-[11px] font-bold text-rose-300 transition hover:bg-rose-900/70 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex min-h-[44px] shrink-0 items-center gap-1 rounded-md border border-rose-600/40 bg-rose-950/60 px-2.5 text-[11px] font-bold text-rose-300 transition hover:bg-rose-900/70 disabled:cursor-not-allowed disabled:opacity-40"
           aria-label="Stop autopilot"
         >
           <Square className="h-3 w-3 fill-current" aria-hidden />
           Stop
+        </button>
+        {error && (
+          <span
+            role="alert"
+            className="absolute right-0 top-full z-10 mt-1 whitespace-nowrap rounded-md border border-rose-800/60 bg-rose-950/90 px-2 py-1 text-[11px] text-rose-300"
+          >
+            {error}
+          </span>
+        )}
+      </span>
+    );
+  }
+
+  if (size === 'icon') {
+    return (
+      <span className="relative flex shrink-0 items-center">
+        <button
+          type="button"
+          onClick={() => void handleStart()}
+          disabled={starting}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-rose-700/40 bg-[#d61f2c] text-white transition hover:bg-[#e11d3f] disabled:cursor-not-allowed disabled:opacity-40"
+          title="Start autopilot auto-drafting"
+          aria-label="Start autopilot auto-drafting"
+        >
+          {starting ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          ) : (
+            <Play className="h-4 w-4 fill-current" aria-hidden />
+          )}
         </button>
         {error && (
           <span
