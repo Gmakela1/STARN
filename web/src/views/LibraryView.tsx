@@ -9,6 +9,7 @@ import {
   Plus
 } from 'lucide-react';
 import { api } from '../api/client';
+import DotGrid from '../components/reactbits/DotGrid';
 import { LibraryListing, RoadmapPhase } from '../types/api';
 
 function formatBytes(bytes: number): string {
@@ -206,7 +207,12 @@ export default function LibraryView() {
 
           {/* Reference List */}
           {(!library?.references || library.references.length === 0) ? (
-            <p className="py-2 text-center text-xs text-[#6e7d92]">No reference documents uploaded yet.</p>
+            <div className="relative isolate py-2">
+              <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+                <DotGrid dotSize={2} gap={26} baseColor="#2a3342" activeColor="#3b4658" mouseInteraction={false} clickShock={false} />
+              </div>
+              <p className="text-center text-xs text-[#6e7d92]">No reference documents uploaded yet.</p>
+            </div>
           ) : (
             <div className="divide-y divide-[#2a3342] border-t border-[#2a3342]">
               {library.references.map(ref => (

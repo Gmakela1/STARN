@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, Play, Square } from 'lucide-react';
+import { Loader2, Sparkles, Square } from 'lucide-react';
 import { describeAutopilotStartError } from '../lib/autopilotError';
 // React Bits (reactbits.dev) decorative border effect — see web/src/components/reactbits.
 import StarBorder from './reactbits/StarBorder';
@@ -113,13 +113,13 @@ export default function StartAutopilotButton({
           onClick={() => void handleStart()}
           disabled={starting}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-rose-700/40 bg-[#d61f2c] text-white transition hover:bg-[#e11d3f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:cursor-not-allowed disabled:opacity-40"
-          title="Start autopilot auto-drafting"
+          title="Launch auto-drafting — drafts docs automatically between gates"
           aria-label="Start autopilot auto-drafting"
         >
           {starting ? (
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
           ) : (
-            <Play className="h-4 w-4 fill-current" aria-hidden />
+            <Sparkles className="h-4 w-4 fill-current motion-safe:animate-[sf-breathe_2.4s_ease-in-out_infinite]" aria-hidden />
           )}
         </button>
         {error && (
@@ -159,9 +159,9 @@ export default function StartAutopilotButton({
         {starting ? (
           <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
         ) : (
-          <Play className="h-3 w-3 fill-current" aria-hidden />
+          <Sparkles className="h-3 w-3 fill-current motion-safe:animate-[sf-breathe_2.4s_ease-in-out_infinite]" aria-hidden />
         )}
-        Start Auto-Drafting
+        Launch Auto-Drafting
       </StarBorder>
       {error && (
         <span

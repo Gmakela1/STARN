@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import type { ReactNode } from 'react';
 import { Loader2, Save } from 'lucide-react';
+import StarBorder from './reactbits/StarBorder';
 
 export interface SettingsSaveBarStatus {
   kind: 'success' | 'warning' | 'error';
@@ -61,16 +62,24 @@ export function SettingsSaveBar(props: SettingsSaveBarProps) {
         <p id={reasonId} className="text-sm text-amber-200">{blockedReason}</p>
       )}
       <div className="flex flex-wrap items-center gap-3">
-        <button
+        <StarBorder
+          as="button"
           type="button"
           onClick={onSave}
           disabled={saveDisabled}
           aria-describedby={blockedReason ? reasonId : undefined}
           className={`flex min-h-[44px] items-center gap-2 rounded-lg bg-violet-600 px-5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-50 ${buttonFocus}`}
+          style={{ padding: '0.625rem 1.25rem' }}
+          thickness={1}
+          duration={8}
+          color="#ff2a3c"
+          trailColor="#ffb3bd"
+          glow={0.5}
+          radius={8}
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Save className="h-4 w-4" aria-hidden />}
           {saving ? savingLabel : label}
-        </button>
+        </StarBorder>
         {onDiscard && dirty && !saving && (
           <button
             type="button"

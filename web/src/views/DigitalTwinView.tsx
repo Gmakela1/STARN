@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Box, UploadCloud, Boxes, Loader2 } from 'lucide-react';
 import { api } from '../api/client';
+import DotGrid from '../components/reactbits/DotGrid';
 import { RoadmapPhase, WorkInstruction } from '../types/api';
 
 /**
@@ -73,7 +74,12 @@ export default function DigitalTwinView() {
   return (
     <div className="grid h-full grid-cols-1 lg:grid-cols-[1fr_320px]">
       {/* Viewport */}
-      <section className="bp-grid relative flex min-h-[320px] flex-col items-center justify-center border-r border-[#2a3342] bg-gradient-to-b from-[#05070c] to-[#0d1017] p-6" aria-label="3D viewport">
+      <section className="bp-grid relative isolate flex min-h-[320px] flex-col items-center justify-center border-r border-[#2a3342] bg-gradient-to-b from-[#05070c] to-[#0d1017] p-6" aria-label="3D viewport">
+        {!modelName && (
+          <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+            <DotGrid dotSize={2} gap={26} baseColor="#2a3342" activeColor="#3b4658" mouseInteraction={false} clickShock={false} />
+          </div>
+        )}
         <div
           className="flex max-w-md flex-col items-center gap-4 rounded-2xl border border-dashed border-[#3b4658] bg-[#05070c]/60 p-8 text-center"
         >

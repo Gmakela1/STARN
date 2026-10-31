@@ -15,6 +15,7 @@ import {
   Bot
 } from 'lucide-react';
 import { api } from '../api/client';
+import DotGrid from '../components/reactbits/DotGrid';
 import { SettingsSaveBar } from '../components/SettingsSaveBar';
 import type { SettingsSaveBarStatus } from '../components/SettingsSaveBar';
 import {
@@ -476,7 +477,12 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                     <Loader2 className="h-4 w-4 animate-spin" /> Loading folders…
                   </div>
                 ) : folders.length === 0 ? (
-                  <p className="py-2 text-center text-xs text-[#6e7d92]">No subdirectories found.</p>
+                  <div className="relative isolate py-2">
+                    <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+                      <DotGrid dotSize={2} gap={26} baseColor="#2a3342" activeColor="#3b4658" opacity={0.12} mouseInteraction={false} clickShock={false} />
+                    </div>
+                    <p className="text-center text-xs text-[#6e7d92]">No subdirectories found.</p>
+                  </div>
                 ) : (
                   folders.map(f => (
                     <div

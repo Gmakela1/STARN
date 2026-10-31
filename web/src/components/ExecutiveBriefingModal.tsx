@@ -1,4 +1,5 @@
 import { Printer, X, AlertTriangle, BadgeCheck, ShieldAlert } from 'lucide-react';
+import StarBorder from './reactbits/StarBorder';
 import { DashboardData } from '../types/api';
 
 interface ExecutiveBriefingModalProps {
@@ -39,13 +40,21 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
         </div>
 
         <div className="flex items-center gap-3">
-          <button
+          <StarBorder
+            as="button"
             onClick={handlePrint}
-            className="flex min-h-[44px] items-center gap-2 rounded-xl bg-violet-600 px-5 text-xs font-bold text-white shadow-lg hover:bg-violet-700 transition-colors"
+            className="flex min-h-[44px] items-center gap-2 rounded-none bg-violet-600 text-xs font-bold text-white shadow-lg hover:bg-violet-700 transition-colors"
+            style={{ padding: '0.625rem 1.25rem' }}
+            thickness={2}
+            duration={6}
+            color="#ff2a3c"
+            trailColor="#d9a441"
+            glow={0.7}
+            radius={0}
           >
             <Printer className="h-4 w-4" />
             Save as PDF / Print
-          </button>
+          </StarBorder>
           <button
             onClick={onClose}
             className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-[#3b4658] bg-[#11151d] text-[#a8b3c4] hover:bg-[#171c26] hover:text-white transition-colors"

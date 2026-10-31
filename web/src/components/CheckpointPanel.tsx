@@ -3,6 +3,7 @@ import { CheckCircle2, MessageCircleMore, Trash2, Loader2 } from 'lucide-react';
 import { PendingCheckpoint } from '../types/api';
 import { api } from '../api/client';
 import CriticScorecard from './CriticScorecard';
+import StarBorder from './reactbits/StarBorder';
 
 export interface CheckpointPanelProps {
   checkpoint: PendingCheckpoint;
@@ -96,14 +97,22 @@ export default function CheckpointPanel({ checkpoint, onResolved, onRevisionRequ
         </div>
       ) : (
         <div className="mt-3 flex flex-wrap gap-2">
-          <button
+          <StarBorder
+            as="button"
             onClick={() => void decide('approve')}
             disabled={submitting !== null}
             className="flex min-h-[44px] items-center gap-2 rounded-lg bg-[#7c3aed] px-4 text-sm font-semibold text-white shadow-md shadow-[#2e1065]/40 transition hover:bg-[#8b5cf6] disabled:opacity-40"
+            style={{ padding: '0.625rem 1rem' }}
+            thickness={1}
+            duration={8}
+            color="#8b5cf6"
+            trailColor="#c4b5fd"
+            glow={0.5}
+            radius={8}
           >
             {submitting === 'approve' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <CheckCircle2 className="h-4 w-4" aria-hidden />}
             Approve & record
-          </button>
+          </StarBorder>
           <button
             onClick={() => setShowFeedback(true)}
             disabled={submitting !== null}

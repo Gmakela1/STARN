@@ -10,6 +10,7 @@ import {
   X
 } from 'lucide-react';
 import type { ProjectInfo, RoadmapPhase } from '../types/api';
+import StarBorder from './reactbits/StarBorder';
 import type { RunState } from '../lib/runState';
 import DocProgressBar from './DocProgressBar';
 import RunStateCluster from './RunStateCluster';
@@ -142,7 +143,7 @@ export function TopBar({
         {HUBS.map(({ id, label, tagline, icon: Icon }) => {
           const active = tab === id;
           const badgeVisible = id === 'development' && openQuestions > 0;
-          return (
+          const tabButton = (
             <button
               key={id}
               type="button"
@@ -173,6 +174,27 @@ export function TopBar({
                 </span>
               )}
             </button>
+          );
+          if (!active) return tabButton;
+          // Active tab wears a StarBorder pill (ambient cap §3: one canvas,
+          // only one tab active at a time). Div wrapper keeps the button the
+          // sole interactive element; canvas is aria-hidden decoration.
+          return (
+            <StarBorder
+              key={id}
+              as="div"
+              thickness={1}
+              duration={10}
+              color="#ff2a3c"
+              trailColor="#d9a441"
+              glow={0.4}
+              radius={8}
+              clickPulse={false}
+              className="shrink-0 rounded-xl"
+              style={{ padding: 0, background: 'transparent' }}
+            >
+              {tabButton}
+            </StarBorder>
           );
         })}
       </div>
