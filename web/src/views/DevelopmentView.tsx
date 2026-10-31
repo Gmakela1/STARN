@@ -463,12 +463,13 @@ export default function DevelopmentView({
   // (exactly one window-level owner, no double recording).
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Alt' && !e.repeat && !recording) {
+      // e.ctrlKey bails for AltGr layouts, which synthesize Ctrl+Alt.
+      if (e.key === 'Alt' && !e.repeat && !recording && !e.ctrlKey) {
         startRecording();
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'Alt' && recording) {
+      if (e.key === 'Alt' && recording && !e.ctrlKey) {
         stopRecording().then(text => {
           if (text) setPrompt(prev => prev + text);
         });

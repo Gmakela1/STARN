@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 
 // Module-scope stable fixtures for the mocked voice recorder (§2 talk-to-text).
 const voiceMock = {
@@ -409,6 +409,56 @@ describe('QuestionPanel', () => {
     consoleSpy.mockRestore();
   });
 
+  it('voice: closing the panel while recording stops the recorder and keeps the transcript', async () => {
+    const view = renderWithUser(<QuestionPanel {...baseProps()} />);
+
+    voiceMock.recording = true;
+    view.rerender(<QuestionPanel {...baseProps()} />);
+
+    view.rerender(<QuestionPanel {...baseProps({ surface: 'closed' })} />);
+
+    // The mic must be released, not orphaned.
+    expect(voiceMock.stopRecording).toHaveBeenCalledTimes(1);
+
+    // The late transcription result is flushed into the item draft and
+    // survives both the close reset and the reopen.
+    await act(async () => { await Promise.resolve(); });
+    view.rerender(<QuestionPanel {...baseProps()} />);
+    await vi.waitFor(() => {
+      const textarea = screen.getByLabelText('Your answer') as HTMLTextAreaElement;
+      expect(textarea.value).toBe('Transcribed answer text');
+    });
+  });
+
+  it('voice: minimizing while recording stops the recorder and keeps the transcript', async () => {
+    const view = renderWithUser(<QuestionPanel {...baseProps()} />);
+
+    voiceMock.recording = true;
+    view.rerender(<QuestionPanel {...baseProps()} />);
+
+    view.rerender(<QuestionPanel {...baseProps({ surface: 'minimized' })} />);
+
+    expect(voiceMock.stopRecording).toHaveBeenCalledTimes(1);
+
+    await act(async () => { await Promise.resolve(); });
+    view.rerender(<QuestionPanel {...baseProps()} />);
+    await vi.waitFor(() => {
+      const textarea = screen.getByLabelText('Your answer') as HTMLTextAreaElement;
+      expect(textarea.value).toBe('Transcribed answer text');
+    });
+  });
+
+  it('voice: AltGr (Ctrl+Alt) does not start or stop recording', () => {
+    voiceMock.recording = true;
+    renderWithUser(<QuestionPanel {...baseProps()} />);
+
+    fireEvent.keyDown(window, { key: 'Alt', ctrlKey: true });
+    expect(voiceMock.startRecording).not.toHaveBeenCalled();
+
+    fireEvent.keyUp(window, { key: 'Alt', ctrlKey: true });
+    expect(voiceMock.stopRecording).not.toHaveBeenCalled();
+  });
+
   // ————— 16. Lifecycle colors + follow-up chip (design §3, board #52) —————
   it('lifecycle: queued state chip is sky (icon + word, never color alone)', () => {
     renderWithUser(<QuestionPanel {...baseProps({ answerStates: { A: { phase: 'queued' } } })} />);
@@ -435,6 +485,34 @@ describe('QuestionPanel', () => {
     renderWithUser(<QuestionPanel {...baseProps()} />);
 
     expect(screen.queryByText('Follow-up')).not.toBeInTheDocument();
+  });
+
+  it('lifecycle: follow-up chip is a collapsed disclosure that expands to the prior answers (oldest first)', async () => {
+    const item = makeItem({
+      id: 'A',
+      meta: {
+        answerHistory: [
+          { text: 'First reply', at: '2025-01-01T00:00:00.000Z' },
+          { text: 'Second reply', at: '2025-01-02T00:00:00.000Z' },
+        ],
+      },
+    });
+    const { user } = renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
+
+    const toggle = screen.getByRole('button', { name: 'Follow-up' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('First reply')).not.toBeInTheDocument();
+
+    await user.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const list = within(toggle.closest('div') as HTMLElement).getByRole('list');
+    const entries = within(list).getAllByRole('listitem');
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toHaveTextContent('First reply');
+    expect(entries[0]).toHaveTextContent('2025-01-01');
+    expect(entries[1]).toHaveTextContent('Second reply');
+    expect(entries[1]).toHaveTextContent('2025-01-02');
   });
 
   it('lifecycle: nav dots — amber pending, sky queued, rose parked', () => {

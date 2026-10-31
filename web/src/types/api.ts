@@ -184,6 +184,10 @@ export interface PortalAnswerHistoryEntry {
   at: string;
 }
 
+/**
+ * Free-form metadata map on a portal item. Mirrors src/workspace/types.ts
+ * (web does not import core sources); keep the two definitions in sync.
+ */
 export interface PortalItemMeta extends Record<string, unknown> {
   archived?: boolean;
   /** §3 board #52 — saved answers, appended server-side each time an answer applies. */

@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ProjectStateManager, ORDERED_WORKFLOW_PHASES } from '../workspace/state.js';
-import { PortalItem, PortalAnswerHistoryEntry } from '../workspace/types.js';
+import { PortalItem } from '../workspace/types.js';
 import { approveArtifact } from './approvals.js';
-import { addPortalItem, answerPortalItem } from './question-portal.js';
+import { addPortalItem, answerPortalItem, ANSWER_HISTORY_CAP } from './question-portal.js';
 
 export interface AnswerApplierDeps {
   stateManager: ProjectStateManager;
@@ -201,13 +201,16 @@ export async function applyAnswer(
   if (counterQuestions.length > 0) {
     const history = updatedItem.meta?.answerHistory;
     if (Array.isArray(history)) {
+      // Cap on inherit too, so a follow-up thread can never carry more saved
+      // answers than an in-place append would.
+      const capped = history.slice(-ANSWER_HISTORY_CAP);
       const fresh = stateManager.getState();
       const byId = new Map((fresh.portalItems || []).map(i => [i.id, i]));
       for (const cq of counterQuestions) {
-        cq.meta = { ...(cq.meta || {}), answerHistory: history as PortalAnswerHistoryEntry[] };
+        cq.meta = { ...(cq.meta || {}), answerHistory: capped };
         const stored = byId.get(cq.id);
         if (stored) {
-          stored.meta = { ...(stored.meta || {}), answerHistory: history as PortalAnswerHistoryEntry[] };
+          stored.meta = { ...(stored.meta || {}), answerHistory: capped };
         }
       }
       stateManager.saveState(fresh);

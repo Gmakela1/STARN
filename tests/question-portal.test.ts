@@ -156,6 +156,37 @@ describe('question portal store', () => {
     expect(typeof history[0].at).toBe('string');
   });
 
+  it('caps meta.answerHistory at the last 20 entries when appending (board #52)', () => {
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'Voltage?',
+      source: 'autopilot'
+    });
+
+    // Seed 20 prior history entries directly into the store.
+    const state = stateMgr.getState();
+    const stored = state.portalItems!.find(i => i.id === item.id)!;
+    stored.meta = {
+      answerHistory: Array.from({ length: 20 }, (_, i) => ({
+        text: `answer ${i + 1}`,
+        at: `2025-01-01T00:00:${String(i).padStart(2, '0')}.000Z`
+      }))
+    };
+    stateMgr.saveState(state);
+
+    answerPortalItem(stateMgr, item.id, 'answer 21');
+    answerPortalItem(stateMgr, item.id, 'answer 22');
+
+    const after = stateMgr.getState().portalItems!.find(i => i.id === item.id)!;
+    const history = after.meta!.answerHistory!;
+    expect(history).toHaveLength(20);
+    // Oldest entries evicted, newest kept last.
+    expect(history[0]).toMatchObject({ text: 'answer 3' });
+    expect(history[19]).toMatchObject({ text: 'answer 22' });
+  });
+
   it('dismissPortalItem sets status dismissed and bumps updatedAt', () => {
     const item = addPortalItem(stateMgr, {
       type: 'flag',

@@ -82,6 +82,8 @@ export default function QuestionPanel({
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [showFull, setShowFull] = useState<string | null>(null);
   const [retryText, setRetryText] = useState<Record<string, string>>({});
+  /** Per-item expansion of the follow-up answer-history disclosure (§3 board #52). */
+  const [showHistory, setShowHistory] = useState<Record<string, boolean>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   /**
    * Snapshot of just-applied items so the 8s "Resolved ✓" dwell keeps rendering
@@ -102,6 +104,7 @@ export default function QuestionPanel({
   const draftsRef = useRef(drafts);
   const onCloseRef = useRef(onClose);
   const onFocusDocumentRef = useRef(onFocusDocument);
+  const recordingRef = useRef(false);
   const consumedFocusRef = useRef<{ token: number } | null>(null);
 
   // Sync refs for the single window-level Escape listener so it never needs to
@@ -131,6 +134,7 @@ export default function QuestionPanel({
     setSubmitError(null);
     setRecentlyResolved({});
     setRetryText({});
+    setShowHistory({});
   }, [surface, items]);
 
   // §1.6.3 — "Resolved ✓" dwell keyed off the paid answer state: one snapshot
@@ -247,6 +251,7 @@ export default function QuestionPanel({
   // Voice input (§2): same treatment as the doc composer — a mic button plus
   // Alt-hold-to-talk; transcribed text appends into the active answer draft.
   const { recording, startRecording, stopRecording, error: voiceError } = useVoiceRecorder();
+  useEffect(() => { recordingRef.current = recording; }, [recording]);
 
   /**
    * Voice is live only while the panel is open on an answerable item
@@ -273,12 +278,13 @@ export default function QuestionPanel({
   useEffect(() => {
     if (!voiceActive) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Alt' && !e.repeat) {
+      // e.ctrlKey bails for AltGr layouts, which synthesize Ctrl+Alt.
+      if (e.key === 'Alt' && !e.repeat && !e.ctrlKey) {
         startRecording();
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'Alt') {
+      if (e.key === 'Alt' && !e.ctrlKey) {
         void stopRecording().then(text => {
           const id = activeIdRef.current;
           if (text && id) appendVoiceText(id, text);
@@ -290,6 +296,16 @@ export default function QuestionPanel({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      // Leaving the answerable state (panel closed or minimized, item parked/
+      // queued/applied) must not orphan a hot MediaRecorder: stop it and flush
+      // the transcript into the item's draft. The append lands as a microtask,
+      // so it survives the close reset's synchronous setDrafts({}).
+      if (recordingRef.current) {
+        const id = activeIdRef.current;
+        void stopRecording().then(text => {
+          if (text && id) appendVoiceText(id, text);
+        });
+      }
     };
   }, [voiceActive, startRecording, stopRecording, appendVoiceText]);
 
@@ -541,12 +557,28 @@ export default function QuestionPanel({
         </p>
 
         {/* §3 board #52 — item returned as a follow-up after an applied answer.
-            The full Q&A history stays available on the item (meta.answerHistory). */}
+            The chip is a disclosure toggle; expanding lists the prior answers
+            (text + date, oldest first) in a scrollable list. */}
         {item.meta?.answerHistory && item.meta.answerHistory.length > 0 && (
           <div className="mt-1.5">
-            <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-950/40 px-2.5 py-0.5 text-[11px] font-medium text-amber-300">
+            <button
+              type="button"
+              onClick={() => setShowHistory(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+              aria-expanded={showHistory[item.id] === true}
+              className="inline-flex min-h-[44px] items-center gap-1 rounded-full border border-amber-500/40 bg-amber-950/40 px-2.5 text-[11px] font-medium text-amber-300 transition hover:bg-amber-900/40 focus:ring-2 focus:ring-amber-500/40"
+            >
               <RotateCcw className="h-3 w-3" aria-hidden /> Follow-up
-            </span>
+            </button>
+            {showHistory[item.id] && (
+              <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-800 bg-slate-900/60 p-2">
+                {item.meta.answerHistory.map((entry, i) => (
+                  <li key={`${entry.at}-${i}`} className="text-[11px] text-slate-300">
+                    <time dateTime={entry.at} className="text-slate-500">{entry.at.slice(0, 10)}</time>{' '}
+                    <span className="text-slate-200">{entry.text}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 

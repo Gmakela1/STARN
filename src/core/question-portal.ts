@@ -1,4 +1,4 @@
-import { PortalItem, PortalItemType, PortalAnswerHistoryEntry } from '../workspace/types.js';
+import { PortalItem, PortalItemType } from '../workspace/types.js';
 import { ProjectStateManager, defaultAutopilotState } from '../workspace/state.js';
 
 export type PortalItemInput = Omit<PortalItem, 'id' | 'createdAt' | 'updatedAt' | 'status'>;
@@ -14,6 +14,9 @@ export interface PortalListFilter {
  * item is marked `meta.archived = true` instead of growing the array past it.
  */
 const MAX_PORTAL_ITEMS = 500;
+
+/** Board #52 — per-item saved answer history is capped to the most recent entries. */
+export const ANSWER_HISTORY_CAP = 20;
 
 const OPEN_RANK = 0;
 const CLOSED_RANK = 1;
@@ -137,12 +140,12 @@ export function answerPortalItem(manager: ProjectStateManager, id: string, answe
   item.updatedAt = new Date().toISOString();
   // Board #52 — append the applied answer to the item's saved history so any
   // follow-up question reopened on this thread keeps the full Q&A record.
-  const priorHistory = Array.isArray(item.meta?.answerHistory)
-    ? (item.meta!.answerHistory as PortalAnswerHistoryEntry[])
-    : [];
+  // The history is capped to the most recent entries so long threads cannot
+  // grow item metadata without bound.
+  const priorHistory = Array.isArray(item.meta?.answerHistory) ? item.meta!.answerHistory : [];
   item.meta = {
     ...(item.meta || {}),
-    answerHistory: [...priorHistory, { text: answer, at: item.updatedAt }]
+    answerHistory: [...priorHistory, { text: answer, at: item.updatedAt }].slice(-ANSWER_HISTORY_CAP)
   };
   manager.saveState(state);
   return item;

@@ -65,6 +65,17 @@ export interface PortalAnswerHistoryEntry {
   at: string;
 }
 
+/**
+ * Free-form metadata map on a portal item. Shared by the core store and the
+ * server; mirrored in web/src/types/api.ts (web does not import core sources).
+ */
+export interface PortalItemMeta extends Record<string, unknown> {
+  /** Dedupe/archive heal — set instead of growing the items array past the cap. */
+  archived?: boolean;
+  /** Board #52 — saved answers, appended server-side each time an answer applies. */
+  answerHistory?: PortalAnswerHistoryEntry[];
+}
+
 export interface PortalItem {
   id: string;
   type: PortalItemType;
@@ -80,7 +91,7 @@ export interface PortalItem {
   source: 'autopilot' | 'studio' | 'shop-floor';
   createdAt: string;
   updatedAt: string;
-  meta?: Record<string, unknown>;
+  meta?: PortalItemMeta;
 }
 
 export interface AutopilotState {

@@ -293,6 +293,56 @@ describe('applyAnswer', () => {
     ]);
   });
 
+  it('follow-up: inherited history is capped to the last 20 entries (board #52)', async () => {
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What is the max voltage?',
+      source: 'autopilot'
+    });
+
+    // Seed 21 prior history entries directly into the store.
+    const state = stateMgr.getState();
+    const stored = state.portalItems!.find(i => i.id === item.id)!;
+    stored.meta = {
+      answerHistory: Array.from({ length: 21 }, (_, i) => ({
+        text: `old ${i + 1}`,
+        at: `2025-01-01T00:00:${String(i).padStart(2, '0')}.000Z`
+      }))
+    };
+    stateMgr.saveState(state);
+
+    executeTurnMock.mockImplementation(async (opts: {
+      onQuestions?: (items: Array<{
+        type: 'question';
+        severity: 'normal';
+        docPath: string;
+        title: string;
+        source: 'autopilot';
+      }>) => void;
+    }) => {
+      if (opts.onQuestions) {
+        opts.onQuestions([
+          { type: 'question', severity: 'normal', docPath: 'docs/CONOPS.md', title: 'Q1. What gauge wire?', source: 'autopilot' }
+        ]);
+      }
+      return makeTurnResult({
+        specialistId: 'conops',
+        criticResult: { passed: true, score: 9.0, summary: 'pass', strengths: [], weaknesses: [], actionableGuidance: '' }
+      });
+    });
+
+    const result = await applyAnswer(deps, item.id, 'new answer');
+
+    // 21 prior + 1 appended = 22 → the counter question inherits only the
+    // last 20 (the capped history, including the just-applied answer).
+    const cqHistory = result.counterQuestions[0].meta!.answerHistory!;
+    expect(cqHistory).toHaveLength(20);
+    expect(cqHistory[0]).toMatchObject({ text: 'old 3' });
+    expect(cqHistory[19]).toMatchObject({ text: 'new answer' });
+  });
+
   it('re-apply to an already-answered item throws (stale rejection)', async () => {
     // First, add and answer an item
     const item = addPortalItem(stateMgr, {
