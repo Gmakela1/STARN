@@ -34,18 +34,18 @@ html, body, #root {
   content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
 }
 .star-field::before { /* far stars: 1px, dim */
-  box-shadow: 17vw 8vh 0 0 #94a3b833, 63vw 4vh 0 0 #94a3b822, 42vw 22vh 0 0 #cbd5e11f,
-    88vw 31vh 0 0 #94a3b833, 9vw 47vh 0 0 #cbd5e11f, 71vw 55vh 0 0 #94a3b822,
-    29vw 66vh 0 0 #94a3b833, 94vw 74vh 0 0 #cbd5e11f, 5vw 85vh 0 0 #94a3b822,
-    55vw 93vh 0 0 #94a3b833, 36vw 38vh 0 0 #cbd5e11f, 78vw 12vh 0 0 #94a3b822;
+  box-shadow: 17vw 8vh 0 0 #94a3b822, 63vw 4vh 0 0 #94a3b815, 42vw 22vh 0 0 #cbd5e114,
+    88vw 31vh 0 0 #94a3b822, 9vw 47vh 0 0 #cbd5e114, 71vw 55vh 0 0 #94a3b815,
+    29vw 66vh 0 0 #94a3b822, 94vw 74vh 0 0 #cbd5e114, 5vw 85vh 0 0 #94a3b815,
+    55vw 93vh 0 0 #94a3b822, 36vw 38vh 0 0 #cbd5e114, 78vw 12vh 0 0 #94a3b815;
   border-radius: 9999px; width: 1px; height: 1px;
 }
 .star-field::after { /* near stars: 2px, brighter, slow drift */
-  box-shadow: 24vw 15vh 0 1px #e2e8f066, 69vw 41vh 0 1px #e2e8f044, 12vw 58vh 0 1px #e2e8f066,
-    83vw 68vh 0 1px #e2e8f044, 47vw 81vh 0 1px #e2e8f066, 91vw 22vh 0 1px #e2e8f044,
-    33vw 5vh 0 1px #e2e8f044, 58vw 28vh 0 1px #e2e8f066;
+  box-shadow: 24vw 15vh 0 1px #e2e8f044, 69vw 41vh 0 1px #e2e8f02e, 12vw 58vh 0 1px #e2e8f044,
+    83vw 68vh 0 1px #e2e8f02e, 47vw 81vh 0 1px #e2e8f044, 91vw 22vh 0 1px #e2e8f02e,
+    33vw 5vh 0 1px #e2e8f02e, 58vw 28vh 0 1px #e2e8f044;
   border-radius: 9999px; width: 2px; height: 2px;
-  animation: sf-drift 240s linear infinite;
+  animation: sf-drift 480s linear infinite;
 }
 @keyframes sf-drift { to { transform: translate3d(-40px, -25px, 0); } }
 

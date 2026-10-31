@@ -251,23 +251,32 @@ export default function DashboardView({
   };
 
   return (
-    // `isolate` + `relative` create a stacking context so the -z-10 Galaxy
-    // layer paints above this root's own background but below all content.
-    <div className="relative isolate h-full overflow-y-auto p-4 lg:p-6 bg-[#05070c] text-[#e8edf5]">
+    // Outer root owns the opaque background and the -z-10 Galaxy layer and is
+    // NOT scrollable (`isolate` + `relative` create one stacking context). An
+    // inner overflow-y-auto container scrolls the content on top of the stars;
+    // the Galaxy canvas therefore resolves to viewport height instead of the
+    // scroll container's padding-box height (fixes starless gutters at the
+    // bottom of the dashboard).
+    <div className="relative isolate h-full bg-[#05070c] text-[#e8edf5]">
       {/* React Bits Galaxy: decorative WebGL starfield, dashboard only.
           pointer-events-none + aria-hidden + mouseInteraction/clickWarp off so
-          it never intercepts input; low twinkle + ≤4 layers keeps it calm. */}
-      <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+          it never intercepts input; low twinkle + 2 layers keeps it calm. */}
+      <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true" data-testid="galaxy-layer">
         <Galaxy
           mouseInteraction={false}
           clickWarp={false}
-          opacity={0.6}
-          twinkleIntensity={0.1}
-          layers={3}
+          speed={0.45}
+          twinkleIntensity={0.06}
+          opacity={0.45}
+          glowIntensity={0.18}
+          density={0.8}
+          layers={2}
           starColors={['#ff2a3c', '#ffb3bd', '#d9a441', '#e8edf5']}
-          glowIntensity={0.3}
         />
       </div>
+      {/* Scroll container: background REMOVED so the fixed Galaxy canvas is
+          visible across the full scroll height. */}
+      <div className="relative h-full overflow-y-auto p-4 lg:p-6">
       <div className="mx-auto max-w-6xl space-y-6">
         {/* Project Overview / Charter Card */}
         <section aria-label="Project overview and charter" className="rounded-2xl border border-[#2a3342] bg-[#0d1017]/70 p-6 backdrop-blur-sm">
@@ -480,6 +489,7 @@ export default function DashboardView({
       {showBriefingModal && (
         <ExecutiveBriefingModal data={data} onClose={() => setShowBriefingModal(false)} />
       )}
+      </div>
     </div>
   );
 }

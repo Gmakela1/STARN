@@ -157,4 +157,24 @@ describe('DashboardView needs-input rows (design §5.E)', () => {
     await user.keyboard('[KeyJ]');
     expect(input).toHaveFocus();
   });
+
+  it('renders the decorative Galaxy layer on a non-scrolling parent, behind the scroll container', async () => {
+    fetchDashboardMock.mockResolvedValue(buildData([buildItem()]));
+    const { container } = renderWithUser(<DashboardView />);
+
+    // Wait for data to land so the full (non-loading) tree is mounted.
+    await screen.findByRole('list');
+
+    // Wrapper exists, is aria-hidden decoration, and hosts the Galaxy canvas.
+    const layer = container.querySelector('[data-testid="galaxy-layer"]');
+    expect(layer).not.toBeNull();
+    expect(layer).toHaveAttribute('aria-hidden', 'true');
+    expect(layer?.querySelector('canvas')).not.toBeNull();
+
+    // Scroll fix: wrapper is a sibling of (not inside) the scrolling pane,
+    // so the canvas resolves to viewport height instead of padding-box height.
+    const scroller = layer?.nextElementSibling as HTMLElement | null;
+    expect(scroller?.className).toContain('overflow-y-auto');
+    expect(scroller?.className).not.toContain('bg-');
+  });
 });
