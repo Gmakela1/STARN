@@ -32,6 +32,29 @@ vi.mock('../src/core/runner.js', async (importOriginal) => {
   };
 });
 
+// Capture the chain driver's onSettled closure so tests can replay the real
+// driver lifecycle (publish 'complete' → finally onSettled) without running
+// the chain. start/resume are no-ops: the driver never runs a real chain here.
+const { capturedOnSettled } = vi.hoisted(() => ({
+  capturedOnSettled: { current: null as (() => void) | null }
+}));
+
+vi.mock('../src/core/autopilot.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/core/autopilot.js')>();
+  return {
+    ...actual,
+    AutopilotDriver: class extends actual.AutopilotDriver {
+      constructor(deps: any, onEvent?: any) {
+        super(deps, onEvent);
+        capturedOnSettled.current = deps.onSettled ?? null;
+      }
+      override start(): void {}
+      override resume(_docId?: string): void {}
+      override stop(): void {}
+    }
+  };
+});
+
 function makeTurnResult(specialistId: string, output = '# Heading\n\nDraft.'): TurnResult {
   return {
     specialistId,
@@ -236,5 +259,78 @@ describe('idle-path answer incorporation (real queueAnswer → real applyAnswer)
     const st = stateManager.getState();
     expect(st.portalItems.find((i: any) => i.id === item.id)?.status).toBe('answered');
     expect(st.portalItems.find((i: any) => i.id === item2.id)?.status).toBe('answered');
+  });
+
+  /** Gated single-answer incorporation: blocks the conops turn until the
+   *  returned release handle is called. */
+  function stubGatedIncorporation(): () => void {
+    let release!: () => void;
+    const gate = new Promise<void>(r => { release = r; });
+    executeTurnMock.mockImplementation(async (opts: any) => {
+      if (opts.forceSpecialistId === 'conops') {
+        await gate;
+        // Strip the pending block, byte-identical content → no ripple turns.
+        const current = fs.readFileSync(conopsPath, 'utf-8');
+        const idx = current.indexOf(PENDING_INCORPORATION_MARKER);
+        fs.writeFileSync(conopsPath, idx >= 0 ? current.slice(0, idx).trimEnd() + '\n' : current, 'utf-8');
+        return makeTurnResult('conops');
+      }
+      return makeTurnResult('change-impact', 'No discrepancies found.');
+    });
+    return () => release();
+  }
+
+  it('d. chain settle after publish is a wrong-owner no-op: the drain-owned guard survives mid-incorporation', async () => {
+    setDocStatus({ conops: 'auto-approved' });
+    const item = addItem('What bus voltage?');
+    const releaseIncorporation = stubGatedIncorporation();
+
+    // Real lifecycle: autopilotStart acquires the chain guard; the chain then
+    // publishes 'complete' synchronously (publish releases the guard and
+    // drainWithGuard re-acquires it for the post-chain drain) and the runChain
+    // finally fires onSettled afterwards.
+    (session as any).autopilotStart();
+    expect(session.busy).toBe(true);
+    expect(session.queueAnswer(item.id, item.answer)).toEqual({ queued: true });
+
+    (session as any).publish({ kind: 'complete', result: { passed: [], parked: [] }, reason: 'finished' });
+    await vi.waitFor(() => expect(executeTurnMock).toHaveBeenCalledTimes(1));
+
+    // onSettled fires with the chain's owner token while the drain holds the
+    // guard → endTurn(chainAbort) is a wrong-owner no-op: busy must stay true
+    // and a concurrent POST /api/turns must still be rejected.
+    expect(capturedOnSettled.current).toBeTypeOf('function');
+    capturedOnSettled.current!();
+    expect(session.busy).toBe(true);
+    expect(() => (session as any).beginTurn()).toThrow('A turn is already in progress');
+
+    releaseIncorporation();
+    await vi.waitFor(() => expect(session.busy).toBe(false));
+    const st = stateManager.getState();
+    expect(st.portalItems.find((i: any) => i.id === item.id)?.status).toBe('answered');
+  });
+
+  it('e. swallowed terminal event: onSettled releases the chain-owned guard and the drain re-acquires it', async () => {
+    setDocStatus({ conops: 'auto-approved' });
+    const item = addItem('What bus voltage?');
+    const releaseIncorporation = stubGatedIncorporation();
+
+    // Chain guard held, no 'complete' ever published (hang/swallowed event).
+    (session as any).autopilotStart();
+    expect(session.busy).toBe(true);
+    expect(session.queueAnswer(item.id, item.answer)).toEqual({ queued: true });
+
+    // The chain settles without publishing: onSettled's endTurn(chainAbort)
+    // owns the guard → released; drainWithGuard re-acquires it synchronously
+    // so the drain (and its incorporation turn) is still guarded.
+    capturedOnSettled.current!();
+    expect(session.busy).toBe(true);
+    expect(() => (session as any).beginTurn()).toThrow('A turn is already in progress');
+    await vi.waitFor(() => expect(executeTurnMock).toHaveBeenCalledTimes(1));
+
+    releaseIncorporation();
+    await vi.waitFor(() => expect(session.busy).toBe(false));
+    const st = stateManager.getState();
+    expect(st.portalItems.find((i: any) => i.id === item.id)?.status).toBe('answered');
   });
 });

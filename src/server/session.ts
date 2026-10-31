@@ -412,10 +412,15 @@ export class ServerSessionManager {
       logger: this.deps.logger,
       // Release the turn guard on ANY chain exit (not just a published
       // 'complete'/'error'), so a hang or a swallowed terminal event cannot
-      // leave the session wedged busy. Release is idempotent.
+      // leave the session wedged busy. Owner-token release: when 'complete'
+      // was already published, publish() released the chain's guard and
+      // drainWithGuard re-acquired it for the post-chain drain — a stale
+      // unconditional endTurn here would null that drain-owned guard
+      // mid-incorporation and let a concurrent POST /api/turns slip past the
+      // busy check. With the token, that cleanup is a no-op.
       onSettled: () => {
-        this.endTurn();
-        void this.answerQueue.drain();
+        this.endTurn(abort);
+        void this.drainWithGuard();
       }
     };
 
@@ -565,7 +570,10 @@ export class ServerSessionManager {
         executeTurn: this.makeExecuteTurn(abort),
         logger: this.deps.logger,
         onSettled: () => {
-          this.endTurn();
+          // Owner-token release (same rationale as autopilotStart): if
+          // 'complete' was already published, the guard now belongs to the
+          // post-chain drain — this stale owner's endTurn must not null it.
+          this.endTurn(abort);
           // Guarded drain: the post-chain answer apply (and any incorporation
           // turn it triggers) holds the busy guard so a concurrent turn start
           // cannot slip in (see drainWithGuard).
