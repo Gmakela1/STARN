@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { ProjectStateManager, ORDERED_WORKFLOW_PHASES } from '../src/workspace/state.js';
+import { ProjectStateManager } from '../src/workspace/state.js';
 import { addPortalItem, answerPortalItem, dismissPortalItem } from '../src/core/question-portal.js';
-import { buildUserAnswersBlock, applyAnswer, AnswerApplierDeps } from '../src/core/answer-applier.js';
+import { applyAnswer, AnswerApplierDeps } from '../src/core/answer-applier.js';
+import { INCORPORATION_CRITIC_FOCUS } from '../src/core/incorporation-prompt.js';
 import { PortalItem } from '../src/workspace/types.js';
 import { TurnResult } from '../src/core/runner.js';
 
@@ -21,94 +22,12 @@ function makeTurnResult(overrides: Partial<TurnResult> = {}): TurnResult {
   };
 }
 
-describe('buildUserAnswersBlock', () => {
-  it('returns exact CLI format with whitespace and newlines', () => {
-    const item: PortalItem = {
-      id: 'p_test1',
-      type: 'question',
-      severity: 'normal',
-      docPath: 'docs/CONOPS.md',
-      title: 'What is the max voltage?',
-      source: 'autopilot',
-      status: 'open',
-      createdAt: '2025-01-01T00:00:00.000Z',
-      updatedAt: '2025-01-01T00:00:00.000Z'
-    };
-    const result = buildUserAnswersBlock(item, '12V nominal');
-    const expected = `\n\nUSER ANSWERS TO OPEN QUESTIONS (incorporate per your instructions):\nQ1. What is the max voltage?\nAnswer: 12V nominal\n`;
-    expect(result).toBe(expected);
-  });
-
-  it('extracts Q number from title when title starts with Q\d+.', () => {
-    const item: PortalItem = {
-      id: 'p_test2',
-      type: 'question',
-      severity: 'normal',
-      docPath: 'docs/ARCHITECTURE.md',
-      title: 'Q3. What bus voltage?',
-      source: 'autopilot',
-      status: 'open',
-      createdAt: '2025-01-01T00:00:00.000Z',
-      updatedAt: '2025-01-01T00:00:00.000Z'
-    };
-    const result = buildUserAnswersBlock(item, '48V');
-    const expected = `\n\nUSER ANSWERS TO OPEN QUESTIONS (incorporate per your instructions):\nQ3. What bus voltage?\nAnswer: 48V\n`;
-    expect(result).toBe(expected);
-  });
-
-  it('uses 1 as default number when title has no Q prefix', () => {
-    const item: PortalItem = {
-      id: 'p_test3',
-      type: 'question',
-      severity: 'normal',
-      docPath: 'docs/CONOPS.md',
-      title: 'Any constraints?',
-      source: 'autopilot',
-      status: 'open',
-      createdAt: '2025-01-01T00:00:00.000Z',
-      updatedAt: '2025-01-01T00:00:00.000Z'
-    };
-    const result = buildUserAnswersBlock(item, 'None');
-    const expected = `\n\nUSER ANSWERS TO OPEN QUESTIONS (incorporate per your instructions):\nQ1. Any constraints?\nAnswer: None\n`;
-    expect(result).toBe(expected);
-  });
-
-  it('with context: lists prior history + other answered items and forbids re-asking (answer memory)', () => {
-    const item: PortalItem = {
-      id: 'p_test4',
-      type: 'question',
-      severity: 'normal',
-      docPath: 'docs/CONOPS.md',
-      title: 'What fuse rating?',
-      source: 'autopilot',
-      status: 'open',
-      createdAt: '2025-01-01T00:00:00.000Z',
-      updatedAt: '2025-01-01T00:00:00.000Z',
-      meta: { answerHistory: [{ text: '32A earlier', at: '2025-01-01T00:00:00.000Z' }] }
-    };
-    const result = buildUserAnswersBlock(item, '40A final', {
-      priorHistory: [{ text: '32A earlier' }],
-      otherAnswered: [
-        { id: 'p_other', title: 'What is the max voltage?', answer: '48V' },
-        { id: 'p_other2', title: 'What gauge wire?', answer: '10 AWG' }
-      ]
-    });
-    expect(result).toContain('PREVIOUSLY ANSWERED');
-    expect(result).toContain('do NOT re-ask');
-    expect(result).toContain('only genuinely NEW unresolved items'.replace('only', 'Only'));
-    expect(result).toContain('32A earlier');
-    expect(result).toContain('What is the max voltage?');
-    expect(result).toContain('48V');
-    expect(result).toContain('What gauge wire?');
-    expect(result).toContain('10 AWG');
-  });
-});
-
 describe('applyAnswer', () => {
   let tmpDir: string;
   let stateMgr: ProjectStateManager;
   let executeTurnMock: ReturnType<typeof vi.fn>;
-  let runChangeImpactMock: ReturnType<typeof vi.fn>;
+  let emitStatusMock: ReturnType<typeof vi.fn>;
+  let emitPhaseMock: ReturnType<typeof vi.fn>;
   let deps: AnswerApplierDeps;
   let docPath: string;
 
@@ -127,13 +46,15 @@ describe('applyAnswer', () => {
     writeDocContent('conops', '# CONOPS\n\nBaseline content.\n\n## Open Questions\n\nQ1. What max voltage?\n');
 
     executeTurnMock = vi.fn();
-    runChangeImpactMock = vi.fn().mockResolvedValue(['icd', 'requirements']);
+    emitStatusMock = vi.fn();
+    emitPhaseMock = vi.fn();
 
     deps = {
       stateManager: stateMgr,
       projectPath: tmpDir,
       executeTurn: executeTurnMock,
-      runChangeImpact: runChangeImpactMock
+      emitStatus: emitStatusMock,
+      emitPhase: emitPhaseMock
     };
   });
 
@@ -141,7 +62,16 @@ describe('applyAnswer', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('builds correct userPrompt with doc content and answers block', async () => {
+  it('(a) idle: answer is a plain doc edit — with open questions remaining no turn runs', async () => {
+    // Two open questions on the same doc; answering one leaves the other open,
+    // so the incorporation trigger must not fire.
+    const other = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What gauge wire?',
+      source: 'autopilot'
+    });
     const item = addPortalItem(stateMgr, {
       type: 'question',
       severity: 'normal',
@@ -150,24 +80,63 @@ describe('applyAnswer', () => {
       source: 'autopilot'
     });
 
-    executeTurnMock.mockResolvedValue(makeTurnResult({
-      specialistId: 'conops',
-      criticResult: { passed: true, score: 9.0, summary: 'pass', strengths: [], weaknesses: [], actionableGuidance: '' }
-    }));
+    const result = await applyAnswer(deps, item.id, '12V nominal');
 
-    await applyAnswer(deps, item.id, '12V nominal');
+    // Plain edit only — no specialist/critic turn per answer.
+    expect(executeTurnMock).not.toHaveBeenCalled();
+    expect(result.affectedDocs).toEqual([]);
+    expect(result.updatedItem.status).toBe('answered');
+    expect(result.updatedItem.answer).toBe('12V nominal');
+    const doc = fs.readFileSync(path.join(tmpDir, 'docs', 'CONOPS.md'), 'utf-8');
+    expect(doc).toContain('## User Answers (Pending Incorporation)');
+    expect(doc).toContain('**What is the max voltage?**');
+    expect(doc).toContain('Answer: 12V nominal');
+    expect(stateMgr.getState().portalItems!.find(i => i.id === other.id)?.status).toBe('open');
+  });
 
-    expect(executeTurnMock).toHaveBeenCalledTimes(1);
+  it('(b) idle + LAST open question answered: exactly one incorporation turn, block stripped, status revised', async () => {
+    const s = stateMgr.getState();
+    s.autopilot!.docStatus['conops'] = 'passed';
+    stateMgr.saveState(s);
+
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What is the max voltage?',
+      source: 'autopilot'
+    });
+
+    executeTurnMock.mockResolvedValue(makeTurnResult({ specialistId: 'conops' }));
+
+    const result = await applyAnswer(deps, item.id, '12V nominal');
+
+    expect(executeTurnMock).toHaveBeenCalledTimes(2); // incorporation + immediate ripple scan (no flags)
     const callOpts = executeTurnMock.mock.calls[0][0];
-    expect(callOpts.userPrompt).toContain('# CONOPS');
-    expect(callOpts.userPrompt).toContain('Baseline content.');
-    expect(callOpts.userPrompt).toContain('USER ANSWERS TO OPEN QUESTIONS');
-    expect(callOpts.userPrompt).toContain('Q1. What is the max voltage?');
-    expect(callOpts.userPrompt).toContain('Answer: 12V nominal');
-    expect(callOpts.userPrompt).toContain('Update the document in place');
+    expect(callOpts.forceSpecialistId).toBe('conops');
+    expect(callOpts.criticFocus).toBe(INCORPORATION_CRITIC_FOCUS);
+    expect(callOpts.userPrompt).toContain('PENDING INCORPORATION');
+    expect(callOpts.userPrompt).toContain('docs/CONOPS.md');
+    expect(callOpts.userPrompt).toContain("REMOVE the '## User Answers (Pending Incorporation)' block");
+
+    // Guard strip: the mocked turn does not edit the doc, but the applier
+    // strips the pending block on success.
+    const doc = fs.readFileSync(path.join(tmpDir, 'docs', 'CONOPS.md'), 'utf-8');
+    expect(doc).not.toContain('## User Answers (Pending Incorporation)');
+    expect(doc).toContain('Baseline content.');
+
+    // docStatus was 'passed' → set to 'revised' + phase event.
+    expect(stateMgr.getState().autopilot!.docStatus['conops']).toBe('revised');
+    expect(emitPhaseMock).toHaveBeenCalledWith('conops', 'revised', expect.any(String));
+    expect(emitStatusMock).toHaveBeenCalledWith(expect.stringContaining('Incorporated answers into'));
+    expect(result.affectedDocs).toEqual([]);
   });
 
-  it('sets forceSpecialistId to the phase derived from docPath', async () => {
+  it('(b2) revised is NOT set for an idle/parked doc — but the block is still stripped', async () => {
+    const s = stateMgr.getState();
+    s.autopilot!.docStatus['conops'] = 'idle';
+    stateMgr.saveState(s);
+
     const item = addPortalItem(stateMgr, {
       type: 'question',
       severity: 'normal',
@@ -176,19 +145,21 @@ describe('applyAnswer', () => {
       source: 'autopilot'
     });
 
-    executeTurnMock.mockResolvedValue(makeTurnResult({
-      specialistId: 'conops',
-      criticResult: { passed: true, score: 9.0, summary: 'pass', strengths: [], weaknesses: [], actionableGuidance: '' }
-    }));
-
+    executeTurnMock.mockResolvedValue(makeTurnResult({ specialistId: 'conops' }));
     await applyAnswer(deps, item.id, '12V nominal');
 
-    expect(executeTurnMock).toHaveBeenCalledWith(
-      expect.objectContaining({ forceSpecialistId: 'conops' })
-    );
+    expect(executeTurnMock).toHaveBeenCalledTimes(2); // incorporation + immediate ripple scan (no flags)
+    expect(stateMgr.getState().autopilot!.docStatus['conops']).toBe('idle');
+    expect(emitPhaseMock).not.toHaveBeenCalled();
+    const doc = fs.readFileSync(path.join(tmpDir, 'docs', 'CONOPS.md'), 'utf-8');
+    expect(doc).not.toContain('## User Answers (Pending Incorporation)');
   });
 
-  it('approveArtifact called on critic pass and affectedDocs returned', async () => {
+  it('(c) incorporation turn fails: block stays (retryable), failure status event, no revised', async () => {
+    const s = stateMgr.getState();
+    s.autopilot!.docStatus['conops'] = 'passed';
+    stateMgr.saveState(s);
+
     const item = addPortalItem(stateMgr, {
       type: 'question',
       severity: 'normal',
@@ -199,13 +170,61 @@ describe('applyAnswer', () => {
 
     executeTurnMock.mockResolvedValue(makeTurnResult({
       specialistId: 'conops',
-      criticResult: { passed: true, score: 9.0, summary: 'pass', strengths: [], weaknesses: [], actionableGuidance: '' }
+      criticFailed: true
     }));
 
     const result = await applyAnswer(deps, item.id, '12V nominal');
 
-    expect(runChangeImpactMock).toHaveBeenCalled();
-    expect(result.affectedDocs).toEqual(['icd', 'requirements']);
+    expect(executeTurnMock).toHaveBeenCalledTimes(1);
+    const doc = fs.readFileSync(path.join(tmpDir, 'docs', 'CONOPS.md'), 'utf-8');
+    expect(doc).toContain('## User Answers (Pending Incorporation)');
+    expect(doc).toContain('Answer: 12V nominal');
+    expect(stateMgr.getState().autopilot!.docStatus['conops']).toBe('passed');
+    expect(emitPhaseMock).not.toHaveBeenCalled();
+    expect(emitStatusMock).toHaveBeenCalledWith(expect.stringContaining('failed'));
+    expect(result.updatedItem.status).toBe('answered');
+  });
+
+  it('(d) more open questions remain for the doc: no incorporation turn', async () => {
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What is the max voltage?',
+      source: 'autopilot'
+    });
+    addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What fuse rating?',
+      source: 'autopilot'
+    });
+
+    await applyAnswer(deps, item.id, '12V nominal');
+
+    expect(executeTurnMock).not.toHaveBeenCalled();
+    expect(emitStatusMock).not.toHaveBeenCalled();
+  });
+
+  it('(e) busy: no incorporation turn — the chain incorporates pending answers itself', async () => {
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What is the max voltage?',
+      source: 'autopilot'
+    });
+
+    executeTurnMock.mockResolvedValue(makeTurnResult({ specialistId: 'conops' }));
+
+    const busyDeps: AnswerApplierDeps = { ...deps, isBusy: () => true };
+    await applyAnswer(busyDeps, item.id, '12V nominal');
+
+    expect(executeTurnMock).not.toHaveBeenCalled();
+    // Block stays: the running chain's own incorporation path handles it.
+    const doc = fs.readFileSync(path.join(tmpDir, 'docs', 'CONOPS.md'), 'utf-8');
+    expect(doc).toContain('## User Answers (Pending Incorporation)');
   });
 
   it('returns counter-questions when onQuestions hook fires', async () => {
@@ -432,44 +451,6 @@ describe('applyAnswer', () => {
       .rejects.toThrow('Unknown phase');
   });
 
-  it('answer memory: userPrompt includes other ANSWERED items for the same doc (capped at 6) and forbids re-asking', async () => {
-    // 8 previously answered items on the same doc → only the most recent 6 appear.
-    for (let i = 1; i <= 8; i++) {
-      const q = addPortalItem(stateMgr, {
-        type: 'question',
-        severity: 'normal',
-        docPath: 'docs/CONOPS.md',
-        title: `Q${i}. Old question ${i}?`,
-        source: 'autopilot'
-      });
-      answerPortalItem(stateMgr, q.id, `Answer ${i}`);
-    }
-    const item = addPortalItem(stateMgr, {
-      type: 'question',
-      severity: 'normal',
-      docPath: 'docs/CONOPS.md',
-      title: 'What fuse rating?',
-      source: 'autopilot'
-    });
-
-    executeTurnMock.mockResolvedValue(makeTurnResult({
-      specialistId: 'conops',
-      criticResult: { passed: true, score: 9.0, summary: 'pass', strengths: [], weaknesses: [], actionableGuidance: '' }
-    }));
-
-    await applyAnswer(deps, item.id, '40A');
-
-    const userPrompt = executeTurnMock.mock.calls[0][0].userPrompt as string;
-    expect(userPrompt).toContain('PREVIOUSLY ANSWERED');
-    expect(userPrompt).toContain('do NOT re-ask');
-    // most recent 6 answers (3..8) present
-    expect(userPrompt).toContain('Old question 3?');
-    expect(userPrompt).toContain('Answer 8');
- // oldest two dropped
-    expect(userPrompt).not.toContain('Old question 1?');
-    expect(userPrompt).not.toContain('Old question 2?');
-  });
-
   it('mid-chain (busy): no full turn runs — answer becomes a plain doc edit, item answered, nothing deferred to counter-questions', async () => {
     const item = addPortalItem(stateMgr, {
       type: 'question',
@@ -489,7 +470,6 @@ describe('applyAnswer', () => {
 
     // No draft+critic turn, no approval, no counter-questions.
     expect(executeTurnMock).not.toHaveBeenCalled();
-    expect(runChangeImpactMock).not.toHaveBeenCalled();
     expect(result.counterQuestions).toEqual([]);
     expect(result.affectedDocs).toEqual([]);
 
@@ -501,6 +481,49 @@ describe('applyAnswer', () => {
     expect(doc).toContain('## User Answers (Pending Incorporation)');
     expect(doc).toContain('What fuse rating?');
     expect(doc).toContain('Answer: 40A');
+  });
+
+  it('(f) after incorporation success, the ripple scan runs IMMEDIATELY: change-impact scan + scoped fix for the flagged doc', async () => {
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What is the max voltage?',
+      source: 'autopilot'
+    });
+
+    executeTurnMock.mockImplementation(async (opts: {
+      userPrompt: string;
+      forceSpecialistId: string;
+      criticDisabled?: boolean;
+    }) => {
+      if (opts.forceSpecialistId === 'change-impact') {
+        expect(opts.userPrompt).toContain('UPSTREAM CHANGE DIFF in docs/CONOPS.md');
+        expect(opts.userPrompt).toContain('pending user answers incorporated');
+        expect(opts.criticDisabled).toBeUndefined();
+        return makeTurnResult({
+          specialistId: 'change-impact',
+          output: 'docs/REQUIREMENTS.md: Bus Voltage section — 48V is now discrepant; scoped update: change to 12V.'
+        });
+      }
+      if (opts.forceSpecialistId === 'requirements') {
+        expect(opts.criticDisabled).toBe(true);
+        expect(opts.userPrompt).toContain('CHANGE-IMPACT RIPPLE: docs/CONOPS.md was updated');
+        expect(opts.userPrompt).toContain('Bus Voltage section');
+        return makeTurnResult({ specialistId: 'requirements', requiresReview: false });
+      }
+      // Incorporation turn itself.
+      expect(opts.forceSpecialistId).toBe('conops');
+      return makeTurnResult({ specialistId: 'conops' });
+    });
+
+    await applyAnswer(deps, item.id, '12V nominal');
+
+    // Incorporation + change-impact scan + scoped fix = exactly 3 turns.
+    expect(executeTurnMock).toHaveBeenCalledTimes(3);
+    // The fix turn marked the flagged doc 'revised' via the phase event.
+    expect(emitPhaseMock).toHaveBeenCalledWith('requirements', 'revised', expect.any(String));
+    expect(stateMgr.getState().autopilot!.docStatus['requirements']).toBe('revised');
   });
 
   it('mid-chain (busy) with missing doc still marks the item answered without throwing', async () => {

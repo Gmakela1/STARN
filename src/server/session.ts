@@ -507,7 +507,9 @@ export class ServerSessionManager {
           projectPath: this.deps.projectPath,
           executeTurn: this.createAnswerExecuteTurn(),
           isBusy: () => this.busy,
-          runChangeImpact: (phaseId) => this.runChangeImpactForApproval(phaseId) ?? Promise.resolve([])
+          emitStatus: (message) => this.publish({ kind: 'status', message }),
+          emitPhase: (phaseId, status, name) => this.publish({ kind: 'phase', phaseId, status, name }),
+          emitEvent: (ev) => this.publish(ev)
         },
         itemId,
         answer

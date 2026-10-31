@@ -1,9 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ProjectStateManager, ORDERED_WORKFLOW_PHASES } from '../workspace/state.js';
+import { ProjectStateManager, ORDERED_WORKFLOW_PHASES, defaultAutopilotState } from '../workspace/state.js';
 import { PortalItem } from '../workspace/types.js';
-import { approveArtifact } from './approvals.js';
+import { TurnResult } from './runner.js';
 import { addPortalItem, answerPortalItem, ANSWER_HISTORY_CAP } from './question-portal.js';
+import { PENDING_INCORPORATION_MARKER, stripPendingBlock, INCORPORATION_CRITIC_FOCUS, buildIncorporationPrompt } from './incorporation-prompt.js';
+import { runRippleScan, summarizeDiff, RippleDeps } from './ripple.js';
+import type { AutopilotEvent, AutopilotDocStatus } from './autopilot.js';
 
 export interface AnswerApplierDeps {
   stateManager: ProjectStateManager;
@@ -11,6 +14,10 @@ export interface AnswerApplierDeps {
   executeTurn: (opts: {
     userPrompt: string;
     forceSpecialistId: string;
+    /** Scoped evaluation directive threaded to the critic (incorporation turn). */
+    criticFocus?: string;
+    /** Ripple fix turns: skip the critic loop in the runner. */
+    criticDisabled?: boolean;
     signal?: AbortSignal;
     onQuestions?: (items: Array<{
       type: 'question';
@@ -20,82 +27,34 @@ export interface AnswerApplierDeps {
       detail?: string;
       source: 'autopilot';
     }>) => void;
+    /** Live status updates from the runner (ripple scan/fix turns). */
+    onStatusUpdate?: (status: string) => void;
+    /** Live tool call notifications from the runner (ripple turns). */
+    onToolCall?: (tool: string, args: unknown) => void;
   }) => Promise<import('./runner.js').TurnResult>;
   /**
-   * Optional callback that runs change-impact for the affected phase.
-   * The server/CLI adapter populates this; if absent, affectedDocs stays empty.
-   */
-  runChangeImpact?: (phaseId: string) => Promise<string[]>;
-  /**
    * True while the owning session is mid-chain (a turn or autopilot chain is
-   * running). When set and true, applyAnswer takes the plain-edit path: the
-   * answer is inserted into the doc as a pending edit and incorporation is
-   * deferred to the next normal turn — no draft+critic turn runs mid-chain.
+   * running). When true, applyAnswer takes ONLY the plain-edit path: the
+   * answer is appended to the pending-answers block and the running chain's
+   * own incorporation path handles it — no incorporation turn runs mid-chain.
    */
   isBusy?: () => boolean;
-}
-
-/**
- * Extract the question number from the item's title. Supports:
- * - "Q3. What bus voltage?" → 3
- * - "Q1: Some question" → 1
- * - anything else → 1 (default)
- */
-function extractQuestionNumber(title: string): number {
-  const m = title.match(/^Q(\d+)[\.:\)]\s*/);
-  if (m) {
-    return parseInt(m[1], 10);
-  }
-  return 1;
-}
-
-/**
- * Saved context injected alongside the current answer so the specialist never
- * re-asks what the user already answered.
- */
-export interface UserAnswersContext {
-  /** Saved history entries for THIS question (most recent last). */
-  priorHistory?: Array<{ text: string }>;
-  /** Other ANSWERED questions on the same document (id + title + latest answer). */
-  otherAnswered?: Array<{ id: string; title: string; answer: string }>;
-}
-
-/** Cap on how many other answered questions the answer-apply prompt carries. */
-const OTHER_ANSWERED_CAP = 6;
-
-/**
- * Build the standard USER ANSWERS prompt block that the specialist will see
- * alongside the existing baseline document. Mirrors the CLI's pre-turn block
- * at src/index.ts:582. With `context`, the block also carries the answer
- * memory: this question's saved history plus other answered questions for the
- * same document, with a do-not-re-ask rule.
- */
-export function buildUserAnswersBlock(
-  item: PortalItem,
-  answerText: string,
-  context?: UserAnswersContext
-): string {
-  const number = extractQuestionNumber(item.title);
-  // Strip the Qn. prefix from title for display in the block — the CLI format
-  // uses the raw question text, not the Q-prefixed version. Check the CLI:
-  // `Q${i + 1}: ${qa.question.slice(0,150)}` where qa.question is raw text.
-  // Our title may already be "What is the max voltage?" (no Q prefix) or
-  // "Q3. What bus voltage?" (with prefix). We show the title as-is but number
-  // from extractQuestionNumber.
-  const displayTitle = item.title.replace(/^Q\d+[\.:\)]\s*/, '');
-  let block = `\n\nUSER ANSWERS TO OPEN QUESTIONS (incorporate per your instructions):\nQ${number}. ${displayTitle}\nAnswer: ${answerText}\n`;
-  const hasHistory = !!context?.priorHistory?.length;
-  const hasOther = !!context?.otherAnswered?.length;
-  if (hasHistory || hasOther) {
-    block += `\nPREVIOUSLY ANSWERED — these decisions are settled: do NOT re-ask, re-open, or restate them as open questions; incorporate them into the relevant sections. Only genuinely NEW unresolved items may appear in the Open Questions section.\n`;
-    if (hasHistory) {
-      block += context!.priorHistory!.map(h => `Q${number} earlier answer: ${h.text}`).join('\n') + '\n';
-    }
-    if (hasOther) {
-      block += context!.otherAnswered!.map(a => `Q?. ${a.title}\nAnswer: ${a.answer}`).join('\n') + '\n';
-    }
-  }
-  return block;
+  /**
+   * Optional status-event sink (the server adapter publishes these onto the
+   * autopilot SSE stream). Emitted around the idle incorporation turn.
+   */
+  emitStatus?: (message: string) => void;
+  /**
+   * Optional phase-event sink, fired when a successful incorporation turn
+   * marks the doc 'revised' (only from 'auto-approved'/'passed').
+   */
+  emitPhase?: (phaseId: string, status: AutopilotDocStatus, name: string) => void;
+  /**
+   * Optional raw-event sink for the shared ripple machinery (src/core/
+   * ripple.ts): question frames for failed ripple fixes and any other
+   * event kinds the status/phase sinks do not cover.
+   */
+  emitEvent?: (ev: AutopilotEvent) => void;
 }
 
 /**
@@ -118,10 +77,15 @@ function phaseIdFromDocPath(docPath: string): string {
 }
 
 /**
- * Apply an answer to a portal question: build the USER ANSWERS block, run a
- * targeted follow-up executeTurn on the originating document (via
- * forceSpecialistId), detect counter-questions, auto-approve if the critic
- * passes, and return affected docs from change-impact.
+ * Apply an answer to a portal question. Every answer — busy or idle — applies
+ * immediately as a plain doc edit: it is appended to the doc's
+ * '## User Answers (Pending Incorporation)' block (created if missing) and the
+ * item is marked answered. When the LAST open question for that docPath is
+ * answered and the session is idle, ONE incorporation turn runs (specialist +
+ * hybrid criticFocus, same prompt machinery as the autopilot chain's
+ * pre-phase incorporation); on success the pending block is stripped and the
+ * doc is marked 'revised' (from 'auto-approved'/'passed' only). Returns
+ * counter-questions raised by the incorporation turn.
  */
 export async function applyAnswer(
   deps: AnswerApplierDeps,
@@ -163,104 +127,133 @@ export async function applyAnswer(
     existingContent = '';
   }
 
-  // 3b. Mid-chain answers (FIX): while the session is busy running the chain,
-  // do NOT burn a full draft+critic turn. Insert the answer as a plain doc
-  // edit and mark the item answered; the next normal turn incorporates it
-  // (it sees the answer via the PREVIOUSLY ANSWERED context).
-  if (deps.isBusy?.()) {
-    if (existingContent.trim()) {
-      const displayTitle = item.title.replace(/^Q\d+[\.:\)]\s*/, '');
-      const pendingBlock = `${existingContent.trimEnd()}\n\n## User Answers (Pending Incorporation)\n\n**${displayTitle}**\nAnswer: ${answerText}\n`;
-      fs.writeFileSync(docFilePath, pendingBlock, 'utf-8');
-    }
-    // If the doc is missing/empty there is nothing to edit in place; the
-    // answer still lands on the item and reaches the next turn via context.
-    const answeredItem = answerPortalItem(stateManager, itemId, answerText);
-    return { updatedItem: answeredItem, affectedDocs: [], counterQuestions: [] };
+  // 3b. PLAIN-EDIT PATH (busy AND idle alike): every answer applies
+  // immediately as a plain doc edit appended to the pending incorporation
+  // block (created if missing) — no per-answer specialist turn. If the doc
+  // is missing/empty there is nothing to edit; the answer still lands on the
+  // item and reaches the next turn via context.
+  if (existingContent.trim()) {
+    const displayTitle = item.title.replace(/^Q\d+[\.:\)]\s*/, '');
+    const pendingBlock = `${existingContent.trimEnd()}\n\n${PENDING_INCORPORATION_MARKER}\n\n**${displayTitle}**\nAnswer: ${answerText}\n`;
+    fs.writeFileSync(docFilePath, pendingBlock, 'utf-8');
   }
 
-  // 4. Build userPrompt — with answer memory (this item's history + other
-  // answered questions on the same doc) so the specialist never re-asks.
-  const allItems = state.portalItems || [];
-  const otherAnswered = allItems
-    .filter(i =>
-      i.id !== itemId &&
-      i.docPath === item.docPath &&
-      i.status === 'answered' &&
-      typeof i.answer === 'string' && i.answer.trim() !== '')
-    .sort((a, b) => (a.updatedAt || '').localeCompare(b.updatedAt || ''))
-    .slice(-OTHER_ANSWERED_CAP)
-    .map(i => ({ id: i.id, title: i.title, answer: i.answer as string }));
-  const priorHistory = Array.isArray(item.meta?.answerHistory)
-    ? item.meta!.answerHistory.slice(-ANSWER_HISTORY_CAP)
-    : [];
-  const answerBlock = buildUserAnswersBlock(item, answerText, { priorHistory, otherAnswered });
-  const userPrompt = `${existingContent}${answerBlock}\n\nUpdate the document in place per the Section 6 answer handling instructions. Do NOT regenerate the entire document.`;
-
-  // 5. Call executeTurn with forceSpecialistId and onQuestions hook
-  const counterQuestionItems: Array<{
-    type: 'question';
-    severity: 'normal';
-    docPath: string;
-    title: string;
-    detail?: string;
-    source: 'autopilot';
-  }> = [];
-
-  const result = await deps.executeTurn({
-    userPrompt,
-    forceSpecialistId: phaseId,
-    onQuestions: (items) => {
-      for (const q of items) {
-        counterQuestionItems.push(q);
-      }
-    }
-  });
-
-  // 6. Post-turn: if critic passed, auto-approve; if failed, throw
-  if (result.requiresReview && result.criticFailed) {
-    throw new Error(
-      `Cannot auto-answer question — critic still fails for ${phaseId}. ` +
-      `Feedback: ${result.criticResult?.summary || 'No feedback available'}`
-    );
-  }
-
-  // 7. Approve artifact (writes the post-turn doc and runs change-impact)
-  // Read the post-turn doc from disk
-  const postTurnContent = fs.readFileSync(docFilePath, 'utf-8');
-
-  let affectedDocs: string[] = [];
-  if (result.requiresReview && !result.criticFailed) {
-    const approveResult = await approveArtifact({
-      projectPath,
-      stateManager,
-      specialistId: phaseId,
-      content: postTurnContent,
-      runChangeImpact: deps.runChangeImpact
-        ? async (id: string) => deps.runChangeImpact!(id)
-        : undefined,
-      advance: false // The applier does NOT advance the workflow
-    });
-    affectedDocs = approveResult.affectedDocs;
-  }
-
-  // 8. Mark the item answered
+  // 4. Mark the item answered.
   const updatedItem = answerPortalItem(stateManager, itemId, answerText);
 
-  // 9. Add counter-questions as new portal items
+  // 5. Incorporation trigger: when the LAST open question for this docPath is
+  // answered (recounted AFTER this answer landed — the answered item does not
+  // count) AND the session is idle, run ONE incorporation turn reusing the
+  // same prompt machinery as the autopilot chain's pre-phase incorporation.
   const counterQuestions: PortalItem[] = [];
-  const threadId = item.threadId || item.id;
-  for (const q of counterQuestionItems) {
-    const newItem = addPortalItem(stateManager, {
-      type: 'question',
-      severity: 'normal',
-      docPath: q.docPath,
-      title: q.title,
-      detail: q.detail,
-      source: 'autopilot',
-      threadId
-    });
-    counterQuestions.push(newItem);
+  const openRemaining = (stateManager.getState().portalItems || [])
+    .filter(i => i.docPath === item.docPath && i.status === 'open' && i.meta?.archived !== true)
+    .length;
+  if (openRemaining === 0 && !deps.isBusy?.()) {
+    const phase = ORDERED_WORKFLOW_PHASES.find(p => p.id === phaseId)!;
+    const counterQuestionItems: Array<{
+      type: 'question';
+      severity: 'normal';
+      docPath: string;
+      title: string;
+      detail?: string;
+      source: 'autopilot';
+    }> = [];
+    deps.emitStatus?.(`Incorporating pending user answers in ${phase.name}…`);
+    let result: TurnResult;
+    try {
+      result = await deps.executeTurn({
+        userPrompt: buildIncorporationPrompt(phaseId),
+        forceSpecialistId: phaseId,
+        // Scope the critic to incorporation accuracy (hybrid directive shared
+        // with the autopilot chain's incorporation turns).
+        criticFocus: INCORPORATION_CRITIC_FOCUS,
+        onQuestions: (items) => {
+          for (const q of items) {
+            counterQuestionItems.push(q);
+          }
+        }
+      });
+    } catch (err: any) {
+      deps.emitStatus?.(`Incorporation of pending answers into ${phase.name} failed — the pending block is kept for retry. (${String(err?.message ?? err).slice(0, 200)})`);
+      return { updatedItem, affectedDocs: [], counterQuestions };
+    }
+    // The pending block is the only record of the user's answers. On error or
+    // criticFailed it stays in place (retryable — the next chain start
+    // re-runs incorporation) and a status event surfaces the failure.
+    if (result?.error || result?.criticFailed) {
+      deps.emitStatus?.(`Incorporation of pending answers into ${phase.name} failed — the pending block is kept for retry.`);
+      return { updatedItem, affectedDocs: [], counterQuestions };
+    }
+    // 6. Success: capture the specialist's edit footprint BEFORE the guard
+    // strip (mirrors the autopilot: a no-op incorporation compares
+    // byte-identical to the pre-answer content and never ripples), then strip
+    // a pending block the specialist left behind (same deterministic guard
+    // as the autopilot's incorporation turns).
+    let postTurnContent: string | null = null;
+    try {
+      postTurnContent = fs.readFileSync(docFilePath, 'utf-8');
+    } catch {
+      // ignore: unreadable/missing doc
+    }
+    if (postTurnContent !== null && postTurnContent.includes(PENDING_INCORPORATION_MARKER)) {
+      try {
+        fs.writeFileSync(docFilePath, stripPendingBlock(postTurnContent), 'utf-8');
+      } catch {
+        // ignore: unwritable doc — the block stays on disk, still recoverable
+      }
+    }
+    // 7. Mark the doc 'revised' — completed by the incorporation turn, NOT
+    // re-approved — but only from 'auto-approved'/'passed'; never touch
+    // 'idle'/'parked' statuses.
+    const state = stateManager.getState();
+    state.autopilot = state.autopilot ?? defaultAutopilotState();
+    const currentStatus = state.autopilot.docStatus[phaseId];
+    if (currentStatus === 'auto-approved' || currentStatus === 'passed') {
+      state.autopilot.docStatus[phaseId] = 'revised';
+      stateManager.saveState(state);
+      deps.emitPhase?.(phaseId, 'revised', phase.name);
+    }
+    deps.emitStatus?.(`Incorporated answers into ${phase.name} — awaiting review`);
+    // 8b. Immediate ripple (user-mandated): the incorporation turn succeeded
+    // and the chain is idle — run the SAME change-impact scan + scoped
+    // critic-free fix turns the autopilot chain runs (shared src/core/
+    // ripple.ts machinery), sourced from the incorporation doc's diff.
+    if (postTurnContent !== null && postTurnContent !== existingContent) {
+      const diff = summarizeDiff(existingContent, postTurnContent);
+      if (diff) {
+        const rippleDeps: RippleDeps = {
+          stateManager,
+          executeTurn: deps.executeTurn,
+          emit: (ev: AutopilotEvent) => {
+            if (ev.kind === 'status') {
+              deps.emitStatus?.(ev.message);
+              return;
+            }
+            if (ev.kind === 'phase') {
+              deps.emitPhase?.(ev.phaseId, ev.status, ev.name);
+              return;
+            }
+            deps.emitEvent?.(ev);
+          }
+        };
+        await runRippleScan(rippleDeps, [{ phaseId, diff, external: false }], new Set<string>());
+      }
+    }
+    // 8. Counter-questions raised by the incorporation turn become portal
+    // items on the original thread (same as the autopilot's incorporation).
+    const threadId = item.threadId || item.id;
+    for (const q of counterQuestionItems) {
+      counterQuestions.push(addPortalItem(stateManager, {
+        type: 'question',
+        severity: 'normal',
+        docPath: q.docPath,
+        title: q.title,
+        detail: q.detail,
+        source: 'autopilot',
+        threadId
+      }));
+    }
   }
 
   // 10. Board #52 — follow-up questions reopened after this answer inherit the
@@ -292,5 +285,5 @@ export async function applyAnswer(
     }
   }
 
-  return { updatedItem, affectedDocs, counterQuestions };
+  return { updatedItem, affectedDocs: [], counterQuestions };
 }
