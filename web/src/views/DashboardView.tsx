@@ -22,6 +22,10 @@ import { DashboardData, PortalItem } from '../types/api';
 import ExecutiveBriefingModal from '../components/ExecutiveBriefingModal';
 import Markdown from '../components/Markdown';
 import { PHASE_SUBTITLES } from '../components/roadmapMeta';
+// React Bits (reactbits.dev) decorative effects — see web/src/components/reactbits.
+import Galaxy from '../components/reactbits/Galaxy';
+import ShinyText from '../components/reactbits/ShinyText';
+import StarBorder from '../components/reactbits/StarBorder';
 
 const money = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -143,12 +147,23 @@ export default function DashboardView({
             <p className="text-sm text-[#a8b3c4]">
               Start Autopilot to auto-draft all 13 documents.
             </p>
-            <button
+            <StarBorder
+              as="button"
+              type="button"
               onClick={() => {}}
               className="cut-corner mt-3 rounded-none bg-[#d61f2c] px-4 py-2 text-xs font-bold text-white hover:bg-[#e11d3f]"
+              style={{ padding: '0.5rem 1rem' }}
+              backgroundColor="#d61f2c"
+              textColor="#ffffff"
+              color="#ff2a3c"
+              trailColor="#d9a441"
+              duration={6}
+              thickness={2}
+              glow={0.7}
+              radius={0}
             >
               Start Autopilot
-            </button>
+            </StarBorder>
           </div>
           {shopFloorFlags.length > 0 && (
             <>
@@ -238,7 +253,23 @@ export default function DashboardView({
   };
 
   return (
-    <div className="h-full overflow-y-auto p-4 lg:p-6 bg-[#05070c] text-[#e8edf5]">
+    // `isolate` + `relative` create a stacking context so the -z-10 Galaxy
+    // layer paints above this root's own background but below all content.
+    <div className="relative isolate h-full overflow-y-auto p-4 lg:p-6 bg-[#05070c] text-[#e8edf5]">
+      {/* React Bits Galaxy: decorative WebGL starfield, dashboard only.
+          pointer-events-none + aria-hidden + mouseInteraction/clickWarp off so
+          it never intercepts input; low twinkle + ≤4 layers keeps it calm. */}
+      <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+        <Galaxy
+          mouseInteraction={false}
+          clickWarp={false}
+          opacity={0.6}
+          twinkleIntensity={0.1}
+          layers={3}
+          starColors={['#ff2a3c', '#ffb3bd', '#d9a441', '#e8edf5']}
+          glowIntensity={0.3}
+        />
+      </div>
       <div className="mx-auto max-w-6xl space-y-6">
         {/* Project Overview / Charter Card */}
         <section aria-label="Project overview and charter" className="rounded-2xl border border-[#2a3342] bg-[#0d1017]/70 p-6 backdrop-blur-sm">
@@ -252,7 +283,9 @@ export default function DashboardView({
                   Gate: [{project.activePhase.toUpperCase()}]
                 </span>
               </div>
-              <h1 className="text-2xl font-black text-white tracking-tight">{project.name}</h1>
+              <h1 className="text-2xl font-black text-white tracking-tight">
+                <ShinyText text={project.name} color="#e8edf5" shineColor="#ffb3bd" speed={4} trigger="loop" />
+              </h1>
             </div>
 
             <div className="flex items-center gap-3">
@@ -421,7 +454,7 @@ export default function DashboardView({
         <section aria-label="Open actions" className="rounded-xl border border-[#2a3342] bg-[#0d1017]/70">
           <header className="border-b border-[#2a3342] px-4 py-3">
             <h2 className="text-sm font-bold text-[#e8edf5]">
-              Open Actions
+              <ShinyText text="Open Actions" color="#e8edf5" shineColor="#ffb3bd" speed={4} trigger="loop" />
               {data.portalSummary && (() => {
                 const ps = data.portalSummary!;
                 const total = ps.blocking + ps.parked + ps.questions + ps.flags;

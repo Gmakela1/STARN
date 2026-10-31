@@ -13,6 +13,8 @@ import type { ProjectInfo, RoadmapPhase } from '../types/api';
 import type { RunState } from '../lib/runState';
 import DocProgressBar from './DocProgressBar';
 import RunStateCluster from './RunStateCluster';
+// React Bits (reactbits.dev) decorative text effect — see web/src/components/reactbits.
+import ShinyText from './reactbits/ShinyText';
 
 /**
  * Merged single top bar (design §5.G + §5.E + §5.H).
@@ -118,7 +120,9 @@ export function TopBar({
             <Satellite className="h-4 w-4 text-[#ff2a3c]" aria-hidden />
           </div>
           <div className="min-w-0">
-            <h1 className="text-[11px] font-black tracking-widest text-white uppercase leading-tight">STARN</h1>
+            <h1 className="text-[11px] font-black tracking-widest text-white uppercase leading-tight">
+              <ShinyText text="STARN" color="#e8edf5" shineColor="#ffb3bd" speed={4} trigger="loop" />
+            </h1>
             <p
               className="text-[11px] font-medium text-[#a8b3c4] truncate max-w-[120px] xl:max-w-[200px] leading-tight"
               title={project?.name}

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Loader2, Play, Square } from 'lucide-react';
 import { describeAutopilotStartError } from '../lib/autopilotError';
+// React Bits (reactbits.dev) decorative border effect — see web/src/components/reactbits.
+import StarBorder from './reactbits/StarBorder';
 
 interface StartAutopilotButtonProps {
   /** True while the autopilot turn is running → render Stop instead of Start. */
@@ -77,11 +79,24 @@ export default function StartAutopilotButton({
 
   return (
     <span className="relative flex shrink-0 items-center">
-      <button
+      {/* StarBorder (React Bits) renders the same <button>: classes, disabled
+          state, aria-label and handlers are forwarded unchanged; the canvas is
+          aria-hidden so the accessible name is untouched. */}
+      <StarBorder
+        as="button"
         type="button"
         onClick={() => void handleStart()}
         disabled={starting}
         className="cut-corner flex min-h-[44px] shrink-0 items-center gap-1 rounded-none bg-[#d61f2c] px-3.5 text-xs font-semibold text-white transition hover:bg-[#e11d3f] saber-on disabled:cursor-not-allowed disabled:opacity-40"
+        style={{ padding: '0.875rem' }}
+        backgroundColor="#d61f2c"
+        textColor="#ffffff"
+        color="#ff2a3c"
+        trailColor="#d9a441"
+        duration={6}
+        thickness={2}
+        glow={0.7}
+        radius={0}
         aria-label="Start autopilot auto-drafting"
       >
         {starting ? (
@@ -90,7 +105,7 @@ export default function StartAutopilotButton({
           <Play className="h-3 w-3 fill-current" aria-hidden />
         )}
         Start Auto-Drafting
-      </button>
+      </StarBorder>
       {error && (
         <span
           role="alert"

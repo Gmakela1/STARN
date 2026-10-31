@@ -50,6 +50,8 @@ import QuestionBadge from '../components/QuestionBadge';
 import QuestionPanel from '../components/QuestionPanel';
 import PaneSplitter from '../components/PaneSplitter';
 import StartAutopilotButton from '../components/StartAutopilotButton';
+// React Bits (reactbits.dev) decorative effect — see web/src/components/reactbits.
+import DotGrid from '../components/reactbits/DotGrid';
 import { deriveQueuedAnswerStates } from '../lib/queuedStates';
 import {
   applyAnchorHighlight,
@@ -979,8 +981,21 @@ export default function DevelopmentView({
         <div ref={feedScrollRef} id="studio-feed" className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 relative">
           {entries.length === 0 && !busy && (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-              <div className="bp-grid flex h-14 w-14 items-center justify-center rounded-2xl border border-[#ff2a3c]/45 bg-[#1a0208]">
-                <Bot className="h-7 w-7 text-[#ff2a3c]" aria-hidden />
+              <div className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl border border-[#ff2a3c]/45 bg-[#1a0208]">
+                {/* DotGrid (React Bits) replaces the bp-grid wash on the empty
+                    pane placeholder; pointer-events-none + aria-hidden. */}
+                <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+                  <DotGrid
+                    dotSize={2}
+                    gap={24}
+                    baseColor="#2a3342"
+                    activeColor="#d9a441"
+                    glow={0.1}
+                    mouseInteraction={false}
+                    clickShock={false}
+                  />
+                </div>
+                <Bot className="relative h-7 w-7 text-[#ff2a3c]" aria-hidden />
               </div>
               <div>
                 <p className="text-sm font-medium text-[#e8edf5]">
