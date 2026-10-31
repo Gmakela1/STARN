@@ -5,6 +5,7 @@ import os from 'node:os';
 import { ProjectStateManager, ORDERED_WORKFLOW_PHASES, defaultAutopilotState } from '../src/workspace/state.js';
 import { AutopilotDriver, AutopilotEvent, AutopilotDeps } from '../src/core/autopilot.js';
 import { TurnResult } from '../src/core/runner.js';
+import { Logger } from '../src/util/logger.js';
 import { approveArtifact } from '../src/core/approvals.js';
 import { addPortalItem, listPortalItems } from '../src/core/question-portal.js';
 import { PortalItem } from '../src/workspace/types.js';
@@ -61,7 +62,8 @@ describe('AutopilotDriver', () => {
     const deps: AutopilotDeps = {
       stateManager: overrides?.stateManager ?? stateMgr,
       projectPath: overrides?.projectPath ?? tmpDir,
-      executeTurn: overrides?.executeTurn ?? executeTurnMock
+      executeTurn: overrides?.executeTurn ?? executeTurnMock,
+      logger: (overrides as { logger?: Logger } | undefined)?.logger
     };
     return new AutopilotDriver(deps, (ev) => { capturedEvents.push(ev); });
   }
@@ -527,5 +529,56 @@ describe('AutopilotDriver', () => {
     expect(bomRetryCall[0].userPrompt).toContain('Skip discovery reads and web_search entirely');
     expect(bomRetryCall[0].userPrompt).toContain('Immediately write the Stage-1 grocery-list skeleton');
     expect(bomRetryCall[0].userPrompt).toContain('docs/BOM.md');
+  });
+
+  // ── Pending-Incorporation routing ────────────────────────────────
+
+  it('re-runs the originating phase FIRST when its doc carries a pending user-answers block, then continues', async () => {
+    // Approve conops..requirements; REQUIREMENTS.md carries a mid-chain
+    // pending block that was never incorporated (requirements auto-approved,
+    // chain resumes at bom).
+    const pendingContent = '# REQUIREMENTS\n\nApproved normative text.\n\n## User Answers (Pending Incorporation)\n\n**Bus current**\nAnswer: derive from motor max output at 72 V\n';
+    await preApprovePhase(tmpDir, stateMgr, 'conops');
+    await preApprovePhase(tmpDir, stateMgr, 'architecture');
+    await preApprovePhase(tmpDir, stateMgr, 'icd');
+    await preApprovePhase(tmpDir, stateMgr, 'capabilities');
+    await preApprovePhase(tmpDir, stateMgr, 'requirements', pendingContent);
+
+    // Fake logger to assert the routing decision is logged.
+    const loggerStub: any = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string }) => {
+      // The incorporation turn leaves the pending block in place (model did
+      // not strip it) — the driver's guard must strip it afterwards.
+      writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nDeliverable content.\n`);
+      if (opts.forceSpecialistId === 'requirements') {
+        writeDoc(tmpDir, 'requirements', pendingContent);
+      }
+      return makeTurnResult(opts.forceSpecialistId);
+    });
+
+    const driver = createDriver({ logger: loggerStub as any });
+    driver.start();
+
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    // First specialist call is the requirements incorporation turn, not bom.
+    const firstCall = executeTurnMock.mock.calls[0][0];
+    expect(firstCall.forceSpecialistId).toBe('requirements');
+    expect(firstCall.userPrompt).toContain('pending incorporation');
+    expect(firstCall.userPrompt).toContain("REMOVE the '## User Answers (Pending Incorporation)' block");
+    // The chain then continues to the current phase (bom).
+    expect(executeTurnMock.mock.calls[1][0].forceSpecialistId).toBe('bom');
+
+    // Pending block removed after incorporation (guard strip).
+    const reqDoc = fs.readFileSync(path.join(tmpDir, 'docs', 'REQUIREMENTS.md'), 'utf-8');
+    expect(reqDoc).not.toContain('## User Answers (Pending Incorporation)');
+    expect(reqDoc).toContain('Approved normative text.');
+
+    // Routing fired the logger + a status event.
+    expect(loggerStub.info).toHaveBeenCalledWith(expect.stringContaining('pending user answers found in docs/REQUIREMENTS.md'));
+    expect(capturedEvents.some(e => e.kind === 'status' && (e as any).message.includes('Incorporating pending user answers'))).toBe(true);
   });
 });

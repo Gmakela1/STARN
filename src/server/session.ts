@@ -389,6 +389,7 @@ export class ServerSessionManager {
       stateManager: this.deps.stateManager,
       projectPath: this.deps.projectPath,
       executeTurn: this.makeExecuteTurn(abort),
+      logger: this.deps.logger,
       // Release the turn guard on ANY chain exit (not just a published
       // 'complete'/'error'), so a hang or a swallowed terminal event cannot
       // leave the session wedged busy. Release is idempotent.
@@ -528,6 +529,7 @@ export class ServerSessionManager {
         stateManager: this.deps.stateManager,
         projectPath: this.deps.projectPath,
         executeTurn: this.makeExecuteTurn(abort),
+        logger: this.deps.logger,
         onSettled: () => {
           this.endTurn();
           void this.answerQueue.drain();

@@ -5,6 +5,7 @@ import { PortalItem, PortalItemType, AutopilotState, ProjectState } from '../wor
 import { TurnResult } from './runner.js';
 import { approveArtifact } from './approvals.js';
 import { addPortalItem, answerPortalItem, listPortalItems } from './question-portal.js';
+import { Logger } from '../util/logger.js';
 
 export type AutopilotDocStatus = 'idle' | 'drafting' | 'critic' | 'revising' | 'passed' | 'auto-approved' | 'parked';
 
@@ -52,6 +53,36 @@ export interface AutopilotDeps {
    * never emits 'complete' cannot leave the session wedged busy.
    */
   onSettled?: () => void;
+  /** Optional logger for routing decisions (pending-answer incorporation). */
+  logger?: Logger;
+}
+
+/** Marker block that answer-applier appends for mid-chain answers not yet incorporated. */
+const PENDING_INCORPORATION_MARKER = '## User Answers (Pending Incorporation)';
+
+/**
+ * Removes a '## User Answers (Pending Incorporation)' block from doc content:
+ * the marker heading and everything up to the next heading of any level (or
+ * end of document). Used as the deterministic guard when a specialist turn
+ * fails to strip the block itself.
+ */
+function stripPendingBlock(content: string): string {
+  const idx = content.indexOf(PENDING_INCORPORATION_MARKER);
+  if (idx < 0) {
+    return content;
+  }
+  const head = content.slice(0, idx);
+  let tail = content.slice(idx);
+  const nl = tail.indexOf('\n');
+  if (nl >= 0) {
+    tail = tail.slice(nl + 1);
+    const nextHeading = tail.match(/^#{1,6} /m);
+    if (nextHeading && nextHeading.index !== undefined) {
+      return (head + tail.slice(nextHeading.index)).trimEnd() + '\n';
+    }
+  }
+  // No later heading: the block extends to end of document.
+  return head.trimEnd() + '\n';
 }
 
 /**
@@ -248,6 +279,14 @@ export class AutopilotDriver {
           continue; // skip silently — prereqs unmet
         }
 
+        // Pending user answers (appended mid-chain by answer-applier) must be
+        // incorporated into their originating approved docs BEFORE this phase
+        // runs — chain-start/resume and between-phases routing.
+        await this.incorporatePendingAnswers(i, signal);
+        if (signal?.aborted) {
+          break;
+        }
+
         // Emit drafting event
         state = this.readState();
         state.autopilot.currentPhaseId = phase.id;
@@ -430,6 +469,82 @@ export class AutopilotDriver {
         kind: 'error',
         message: err?.message ?? String(err)
       });
+    }
+  }
+
+  /**
+   * Finds approved phases (indices < beforeIdx) whose docs/ID.md still carry
+   * a '## User Answers (Pending Incorporation)' block — mid-chain answers
+   * appended by answer-applier but never incorporated into normative text.
+   */
+  private findPendingIncorporationPhases(beforeIdx: number): string[] {
+    const pending: string[] = [];
+    for (let j = 0; j < beforeIdx; j++) {
+      const phase = ORDERED_WORKFLOW_PHASES[j];
+      if (!this.deps.stateManager.isArtifactApproved(phase.id.toUpperCase())) {
+        continue;
+      }
+      const content = readDocContent(this.deps.projectPath, phase.id);
+      if (content && content.includes(PENDING_INCORPORATION_MARKER)) {
+        pending.push(phase.id);
+      }
+    }
+    return pending;
+  }
+
+  /**
+   * Runs one incorporation specialist turn per approved doc that still
+   * carries a pending-answers block, before the current phase executes. The
+   * specialist revises its own document's normative text to incorporate the
+   * answers and removes the pending block per its instructions. If a turn
+   * leaves the block behind, it is stripped deterministically so the chain
+   * never loops on a stale block. Errors are logged, not fatal.
+   */
+  private async incorporatePendingAnswers(beforeIdx: number, signal?: AbortSignal): Promise<void> {
+    const { stateManager, projectPath, executeTurn, logger } = this.deps;
+    const pendingPhaseIds = this.findPendingIncorporationPhases(beforeIdx);
+    for (const phaseId of pendingPhaseIds) {
+      const phase = ORDERED_WORKFLOW_PHASES.find(p => p.id === phaseId)!;
+      logger?.info(
+        `Autopilot: pending user answers found in docs/${phaseId.toUpperCase()}.md — running incorporation turn for ${phaseId} before the current phase`
+      );
+      this.emit({ kind: 'status', message: `Incorporating pending user answers in ${phase.name} before continuing…` });
+      const result = await executeTurn({
+        userPrompt: `USER ANSWERS PENDING INCORPORATION detected in docs/${phaseId.toUpperCase()}.md.
+
+User answers below are pending incorporation: revise the document's normative text to incorporate them per your answer-handling instructions, then REMOVE the '## User Answers (Pending Incorporation)' block once incorporated.
+
+You MUST write the complete updated document to docs/${phaseId.toUpperCase()}.md using fs_write (or apply the edits with fs_edit). Your response must be the complete document content starting with a heading.`,
+        forceSpecialistId: phaseId,
+        signal,
+        onQuestions: (items) => {
+          for (const item of items) {
+            const portalItem = addPortalItem(stateManager, {
+              ...item,
+              source: 'autopilot'
+            });
+            this.emit({ kind: 'question', item: portalItem });
+          }
+        },
+        onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
+        onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args })
+      });
+      if (result?.error) {
+        logger?.warn(`Autopilot: incorporation turn for ${phaseId} failed (${result.output?.slice(0, 120) || 'unknown error'})`);
+        this.emit({ kind: 'status', message: `Incorporation turn for ${phase.name} failed — continuing with the pending block stripped.` });
+      }
+      // Guard: if the specialist turn left the block in place, strip it so
+      // the chain never re-runs incorporation on a stale block forever.
+      const docPath = path.join(projectPath, 'docs', `${phaseId.toUpperCase()}.md`);
+      try {
+        const content = fs.readFileSync(docPath, 'utf-8');
+        if (content.includes(PENDING_INCORPORATION_MARKER)) {
+          fs.writeFileSync(docPath, stripPendingBlock(content), 'utf-8');
+          logger?.info(`Autopilot: incorporation turn left the pending block in docs/${phaseId.toUpperCase()}.md — stripped it`);
+        }
+      } catch {
+        // ignore: unreadable/missing doc — nothing to strip
+      }
     }
   }
 
