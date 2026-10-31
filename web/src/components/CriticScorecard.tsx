@@ -2,8 +2,8 @@ import { ShieldCheck, ShieldAlert, Lightbulb } from 'lucide-react';
 import { CriticResult } from '../types/api';
 
 function scoreTone(score: number, passed: boolean) {
-  if (passed && score >= 8.5) return { bar: 'bg-emerald-500', text: 'text-emerald-300', border: 'border-emerald-800/70', chip: 'bg-emerald-950/60' };
-  if (passed) return { bar: 'bg-emerald-500', text: 'text-emerald-300', border: 'border-emerald-900/70', chip: 'bg-emerald-950/50' };
+  if (passed && score >= 8.5) return { bar: 'bg-[#2c5e3b]', text: 'text-[#86efac]', border: 'border-[#35714a]/70', chip: 'bg-[#0f2318]/60' };
+  if (passed) return { bar: 'bg-[#2c5e3b]', text: 'text-[#86efac]', border: 'border-[#35714a]/50', chip: 'bg-[#0f2318]/50' };
   if (score >= 6) return { bar: 'bg-amber-500', text: 'text-amber-300', border: 'border-amber-900/70', chip: 'bg-amber-950/50' };
   return { bar: 'bg-rose-500', text: 'text-rose-300', border: 'border-rose-900/70', chip: 'bg-rose-950/50' };
 }
@@ -37,8 +37,8 @@ export default function CriticScorecard({ result, compact }: { result: CriticRes
         <div className="mt-2 space-y-2">
           {result.strengths?.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-400">Strengths</p>
-              <ul className="mt-0.5 ml-4 list-disc space-y-0.5 text-xs text-[#a8b3c4] marker:text-emerald-700">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[#86efac]">Strengths</p>
+              <ul className="mt-0.5 ml-4 list-disc space-y-0.5 text-xs text-[#a8b3c4] marker:text-[#35714a]">
                 {result.strengths.map((s, i) => <li key={i}>{s}</li>)}
               </ul>
             </div>

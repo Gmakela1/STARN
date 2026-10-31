@@ -579,11 +579,11 @@ describe('QuestionPanel', () => {
   });
 
   // ————— 16. Lifecycle colors + follow-up chip (design §3, board #52) —————
-  it('lifecycle: queued state chip is sky (icon + word, never color alone)', () => {
+  it('lifecycle: queued state chip is violet (icon + word, never color alone)', () => {
     renderWithUser(<QuestionPanel {...baseProps({ answerStates: { A: { phase: 'queued' } } })} />);
 
     const chip = screen.getByText('Queued — applies after this phase');
-    expect(chip.className).toContain('text-sky-300');
+    expect(chip.className).toContain('text-violet-300');
     expect(chip.className).not.toContain('amber');
   });
 
@@ -634,8 +634,8 @@ describe('QuestionPanel', () => {
     expect(entries[1]).toHaveTextContent('2025-01-02');
   });
 
-  it('lifecycle: nav dots — amber pending, sky queued, rose parked', () => {
-    const A = makeItem({ id: 'A', title: 'Question A' }); // queued → sky
+  it('lifecycle: nav dots — amber pending, violet queued, rose parked', () => {
+    const A = makeItem({ id: 'A', title: 'Question A' }); // queued → violet
     const B = makeItem({ id: 'B', title: 'Question B', type: 'parked' }); // parked → rose
     const C = makeItem({ id: 'C', title: 'Question C' }); // pending → amber
     renderWithUser(
@@ -646,7 +646,7 @@ describe('QuestionPanel', () => {
 
     const dotOf = (name: string) =>
       screen.getByRole('button', { name: new RegExp(name) }).querySelector('span.rounded-full');
-    expect(dotOf('Question A')?.className).toContain('bg-sky-400');
+    expect(dotOf('Question A')?.className).toContain('bg-violet-400');
     expect(dotOf('Question B')?.className).toContain('bg-rose-400');
     expect(dotOf('Question C')?.className).toContain('bg-amber-400');
   });

@@ -381,7 +381,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
     <div className="h-full overflow-y-auto p-4 lg:p-6">
       <div className="mx-auto max-w-2xl space-y-5">
         <header className="flex items-center gap-2.5">
-          <Settings2 className="h-5 w-5 text-sky-400" aria-hidden />
+          <Settings2 className="h-5 w-5 text-violet-400" aria-hidden />
           <h1 className="text-lg font-bold text-[#e8edf5]">Settings</h1>
         </header>
 
@@ -389,7 +389,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
           <p className="rounded-lg border border-rose-900 bg-rose-950/50 px-3 py-2 text-sm text-rose-200" role="alert">{error}</p>
         )}
         {notice && (
-          <p className="rounded-lg border border-emerald-900 bg-emerald-950/50 px-3 py-2 text-sm text-emerald-200" role="status">{notice}</p>
+          <p className="rounded-lg border border-[#35714a] bg-[#0f2318]/50 px-3 py-2 text-sm text-[#86efac]" role="status">{notice}</p>
         )}
 
         {/* Project Switcher Card */}
@@ -404,7 +404,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
               }}
               className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#3b4658] px-3 text-sm text-[#e8edf5] hover:bg-[#11151d]"
             >
-              <FolderOpen className="h-4 w-4 text-sky-400" aria-hidden />
+              <FolderOpen className="h-4 w-4 text-violet-400" aria-hidden />
               {browseOpen ? 'Hide folder browser' : 'Browse folders…'}
             </button>
           </div>
@@ -432,7 +432,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                 type="button"
                 onClick={() => handleSwitchProject({ projectId: selectedProjectId })}
                 disabled={switchingProject || selectedProjectId === activeProjectId}
-                className="flex min-h-[44px] w-full sm:w-auto items-center justify-center gap-1.5 rounded-lg bg-sky-700 px-4 text-sm font-semibold text-white hover:bg-sky-600 disabled:opacity-50"
+                className="flex min-h-[44px] w-full sm:w-auto items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
               >
                 {switchingProject ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
                 Switch
@@ -485,11 +485,11 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                       className="flex min-h-[44px] cursor-pointer items-center justify-between gap-2 rounded px-2 hover:bg-[#171c26] transition-colors"
                     >
                       <div className="flex items-center gap-2 truncate">
-                        <Folder className="h-4 w-4 text-sky-400 shrink-0" />
+                        <Folder className="h-4 w-4 text-violet-400 shrink-0" />
                         <span className="text-sm text-[#e8edf5] truncate">{f.name}</span>
                       </div>
                       {f.isProject && (
-                        <span className="rounded bg-sky-950 px-2 py-0.5 font-mono text-[10px] font-bold text-sky-300 border border-sky-800">
+                        <span className="rounded bg-violet-950 px-2 py-0.5 font-mono text-[10px] font-bold text-violet-300 border border-violet-800">
                           STARN Project
                         </span>
                       )}
@@ -510,7 +510,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                   type="button"
                   onClick={() => handleSwitchProject({ path: customPathInput })}
                   disabled={switchingProject || !customPathInput.trim()}
-                  className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-sky-700 px-4 text-sm font-semibold text-white hover:bg-sky-600 disabled:opacity-50"
+                  className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
                 >
                   Use this folder
                 </button>
@@ -611,7 +611,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                     )}
                     <span className="text-sm" role="status">
                       {list && 'error' in list && <span className="text-rose-300">{list.error}</span>}
-                      {Array.isArray(list) && <span className="text-emerald-300">{list.length} models available</span>}
+                      {Array.isArray(list) && <span className="text-[#86efac]">{list.length} models available</span>}
                       {roles.length > 0 && <span className="ml-2 text-[#a8b3c4]">Used by: {roles.join(', ')}</span>}
                     </span>
                   </div>
@@ -790,7 +790,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
         {/* Web Search & Hardware Sourcing */}
         <section className="space-y-4 rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-4">
           <div className="flex items-center gap-2">
-            <Globe className="h-4 w-4 text-sky-400" />
+            <Globe className="h-4 w-4 text-violet-400" />
             <h2 className="text-sm font-bold text-[#e8edf5]">Web Search & Hardware Sourcing</h2>
           </div>
           <p className="text-xs text-[#a8b3c4]">
@@ -802,7 +802,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
               <label
                 key={opt.value}
                 className={`flex cursor-pointer flex-col rounded-lg border p-3 transition-colors ${
-                  searchProvider === opt.value ? 'border-sky-500 bg-sky-950/30' : 'border-[#2a3342] bg-[#05070c] hover:border-[#3b4658]'
+                  searchProvider === opt.value ? 'border-violet-500 bg-violet-950/30' : 'border-[#2a3342] bg-[#05070c] hover:border-[#3b4658]'
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -815,7 +815,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                       setSearchStatus(null);
                       setSearchProvider(opt.value);
                     }}
-                    className="accent-sky-500"
+                    className="accent-violet-600"
                   />
                   <span className="text-xs font-semibold text-[#e8edf5]">{opt.title}</span>
                 </div>
@@ -829,7 +829,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-[#e8edf5]">Tavily API Key</span>
                 {hasTavilyKey && (
-                  <span className="rounded bg-emerald-950 px-2 py-0.5 text-[10px] font-medium text-emerald-300 border border-emerald-800">
+                  <span className="rounded bg-[#0f2318] px-2 py-0.5 text-[10px] font-medium text-[#86efac] border border-[#35714a]">
                     Stored on server
                   </span>
                 )}
@@ -852,7 +852,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-[#e8edf5]">Brave Search API Key</span>
                 {hasBraveKey && (
-                  <span className="rounded bg-emerald-950 px-2 py-0.5 text-[10px] font-medium text-emerald-300 border border-emerald-800">
+                  <span className="rounded bg-[#0f2318] px-2 py-0.5 text-[10px] font-medium text-[#86efac] border border-[#35714a]">
                     Stored on server
                   </span>
                 )}
@@ -885,12 +885,12 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                   disabled={probingSearch}
                   className="flex min-h-[44px] items-center gap-2 rounded-lg border border-[#3b4658] bg-[#0d1017] px-4 text-xs font-semibold text-[#e8edf5] transition hover:bg-[#11151d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:opacity-50"
                 >
-                  {probingSearch ? <Loader2 className="h-4 w-4 animate-spin text-sky-400" /> : <PlugZap className="h-4 w-4" />}
+                  {probingSearch ? <Loader2 className="h-4 w-4 animate-spin text-violet-400" /> : <PlugZap className="h-4 w-4" />}
                   Test search connection
                 </button>
                 <span className="text-xs text-[#a8b3c4]">Test uses the key you typed; Save to keep it.</span>
                 {searchProbeResult && (
-                  <span className={`text-xs ${searchProbeResult.success ? 'text-emerald-400' : 'text-rose-400'}`} role="status">
+                  <span className={`text-xs ${searchProbeResult.success ? 'text-[#86efac]' : 'text-rose-400'}`} role="status">
                     {searchProbeResult.success
                       ? `Connected (${searchProbeResult.latencyMs}ms)`
                       : `Connection failed: ${searchProbeResult.error}`}

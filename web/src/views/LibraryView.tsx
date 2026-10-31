@@ -127,7 +127,7 @@ export default function LibraryView() {
         {/* Header */}
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <FolderArchive className="h-6 w-6 text-sky-400" />
+            <FolderArchive className="h-6 w-6 text-violet-400" />
             <div>
               <h1 className="text-lg font-bold text-[#e8edf5]">Project Library</h1>
               <p className="text-xs text-[#a8b3c4]">
@@ -149,7 +149,7 @@ export default function LibraryView() {
           </p>
         )}
         {notice && (
-          <p className="rounded-lg border border-emerald-900 bg-emerald-950/50 px-3 py-2 text-sm text-emerald-200" role="status">
+          <p className="rounded-lg border border-[#35714a] bg-[#0f2318]/50 px-3 py-2 text-sm text-[#86efac]" role="status">
             {notice}
           </p>
         )}
@@ -180,7 +180,7 @@ export default function LibraryView() {
                 type="button"
                 onClick={() => refInputRef.current?.click()}
                 disabled={uploading}
-                className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-sky-700 px-3.5 text-xs font-semibold text-white hover:bg-sky-600 disabled:opacity-50"
+                className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
               >
                 {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                 Upload Reference Document
@@ -196,7 +196,7 @@ export default function LibraryView() {
               const f = e.dataTransfer.files?.[0];
               if (f) void handleReferenceUpload(f);
             }}
-            className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-[#3b4658] bg-[#05070c]/40 p-4 text-center hover:border-sky-500 transition-colors"
+            className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-[#3b4658] bg-[#05070c]/40 p-4 text-center hover:border-violet-500 transition-colors"
           >
             <FileText className="h-6 w-6 text-[#6e7d92] mb-1" />
             <p className="text-xs text-[#a8b3c4]">
@@ -212,7 +212,7 @@ export default function LibraryView() {
               {library.references.map(ref => (
                 <div key={ref.name} className="flex min-h-[44px] items-center justify-between gap-3 py-2">
                   <div className="flex items-center gap-2.5 truncate">
-                    <FileText className="h-4 w-4 text-sky-400 shrink-0" />
+                    <FileText className="h-4 w-4 text-violet-400 shrink-0" />
                     <span className="font-mono text-xs text-[#e8edf5] truncate">{ref.name}</span>
                     <span className="text-[11px] text-[#6e7d92] shrink-0">{formatBytes(ref.size)}</span>
                   </div>
@@ -270,7 +270,7 @@ export default function LibraryView() {
                 type="button"
                 onClick={() => exInputRef.current?.click()}
                 disabled={uploading}
-                className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-sky-700 px-3.5 text-xs font-semibold text-white hover:bg-sky-600 disabled:opacity-50"
+                className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
               >
                 {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                 Add Example
@@ -290,7 +290,7 @@ export default function LibraryView() {
                 return (
                   <div key={specId} className="rounded-lg border border-[#2a3342] bg-[#05070c]/60 p-3 space-y-2">
                     <div className="flex items-center justify-between border-b border-[#2a3342] pb-1.5">
-                      <span className="font-bold text-xs uppercase tracking-wider text-sky-400">
+                      <span className="font-bold text-xs uppercase tracking-wider text-violet-400">
                         {phaseName} <span className="font-mono text-[#6e7d92] text-[10px]">({specId})</span>
                       </span>
                       <span className="text-[11px] text-[#a8b3c4]">{files.length} example{files.length === 1 ? '' : 's'}</span>

@@ -80,7 +80,7 @@ export default function CheckpointPanel({ checkpoint, onResolved, onRevisionRequ
             <button
               onClick={() => void decide('revise')}
               disabled={!feedback.trim() || submitting !== null}
-              className="flex min-h-[44px] items-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex min-h-[44px] items-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {submitting === 'revise' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <MessageCircleMore className="h-4 w-4" aria-hidden />}
               Send for revision
@@ -99,7 +99,7 @@ export default function CheckpointPanel({ checkpoint, onResolved, onRevisionRequ
           <button
             onClick={() => void decide('approve')}
             disabled={submitting !== null}
-            className="flex min-h-[44px] items-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white shadow-md shadow-emerald-950/40 transition hover:bg-emerald-500 disabled:opacity-40"
+            className="flex min-h-[44px] items-center gap-2 rounded-lg bg-[#2c5e3b] px-4 text-sm font-semibold text-white shadow-md shadow-[#0f2318]/40 transition hover:bg-[#35714a] disabled:opacity-40"
           >
             {submitting === 'approve' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <CheckCircle2 className="h-4 w-4" aria-hidden />}
             Approve & record
@@ -107,7 +107,7 @@ export default function CheckpointPanel({ checkpoint, onResolved, onRevisionRequ
           <button
             onClick={() => setShowFeedback(true)}
             disabled={submitting !== null}
-            className="flex min-h-[44px] items-center gap-2 rounded-lg border border-sky-700 px-4 text-sm font-semibold text-sky-300 transition hover:bg-sky-950"
+            className="flex min-h-[44px] items-center gap-2 rounded-lg border border-violet-700 px-4 text-sm font-semibold text-violet-300 transition hover:bg-violet-950"
           >
             <MessageCircleMore className="h-4 w-4" aria-hidden />
             Request changes

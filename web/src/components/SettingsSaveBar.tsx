@@ -28,12 +28,12 @@ export interface SettingsSaveBarProps {
 }
 
 const statusTone: Record<SettingsSaveBarStatus['kind'], string> = {
-  success: 'text-emerald-300',
+  success: 'text-[#86efac]',
   warning: 'text-amber-200',
   error: 'text-rose-300'
 };
 
-const buttonFocus = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400';
+const buttonFocus = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400';
 
 /** Scoped, sticky save bar with a local, always-mounted live region. */
 export function SettingsSaveBar(props: SettingsSaveBarProps) {
@@ -66,7 +66,7 @@ export function SettingsSaveBar(props: SettingsSaveBarProps) {
           onClick={onSave}
           disabled={saveDisabled}
           aria-describedby={blockedReason ? reasonId : undefined}
-          className={`flex min-h-[44px] items-center gap-2 rounded-lg bg-sky-700 px-5 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:opacity-50 ${buttonFocus}`}
+          className={`flex min-h-[44px] items-center gap-2 rounded-lg bg-violet-600 px-5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-50 ${buttonFocus}`}
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Save className="h-4 w-4" aria-hidden />}
           {saving ? savingLabel : label}

@@ -28,9 +28,9 @@ function sourceUrl(src: string): string | null {
 
 const STATUS_TONE: Record<string, string> = {
   Identified: 'bg-[#11151d] text-[#a8b3c4]',
-  Ordered: 'bg-sky-950/80 text-sky-300 border border-sky-800/40',
-  Shipped: 'bg-indigo-950/80 text-indigo-300 border border-indigo-800/40',
-  Received: 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/40',
+  Ordered: 'bg-violet-950/80 text-violet-300 border border-violet-700/40',
+  Shipped: 'bg-violet-950/80 text-violet-300 border border-violet-700/40',
+  Received: 'bg-[#0f2318] text-[#86efac] border border-[#35714a]/40',
   'Bench Tested': 'bg-teal-950/80 text-teal-200 border border-teal-700/50',
   Consumed: 'bg-purple-950/80 text-purple-300 border border-purple-800/40'
 };
@@ -154,7 +154,7 @@ export default function PartsView() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-              <PackageSearch className="h-6 w-6 text-sky-400" />
+              <PackageSearch className="h-6 w-6 text-violet-400" />
               Parts & Sourcing Hub
             </h1>
             <p className="text-xs text-[#a8b3c4]">
@@ -179,7 +179,7 @@ export default function PartsView() {
             onClick={() => setSubTab('sourcing')}
             className={`flex min-h-[44px] items-center gap-2 rounded-lg px-4 text-xs font-semibold transition-colors ${
               subTab === 'sourcing'
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                ? 'bg-violet-950/40 text-violet-300 border border-violet-600/40'
                 : 'text-[#a8b3c4] hover:text-[#e8edf5] hover:bg-[#11151d]/50'
             }`}
           >
@@ -196,7 +196,7 @@ export default function PartsView() {
             onClick={() => setSubTab('bom')}
             className={`flex min-h-[44px] items-center gap-2 rounded-lg px-4 text-xs font-semibold transition-colors ${
               subTab === 'bom'
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                ? 'bg-violet-950/40 text-violet-300 border border-violet-600/40'
                 : 'text-[#a8b3c4] hover:text-[#e8edf5] hover:bg-[#11151d]/50'
             }`}
           >
@@ -213,7 +213,7 @@ export default function PartsView() {
             onClick={() => setSubTab('parts')}
             className={`flex min-h-[44px] items-center gap-2 rounded-lg px-4 text-xs font-semibold transition-colors ${
               subTab === 'parts'
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                ? 'bg-violet-950/40 text-violet-300 border border-violet-600/40'
                 : 'text-[#a8b3c4] hover:text-[#e8edf5] hover:bg-[#11151d]/50'
             }`}
           >
@@ -237,11 +237,11 @@ export default function PartsView() {
           </div>
           <div className="rounded-lg border border-[#2a3342] bg-[#0d1017]/70 p-3">
             <div className="text-[11px] font-semibold uppercase tracking-wider text-[#a8b3c4]">Actual Committed Spend</div>
-            <div className="text-xl font-bold text-sky-400">{money(bomData.financials.totalActual)}</div>
+            <div className="text-xl font-bold text-violet-400">{money(bomData.financials.totalActual)}</div>
           </div>
           <div className="rounded-lg border border-[#2a3342] bg-[#0d1017]/70 p-3">
             <div className="text-[11px] font-semibold uppercase tracking-wider text-[#a8b3c4]">Net Budget Variance</div>
-            <div className={`text-xl font-bold ${bomData.financials.netVariance > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+            <div className={`text-xl font-bold ${bomData.financials.netVariance > 0 ? 'text-rose-400' : 'text-[#86efac]'}`}>
               {bomData.financials.netVariance > 0 ? '+' : ''}
               {money(bomData.financials.netVariance)}
             </div>
@@ -251,7 +251,7 @@ export default function PartsView() {
             <div className="flex items-center gap-2">
               <div className="h-2 flex-1 rounded-full bg-[#11151d] overflow-hidden">
                 <div
-                  className="h-full bg-emerald-500 transition-all duration-300"
+                  className="h-full bg-[#2c5e3b] transition-all duration-300"
                   style={{ width: `${Math.min(100, Math.max(0, bomData.financials.procurementProgressPercent))}%` }}
                 />
               </div>
@@ -293,7 +293,7 @@ export default function PartsView() {
                 <div key={idx} className="rounded-xl border border-[#2a3342] bg-[#0d1017]/70 p-5 shadow-sm space-y-4">
                   <div className="flex items-start justify-between">
                     <div>
-                      <div className="text-xs font-mono uppercase tracking-wider text-sky-400 font-semibold">
+                      <div className="text-xs font-mono uppercase tracking-wider text-violet-400 font-semibold">
                         {study.subsystemId}
                       </div>
                       <h2 className="text-lg font-bold text-[#e8edf5]">{study.subsystemName}</h2>
@@ -335,7 +335,7 @@ export default function PartsView() {
                             <td className="px-3 py-2.5 text-[#a8b3c4]">{cand.specs}</td>
                             <td className="px-3 py-2.5 text-center">
                               {cand.satisfies === 'compliant' && (
-                                <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold bg-emerald-950 text-emerald-300 border border-emerald-800/40">
+                                <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold bg-[#0f2318] text-[#86efac] border border-[#35714a]/40">
                                   <CheckCircle2 className="h-3 w-3" /> Compliant
                                 </span>
                               )}
@@ -360,7 +360,7 @@ export default function PartsView() {
                                   href={sourceUrl(cand.source)!}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300"
+                                  className="inline-flex items-center gap-1 text-violet-400 hover:text-violet-300"
                                 >
                                   Link <ExternalLink className="h-3 w-3" />
                                 </a>
@@ -375,8 +375,8 @@ export default function PartsView() {
                   </div>
 
                   {study.rationale && (
-                    <div className="rounded-lg bg-sky-950/20 border border-sky-800/30 p-3">
-                      <div className="text-[11px] font-semibold text-sky-300 uppercase tracking-wider mb-1">
+                    <div className="rounded-lg bg-violet-950/20 border border-violet-800/30 p-3">
+                      <div className="text-[11px] font-semibold text-violet-300 uppercase tracking-wider mb-1">
                         Selection Rationale
                       </div>
                       <p className="text-xs text-[#a8b3c4] leading-relaxed">{study.rationale}</p>
@@ -452,7 +452,7 @@ export default function PartsView() {
                         <td className="px-3 py-2.5 font-medium text-[#a8b3c4] whitespace-nowrap">
                           {item.subsystem}
                         </td>
-                        <td className="px-3 py-2.5 font-mono font-bold text-sky-400 whitespace-nowrap">
+                        <td className="px-3 py-2.5 font-mono font-bold text-violet-400 whitespace-nowrap">
                           {item.id}
                         </td>
                         <td className="px-3 py-2.5 text-[#e8edf5]">{item.description}</td>
@@ -471,7 +471,7 @@ export default function PartsView() {
                               href={sourceUrl(item.source)!}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300"
+                              className="inline-flex items-center gap-1 text-violet-400 hover:text-violet-300"
                             >
                               Source <ExternalLink className="h-3 w-3" />
                             </a>
@@ -554,7 +554,7 @@ export default function PartsView() {
 
                       return (
                         <tr key={item.id} className="hover:bg-[#171c26] transition-colors">
-                          <td className="px-3 py-2.5 font-mono font-bold text-sky-400 whitespace-nowrap">
+                          <td className="px-3 py-2.5 font-mono font-bold text-violet-400 whitespace-nowrap">
                             {item.id}
                           </td>
                           <td className="px-3 py-2.5 text-[#e8edf5]">{item.description}</td>
@@ -586,7 +586,7 @@ export default function PartsView() {
                                 min={1}
                                 value={edit.qty}
                                 onChange={e => setEdit({ ...edit, qty: Number(e.target.value) || 1 })}
-                                className="w-16 rounded border border-sky-500 bg-[#05070c] px-2 py-1 text-center font-mono text-xs text-white"
+                                className="w-16 rounded border border-violet-500 bg-[#05070c] px-2 py-1 text-center font-mono text-xs text-white"
                               />
                             ) : (
                               <span className="font-bold text-[#e8edf5]">{item.qty}</span>
@@ -601,7 +601,7 @@ export default function PartsView() {
                                 value={edit.tracking}
                                 onChange={e => setEdit({ ...edit, tracking: e.target.value })}
                                 placeholder="Tracking / Order #"
-                                className="w-full rounded border border-sky-500 bg-[#05070c] px-2 py-1 font-mono text-xs text-white"
+                                className="w-full rounded border border-violet-500 bg-[#05070c] px-2 py-1 font-mono text-xs text-white"
                               />
                             ) : item.tracking && item.tracking !== '—' ? (
                               (() => {
@@ -611,7 +611,7 @@ export default function PartsView() {
                                     href={tUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 hover:underline"
+                                    className="inline-flex items-center gap-1 text-violet-400 hover:text-violet-300 hover:underline"
                                     title="Track package"
                                   >
                                     <span>{item.tracking}</span>
@@ -634,7 +634,7 @@ export default function PartsView() {
                                 value={edit.actualTotal}
                                 onChange={e => setEdit({ ...edit, actualTotal: e.target.value })}
                                 placeholder="$0.00"
-                                className="w-24 rounded border border-sky-500 bg-[#05070c] px-2 py-1 text-right font-mono text-xs text-white"
+                                className="w-24 rounded border border-violet-500 bg-[#05070c] px-2 py-1 text-right font-mono text-xs text-white"
                               />
                             ) : (
                               money(item.actualTotal)
@@ -648,7 +648,7 @@ export default function PartsView() {
                             ) : (
                               <span
                                 className={`font-semibold ${
-                                  item.variance > 0 ? 'text-rose-400' : 'text-emerald-400'
+                                  item.variance > 0 ? 'text-rose-400' : 'text-[#86efac]'
                                 }`}
                               >
                                 {item.variance > 0 ? '+' : ''}
@@ -660,13 +660,13 @@ export default function PartsView() {
                           {/* Action Controls */}
                           <td className="px-3 py-2.5 text-center whitespace-nowrap">
                             {isSaving ? (
-                              <Loader2 className="mx-auto h-4 w-4 animate-spin text-sky-400" />
+                              <Loader2 className="mx-auto h-4 w-4 animate-spin text-violet-400" />
                             ) : isEditing ? (
                               <div className="flex items-center justify-center gap-1">
                                 <button
                                   onClick={() => void commitEdit()}
                                   title="Save changes"
-                                  className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded bg-emerald-600/80 text-white hover:bg-emerald-600"
+                                  className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded bg-[#2c5e3b]/80 text-white hover:bg-[#2c5e3b]"
                                 >
                                   <Check className="h-4 w-4" />
                                 </button>

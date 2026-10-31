@@ -123,7 +123,7 @@ export default function DocProgressBar({
           <div className="flex h-full w-full">
             {greenPct > 0 && (
               <div
-                className="h-full bg-emerald-500 transition-all"
+                className="h-full bg-[#2c5e3b] transition-all"
                 style={{ width: `${greenPct}%` }}
               />
             )}
@@ -133,7 +133,7 @@ export default function DocProgressBar({
                 style={{
                   width: `${draftedPct}%`,
                   background:
-                    'repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(56,189,248,0.5) 4px,rgba(56,189,248,0.5) 8px)',
+                    'repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(167,139,250,0.55) 4px,rgba(167,139,250,0.55) 8px)',
                 }}
               />
             )}
@@ -160,14 +160,14 @@ export default function DocProgressBar({
           <div className="space-y-2">
             {/* Approved row */}
             <div className="flex items-center gap-2 text-xs">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+              <span className="h-2 w-2 rounded-full bg-[#2c5e3b]" aria-hidden />
               <span className="flex-1 text-[#a8b3c4]">Approved</span>
               <span className="font-mono text-[#e8edf5] font-semibold tabular-nums">
                 {progress.approved}
               </span>
               <div className="h-2 w-16 overflow-hidden rounded bg-[#171c26]">
                 <div
-                  className="h-full bg-emerald-500"
+                  className="h-full bg-[#2c5e3b]"
                   style={{
                     width: `${total > 0 ? (progress.approved / total) * 100 : 0}%`,
                   }}
@@ -177,7 +177,7 @@ export default function DocProgressBar({
 
             {/* Drafted row */}
             <div className="flex items-center gap-2 text-xs">
-              <span className="h-2 w-2 rounded-full bg-sky-600" aria-hidden />
+              <span className="h-2 w-2 rounded-full bg-violet-500" aria-hidden />
               <span className="flex-1 text-[#a8b3c4]">Drafted</span>
               <span className="font-mono text-[#e8edf5] font-semibold tabular-nums">
                 {progress.drafted}
@@ -188,7 +188,7 @@ export default function DocProgressBar({
                   style={{
                     width: `${total > 0 ? (progress.drafted / total) * 100 : 0}%`,
                     background:
-                      'repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(56,189,248,0.5) 4px,rgba(56,189,248,0.5) 8px)',
+                      'repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(167,139,250,0.55) 4px,rgba(167,139,250,0.55) 8px)',
                   }}
                 />
               </div>

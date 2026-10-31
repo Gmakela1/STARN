@@ -39,9 +39,9 @@ export interface QuestionPanelProps {
 
 /** §1.4.1 — per-phase chip visuals, keyed off the AnswerPhase union (moved from QuestionBar). */
 const stateChip: Record<AnswerState['phase'], { icon: LucideIcon; label: string; cls: string; live?: boolean }> = {
-  queued: { icon: Clock3, label: 'Queued — applies after this phase', cls: 'border-sky-700/50 bg-sky-950/40 text-sky-300' },
+  queued: { icon: Clock3, label: 'Queued — applies after this phase', cls: 'border-violet-700/50 bg-violet-950/40 text-violet-300' },
   applying: { icon: Loader2, label: 'Applying…', cls: 'border-[#ff2a3c]/45 bg-[#1a0208] text-[#ffb3bd]', live: true },
-  applied: { icon: Check, label: 'Applied', cls: 'border-emerald-700/50 bg-emerald-950/40 text-emerald-300' },
+  applied: { icon: Check, label: 'Applied', cls: 'border-[#35714a]/50 bg-[#0f2318]/40 text-[#86efac]' },
   failed: { icon: TriangleAlert, label: "Couldn't apply", cls: 'border-rose-700/50 bg-rose-950/40 text-rose-300' }
 };
 
@@ -521,8 +521,8 @@ export default function QuestionPanel({
   if (!item) {
     body = (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-800/60 bg-emerald-950/40">
-          <CheckCircle2 className="h-8 w-8 text-emerald-400" aria-hidden />
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#35714a]/60 bg-[#0f2318]/40">
+          <CheckCircle2 className="h-8 w-8 text-[#86efac]" aria-hidden />
         </div>
         <div>
           <p className="text-sm font-medium text-[#e8edf5]">All questions resolved</p>
@@ -558,7 +558,7 @@ export default function QuestionPanel({
       cardTone = 'border-l-[#3b4658] bg-[#0d1017]/70';
       labelText = 'Resolved ✓';
       labelClass = 'text-[#a8b3c4]';
-      iconClass = 'text-emerald-400';
+      iconClass = 'text-[#86efac]';
       LabelIcon = Check;
     }
 
@@ -588,7 +588,7 @@ export default function QuestionPanel({
             <button
               type="button"
               onClick={() => setShowFull(prev => (prev === item.id ? null : item.id))}
-              className="mt-1 rounded text-[11px] font-medium text-sky-400 hover:text-sky-300 focus:ring-2 focus:ring-[#ff2a3c]/60"
+              className="mt-1 rounded text-[11px] font-medium text-violet-400 hover:text-violet-300 focus:ring-2 focus:ring-[#ff2a3c]/60"
             >
               Show full question
             </button>
@@ -719,7 +719,7 @@ export default function QuestionPanel({
           {dwellActive ? (
             <div
               role="status"
-              className="flex min-h-[96px] items-center gap-2 rounded-lg border border-emerald-800/60 bg-emerald-950/40 px-3 py-2.5 text-sm font-medium text-emerald-300"
+              className="flex min-h-[96px] items-center gap-2 rounded-lg border border-[#35714a]/60 bg-[#0f2318]/40 px-3 py-2.5 text-sm font-medium text-[#86efac]"
             >
               <Check className="h-4 w-4" aria-hidden /> Resolved ✓
             </div>
@@ -774,10 +774,10 @@ export default function QuestionPanel({
                   disabled={composingDisabled}
                   aria-label={recording ? 'Stop recording' : 'Record answer'}
                   title={recording ? 'Release Alt or click to send' : 'Click or hold Alt to record'}
-                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 disabled:opacity-50 ${
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40 disabled:opacity-50 ${
                     recording
                       ? 'bg-rose-600 text-white motion-safe:animate-pulse'
-                      : 'border border-[#3b4658] bg-[#11151d] text-[#a8b3c4] hover:border-sky-600 hover:text-sky-400'
+                      : 'border border-[#3b4658] bg-[#11151d] text-[#a8b3c4] hover:border-violet-600 hover:text-violet-400'
                   }`}
                 >
                   <Mic className="h-4 w-4" aria-hidden />
@@ -845,7 +845,7 @@ export default function QuestionPanel({
                   const p = item?.docPath;
                   if (p) onOpenDocument(p);
                 }}
-                className="cursor-pointer rounded px-1.5 py-1 text-xs text-sky-400 transition hover:text-sky-300 focus:ring-2 focus:ring-[#ff2a3c]/60"
+                className="cursor-pointer rounded px-1.5 py-1 text-xs text-violet-400 transition hover:text-violet-300 focus:ring-2 focus:ring-[#ff2a3c]/60"
               >
                 Open document
               </button>
@@ -876,7 +876,7 @@ export default function QuestionPanel({
             if (navItem.type === 'parked' || navItem.severity === 'blocking') {
               dotClass = 'bg-rose-400';
             } else if (queuedPhase === 'queued' || queuedPhase === 'applying') {
-              dotClass = 'bg-sky-400';
+              dotClass = 'bg-violet-400';
             }
             return (
               <button
@@ -889,7 +889,7 @@ export default function QuestionPanel({
                 aria-current={isActive ? 'true' : undefined}
                 className={`flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
                   isActive
-                    ? 'border-sky-800/60 bg-sky-950/70 text-sky-200'
+                    ? 'border-violet-800/60 bg-violet-950/70 text-violet-200'
                     : 'border-[#2a3342] bg-[#0d1017] text-[#a8b3c4] hover:bg-[#11151d] hover:text-[#e8edf5]'
                 }`}
               >

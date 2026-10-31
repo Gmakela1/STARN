@@ -276,7 +276,7 @@ export default function DashboardView({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-1.5 flex-1 min-w-[280px]">
               <div className="flex items-center gap-2">
-                <span className="rounded bg-sky-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-sky-300 border border-sky-500/30">
+                <span className="rounded bg-violet-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-violet-300 border border-violet-600/40">
                   SYSTEM OVERVIEW &amp; CHARTER
                 </span>
                 <span className="rounded bg-[#11151d] px-2 py-0.5 font-mono text-[11px] text-[#a8b3c4]">
@@ -305,7 +305,7 @@ export default function DashboardView({
             <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-[#2a3342]/80 pt-4">
               {project.charter.map((section, idx) => (
                 <div key={idx} className="rounded-xl border border-[#2a3342]/80 bg-[#05070c]/60 p-4">
-                  <h2 className="text-xs font-bold uppercase tracking-wider text-sky-400 mb-1.5">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-violet-400 mb-1.5">
                     {section.heading}
                   </h2>
                   <div className="text-sm leading-relaxed text-[#e8edf5]">
@@ -370,12 +370,12 @@ export default function DashboardView({
             </div>
             <p className="mt-2 text-2xl font-bold text-[#e8edf5]">{money(fin.totalActual)}</p>
           </div>
-          <div className={`rounded-xl border p-4 ${varianceOver ? 'border-rose-900/70 bg-rose-950/30' : 'border-emerald-900/70 bg-emerald-950/30'}`}>
+          <div className={`rounded-xl border p-4 ${varianceOver ? 'border-rose-900/70 bg-rose-950/30' : 'border-[#35714a]/70 bg-[#0f2318]/30'}`}>
             <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[#a8b3c4]">
-              {varianceOver ? <TrendingUp className="h-3.5 w-3.5 text-rose-400" aria-hidden /> : <TrendingDown className="h-3.5 w-3.5 text-emerald-400" aria-hidden />}
+              {varianceOver ? <TrendingUp className="h-3.5 w-3.5 text-rose-400" aria-hidden /> : <TrendingDown className="h-3.5 w-3.5 text-[#86efac]" aria-hidden />}
               Net variance
             </div>
-            <p className={`mt-2 text-2xl font-bold ${varianceOver ? 'text-rose-300' : 'text-emerald-300'}`}>
+            <p className={`mt-2 text-2xl font-bold ${varianceOver ? 'text-rose-300' : 'text-[#86efac]'}`}>
               {varianceOver ? '+' : ''}{money(fin.netVariance)}
             </p>
           </div>
@@ -385,7 +385,7 @@ export default function DashboardView({
             </div>
             <p className="mt-2 text-2xl font-bold text-[#e8edf5]">{fin.procurementProgressPercent}%</p>
             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#11151d]" aria-hidden>
-              <div className="h-full rounded-full bg-sky-500" style={{ width: `${fin.procurementProgressPercent}%` }} />
+              <div className="h-full rounded-full bg-violet-500" style={{ width: `${fin.procurementProgressPercent}%` }} />
             </div>
           </div>
         </section>
@@ -406,7 +406,7 @@ export default function DashboardView({
                 title={`${p.name} — ${p.status}`}
                 className={`h-1.5 flex-1 rounded-full transition-colors ${
                   p.status === 'COMPLETED'
-                    ? 'bg-emerald-500'
+                    ? 'bg-[#2c5e3b]'
                     : p.status === 'IN_PROGRESS'
                       ? 'bg-[#ff2a3c] motion-safe:animate-pulse'
                       : p.status === 'PENDING_REVIEW'

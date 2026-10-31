@@ -28,7 +28,7 @@ interface ConnectorArrowProps {
 }
 
 const ConnectorArrow: React.FC<ConnectorArrowProps> = ({ dir, active }) => {
-  const colorClass = active ? 'text-emerald-400' : 'text-[#6e7d92]';
+  const colorClass = active ? 'text-[#86efac]' : 'text-[#6e7d92]';
 
   if (dir === 'right') {
     return (
@@ -99,11 +99,11 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase, hideHeader 
     let ringClass = 'bg-[#11151d] text-[#a8b3c4] border-[#3b4658]';
 
     if (isCompleted) {
-      borderClass = 'border-emerald-500/40 bg-emerald-950/20 shadow-emerald-950/50 shadow-sm';
-      ringClass = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50';
+      borderClass = 'border-[#35714a]/40 bg-[#0f2318]/20 shadow-[#0f2318]/50 shadow-sm';
+      ringClass = 'bg-[#2c5e3b]/20 text-[#86efac] border-[#35714a]/50';
     } else if (isInProgress) {
-      borderClass = 'border-sky-500 bg-sky-950/30 shadow-sky-900/30 shadow-md';
-      ringClass = 'bg-sky-500 text-[#05070c] font-bold border-sky-400';
+      borderClass = 'border-violet-600 bg-violet-950/30 shadow-violet-900/30 shadow-md';
+      ringClass = 'bg-violet-500 text-[#05070c] font-bold border-violet-400';
     } else if (isPendingReview) {
       borderClass = 'border-amber-500/50 bg-amber-950/20';
       ringClass = 'bg-amber-500/20 text-amber-300 border-amber-500/50';
@@ -147,12 +147,12 @@ export default function TreasureMapRoadmap({ roadmap, onSelectPhase, hideHeader 
           {/* Status Badge */}
           <div className="flex items-center gap-1">
             {isCompleted && (
-              <span className="inline-flex items-center gap-1 rounded bg-emerald-950/80 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 border border-emerald-800/40">
+              <span className="inline-flex items-center gap-1 rounded bg-[#0f2318] px-2 py-0.5 text-[10px] font-semibold text-[#86efac] border border-[#35714a]/40">
                 <CircleCheck className="h-3 w-3" /> Approved
               </span>
             )}
             {isInProgress && (
-              <span className="inline-flex items-center gap-1 rounded bg-sky-950/80 px-2 py-0.5 text-[10px] font-semibold text-sky-300 border border-sky-800/40 motion-safe:animate-pulse">
+              <span className="inline-flex items-center gap-1 rounded bg-violet-950/80 px-2 py-0.5 text-[10px] font-semibold text-violet-300 border border-violet-800/40 motion-safe:animate-pulse">
                 <CircleDot className="h-3 w-3" /> Active Gate
               </span>
             )}

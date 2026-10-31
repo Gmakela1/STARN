@@ -77,7 +77,7 @@ export default function DigitalTwinView() {
         <div
           className="flex max-w-md flex-col items-center gap-4 rounded-2xl border border-dashed border-[#3b4658] bg-[#05070c]/60 p-8 text-center"
         >
-          <Box className="h-12 w-12 text-sky-500/70" aria-hidden />
+          <Box className="h-12 w-12 text-violet-500/70" aria-hidden />
           <div>
             <h2 className="text-sm font-bold text-[#e8edf5]">Digital twin viewport</h2>
             <p className="mt-1.5 text-xs leading-relaxed text-[#6e7d92]">
@@ -85,7 +85,7 @@ export default function DigitalTwinView() {
               readiness from the shop floor will overlay as a heatmap once the renderer lands.
             </p>
             {modelName && (
-              <p className="mt-2 font-mono text-[11px] text-emerald-300">{modelName}</p>
+              <p className="mt-2 font-mono text-[11px] text-[#86efac]">{modelName}</p>
             )}
           </div>
           <input
@@ -101,7 +101,7 @@ export default function DigitalTwinView() {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="flex min-h-[44px] items-center gap-2 rounded-lg bg-sky-600 px-5 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:opacity-40"
+            className="flex min-h-[44px] items-center gap-2 rounded-lg bg-violet-600 px-5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-40"
           >
             {uploading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <UploadCloud className="h-4 w-4" aria-hidden />}
             Upload GLTF / GLB model
@@ -114,7 +114,7 @@ export default function DigitalTwinView() {
       <aside className="min-h-0 overflow-y-auto" aria-label="Subsystem readiness">
         <header className="border-b border-[#2a3342] px-4 py-3">
           <h2 className="flex items-center gap-2 text-sm font-bold text-[#e8edf5]">
-            <Boxes className="h-4 w-4 text-sky-400" aria-hidden /> Subsystem readiness
+            <Boxes className="h-4 w-4 text-violet-400" aria-hidden /> Subsystem readiness
           </h2>
           <p className="mt-0.5 text-[11px] text-[#6e7d92]">
             {icdApproved ? 'Derived from the approved ICD and shop-floor progress' : 'Populates as the ICD and work instructions mature'}
@@ -137,7 +137,7 @@ export default function DigitalTwinView() {
               return (
                 <li key={ss.id} className="px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-sky-300">{ss.id}</span>
+                    <span className="font-mono text-xs font-bold text-violet-300">{ss.id}</span>
                     {ss.defects > 0 && (
                       <span className="rounded-full bg-rose-950/80 px-2 py-0.5 text-[10px] font-bold text-rose-300">
                         {ss.defects} defect{ss.defects > 1 ? 's' : ''}
@@ -147,7 +147,7 @@ export default function DigitalTwinView() {
                   </div>
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#11151d]" aria-hidden>
                     <div
-                      className={`h-full rounded-full ${ss.defects > 0 ? 'bg-rose-500' : pct === 100 ? 'bg-emerald-500' : 'bg-sky-500'}`}
+                      className={`h-full rounded-full ${ss.defects > 0 ? 'bg-rose-500' : pct === 100 ? 'bg-[#2c5e3b]' : 'bg-violet-500'}`}
                       style={{ width: `${Math.max(pct, 4)}%` }}
                     />
                   </div>

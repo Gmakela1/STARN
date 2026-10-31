@@ -155,7 +155,7 @@ describe('QuestionBadge', () => {
   });
 
   // ————— 7. Lifecycle colors (design §3, board #52) —————
-  it('nav dot is amber for pending, sky when any queued, rose when blocking', () => {
+  it('nav dot is amber for pending, violet when any queued, rose when blocking', () => {
     const dotClass = (props: { queuedCount: number; blockingCount: number }) => {
       const { unmount } = render(
         <QuestionBadge
@@ -176,11 +176,11 @@ describe('QuestionBadge', () => {
     };
 
     expect(dotClass({ queuedCount: 0, blockingCount: 0 })).toContain('bg-amber-400');
-    expect(dotClass({ queuedCount: 1, blockingCount: 0 })).toContain('bg-sky-400');
+    expect(dotClass({ queuedCount: 1, blockingCount: 0 })).toContain('bg-violet-400');
     expect(dotClass({ queuedCount: 0, blockingCount: 1 })).toContain('bg-rose-400');
   });
 
-  it('queued chip is sky, not amber', () => {
+  it('queued chip is violet, not amber', () => {
     render(
       <QuestionBadge
         count={1}
@@ -194,7 +194,7 @@ describe('QuestionBadge', () => {
     );
 
     const chip = screen.getByText('2 queued');
-    expect(chip.className).toContain('sky');
+    expect(chip.className).toContain('violet');
     expect(chip.className).not.toContain('amber');
   });
 });

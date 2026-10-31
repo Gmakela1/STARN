@@ -34,7 +34,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
             href={href}
             target="_blank"
             rel="noreferrer"
-            className="text-sky-400 underline decoration-sky-700 underline-offset-2 hover:text-sky-300"
+            className="text-violet-400 underline decoration-violet-700 underline-offset-2 hover:text-violet-300"
           >
             {match[5]}
           </a>
@@ -136,7 +136,7 @@ export default function Markdown({ content }: { content: string }) {
               <span
                 aria-hidden
                 className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
-                  done ? 'border-emerald-600 bg-emerald-900/60 text-emerald-300' : 'border-[#3b4658] bg-[#0d1017]'
+                  done ? 'border-[#35714a] bg-[#0f2318]/60 text-[#86efac]' : 'border-[#3b4658] bg-[#0d1017]'
                 }`}
               >
                 {done ? '✓' : ''}

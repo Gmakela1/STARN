@@ -78,7 +78,7 @@ export default function PhaseRail({
           title="Phase states"
           className="flex h-8 items-center gap-1.5 rounded-lg border border-[#2a3342] bg-[#05070c]/60 px-2.5 text-[11px] font-mono text-[#a8b3c4] transition hover:bg-[#0d1017] hover:text-[#e8edf5] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/60"
         >
-          <Check className="h-3 w-3 text-emerald-400" aria-hidden />
+          <Check className="h-3 w-3 text-[#86efac]" aria-hidden />
           {approvedCount}/{total} · {firstActive?.name ?? ''}
         </button>
       ) : (
@@ -172,15 +172,15 @@ function markerForView(view: PhaseRailView): ReactNode {
       );
     case 'needs-review':
       return (
-        <span className={`${base} border-sky-400 bg-sky-500/25`}>
-          <Eye className="h-2.5 w-2.5 text-sky-300" aria-hidden />
+        <span className={`${base} border-violet-400 bg-violet-500/25`}>
+          <Eye className="h-2.5 w-2.5 text-violet-300" aria-hidden />
         </span>
       );
     case 'approved':
       return (
-        <span className={`${base} relative border-emerald-400 bg-emerald-500`}>
-          <Check className="h-2.5 w-2.5 text-emerald-950" aria-hidden />
-          {view.auto && <Sparkles className="absolute -right-1 -top-1 h-2 w-2 text-sky-300" aria-hidden />}
+        <span className={`${base} relative border-[#35714a] bg-[#2c5e3b]`}>
+          <Check className="h-2.5 w-2.5 text-white" aria-hidden />
+          {view.auto && <Sparkles className="absolute -right-1 -top-1 h-2 w-2 text-violet-300" aria-hidden />}
         </span>
       );
     case 'error-parked':

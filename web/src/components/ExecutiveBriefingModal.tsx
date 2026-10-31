@@ -31,7 +31,7 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
       {/* Sticky Action Toolbar (Hidden in Print) */}
       <header className="sticky top-0 z-10 flex min-h-[60px] items-center justify-between border-b border-[#2a3342] bg-[#0d1017]/90 px-6 py-3 no-print">
         <div className="flex items-center gap-3">
-          <div className="h-3 w-3 rounded-full bg-emerald-400" />
+          <div className="h-3 w-3 rounded-full bg-[#2c5e3b]" />
           <h2 className="text-sm font-bold text-white">2-Page Executive Briefing & Audit Report</h2>
           <span className="rounded bg-[#11151d] px-2 py-0.5 text-xs font-mono text-[#a8b3c4]">
             Print-Ready Letter (8.5" x 11")
@@ -41,7 +41,7 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
         <div className="flex items-center gap-3">
           <button
             onClick={handlePrint}
-            className="flex min-h-[44px] items-center gap-2 rounded-xl bg-sky-600 px-5 text-xs font-bold text-white shadow-lg hover:bg-sky-500 transition-colors"
+            className="flex min-h-[44px] items-center gap-2 rounded-xl bg-violet-600 px-5 text-xs font-bold text-white shadow-lg hover:bg-violet-700 transition-colors"
           >
             <Printer className="h-4 w-4" />
             Save as PDF / Print
@@ -66,7 +66,7 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
             <div className="border-b-2 border-slate-900 pb-3">
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="text-[10px] font-black uppercase tracking-widest text-sky-700">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-violet-700">
                     STARN Engineering Program Management
                   </div>
                   <h1 className="mt-1 text-2xl font-black text-slate-950 uppercase tracking-tight">
@@ -91,7 +91,7 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
                 <div className="grid grid-cols-2 gap-2.5">
                   {project.charter.map((s, idx) => (
                     <div key={idx} className="rounded border border-slate-200 bg-slate-50/60 p-2.5">
-                      <h3 className="text-[10px] font-black uppercase tracking-wider text-sky-900 border-b border-slate-200 pb-0.5 mb-1">
+                      <h3 className="text-[10px] font-black uppercase tracking-wider text-violet-900 border-b border-slate-200 pb-0.5 mb-1">
                         {s.heading}
                       </h3>
                       <p className="whitespace-pre-line text-[11px] leading-relaxed text-slate-700">
@@ -152,7 +152,7 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
                   <div className="text-[10px] font-semibold uppercase text-slate-500">Net Variance</div>
                   <div
                     className={`mt-0.5 font-mono text-base font-black ${
-                      fin.netVariance > 0 ? 'text-rose-700' : 'text-emerald-700'
+                      fin.netVariance > 0 ? 'text-rose-700' : 'text-[#2c5e3b]'
                     }`}
                   >
                     {fin.netVariance > 0 ? '+' : ''}
@@ -185,9 +185,9 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
                         <div
                           className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-mono font-bold ${
                             isApproved
-                              ? 'bg-emerald-600 text-white'
+                              ? 'bg-[#2c5e3b] text-white'
                               : isActive
-                              ? 'bg-sky-600 text-white'
+                              ? 'bg-violet-600 text-white'
                               : isPending
                               ? 'bg-amber-500 text-white'
                               : 'bg-slate-300 text-slate-600'
@@ -231,9 +231,9 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
                       <td className="p-1.5 font-mono text-slate-600">{p.artifactPath}</td>
                       <td className="p-1.5 text-center">
                         {p.status === 'COMPLETED' ? (
-                          <span className="font-bold text-emerald-700">Approved</span>
+                          <span className="font-bold text-[#2c5e3b]">Approved</span>
                         ) : p.status === 'IN_PROGRESS' ? (
-                          <span className="font-bold text-sky-700">In Progress</span>
+                          <span className="font-bold text-violet-700">In Progress</span>
                         ) : p.status === 'PENDING_REVIEW' ? (
                           <span className="font-bold text-amber-700">Draft</span>
                         ) : (
@@ -255,7 +255,7 @@ export default function ExecutiveBriefingModal({ data, onClose }: ExecutiveBrief
                 5. Critical Non-Conformances & Builder Questions
               </h3>
               {nonConformances.length === 0 && openQuestions.length === 0 ? (
-                <div className="p-2.5 rounded bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800 font-medium">
+                <div className="p-2.5 rounded bg-[#0f2318]/10 border border-[#35714a]/40 text-[11px] text-[#2c5e3b] font-medium">
                   ✔ Zero open hardware non-conformances or unaddressed builder questions.
                 </div>
               ) : (

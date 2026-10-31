@@ -11,7 +11,7 @@ const REQ_RE = /\b[A-Z]{2,6}(?:-[A-Z0-9]{1,4})?-\d{1,3}(?:\.[a-z0-9]{1,3})?\b/g;
 const BLOCK_SELECTOR = 'h1,h2,h3,h4,h5,h6,p,li,td,tr';
 
 /** Static outline applied while data-studio-anchor is present (shape cue, not color alone). */
-const RING_CLASSES = ['ring-2', 'ring-sky-400/70', 'ring-offset-2', 'ring-offset-slate-950'];
+const RING_CLASSES = ['ring-2', 'ring-violet-400/70', 'ring-offset-2', 'ring-offset-slate-950'];
 
 /** Extract requirement-looking ids in document order, deduped. */
 export function extractRequirementIds(text: string): string[] {
@@ -84,7 +84,7 @@ export function applyAnchorHighlight(root: HTMLElement, id: string): HTMLElement
   const marker = document.createElement('span');
   marker.setAttribute('data-studio-anchor-marker', '');
   marker.className =
-    'absolute right-1 top-1 z-10 rounded bg-sky-950 px-1.5 py-0.5 font-mono text-[10px] leading-none text-sky-200 ring-1 ring-sky-500/40';
+    'absolute right-1 top-1 z-10 rounded bg-violet-950 px-1.5 py-0.5 font-mono text-[10px] leading-none text-violet-200 ring-1 ring-violet-500/40';
   marker.textContent = id;
   block.appendChild(marker);
 

@@ -170,7 +170,7 @@ function feedIconFor(m: ActivityMeta, text: string): LucideIcon {
 function dotTone(m: ActivityMeta, opts: { live: boolean; held: boolean }): string {
   if (m.kind === 'error') return 'bg-rose-400';
   if (opts.held || m.stopped) return 'bg-amber-400';
-  if (m.kind === 'complete') return 'bg-emerald-400';
+  if (m.kind === 'complete') return 'bg-[#2c5e3b]';
   if (opts.live) return 'bg-[#ff2a3c] ring-2 ring-[#ff2a3c]/30 motion-safe:animate-pulse';
   return 'bg-[#2a3342]';
 }
@@ -264,8 +264,8 @@ function LegacySystemNote({ entry }: { entry: ChatEntry }) {
 
   if (/^(Draft approved|Saved|✔ Uploaded)/i.test(stripped)) {
     return (
-      <div className="flex items-start gap-2 rounded-md border border-emerald-900/60 bg-emerald-950/30 px-3 py-1.5 text-xs text-emerald-300">
-        <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0 text-emerald-400" aria-hidden />
+      <div className="flex items-start gap-2 rounded-md border border-[#35714a]/60 bg-[#0f2318]/30 px-3 py-1.5 text-xs text-[#86efac]">
+        <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0 text-[#86efac]" aria-hidden />
         <p className="break-words">{stripped}</p>
       </div>
     );
@@ -889,7 +889,7 @@ export default function DevelopmentView({
       openQuestions: phase.openQuestions
     })) {
       return (
-        <span className="rounded bg-sky-950/80 px-2 py-0.5 font-mono text-[10px] font-semibold text-sky-300 border border-sky-800 shrink-0 inline-flex items-center gap-1">
+        <span className="rounded bg-violet-950/80 px-2 py-0.5 font-mono text-[10px] font-semibold text-violet-300 border border-violet-800 shrink-0 inline-flex items-center gap-1">
           <Eye className="h-3 w-3" aria-hidden />
           Completed — needs approval
         </span>
@@ -897,14 +897,14 @@ export default function DevelopmentView({
     }
     if (phase.status === 'COMPLETED') {
       return (
-        <span className="rounded bg-emerald-950/80 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-300 border border-emerald-800 shrink-0">
+        <span className="rounded bg-[#0f2318] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#86efac] border border-[#35714a] shrink-0">
           Completed
         </span>
       );
     }
     if (phase.status === 'IN_PROGRESS' || phase.status === 'PENDING_REVIEW') {
       return (
-        <span className="rounded bg-sky-950/80 px-2 py-0.5 font-mono text-[10px] font-semibold text-sky-300 border border-sky-800 shrink-0">
+        <span className="rounded bg-violet-950/80 px-2 py-0.5 font-mono text-[10px] font-semibold text-violet-300 border border-violet-800 shrink-0">
           In Work
         </span>
       );
@@ -1030,7 +1030,7 @@ export default function DevelopmentView({
                 key={entry.id}
                 className={`max-w-[92%] rounded-xl border p-3 ${
                   entry.role === 'user'
-                    ? 'ml-auto border-sky-900/60 bg-sky-950/40'
+                    ? 'ml-auto border-violet-800/60 bg-violet-950/40'
                     : 'border-[#2a3342] bg-[#0d1017]/70'
                 }`}
               >
@@ -1300,7 +1300,7 @@ export default function DevelopmentView({
                       }}
                       className={`flex min-h-[44px] cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 text-xs transition-colors ${
                         isSelected
-                          ? 'bg-sky-950/70 text-sky-200 border border-sky-800/60 font-semibold'
+                          ? 'bg-violet-950/70 text-violet-200 border border-violet-800/60 font-semibold'
                           : 'text-[#a8b3c4] hover:bg-[#0d1017] hover:text-white'
                       }`}
                     >
@@ -1310,7 +1310,7 @@ export default function DevelopmentView({
                       </div>
                       <div className="shrink-0 flex items-center gap-1.5">
                         {renderStatusPill(p)}
-                        {isSelected && <Check className="h-3.5 w-3.5 text-sky-400" />}
+                        {isSelected && <Check className="h-3.5 w-3.5 text-violet-400" />}
                       </div>
                     </div>
                   );
@@ -1370,7 +1370,7 @@ export default function DevelopmentView({
                 <button
                   onClick={() => void saveDraft()}
                   disabled={saving}
-                  className="flex min-h-[40px] items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-40"
+                  className="flex min-h-[40px] items-center gap-1.5 rounded-lg bg-[#2c5e3b] px-3 text-xs font-semibold text-white transition hover:bg-[#35714a] disabled:opacity-40"
                 >
                   {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Save className="h-3.5 w-3.5" aria-hidden />}
                   Save
@@ -1387,7 +1387,7 @@ export default function DevelopmentView({
               <button
                 onClick={() => void approvePhase()}
                 disabled={approving}
-                className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-emerald-800 px-3 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-950 disabled:opacity-40"
+                className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#35714a] px-3 text-xs font-semibold text-[#86efac] transition hover:bg-[#0f2318] disabled:opacity-40"
               >
                 {approving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <BadgeCheck className="h-3.5 w-3.5" aria-hidden />}
                 Approve phase
@@ -1427,13 +1427,13 @@ export default function DevelopmentView({
         </header>
 
         {uploadNotice && (
-          <p className={`border-b px-4 py-1.5 text-xs ${uploadNotice.startsWith('✔') ? 'border-emerald-900/60 bg-emerald-950/40 text-emerald-300' : 'border-rose-800/60 bg-rose-950/40 text-rose-300'}`}>
+          <p className={`border-b px-4 py-1.5 text-xs ${uploadNotice.startsWith('✔') ? 'border-[#35714a]/60 bg-[#0f2318]/40 text-[#86efac]' : 'border-rose-800/60 bg-rose-950/40 text-rose-300'}`}>
             {uploadNotice}
           </p>
         )}
 
         {docNotice && (
-          <p className="border-b border-emerald-900/60 bg-emerald-950/40 px-4 py-1.5 text-xs text-emerald-300" role="status">
+          <p className="border-b border-[#35714a]/60 bg-[#0f2318]/40 px-4 py-1.5 text-xs text-[#86efac]" role="status">
             {docNotice}
           </p>
         )}

@@ -64,7 +64,7 @@ export default function QuestionBadge({
   if (blockingCount > 0) {
     dotClass = 'bg-rose-400';
   } else if (queuedCount > 0) {
-    dotClass = 'bg-sky-400';
+    dotClass = 'bg-violet-400';
   }
 
   if (subdued) {
@@ -108,7 +108,7 @@ export default function QuestionBadge({
       </span>
       <span className="truncate text-xs font-medium text-amber-200">Needs Input</span>
       {queuedCount > 0 && (
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-sky-700/50 bg-sky-950/40 px-2 py-0.5 text-[11px] font-semibold text-sky-300">
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-violet-700/50 bg-violet-950/40 px-2 py-0.5 text-[11px] font-semibold text-violet-300">
           <Clock3 className="h-3 w-3" aria-hidden />
           {queuedCount} queued
         </span>
@@ -126,7 +126,7 @@ export default function QuestionBadge({
       )}
       {resolvedCount > 0 && (
         <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-[#a8b3c4]">
-          <CheckCircle2 className="h-3 w-3 text-emerald-400/80" aria-hidden />
+          <CheckCircle2 className="h-3 w-3 text-[#86efac]/80" aria-hidden />
           {resolvedCount} resolved
         </span>
       )}

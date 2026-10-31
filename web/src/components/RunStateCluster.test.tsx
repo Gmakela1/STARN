@@ -40,7 +40,7 @@ describe('RunStateCluster', () => {
 
   it('renders the ready state as a plain dot (no icon)', () => {
     const { container } = render(<RunStateCluster runState="ready" />);
-    expect(container.querySelector('span.h-2.w-2.rounded-full.bg-emerald-400')).not.toBeNull();
+    expect(container.querySelector('span[class*="2c5e3b"]')).not.toBeNull();
     expect(container.querySelector('svg')).toBeNull();
   });
 
@@ -51,7 +51,7 @@ describe('RunStateCluster', () => {
     );
 
     rerender(<RunStateCluster runState="ready" />);
-    expect(container.querySelector('span.bg-emerald-400')?.getAttribute('class')).not.toContain('animate-pulse');
+    expect(container.querySelector('span[class*="2c5e3b"]')?.getAttribute('class')).not.toContain('animate-pulse');
   });
 
   it('renders only the status word: no phase chip, no step text, no separators', () => {
