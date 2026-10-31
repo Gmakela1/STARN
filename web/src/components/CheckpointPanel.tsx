@@ -40,10 +40,10 @@ export default function CheckpointPanel({ checkpoint, onResolved, onRevisionRequ
 
   return (
     <aside
-      className="rounded-xl border border-[#ff2a3c]/45 bg-gradient-to-br from-[#1a0208]/80 to-[#05070c]/80 p-3 shadow-lg shadow-[#1a0208]/40"
+      className="rounded-xl border border-amber-500/40 bg-[#180c02] p-3 shadow-lg shadow-[#180c02]/40"
       aria-label="Pending human checkpoint"
     >
-      <p className="text-xs font-bold uppercase tracking-wider text-[#ffb3bd]">
+      <p className="text-xs font-bold uppercase tracking-wider text-amber-300">
         ◈ Checkpoint — {checkpoint.specialistName} draft awaiting your review
       </p>
       <p className="mt-0.5 text-[11px] leading-relaxed text-[#a8b3c4]">

@@ -1161,7 +1161,7 @@ export default function DevelopmentView({
                 <button
                   onClick={() => void submit()}
                   disabled={!prompt.trim() || checkpoint !== null}
-                  className="flex h-[44px] w-[44px] items-center justify-center rounded-lg bg-sky-600 text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="cut-corner-sm flex h-[44px] w-[44px] items-center justify-center rounded-lg bg-[#d61f2c] text-white transition hover:bg-[#e11d3f] disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label="Send message"
                   title="Send message"
                 >

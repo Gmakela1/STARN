@@ -588,7 +588,7 @@ export default function QuestionPanel({
             <button
               type="button"
               onClick={() => setShowFull(prev => (prev === item.id ? null : item.id))}
-              className="mt-1 rounded text-[11px] font-medium text-sky-400 hover:text-sky-300 focus:ring-2 focus:ring-sky-500/40"
+              className="mt-1 rounded text-[11px] font-medium text-sky-400 hover:text-sky-300 focus:ring-2 focus:ring-[#ff2a3c]/60"
             >
               Show full question
             </button>
@@ -690,7 +690,7 @@ export default function QuestionPanel({
               onClick={() => {
                 if (item.docPath) void onResume(item.docPath);
               }}
-              className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-rose-700 bg-rose-950/60 px-3 text-xs font-medium text-rose-200 transition hover:bg-rose-900/60 focus:ring-2 focus:ring-sky-500/40"
+              className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-rose-700 bg-rose-950/60 px-3 text-xs font-medium text-rose-200 transition hover:bg-rose-900/60 focus:ring-2 focus:ring-[#ff2a3c]/60"
             >
               <RotateCcw className="h-3.5 w-3.5" aria-hidden /> Resolve & Resume
             </button>
@@ -845,7 +845,7 @@ export default function QuestionPanel({
                   const p = item?.docPath;
                   if (p) onOpenDocument(p);
                 }}
-                className="cursor-pointer rounded px-1.5 py-1 text-xs text-sky-400 transition hover:text-sky-300 focus:ring-2 focus:ring-sky-500/40"
+                className="cursor-pointer rounded px-1.5 py-1 text-xs text-sky-400 transition hover:text-sky-300 focus:ring-2 focus:ring-[#ff2a3c]/60"
               >
                 Open document
               </button>
