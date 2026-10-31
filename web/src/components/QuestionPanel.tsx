@@ -483,7 +483,9 @@ export default function QuestionPanel({
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Couldn't send your answer.");
     } finally {
-      setSubmittingId(null);
+      // Only clear the in-flight flag if it still refers to this answer; a
+      // newer submit may have claimed it in the meantime.
+      setSubmittingId(prev => (prev === id ? null : prev));
     }
   };
 
