@@ -104,14 +104,16 @@ export async function recordAudio(): Promise<RecordResult> {
 
 /**
  * Full voice prompt flow: record audio, transcribe it, return the text.
+ * `model` selects the speech-to-text model (defaults to openai/whisper-large-v3
+ * inside the client when omitted).
  */
-export async function captureVoicePrompt(client: OpenRouterClient): Promise<string> {
+export async function captureVoicePrompt(client: OpenRouterClient, model?: string): Promise<string> {
   const result = await recordAudio();
 
   if (result.buffer.length < 100) {
     return '';
   }
 
-  const transcription = await client.transcribeAudio(result.buffer);
+  const transcription = await client.transcribeAudio(result.buffer, 'recording.wav', model);
   return transcription.text;
 }

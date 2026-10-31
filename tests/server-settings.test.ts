@@ -189,6 +189,44 @@ describe('settings + providers API', () => {
     expect(r2.status).toBe(404);
   });
 
+  it('PUT voiceInputModel round-trips and is used by session.transcribeAudio', async () => {
+    const get1 = await request(server, 'GET', '/api/settings');
+    expect(get1.json.data.voiceInputModel).toBe('openai/whisper-large-v3');
+
+    const put = await request(server, 'PUT', '/api/settings', { voiceInputModel: 'openai/gpt-4o-mini-transcribe' });
+    expect(put.status).toBe(200);
+    expect(put.json.data.voiceInputModel).toBe('openai/gpt-4o-mini-transcribe');
+    expect(session.voiceInputModel).toBe('openai/gpt-4o-mini-transcribe');
+
+    const get2 = await request(server, 'GET', '/api/settings');
+    expect(get2.json.data.voiceInputModel).toBe('openai/gpt-4o-mini-transcribe');
+  });
+
+  it('session.transcribeAudio posts the configured STT model', async () => {
+    await session.applySettings({ voiceInputModel: 'openai/gpt-4o-mini-transcribe' });
+    const captured: any[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: any, init?: any) => {
+      captured.push(init.body);
+      return new Response(JSON.stringify({ text: 'hello from mic' }), { status: 200 });
+    }));
+    const text = await session.transcribeAudio(Buffer.from('audio-bytes'), 'recording.webm');
+    expect(text).toBe('hello from mic');
+    expect(captured[0]).toBeInstanceOf(FormData);
+    expect((captured[0] as FormData).get('model')).toBe('openai/gpt-4o-mini-transcribe');
+  });
+
+  it('GET /api/providers/openrouter/models?output=transcription returns STT models', async () => {
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', vi.fn(async (url: any, init?: any) =>
+      String(url).includes('output_modalities=transcription')
+        ? new Response(JSON.stringify({ data: [{ id: 'openai/whisper-1', name: 'OpenAI: Whisper' }] }), { status: 200 })
+        : realFetch(url, init)
+    ));
+    const { status, json } = await request(server, 'GET', '/api/providers/openrouter/models?output=transcription');
+    expect(status).toBe(200);
+    expect(json.data.models[0]).toMatchObject({ id: 'openai/whisper-1', name: 'OpenAI: Whisper' });
+  });
+
   it('runTurn routes the classifier to its assigned client', async () => {
     await session.applySettings({ assignments: { classifier: { providerId: 'lm', model: 'cls' } } });
     clients.lm.chatCompletion.mockImplementation(async () => ({ content: '{"specialistId":"general"}', raw: {} }));

@@ -34,6 +34,26 @@ describe('Voice Transcription', () => {
     expect(capturedBody instanceof FormData).toBe(true);
   });
 
+  it('transcribeAudio uses the configured STT model', async () => {
+    const mockAudioBuffer = Buffer.from('fake-wav-data');
+    let capturedBody: any = null;
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, opts: any) => {
+      capturedBody = opts.body;
+      return {
+        ok: true,
+        json: async () => ({ text: 'ok' })
+      } as any;
+    });
+
+    await client.transcribeAudio(mockAudioBuffer, 'recording.webm', 'openai/gpt-4o-mini-transcribe');
+    expect(capturedBody instanceof FormData).toBe(true);
+    expect((capturedBody as FormData).get('model')).toBe('openai/gpt-4o-mini-transcribe');
+
+    await client.transcribeAudio(mockAudioBuffer);
+    expect((capturedBody as FormData).get('model')).toBe('openai/whisper-large-v3');
+  });
+
   it('transcribeAudio throws on API error', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,

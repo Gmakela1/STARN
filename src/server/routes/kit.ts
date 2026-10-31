@@ -28,7 +28,7 @@ import type {
   /** Static assets directory (built web UI). Optional. */
   webDistPath?: string;
   /** Called when settings are saved, so the host can persist them. */
-  onSettingsSaved?: (settings: { providers: ProviderConfig[]; assignments: SettingsResponse['assignments']; transcriptionEnabled?: boolean; autopilotEnabled?: boolean }) => void;
+  onSettingsSaved?: (settings: { providers: ProviderConfig[]; assignments: SettingsResponse['assignments']; transcriptionEnabled?: boolean; autopilotEnabled?: boolean; voiceInputModel?: string }) => void;
   port?: number;
   /** Autopilot enabled toggle (from config). */
   autopilotEnabled?: boolean;
@@ -283,6 +283,12 @@ export function buildSettings(deps: RouterDeps): SettingsResponse {
     transcriptionEnabled = loadConfig().transcriptionEnabled;
   } catch {}
 
+  let voiceInputModel: string | undefined;
+  try {
+    voiceInputModel = loadConfig().voiceInputModel;
+  } catch {}
+  if (session) voiceInputModel = session.voiceInputModel;
+
   let autopilotEnabledVal = deps.autopilotEnabled ?? true;
   if (session) {
     autopilotEnabledVal = session.autopilotEnabled;
@@ -299,6 +305,7 @@ export function buildSettings(deps: RouterDeps): SettingsResponse {
     projectPath: deps.projectPath,
     search,
     transcriptionEnabled,
+    voiceInputModel,
     autopilotEnabled: autopilotEnabledVal
   };
 }

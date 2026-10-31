@@ -12,6 +12,7 @@ vi.mock('../api/client', () => ({
     saveSearchSettings: vi.fn(),
     probeSearchProvider: vi.fn(),
     listProviderModels: vi.fn(),
+    listTranscriptionModels: vi.fn(),
     fetchProjects: vi.fn(),
     browseFolders: vi.fn(),
     switchProject: vi.fn()
@@ -57,6 +58,12 @@ describe('SettingsView save bars', () => {
     mocked.fetchSearchSettings.mockResolvedValue({ provider: 'openrouter', hasTavilyKey: false, hasBraveKey: false });
     mocked.fetchProjects.mockResolvedValue({ projects: [], activeId: '' } as never);
     mocked.listProviderModels.mockRejectedValue(new Error('offline'));
+    mocked.listTranscriptionModels.mockResolvedValue({
+      models: [
+        { id: 'openai/whisper-large-v3-turbo', name: 'Whisper Large V3 Turbo' },
+        { id: 'openai/gpt-4o-mini-transcribe', name: 'GPT-4o Mini Transcribe' }
+      ]
+    });
   });
 
   it('starts clean with Save disabled and the group containing Autopilot before Web Search', async () => {
@@ -141,6 +148,41 @@ describe('SettingsView save bars', () => {
     const alert = await within(aiGroup()).findByRole('alert');
     expect(alert).toHaveTextContent("Couldn't save: disk full. Your changes are still here. Try again.");
     expect(screen.getByRole('switch', { name: 'Toggle autopilot' })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('renders the Speech-to-text section and renames Transcriber to Document OCR', async () => {
+    await renderLoaded();
+    const group = aiGroup();
+    expect(within(group).getByRole('heading', { name: 'Speech-to-text (voice input)' })).toBeInTheDocument();
+    expect(within(group).getByText('Used for voice dictation in the Studio and question answers.')).toBeInTheDocument();
+    const stt = within(group).getByRole('region', { name: 'Speech-to-text (voice input)' });
+    const select = within(stt).getByLabelText('Model') as HTMLSelectElement;
+    expect(select).toHaveValue('openai/whisper-large-v3');
+    // Display-only rename: the transcriber role shows the OCR label and helper.
+    expect(within(group).getByText('Document OCR (scanned PDFs)')).toBeInTheDocument();
+    expect(within(group).getByText('Reads text from scanned PDF pages.')).toBeInTheDocument();
+    expect(within(group).queryByText('Transcriber')).not.toBeInTheDocument();
+  });
+
+  it('marks Speech-to-text dirty and saves voiceInputModel', async () => {
+    const { user } = await renderLoaded();
+    mocked.saveSettings.mockResolvedValue(buildSettings({ voiceInputModel: 'openai/gpt-4o-mini-transcribe' }));
+    expect(within(aiGroup()).queryByText(/Unsaved changes: Speech-to-text/)).not.toBeInTheDocument();
+    const stt = within(aiGroup()).getByRole('region', { name: 'Speech-to-text (voice input)' });
+    await user.selectOptions(within(stt).getByLabelText('Model'), 'openai/gpt-4o-mini-transcribe');
+    expect(within(aiGroup()).getByText('Unsaved changes: Speech-to-text')).toBeInTheDocument();
+    await user.click(within(aiGroup()).getByRole('button', { name: 'Save AI settings' }));
+    expect(mocked.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ voiceInputModel: 'openai/gpt-4o-mini-transcribe' }));
+  });
+
+  it('falls back to the static STT list when the transcription fetch fails', async () => {
+    mocked.listTranscriptionModels.mockRejectedValue(new Error('offline'));
+    await renderLoaded();
+    const stt = within(aiGroup()).getByRole('region', { name: 'Speech-to-text (voice input)' });
+    const select = within(stt).getByLabelText('Model') as HTMLSelectElement;
+    const names = Array.from(select.options).map(o => o.value);
+    expect(names).toContain('openai/whisper-1');
+    expect(names).toContain('microsoft/mai-transcribe-2');
   });
 
   it('search bar saves, confirms locally and clears the typed key', async () => {

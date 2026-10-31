@@ -8,7 +8,7 @@ import { resolvePendingCheckpoint, CheckpointDecision, PendingCheckpoint } from 
 import { ChatMessage } from '../openrouter/types.js';
 import { ChatClient } from '../openrouter/types.js';
 import { OpenRouterClient } from '../openrouter/client.js';
-import { Assignments, MODEL_ROLES, OPENROUTER_PROVIDER_ID, ProviderConfig, validateAssignments } from '../config.js';
+import { Assignments, DEFAULT_VOICE_INPUT_MODEL, MODEL_ROLES, OPENROUTER_PROVIDER_ID, ProviderConfig, validateAssignments } from '../config.js';
 import { allProviders, createProviderClient, createRoleClients, RoleClients } from '../models/role-clients.js';
 import { ProjectStateManager } from '../workspace/state.js';
 import { ToolRegistry } from '../tools/registry.js';
@@ -37,6 +37,8 @@ export interface SessionDeps {
   logger?: Logger;
   /** Master toggle for scanned-document transcription (default true). */
   transcriptionEnabled?: boolean;
+  /** Speech-to-text model for voice dictation (default openai/whisper-large-v3). */
+  voiceInputModel?: string;
   /** Master toggle for autopilot mode (default true). This is a mutable property updated by applySettings. */
   autopilotEnabled?: boolean;
 }
@@ -98,6 +100,7 @@ export class ServerSessionManager {
   constructor(deps: SessionDeps) {
     this.deps = { ...deps, providers: deps.providers.map(p => ({ ...p })), assignments: cloneAssignments(deps.assignments) };
     this._autopilotEnabled = deps.autopilotEnabled ?? true;
+    this._voiceInputModel = deps.voiceInputModel?.trim() || DEFAULT_VOICE_INPUT_MODEL;
     this.roleClients = this.buildRoleClients();
   }
 
@@ -116,6 +119,7 @@ export class ServerSessionManager {
   }
 
   private _autopilotEnabled: boolean;
+  private _voiceInputModel: string;
 
   get autopilotEnabled(): boolean {
     return this._autopilotEnabled;
@@ -123,6 +127,11 @@ export class ServerSessionManager {
 
   get busy(): boolean {
     return this.activeAbort !== null;
+  }
+
+  /** Speech-to-text model used for voice dictation. */
+  get voiceInputModel(): string {
+    return this._voiceInputModel;
   }
 
   get apiKey(): string {
@@ -153,12 +162,13 @@ export class ServerSessionManager {
   }
 
   /**
-   * Transcribes audio via OpenRouter Whisper using the session's API key.
+   * Transcribes audio via OpenRouter using the session's API key and the
+   * configured speech-to-text model (settings → voiceInputModel).
    * Creates a throwaway OpenRouterClient to call transcribeAudio.
    */
   async transcribeAudio(audioBuffer: Buffer, filename: string = 'recording.webm'): Promise<string> {
     const client = new OpenRouterClient({ apiKey: this.deps.apiKey });
-    const result = await client.transcribeAudio(audioBuffer, filename);
+    const result = await client.transcribeAudio(audioBuffer, filename, this._voiceInputModel);
     return result.text;
   }
 
@@ -176,7 +186,7 @@ export class ServerSessionManager {
    * Throws (without mutating) on: reserved/duplicate provider ids, or any role
    * referencing an unknown provider.
    */
-  applySettings(update: { providers?: ProviderConfig[]; assignments?: Partial<Assignments>; autopilotEnabled?: boolean }): void {
+  applySettings(update: { providers?: ProviderConfig[]; assignments?: Partial<Assignments>; autopilotEnabled?: boolean; voiceInputModel?: string }): void {
     const providers = update.providers ? update.providers.map(p => ({ ...p })) : this.providers;
     const ids = new Set<string>();
     for (const p of providers) {
@@ -201,6 +211,9 @@ export class ServerSessionManager {
     this.deps.assignments = assignments;
     if (typeof update.autopilotEnabled === 'boolean') {
       this._autopilotEnabled = update.autopilotEnabled;
+    }
+    if (typeof update.voiceInputModel === 'string' && update.voiceInputModel.trim()) {
+      this._voiceInputModel = update.voiceInputModel.trim();
     }
     this.roleClients = this.buildRoleClients();
   }

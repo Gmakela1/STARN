@@ -21,6 +21,7 @@ import {
   SearchSettings,
   SearchProvider,
   SubsystemTradeStudy,
+  TranscriptionModel,
   WorkInstruction
 } from '../types/api';
 
@@ -128,6 +129,8 @@ export const api = {
     call<{ success: boolean; provider: string; latencyMs: number; error?: string }>('POST', '/api/settings/search/probe', body),
   listProviderModels: (id: string) =>
     call<{ models: string[] }>('GET', `/api/providers/${encodeURIComponent(id)}/models`),
+  listTranscriptionModels: () =>
+    call<{ models: TranscriptionModel[] }>('GET', '/api/providers/openrouter/models?output=transcription'),
   probeProvider: (id: string, model: string) =>
     call<{ ok: boolean; detail: string }>('POST', `/api/providers/${encodeURIComponent(id)}/probe`, { model }),
 

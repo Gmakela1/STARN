@@ -2,7 +2,7 @@ import { OPENROUTER_PROVIDER_ID, loadConfig, saveUserConfig, SearchProvider, Pro
 import type { SettingsResponse } from '../types.js';
 import { createSearchClient } from '../../tools/search/search-client.js';
 import { listProviderModels, probeToolCalling } from '../../models/provider-models.js';
-import { fetchLiveOpenRouterModels } from '../../openrouter/models.js';
+import { fetchLiveOpenRouterModels, fetchTranscriptionModels } from '../../openrouter/models.js';
 import { readJsonBody, ok, fail, buildSettings, RouteModule } from './kit.js';
 
 export const settingsModule: RouteModule = {
@@ -104,7 +104,8 @@ export const settingsModule: RouteModule = {
         session.applySettings({
           providers,
           assignments: body.assignments,
-          autopilotEnabled: typeof body.autopilotEnabled === 'boolean' ? body.autopilotEnabled : undefined
+          autopilotEnabled: typeof body.autopilotEnabled === 'boolean' ? body.autopilotEnabled : undefined,
+          voiceInputModel: typeof body.voiceInputModel === 'string' ? body.voiceInputModel : undefined
         });
       } catch (err: any) {
         return fail(res, 400, err?.message ?? 'Invalid settings');
@@ -116,7 +117,8 @@ export const settingsModule: RouteModule = {
         providers: session.providers,
         assignments: session.assignments,
         transcriptionEnabled: typeof body.transcriptionEnabled === 'boolean' ? body.transcriptionEnabled : undefined,
-        autopilotEnabled: autopilotEnabledVal
+        autopilotEnabled: autopilotEnabledVal,
+        voiceInputModel: typeof body.voiceInputModel === 'string' ? body.voiceInputModel : undefined
       });
 
       const response: SettingsResponse = buildSettings(deps);
@@ -137,6 +139,17 @@ export const settingsModule: RouteModule = {
       if (!provider) return fail(res, 404, `Unknown provider "${providerId}"`);
 
       if (method === 'GET' && segments[3] === 'models') {
+        // Transcription variant: STT models are excluded from the default
+        // catalog, so they are fetched with output_modalities=transcription.
+        if (url.searchParams.get('output') === 'transcription') {
+          try {
+            const apiKey = provider.id === OPENROUTER_PROVIDER_ID ? provider.apiKey : undefined;
+            const models = await fetchTranscriptionModels(apiKey);
+            return ok(res, { models });
+          } catch (err: any) {
+            return fail(res, 502, err?.message ?? 'Provider unreachable');
+          }
+        }
         try {
           const models = provider.id === OPENROUTER_PROVIDER_ID
             ? (await fetchLiveOpenRouterModels(provider.apiKey)).map(m => m.id)

@@ -124,7 +124,7 @@ export async function promptProjectSelection(
   return { action: 'select', projectId: selected };
 }
 
-export async function promptInputWithVoice(message: string, client?: OpenRouterClient): Promise<string> {
+export async function promptInputWithVoice(message: string, client?: OpenRouterClient, voiceModel?: string): Promise<string> {
   const raw = await input({
     message,
     validate: val => (val.trim() ? true : 'Please enter a prompt.')
@@ -133,10 +133,10 @@ export async function promptInputWithVoice(message: string, client?: OpenRouterC
   if (isVoiceCommand(raw) && client) {
     console.log(chalk.cyan('🎤 Recording... (press Enter to stop and transcribe)'));
     try {
-      const transcribed = await captureVoicePrompt(client);
+      const transcribed = await captureVoicePrompt(client, voiceModel);
       if (!transcribed) {
         console.log(chalk.yellow('No speech captured. Please try again.'));
-        return promptInputWithVoice(message, client);
+        return promptInputWithVoice(message, client, voiceModel);
       }
       return await input({
         message: 'Edit your prompt (or press Enter to submit):',
@@ -144,15 +144,15 @@ export async function promptInputWithVoice(message: string, client?: OpenRouterC
       });
     } catch (err: any) {
       console.log(chalk.yellow(`Voice capture failed: ${err.message}`));
-      return promptInputWithVoice(message, client);
+      return promptInputWithVoice(message, client, voiceModel);
     }
   }
 
   return raw;
 }
 
-export async function promptUserQuery(client?: OpenRouterClient): Promise<string> {
-  return promptInputWithVoice('What would you like to build or inspect? (type /voice to speak)', client);
+export async function promptUserQuery(client?: OpenRouterClient, voiceModel?: string): Promise<string> {
+  return promptInputWithVoice('What would you like to build or inspect? (type /voice to speak)', client, voiceModel);
 }
 
 export async function promptContinueSession(): Promise<boolean> {

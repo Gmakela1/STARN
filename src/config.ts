@@ -12,6 +12,9 @@ export type ModelRole = 'drafting' | 'critic' | 'classifier' | 'compaction' | 't
 export const MODEL_ROLES: ModelRole[] = ['drafting', 'critic', 'classifier', 'compaction', 'transcriber'];
 export const DEFAULT_TRANSCRIBER_MODEL = 'google/gemini-2.5-flash';
 
+/** Speech-to-text model used for voice dictation (Studio + question answers). */
+export const DEFAULT_VOICE_INPUT_MODEL = 'openai/whisper-large-v3';
+
 export type SearchProvider = 'openrouter' | 'tavily' | 'brave';
 
 export interface SearchConfig {
@@ -50,6 +53,8 @@ export interface StarnConfig {
   providers: ProviderConfig[];
   assignments: Assignments;
   transcriptionEnabled: boolean;
+  /** Speech-to-text model for voice dictation. */
+  voiceInputModel: string;
   autopilotEnabled: boolean;
   search?: SearchConfig;
 }
@@ -65,6 +70,7 @@ export interface UserConfigFile {
   providers?: ProviderConfig[];
   assignments?: Partial<Assignments>;
   transcription?: { enabled?: boolean };
+  voiceInput?: { model?: string };
   autopilot?: { enabled?: boolean };
   search?: SearchConfig;
 }
@@ -117,6 +123,16 @@ export function transcriptionEnabled(file: UserConfigFile, env: NodeJS.ProcessEn
     if (v === '1' || v === 'true' || v === 'on' || v === 'yes') return true;
   }
   return file.transcription?.enabled !== false;
+}
+
+/**
+ * Resolves the speech-to-text model for voice dictation. Env override wins
+ * over the config file; default is openai/whisper-large-v3.
+ */
+export function voiceInputModel(file: UserConfigFile, env: NodeJS.ProcessEnv = process.env): string {
+  const envVal = env.STARN_VOICE_INPUT_MODEL?.trim();
+  if (envVal) return envVal;
+  return file.voiceInput?.model?.trim() || DEFAULT_VOICE_INPUT_MODEL;
 }
 
 /**
@@ -229,6 +245,7 @@ export function loadConfig(customGlobalDir?: string): StarnConfig {
     providers,
     assignments,
     transcriptionEnabled: transcriptionEnabled(fileConfig),
+    voiceInputModel: voiceInputModel(fileConfig),
     autopilotEnabled: autopilotEnabled(fileConfig),
     search
   };

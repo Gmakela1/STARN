@@ -115,3 +115,55 @@ export async function fetchLiveOpenRouterModels(apiKey?: string): Promise<ModelO
     return AVAILABLE_MODELS;
   }
 }
+
+/**
+ * Static fallback for speech-to-text model selection. These models are excluded
+ * from OpenRouter's default /api/v1/models catalog; they are only discoverable
+ * via the `output_modalities=transcription` query parameter.
+ */
+export const STT_MODELS: ModelOption[] = [
+  { id: 'openai/whisper-large-v3-turbo', name: 'Whisper Large V3 Turbo', description: 'Fast, accurate speech-to-text (recommended for voice dictation)' },
+  { id: 'openai/gpt-4o-transcribe', name: 'GPT-4o Transcribe', description: 'Highest-accuracy speech-to-text' },
+  { id: 'openai/gpt-4o-mini-transcribe', name: 'GPT-4o Mini Transcribe', description: 'Low-cost, fast speech-to-text' },
+  { id: 'microsoft/mai-transcribe-2', name: 'MAI Transcribe 2', description: 'Microsoft speech-to-text, latest generation' },
+  { id: 'microsoft/mai-transcribe-1.5', name: 'MAI Transcribe 1.5', description: 'Microsoft speech-to-text, previous generation' },
+  { id: 'openai/whisper-large-v3', name: 'Whisper Large V3', description: 'Classic Whisper model (previous default)' },
+  { id: 'openai/whisper-1', name: 'Whisper 1', description: 'Original Whisper model, lowest cost' }
+];
+
+/**
+ * Fetches the transcription-capable (speech-to-text) models from OpenRouter.
+ * STT models are excluded from the default catalog, so the request must pass
+ * `output_modalities=transcription`. Falls back to STT_MODELS on any failure.
+ */
+export async function fetchTranscriptionModels(apiKey?: string): Promise<ModelOption[]> {
+  const url = 'https://openrouter.ai/api/v1/models?output_modalities=transcription';
+  const headers: Record<string, string> = {};
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  try {
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      return STT_MODELS;
+    }
+    const json = (await res.json()) as any;
+    const rawList: any[] = json.data || [];
+
+    if (!Array.isArray(rawList) || rawList.length === 0) {
+      return STT_MODELS;
+    }
+
+    return rawList.map(item => ({
+      id: item.id,
+      name: item.name || item.id,
+      description: item.description || '',
+      contextLength: item.context_length,
+      contextLengthFormatted: formatContext(item.context_length),
+      pricingFormatted: item.pricing ? formatPricing(item.pricing) : ''
+    }));
+  } catch (_err) {
+    return STT_MODELS;
+  }
+}

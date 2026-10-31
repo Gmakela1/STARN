@@ -179,16 +179,19 @@ async function main() {
   let roleClients = buildRoleClients();
 
   /** Persists provider/assignment changes (from web Settings or /models) and keeps legacy mirrors in sync. */
-  const persistModelSettings = (s: { providers: ProviderConfig[]; assignments: Assignments }) => {
+  const persistModelSettings = (s: { providers: ProviderConfig[]; assignments: Assignments; transcriptionEnabled?: boolean; autopilotEnabled?: boolean; voiceInputModel?: string }) => {
     config.providers = s.providers;
     config.assignments = s.assignments;
     roleClients = buildRoleClients();
     config.defaultModel = s.assignments.drafting.model;
     config.compactionModel = s.assignments.compaction.model;
     const transcriptionEnabled =
-      typeof (s as any).transcriptionEnabled === 'boolean' ? (s as any).transcriptionEnabled : config.transcriptionEnabled;
+      typeof s.transcriptionEnabled === 'boolean' ? s.transcriptionEnabled : config.transcriptionEnabled;
     const autopilotEnabled =
-      typeof (s as any).autopilotEnabled === 'boolean' ? (s as any).autopilotEnabled : config.autopilotEnabled;
+      typeof s.autopilotEnabled === 'boolean' ? s.autopilotEnabled : config.autopilotEnabled;
+    const voiceInputModel = typeof s.voiceInputModel === 'string' && s.voiceInputModel.trim()
+      ? s.voiceInputModel.trim()
+      : config.voiceInputModel;
     saveUserConfig(
       {
         providers: s.providers,
@@ -196,12 +199,14 @@ async function main() {
         defaultModel: s.assignments.drafting.model,
         compactionModel: s.assignments.compaction.model,
         transcription: { enabled: transcriptionEnabled },
+        voiceInput: { model: voiceInputModel },
         autopilot: { enabled: autopilotEnabled }
       },
       config.globalDir
     );
     config.transcriptionEnabled = transcriptionEnabled;
     config.autopilotEnabled = autopilotEnabled;
+    config.voiceInputModel = voiceInputModel;
   };
 
   const toolRegistry = new ToolRegistry({ transcriptionEnabled: config.transcriptionEnabled });
@@ -226,6 +231,7 @@ async function main() {
       keepRecentTokens: config.keepRecentTokens,
       logger: projectContext.logger,
       transcriptionEnabled: config.transcriptionEnabled,
+      voiceInputModel: config.voiceInputModel,
       autopilotEnabled: config.autopilotEnabled
     });
 
@@ -252,7 +258,7 @@ async function main() {
   while (true) {
     const sessionTokens = estimateTokens(sessionMessages);
     printSectionHeader(`Active Session [Phase: ${projectContext.stateManager.getState().workflow?.activePhase?.toUpperCase() || 'CONOPS'}] ${formatContextGauge(sessionTokens, config.compressionThreshold, config.compactionModel)}`);
-    const userPrompt = await promptUserQuery(voiceClient);
+    const userPrompt = await promptUserQuery(voiceClient, config.voiceInputModel);
 
     let currentPrompt = userPrompt;
 
@@ -301,6 +307,7 @@ async function main() {
         keepRecentTokens: config.keepRecentTokens,
         logger: projectContext.logger,
         transcriptionEnabled: config.transcriptionEnabled,
+        voiceInputModel: config.voiceInputModel,
         autopilotEnabled: config.autopilotEnabled
       });
       session.setSessionMessages(sessionMessages);
@@ -673,7 +680,7 @@ async function main() {
           console.log(formatCompactCriticPass(crit));
         } else if (crit && !crit.passed && result.autoRevisionsRun >= 2) {
           // Auto-revisions exhausted — user must intervene
-          const critAction = await handleCriticFailure(crit, result.specialistName, voiceClient);
+          const critAction = await handleCriticFailure(crit, result.specialistName, voiceClient, config.voiceInputModel);
           if (critAction.action === 'feedback' && critAction.feedback) {
             currentPrompt = critAction.feedback;
             continue; // restart turn loop with targeted feedback
@@ -699,6 +706,7 @@ async function main() {
             client: roleClients.drafting.client,
             model: roleClients.drafting.model,
             voiceClient,
+            voiceModel: config.voiceInputModel,
             toolRegistry
           });
 

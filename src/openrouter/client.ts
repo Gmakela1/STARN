@@ -1,5 +1,6 @@
 import { ChatClient, ChatCompletionOptions, ChatCompletionResult, TranscriptionResult } from './types.js';
 import { Logger } from '../util/logger.js';
+import { DEFAULT_VOICE_INPUT_MODEL } from '../config.js';
 
 export const OPENROUTER_API_ROOT = 'https://openrouter.ai/api/v1';
 
@@ -193,7 +194,11 @@ export class OpenRouterClient extends OpenAICompatClient {
     return super.chatCompletion(options);
   }
 
-  async transcribeAudio(audioBuffer: Buffer, filename: string = 'recording.wav'): Promise<TranscriptionResult> {
+  async transcribeAudio(
+    audioBuffer: Buffer,
+    filename: string = 'recording.wav',
+    model: string = DEFAULT_VOICE_INPUT_MODEL
+  ): Promise<TranscriptionResult> {
     if (!this.apiKey) {
       throw new Error('OPENROUTER_API_KEY is not configured.');
     }
@@ -201,7 +206,7 @@ export class OpenRouterClient extends OpenAICompatClient {
     const formData = new FormData();
     const blob = new Blob([audioBuffer], { type: 'audio/wav' });
     formData.append('file', blob, filename);
-    formData.append('model', 'openai/whisper-large-v3');
+    formData.append('model', model || DEFAULT_VOICE_INPUT_MODEL);
 
     const res = await fetch(`${this.baseUrl}/audio/transcriptions`, {
       method: 'POST',

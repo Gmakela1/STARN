@@ -24,7 +24,8 @@ import {
   Settings,
   ProjectRecord,
   FolderEntry,
-  SearchProvider
+  SearchProvider,
+  TranscriptionModel
 } from '../types/api';
 
 export interface SettingsViewProps {
@@ -37,7 +38,20 @@ const ROLES: Array<{ role: ModelRole; label: string; note?: string }> = [
   { role: 'critic', label: 'Critic', note: 'The critic gates every deliverable; assign your strongest model.' },
   { role: 'classifier', label: 'Classifier', note: 'Routes each request to a specialist. A small fast model is fine.' },
   { role: 'compaction', label: 'Compaction', note: 'Summarizes long sessions.' },
-  { role: 'transcriber', label: 'Transcriber', note: 'Reads scanned PDFs (manuals, datasheets). Recommended: gemini-2.5-flash (low cost). Local: qwen2.5vl:7b.' }
+  { role: 'transcriber', label: 'Document OCR (scanned PDFs)', note: 'Reads text from scanned PDF pages.' }
+];
+
+export const DEFAULT_VOICE_INPUT_MODEL = 'openai/whisper-large-v3';
+
+/** Static fallback when the live transcription model list cannot be fetched. */
+export const STT_MODEL_FALLBACK: TranscriptionModel[] = [
+  { id: 'openai/whisper-large-v3-turbo', name: 'Whisper Large V3 Turbo', description: 'Fast, accurate speech-to-text (recommended for voice dictation)' },
+  { id: 'openai/gpt-4o-transcribe', name: 'GPT-4o Transcribe', description: 'Highest-accuracy speech-to-text' },
+  { id: 'openai/gpt-4o-mini-transcribe', name: 'GPT-4o Mini Transcribe', description: 'Low-cost, fast speech-to-text' },
+  { id: 'microsoft/mai-transcribe-2', name: 'MAI Transcribe 2', description: 'Microsoft speech-to-text, latest generation' },
+  { id: 'microsoft/mai-transcribe-1.5', name: 'MAI Transcribe 1.5', description: 'Microsoft speech-to-text, previous generation' },
+  { id: 'openai/whisper-large-v3', name: 'Whisper Large V3', description: 'Classic Whisper model (previous default)' },
+  { id: 'openai/whisper-1', name: 'Whisper 1', description: 'Original Whisper model, lowest cost' }
 ];
 
 const SEARCH_OPTIONS: Array<{ value: SearchProvider; title: string; blurb: string }> = [
@@ -69,6 +83,8 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
   const [searchStatus, setSearchStatus] = useState<SettingsSaveBarStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [transcriptionEnabled, setTranscriptionEnabled] = useState(true);
+  const [voiceInputModel, setVoiceInputModel] = useState<string>(DEFAULT_VOICE_INPUT_MODEL);
+  const [sttModels, setSttModels] = useState<TranscriptionModel[]>(STT_MODEL_FALLBACK);
   const [autopilotEnabled, setAutopilotEnabled] = useState(true);
 
   // Project switching state
@@ -145,6 +161,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
     setProviders(s.providers.map(p => ({ ...p, apiKey: undefined })));
     setAssignments(s.assignments);
     setTranscriptionEnabled(s.transcriptionEnabled ?? true);
+    setVoiceInputModel(s.voiceInputModel || DEFAULT_VOICE_INPUT_MODEL);
     setAutopilotEnabled(s.autopilotEnabled ?? true);
   };
 
@@ -163,6 +180,22 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
       setHasBraveKey(res.hasBraveKey);
     } catch {}
   };
+
+  const loadSttModels = async () => {
+    try {
+      const res = await api.listTranscriptionModels();
+      if (Array.isArray(res.models) && res.models.length > 0) {
+        setSttModels(res.models);
+      }
+    } catch {
+      setSttModels(STT_MODEL_FALLBACK);
+    }
+  };
+
+  useEffect(() => {
+    void loadSttModels();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const discardSearch = () => {
     setSearchProvider(savedSearchProvider);
@@ -247,14 +280,17 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
     settings && assignments && JSON.stringify(assignments.drafting) !== JSON.stringify(settings.assignments.drafting)
   );
 
+  const voiceInputDirty = Boolean(settings && voiceInputModel !== (settings.voiceInputModel || DEFAULT_VOICE_INPUT_MODEL));
+
   const aiDirtyParts = useMemo(() => {
     const parts: string[] = [];
     if (dirtyProviders) parts.push('Providers');
     if (assignmentsDirty) parts.push('Model assignments');
     if (settings && transcriptionEnabled !== (settings.transcriptionEnabled ?? true)) parts.push('Transcription');
+    if (voiceInputDirty) parts.push('Speech-to-text');
     if (settings && autopilotEnabled !== (settings.autopilotEnabled ?? true)) parts.push('Autopilot');
     return parts;
-  }, [settings, dirtyProviders, assignmentsDirty, transcriptionEnabled, autopilotEnabled]);
+  }, [settings, dirtyProviders, assignmentsDirty, transcriptionEnabled, voiceInputDirty, autopilotEnabled]);
 
   const searchDirtyParts: string[] = [];
   if (searchProvider !== savedSearchProvider) searchDirtyParts.push('Search provider');
@@ -313,6 +349,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
           })),
         assignments,
         transcriptionEnabled,
+        voiceInputModel,
         autopilotEnabled
       });
       load(updated);
@@ -590,7 +627,7 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
             <div>
               <h2 id="transcription-heading" className="text-sm font-bold text-slate-200">Document Transcription</h2>
               <p className="mt-1 text-xs leading-relaxed text-slate-400">
-                When on, scanned PDFs without text (manuals, datasheets) are read by the Transcriber model. Cost: ~$0.0005/page on the
+                When on, scanned PDFs without text (manuals, datasheets) are read by the Document OCR model. Cost: ~$0.0005/page on the
                 recommended model — a 25-page manual ≈ $0.05. Local models (Ollama / LM Studio) cost $0/token.
               </p>
             </div>
@@ -697,6 +734,36 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
           <div className="mt-3 rounded-lg border border-dashed border-slate-700 bg-slate-950/40 p-4 opacity-40 pointer-events-none">
             <p className="text-xs font-semibold text-slate-400">Per-doc token budget &amp; model-based cost estimate</p>
             <p className="mt-1 text-[11px] text-slate-500">Coming in a future release.</p>
+          </div>
+        </section>
+
+        {/* Speech-to-text (voice input) */}
+        <section aria-labelledby="stt-heading" className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+          <h2 id="stt-heading" className="text-sm font-bold text-slate-200">Speech-to-text (voice input)</h2>
+          <p className="mt-1 text-xs text-slate-400">Used for voice dictation in the Studio and question answers.</p>
+          <div className="mt-3">
+            <label htmlFor="voice-input-model" className="text-xs font-medium text-slate-300">Model</label>
+            <select
+              id="voice-input-model"
+              value={voiceInputModel}
+              onChange={e => {
+                setAiStatus(null);
+                setVoiceInputModel(e.target.value);
+              }}
+              className={inputClass}
+            >
+              {!sttModels.some(m => m.id === voiceInputModel) && (
+                <option value={voiceInputModel}>{voiceInputModel || DEFAULT_VOICE_INPUT_MODEL}</option>
+              )}
+              {sttModels.map(m => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              {sttModels.find(m => m.id === voiceInputModel)?.description || 'Runs on OpenRouter (built-in provider).'}
+            </p>
           </div>
         </section>
 

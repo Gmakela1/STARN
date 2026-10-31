@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OpenRouterClient } from '../src/openrouter/client.js';
-import { AVAILABLE_MODELS, fetchLiveOpenRouterModels } from '../src/openrouter/models.js';
+import { AVAILABLE_MODELS, STT_MODELS, fetchLiveOpenRouterModels, fetchTranscriptionModels } from '../src/openrouter/models.js';
 
 describe('OpenRouter Models', () => {
   it('defines standard physical engineering compatible models', () => {
@@ -47,6 +47,62 @@ describe('OpenRouter Models', () => {
     const models = await fetchLiveOpenRouterModels('sk-or-test-key');
     expect(models.length).toBeGreaterThanOrEqual(AVAILABLE_MODELS.length);
     expect(models[0].id).toBe(AVAILABLE_MODELS[0].id);
+  });
+});
+
+describe('fetchTranscriptionModels', () => {
+  it('queries the transcription output modality and maps results', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'openai/whisper-large-v3-turbo',
+            name: 'OpenAI: Whisper Large V3 Turbo',
+            context_length: 8192,
+            pricing: { prompt: '0.0000002', completion: '0' },
+            description: 'Fast speech-to-text'
+          }
+        ]
+      })
+    });
+    global.fetch = mockFetch;
+
+    const models = await fetchTranscriptionModels('sk-or-test-key');
+    expect(mockFetch.mock.calls[0][0]).toContain('output_modalities=transcription');
+    expect(mockFetch.mock.calls[0][1].headers.Authorization).toBe('Bearer sk-or-test-key');
+    expect(models.length).toBe(1);
+    expect(models[0].id).toBe('openai/whisper-large-v3-turbo');
+    expect(models[0].name).toBe('OpenAI: Whisper Large V3 Turbo');
+    expect(models[0].pricingFormatted).toContain('$0.20');
+  });
+
+  it('falls back to STT_MODELS when the fetch fails', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('Network offline'));
+
+    const models = await fetchTranscriptionModels();
+    expect(models.map(m => m.id)).toEqual(STT_MODELS.map(m => m.id));
+    expect(models[0].name).toBe(STT_MODELS[0].name);
+  });
+
+  it('falls back to STT_MODELS on non-OK response or empty list', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 503 });
+    expect((await fetchTranscriptionModels()).map(m => m.id)).toEqual(STT_MODELS.map(m => m.id));
+
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) });
+    expect((await fetchTranscriptionModels()).map(m => m.id)).toEqual(STT_MODELS.map(m => m.id));
+  });
+
+  it('STT_MODELS contains the seven known transcription models', () => {
+    expect(STT_MODELS.map(m => m.id)).toEqual([
+      'openai/whisper-large-v3-turbo',
+      'openai/gpt-4o-transcribe',
+      'openai/gpt-4o-mini-transcribe',
+      'microsoft/mai-transcribe-2',
+      'microsoft/mai-transcribe-1.5',
+      'openai/whisper-large-v3',
+      'openai/whisper-1'
+    ]);
   });
 });
 

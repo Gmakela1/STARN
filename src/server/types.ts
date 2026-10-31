@@ -103,6 +103,8 @@ export interface SettingsResponse {
   providers: ProviderView[];
   assignments: Assignments;
   transcriptionEnabled: boolean;
+  /** Speech-to-text model for voice dictation. */
+  voiceInputModel?: string;
   autopilotEnabled: boolean;
   port: number;
   projectPath: string;

@@ -315,10 +315,20 @@ export interface SearchSettings {
   hasBraveKey: boolean;
 }
 
+/** Speech-to-text model option (voice dictation). */
+export interface TranscriptionModel {
+  id: string;
+  name: string;
+  description?: string;
+  pricingFormatted?: string;
+}
+
 export interface Settings {
   providers: ProviderView[];
   assignments: Assignments;
   transcriptionEnabled: boolean;
+  /** Speech-to-text model for voice dictation. */
+  voiceInputModel?: string;
   autopilotEnabled: boolean;
   port: number;
   projectPath: string;
@@ -330,6 +340,7 @@ export interface SettingsUpdate {
   providers?: ProviderInput[];
   assignments?: Partial<Assignments>;
   transcriptionEnabled?: boolean;
+  voiceInputModel?: string;
   autopilotEnabled?: boolean;
 }
 

@@ -30,6 +30,8 @@ export interface CheckpointReviewOptions {
   model?: string;
   /** OpenRouter client for voice transcription. */
   voiceClient?: OpenRouterClient;
+  /** Speech-to-text model for voice transcription. */
+  voiceModel?: string;
   toolRegistry?: ToolRegistry;
 }
 
@@ -169,7 +171,8 @@ export async function runHumanCheckpoint(
     if (action === 'feedback') {
       const feedback = await promptInputWithVoice(
         'Enter your response / feedback for the agent:',
-        options.voiceClient
+        options.voiceClient,
+        options.voiceModel
       );
       userFeedback = enrichFeedbackWithCritic(feedback, criticResult);
       finalAction = 'feedback';
@@ -267,7 +270,8 @@ export async function runHumanCheckpoint(
 export async function handleCriticFailure(
   criticResult: CriticResult,
   specialistName: string,
-  client?: OpenRouterClient
+  client?: OpenRouterClient,
+  voiceModel?: string
 ): Promise<{ action: 'feedback' | 'override' | 'discard'; feedback?: string; dismissedIndices?: number[] }> {
   console.log(formatCriticFindingsTable(criticResult));
 
@@ -322,7 +326,8 @@ export async function handleCriticFailure(
   // Full feedback
   const feedback = await promptInputWithVoice(
     'Enter your specific guidance for the specialist:',
-    client
+    client,
+    voiceModel
   );
   return { action: 'feedback', feedback };
 }
