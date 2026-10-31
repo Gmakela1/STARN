@@ -47,3 +47,17 @@ describe('Markdown link scheme allowlist', () => {
     expect(screen.getByText('help')).toBeInTheDocument();
   });
 });
+
+// Containment contract: wide tables must scroll horizontally inside the doc
+// pane, never expand it (DevelopmentView keeps max-w-[72ch] only for table-free
+// docs, so this wrapper is what stops a table's intrinsic width from
+// resizing the pane split).
+describe('Markdown table containment', () => {
+  it('wraps rendered tables in an overflow-x-auto scroll container', () => {
+    render(<Markdown content={'| A | B |\n| --- | --- |\n| 1 | 2 |'} />);
+
+    const table = screen.getByRole('table');
+    const wrapper = table.parentElement as HTMLElement;
+    expect(wrapper.className).toContain('overflow-x-auto');
+  });
+});

@@ -1334,22 +1334,23 @@ export default function DevelopmentView({
         )}
       </section>
 
-      {/* §5.I — pane divider (lg+ only; below lg the single chat pane stays full-width) */}
-      <div className="hidden lg:flex">
-        <PaneSplitter
-          leftPct={leftPct}
-          onChange={setLeftPct}
-          onCommit={persistSplit}
-          minPct={minPct}
-          maxPct={maxPct}
-        />
-      </div>
+      {/* §5.I — pane divider (lg+ only; below lg the single chat pane stays full-width).
+          Rendered directly in the pane row: drag math measures parentElement,
+          so a wrapper div (8px wide) would desync it from the real row. */}
+      <PaneSplitter
+        className="hidden lg:flex"
+        leftPct={leftPct}
+        onChange={setLeftPct}
+        onCommit={persistSplit}
+        minPct={minPct}
+        maxPct={maxPct}
+      />
 
       {/* --------------------------- Document pane ---------------------------- */}
       <section
         aria-label="Document workspace"
         style={rightStyle}
-        className={`relative hidden min-h-0 flex-col lg:flex ${rightIsRail ? 'overflow-hidden' : ''}`}
+        className={`relative hidden min-h-0 min-w-0 flex-col lg:flex ${rightIsRail ? 'overflow-hidden' : ''}`}
       >
         {rightIsRail && (
           <div className="absolute inset-0 z-30 hidden w-11 flex-col items-center justify-center gap-2 bg-[#0d1017]/95 lg:flex">
@@ -1553,7 +1554,7 @@ export default function DevelopmentView({
 
         {/* §5.B — drag/drop now lives on the doc body wrapper (the strip is folded) */}
         <div
-          className="relative min-h-0 flex-1"
+          className="relative min-h-0 min-w-0 flex-1"
           onDragOver={e => e.preventDefault()}
           onDrop={e => {
             e.preventDefault();

@@ -19,6 +19,10 @@ export interface PaneSplitterProps {
   /** Clamp ceiling (100 − minPct% so the right pane keeps its floor). */
   maxPct: number;
   label?: string;
+  /** Extra classes (e.g. `hidden lg:flex`). NOTE: drag math measures the
+   *  splitter's parentElement, so callers must not wrap the splitter in a
+   *  narrow decorative div — pass responsive classes here instead. */
+  className?: string;
 }
 
 function clampPct(value: number, minPct: number, maxPct: number): number {
@@ -32,6 +36,7 @@ export default function PaneSplitter({
   minPct,
   maxPct,
   label,
+  className,
 }: PaneSplitterProps) {
   const draggingRef = useRef(false);
   const startXRef = useRef(0);
@@ -104,7 +109,7 @@ export default function PaneSplitter({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onKeyDown={handleKeyDown}
-      className="group flex w-2 shrink-0 cursor-col-resize items-center justify-center bg-[#0d1017] hover:bg-[#11151d] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/60"
+      className={`group flex w-2 shrink-0 cursor-col-resize items-center justify-center bg-[#0d1017] hover:bg-[#11151d] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/60 ${className ?? ''}`}
     >
       <span className="h-8 w-0.5 rounded-full bg-[#3b4658] group-hover:bg-[#ff2a3c]/60" aria-hidden />
     </div>

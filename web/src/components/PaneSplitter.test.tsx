@@ -113,4 +113,44 @@ describe('PaneSplitter', () => {
     const sep = screen.getByRole('separator');
     expect(sep.className).toContain('cursor-col-resize');
   });
+
+  it('merges caller classes so the splitter can sit directly in the pane row', () => {
+    renderWithUser(<PaneSplitter {...baseProps({ className: 'hidden lg:flex' })} />);
+
+    const sep = screen.getByRole('separator');
+    expect(sep.className).toContain('hidden lg:flex');
+    expect(sep.className).toContain('cursor-col-resize');
+  });
+
+  // jsdom lacks pointer capture and reports 0-width rects; stub both so the
+  // drag math is exercised against a known parent width.
+  it('scales pointer deltas by the parent (pane row) width, not the splitter', () => {
+    const props = baseProps({ leftPct: 50 });
+    renderWithUser(
+      <div>
+        <PaneSplitter {...props} />
+      </div>
+    );
+    const sep = screen.getByRole('separator');
+    const parent = sep.parentElement as HTMLElement;
+    vi.spyOn(parent, 'getBoundingClientRect').mockReturnValue({ width: 1000 } as DOMRect);
+    // jsdom 25 has no pointer-capture API or PointerEvent constructor — stub
+    // capture and dispatch MouseEvents carrying pointer fields instead.
+    Object.defineProperty(Element.prototype, 'setPointerCapture', {
+      value: vi.fn(),
+      configurable: true,
+    });
+    const pointerEvent = (type: string, clientX: number) => {
+      const ev = new MouseEvent(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, 'clientX', { value: clientX });
+      Object.defineProperty(ev, 'pointerId', { value: 1 });
+      return ev;
+    };
+
+    sep.dispatchEvent(pointerEvent('pointerdown', 0));
+    sep.dispatchEvent(pointerEvent('pointermove', 50));
+
+    // 50px on a 1000px row = +5% → 55, not clamped and not overscaled.
+    expect(props.onChange).toHaveBeenCalledWith(55);
+  });
 });
