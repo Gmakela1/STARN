@@ -40,7 +40,7 @@ export default function DocDiff({ approved, current }: DocDiffProps) {
             cls = 'bg-[#7f1d1d]/40 text-[#fecaca]';
           }
           return (
-            <div key={i} className={`flex ${cls}`} aria-hidden={false}>
+            <div key={i} className={`flex ${cls}`}>
               <span className="w-6 shrink-0 select-none text-right pr-1">{sign}</span>
               <span className="whitespace-pre-wrap break-all">{row.text === '' ? '\u00A0' : row.text}</span>
             </div>

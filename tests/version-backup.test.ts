@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -104,5 +104,18 @@ describe('findApprovedBackup', () => {
     expect(findApprovedBackup(projectDir, 'CONOPS', null)).toBeNull();
     expect(findApprovedBackup(projectDir, 'CONOPS', undefined)).toBeNull();
     expect(findApprovedBackup(projectDir, 'CONOPS', 'abc')).toBeNull(); // no versions dir yet
+  });
+
+  it('returns null instead of throwing when filesystem reads fail', () => {
+    const versions = path.join(projectDir, '.starn', 'versions');
+    fs.mkdirSync(versions, { recursive: true });
+    const spy = vi.spyOn(fs, 'readdirSync').mockImplementation(() => {
+      throw new Error('EACCES: permission denied');
+    });
+    try {
+      expect(findApprovedBackup(projectDir, 'CONOPS', 'deadbeef')).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

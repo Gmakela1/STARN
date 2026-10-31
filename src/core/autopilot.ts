@@ -796,8 +796,10 @@ You MUST write the complete updated document to docs/${phaseId.toUpperCase()}.md
     this.emit({ kind: 'status', message: `Ripple scan: ${affectedPhaseIds.length} documents flagged` });
     for (const targetId of affectedPhaseIds) {
       const targetPhase = ORDERED_WORKFLOW_PHASES.find(p => p.id === targetId)!;
-      // Each flagged doc ripples at most once per run, success or failure —
-      // a ripple fix that edits another approved doc must not cascade.
+      // Record in the ledger immediately, success or failure. The actual
+      // at-most-once-per-run dedupe lives in the ledger gate at the call site
+      // (runPrePhaseRipples), not here — a later-boundary scan in a NEW run can
+      // legitimately re-fix the same doc for NEW upstream changes.
       this._rippleProcessed.add(targetId);
       if (signal?.aborted) {
         return;
