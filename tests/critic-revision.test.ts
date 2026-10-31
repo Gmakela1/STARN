@@ -2,6 +2,17 @@ import { describe, it, expect } from 'vitest';
 import { buildRevisionGuidance, buildCriticNote } from '../src/core/critic-revision.js';
 import { CriticResult } from '../src/core/critic.js';
 
+// Source of truth: the REVISION SCOPE & MANDATE block appended by
+// buildRevisionGuidance (src/core/critic-revision.ts) to both revision branches.
+const REVISION_SCOPE_MANDATE =
+  'REVISION SCOPE & MANDATE: Address ONLY the issues the critic flagged, in the sections named. ' +
+  'You are authorized and expected to think through each flagged item and use your tools to ground the fix — ' +
+  'web_search for sourcing/market data, doc_transcribe for image-only datasheets in reference/, ' +
+  'fs_read for baseline context. Do NOT restructure or rewrite unrelated sections. ' +
+  'If a flagged fix would require changing an approved upstream baseline figure (DD/ICD/requirements value), ' +
+  'do NOT change it: apply the baseline-conflict protocol instead — keep the approved figure binding, ' +
+  'mark affected rows/items pending reconciliation, and record the conflict as an Open Question.';
+
 const failingResult: CriticResult = {
   passed: false,
   score: 8.9,
@@ -18,7 +29,8 @@ describe('buildRevisionGuidance', () => {
       'The Critic evaluated your targeted edits to docs/CONOPS.md and found the following issues:\n' +
         '- PTO spline dimension omitted\n\n' +
         'Actionable Guidance:\nSpecify 1-3/8 inch 6-spline shaft in Section 3.2.\n\n' +
-        'INSTRUCTION: Use the fs_edit tool to surgically resolve these specific issues in the document. Do NOT rewrite or regenerate the entire document.'
+        'INSTRUCTION: Use the fs_edit tool to surgically resolve these specific issues in the document. Do NOT rewrite or regenerate the entire document.\n\n' +
+        REVISION_SCOPE_MANDATE
     );
   });
 
@@ -28,8 +40,38 @@ describe('buildRevisionGuidance', () => {
       'The Critic evaluated your draft and found the following weaknesses:\n' +
         '- PTO spline dimension omitted\n\n' +
         'Actionable Guidance:\nSpecify 1-3/8 inch 6-spline shaft in Section 3.2.\n\n' +
-        'Please revise the deliverable to resolve all weaknesses while maintaining rigorous physical engineering standards and program alignment.'
+        'Please revise the deliverable to resolve all weaknesses while maintaining rigorous physical engineering standards and program alignment.\n\n' +
+        REVISION_SCOPE_MANDATE
     );
+  });
+
+  it('appends the revision scope & mandate block with scope-only language', () => {
+    expect(buildRevisionGuidance(failingResult, true, 'CONOPS')).toContain(
+      'REVISION SCOPE & MANDATE: Address ONLY the issues the critic flagged, in the sections named.'
+    );
+    expect(buildRevisionGuidance(failingResult, false, 'CONOPS')).toContain(
+      'REVISION SCOPE & MANDATE: Address ONLY the issues the critic flagged, in the sections named.'
+    );
+    expect(buildRevisionGuidance(failingResult, false, 'CONOPS')).toContain(
+      'Do NOT restructure or rewrite unrelated sections.'
+    );
+  });
+
+  it('authorizes tool-grounded research in the mandate block', () => {
+    for (const isDeltaReview of [true, false]) {
+      const guidance = buildRevisionGuidance(failingResult, isDeltaReview, 'CONOPS');
+      expect(guidance).toContain('web_search for sourcing/market data');
+      expect(guidance).toContain('doc_transcribe for image-only datasheets in reference/');
+      expect(guidance).toContain('fs_read for baseline context');
+    }
+  });
+
+  it('includes the baseline-conflict escape hatch in the mandate block', () => {
+    for (const isDeltaReview of [true, false]) {
+      const guidance = buildRevisionGuidance(failingResult, isDeltaReview, 'CONOPS');
+      expect(guidance).toContain('apply the baseline-conflict protocol instead');
+      expect(guidance).toContain('keep the approved figure binding, mark affected rows/items pending reconciliation, and record the conflict as an Open Question.');
+    }
   });
 
   it('falls back to "Fix weaknesses" when actionableGuidance is empty', () => {
