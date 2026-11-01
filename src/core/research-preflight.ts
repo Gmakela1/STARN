@@ -65,7 +65,11 @@ export const RESEARCH_FENCE_END = '<<< END UNTRUSTED WEB RESEARCH >>>';
  * - strip leading '#' (markdown heading forgery),
  * - turn setext underline lines ('===', '---') into '___',
  * - prefix lines matching a deterministic section heading (case-insensitive
- *   contains) with 'echoed: ' so they cannot claim section status.
+ *   contains) with 'echoed: ' so they cannot claim section status,
+ * - neutralize fence-marker lines: a model reply echoing '<<< END UNTRUSTED
+ *   ... >>>' would otherwise close (or open) the untrusted fence early; the
+ *   line is echoed with its '<<<' broken so a substring search for the real
+ *   marker cannot match it either.
  */
 const ECHOED_HEADING_PATTERNS = [
   /settled decisions/i,
@@ -74,10 +78,16 @@ const ECHOED_HEADING_PATTERNS = [
   /unresolved/i
 ];
 
+/** Matches a model-supplied fence marker, loose enough to catch spacing/case games. */
+const FENCE_MARKER_PATTERN = /<{3}\s*(BEGIN|END)\s+UNTRUSTED/i;
+
 export function sanitizeResearchLine(line: string): string {
   const stripped = line.replace(/^#+/, '');
-  if (/^[=\-]{2,}$/.test(stripped.trim())) {
+  if (/^[=\-]{1,}$/.test(stripped.trim())) {
     return '___';
+  }
+  if (FENCE_MARKER_PATTERN.test(stripped)) {
+    return 'echoed: ' + stripped.replace(/</g, '«');
   }
   if (ECHOED_HEADING_PATTERNS.some(p => p.test(stripped))) {
     return 'echoed: ' + stripped;
@@ -439,7 +449,8 @@ export const SCOPING_PLAN_PROMPT_HEADING = '## SCOPING PLAN (PRE-DRAFT RESEARCH 
  *   + UNTRUSTED fence (RESEARCHED CANDIDATE ANSWERS + UNRESOLVED — the model's
  *   final reply, every line passed through sanitizeResearchLine)
  *
- * @returns the dossier bounded to DOSSIER_CHAR_CAP (whole-line drops), or ''
+ * @returns the dossier bounded to DOSSIER_CHAR_CAP (whole-line drops; the
+ *          closing fence is always present in the result), or ''
  *          on any failure — never throws, and an empty dossier means the
  *          caller proceeds without one. ESC still propagates as an abort.
  */
@@ -485,7 +496,14 @@ export async function runResearchPreflight(deps: ResearchStageDeps, scoping: Sco
       .map(sanitizeResearchLine)
       .join('\n');
     const dossier = `${settled}\n${alreadyOpen}\n${RESEARCH_FENCE_BEGIN}\n${fenced}\n${RESEARCH_FENCE_END}`;
-    return capWholeLines(dossier, DOSSIER_CHAR_CAP);
+    const capped = capWholeLines(dossier, DOSSIER_CHAR_CAP);
+    // Whole-line capping drops lines from the end; if it removed the closing
+    // fence, re-append it so an unclosed fence cannot swallow the trailing
+    // prompt content that follows the dossier in runner.ts.
+    if (capped && capped.includes(RESEARCH_FENCE_BEGIN) && !capped.includes(RESEARCH_FENCE_END)) {
+      return `${capped}\n${RESEARCH_FENCE_END}`;
+    }
+    return capped;
   } catch (err: any) {
     if (err?.name === 'AbortError' || deps.signal?.aborted) {
       throw err;
