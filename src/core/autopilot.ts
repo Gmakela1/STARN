@@ -39,6 +39,10 @@ export interface AutopilotDeps {
     criticDisabled?: boolean;
     /** Scoped evaluation directive threaded to the critic (incorporation turns). */
     criticFocus?: string;
+    /** P3+P6 pre-turn research stages (document specialists only; runner gates). */
+    preflight?: boolean;
+    /** Fast-retry path skip for the pre-turn research stages. */
+    skipPreflight?: boolean;
     signal?: AbortSignal;
     onQuestions?: (items: Array<{
       type: 'question';
@@ -314,6 +318,9 @@ export class AutopilotDriver {
         let turnResult = await executeTurn({
           userPrompt: `Generate the ${phase.name} deliverable for this project now (autopilot run). Follow the specialist's instructions fully.\n\nIMPORTANT: You MUST write the deliverable to docs/${phase.id.toUpperCase()}.md using the fs_write tool. Your response must be the COMPLETE document content starting with a heading. Do not return commentary or summaries.`,
           forceSpecialistId: phase.id,
+          // P3+P6 pre-turn research stages: document specialists only (the
+          // runner additionally excludes general/change-impact).
+          preflight: true,
           signal,
           onQuestions: (items) => {
             for (const item of items) {
@@ -357,6 +364,10 @@ export class AutopilotDriver {
           const retryResult = await executeTurn({
             userPrompt: `You previously failed to produce the ${phase.name} deliverable. This is a retry.\n\nCRITICAL: You MUST write the file docs/${phase.id.toUpperCase()}.md using fs_write. Your response MUST be the complete document content starting with a level-1 heading (#).\n\nDo NOT return commentary, explanations, or summaries. Only the document itself.${overrideSentence}`,
             forceSpecialistId: phase.id,
+            // Fast-retry path: the override prompt already says "skip
+            // discovery reads and web_search entirely" — both pre-turn stages
+            // honor that by skipping.
+            skipPreflight: true,
             signal,
             onQuestions: (items) => {
               for (const item of items) {

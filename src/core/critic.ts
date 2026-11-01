@@ -39,6 +39,14 @@ export interface CriticEvaluateOptions {
    * anti-fabrication guards remain in force. Absent → no directive block.
    */
   criticFocus?: string;
+  /**
+   * Preflight-aware checks (P3): when true (dossier was actually injected
+   * into the drafting prompt), the critic additionally enforces source
+   * citation for research-based claims, no contradiction with recorded user
+   * answers, and adopt-or-overturn discipline for dossier findings.
+   * Absent/false → no block (no dossier this turn).
+   */
+  preflightChecks?: boolean;
 }
 
 export interface CriticResult {
@@ -105,6 +113,15 @@ ${options.appliedEdits.map(e => `- [${e.path}] L${e.matchedLineRange.start}-${e.
       ? `\nSCOPED EVALUATION DIRECTIVE (overrides general grading scope): ${options.criticFocus}\nThe artifact was already approved; grade ONLY the scoped aspect. Baseline-binding and anti-fabrication guards still apply in full.\n`
       : '';
 
+    // Preflight-aware checks: only wired when the runner actually injected a
+    // research dossier into the drafting prompt.
+    const preflightChecksSection = options.preflightChecks
+      ? `\nPREFLIGHT RESEARCH CHECKS (MANDATORY):
+- Research-based claims in the document must cite their source (URL or document name). Uncited research claims are FAILURES.
+- Claims contradicting recorded user answers are FAILURES.
+- Research findings from the pre-draft research dossier must be either adopted into the document or explicitly overturned with justification in the document.\n`
+      : '';
+
     let prompt: string;
     if (isDelta) {
       let editsSummary = 'No specific edits recorded.';
@@ -139,6 +156,7 @@ CRITICAL DELTA REVIEW GUIDELINES:
    If the edits cleanly and accurately address the feedback without introducing contradictions or hallucinations, score >= ${priorScore}/10 and pass (score >= 8.0). Only deduct points and fail if the edits themselves are defective, contradict the user's intent, or break internal document consistency.
 
 ${criticFocusSection}
+${preflightChecksSection}
 ${baselineSection}
 DRAFT ARTIFACT TO EVALUATE:
 ${options.artifactContent}
@@ -171,6 +189,7 @@ CRITIC GUIDELINES:
 GRADING RUBRIC:
 ${options.rubric}
 ${stageHintSection}${criticFocusSection}
+${preflightChecksSection}
 ${baselineSection}
 SECRET-SAUCE QUALITY EXAMPLES (Standard of Quality Reference):
 ${options.secretSauceExamples.map((ex, i) => `### Example ${i + 1}:\n${ex}`).join('\n\n')}

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { ProjectStateManager } from '../workspace/state.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { ToolExecutionContext, EditEntry } from '../tools/types.js';
+import { SearchClient } from '../tools/search/types.js';
 import { SpecialistRegistry } from '../specialists/registry.js';
 import { SHARED_EDIT_INSTRUCTIONS } from '../specialists/shared.js';
 import { ChatClient, ChatMessage } from '../openrouter/types.js';
@@ -11,6 +12,14 @@ import { classifyRequest } from './classifier.js';
 import { parseOpenQuestionsFromContent, questionSlug, questionTopic, buildUpstreamQuestionContext } from './open-questions-parser.js';
 import { capQuestionsPerDoc } from '../specialists/open-questions.js';
 import { runAgentToolLoop } from './agent-loop.js';
+import {
+  runScopingTurn,
+  runResearchPreflight,
+  formatScopingPlanForPrompt,
+  DOSSIER_PROMPT_HEADER,
+  ScopingPlan,
+  ResearchStageDeps
+} from './research-preflight.js';
 import { maybeCompact } from './compaction.js';
 import { Logger } from '../util/logger.js';
 import { CriticEvaluator, CriticResult, BaselineDocument, detectStageHint } from './critic.js';
@@ -87,6 +96,20 @@ export interface TurnOptions {
    * criticFailed false; all other turn semantics are unchanged.
    */
   criticDisabled?: boolean;
+  /**
+   * P3+P6 pre-turn research stages (scoping turn + research preflight).
+   * Opt-in at the call site; the runner additionally restricts the stages to
+   * document specialists (general/change-impact/quick commands never run
+   * them), so production callers can enable this unconditionally.
+   */
+  preflight?: boolean;
+  /** Hard skip for the fast-retry path (autopilot override: skip discovery/web_search). */
+  skipPreflight?: boolean;
+  /**
+   * Search client used by the preflight stage's web_search calls (tests inject
+   * a fake; production leaves it unset so the handler lazily builds one).
+   */
+  searchClient?: SearchClient;
 }
 
 export interface TurnResult {
@@ -375,6 +398,43 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
       }
     }
 
+    // 5b. P3+P6 Pre-turn research stages (scoping turn → research preflight).
+    // Opt-in at the call site (production: autopilot chain); the runner also
+    // restricts the stages to document specialists. Both stages run with fresh
+    // priorMessages, so their transcripts never enter sessionMessages and are
+    // discarded after prompt assembly. Scoping failure degrades to
+    // preflight-without-plan; preflight failure yields '' (no dossier).
+    const stageEligible = specialist.id !== 'general' && specialist.id !== 'change-impact';
+    const stagesEnabled = stageEligible && options.preflight === true && options.skipPreflight !== true;
+    let researchDossier = '';
+    let scopingPlan: ScopingPlan | null = null;
+    if (stagesEnabled) {
+      const stageDeps: ResearchStageDeps = {
+        client,
+        model,
+        projectPath,
+        stateManager,
+        toolRegistry,
+        userPrompt,
+        discoveryText: discovery.discoveryText,
+        currentDocPath: targetDocPath,
+        searchClient: options.searchClient,
+        onToolCall,
+        signal,
+        logger: options.logger
+      };
+      onStatusUpdate?.('Scoping research needs…');
+      scopingPlan = await runScopingTurn({ ...stageDeps, specialistSystemPrompt: specialist.systemPrompt });
+      if (signal?.aborted) {
+        return buildAbortedTurnResult(specialist.id, specialist.name, 0, sessionMessages);
+      }
+      onStatusUpdate?.(`Researching ${scopingPlan?.infoNeeds.length ?? 0} info needs…`);
+      researchDossier = await runResearchPreflight(stageDeps, scopingPlan);
+      if (signal?.aborted) {
+        return buildAbortedTurnResult(specialist.id, specialist.name, 0, sessionMessages);
+      }
+    }
+
     // 6. Specialist Execution Loop
     // Auto-compaction: if context exceeds threshold, summarize older messages first.
     const compactionResult = await maybeCompact({
@@ -395,7 +455,14 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     // before the existing-baseline block so the no-re-ask rule fires (they are
     // context, not an instruction to evolve the current doc).
     const upstreamQuestionContext = buildUpstreamQuestionContext(projectPath, targetDocPath);
-    const enhancedSystemPrompt = `${specialist.systemPrompt}\n\n${discovery.discoveryText}${upstreamQuestionContext}${existingBaselineText}${SHARED_EDIT_INSTRUCTIONS}`;
+    // P3+P6 stage results join the prompt here (order: dossier → scoping plan
+    // → upstream questions → baseline). Both are turn-scoped, char-capped and
+    // '' when their stage failed, so the prompt shape is unchanged then.
+    const dossierBlock = researchDossier
+      ? `\n${DOSSIER_PROMPT_HEADER}\n${researchDossier}\n`
+      : '';
+    const scopingPlanBlock = scopingPlan ? `\n${formatScopingPlanForPrompt(scopingPlan)}\n` : '';
+    const enhancedSystemPrompt = `${specialist.systemPrompt}\n\n${discovery.discoveryText}${dossierBlock}${scopingPlanBlock}${upstreamQuestionContext}${existingBaselineText}${SHARED_EDIT_INSTRUCTIONS}`;
 
     const transcriptionOn = options.transcriptionEnabled !== false;
     const transcriberGated =
@@ -575,7 +642,10 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
             // criteria (verified URLs, variance). Other specialists: no hint.
             stageHint: specialist.id === 'bom' && !isDeltaReview
               ? detectStageHint(artifactForCritic)
-              : undefined
+              : undefined,
+            // Preflight-aware checks: only when a research dossier was
+            // actually injected into the drafting prompt this turn.
+            preflightChecks: researchDossier !== ''
           });
         } catch (err: any) {
           // ESC during critic — abort the turn.
