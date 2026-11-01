@@ -10,6 +10,8 @@ export interface PortalListFilter {
   phaseId?: string;
   /** ICD-system topic tag on meta.topic (QUESTION_TOPICS values or any normalized tag). */
   topic?: string;
+  /** P2 audit flag — when true, upstreamOf-tagged hidden duplicates are included. */
+  includeUpstream?: boolean;
 }
 
 /**
@@ -20,6 +22,13 @@ const MAX_PORTAL_ITEMS = 500;
 
 /** Board #52 — per-item saved answer history is capped to the most recent entries. */
 export const ANSWER_HISTORY_CAP = 20;
+
+/**
+ * P2 — minimum token-Jaccard similarity for a question to count as a fuzzy
+ * cross-doc duplicate of an already-open question (meta.upstreamOf tagging).
+ * Tuned high so merely-related questions (sharing 1-2 words) stay separate.
+ */
+export const SIMILARITY_THRESHOLD = 0.72;
 
 const OPEN_RANK = 0;
 const CLOSED_RANK = 1;
@@ -69,6 +78,26 @@ export function archiveDuplicateOpenPortalItems(manager: ProjectStateManager): v
 }
 
 /**
+ * Pure: token-Jaccard similarity between two question titles. Both are
+ * normalized via questionSlug (lowercased, punctuation-stripped, 10-word
+ * cap) and split into tokens; returns |intersection| / |union|. An empty
+ * slug (no tokens) yields 0.
+ */
+export function questionSimilarity(titleA: string, titleB: string): number {
+  const tokensA = questionSlug(titleA).split(' ').filter(Boolean);
+  const tokensB = questionSlug(titleB).split(' ').filter(Boolean);
+  if (tokensA.length === 0 || tokensB.length === 0) return 0;
+  const setA = new Set(tokensA);
+  const setB = new Set(tokensB);
+  let intersection = 0;
+  for (const token of setA) {
+    if (setB.has(token)) intersection++;
+  }
+  const union = new Set([...setA, ...setB]).size;
+  return intersection / union;
+}
+
+/**
  * Adds a portal item (or dedupes onto an existing open item with the same type, docPath and title).
  * Returns the stored PortalItem.
  */
@@ -81,14 +110,54 @@ export function addPortalItem(manager: ProjectStateManager, input: PortalItemInp
     state.autopilot = defaultAutopilotState();
   }
 
-  // Dedupe: an identical open question (same type, docPath and normalized
-  // title) is returned as-is instead of creating a duplicate — across runs too.
+  // Exact dedupe (unchanged): an identical open question (same type, docPath
+  // and normalized title) is returned as-is instead of creating a duplicate —
+  // across runs too.
   const key = dedupeKey(input);
   const existing = state.portalItems.find(
     item => item.status === 'open' && item.meta?.archived !== true && dedupeKey(item) === key
   );
   if (existing) {
     return existing;
+  }
+
+  // P2 fuzzy cross-doc dedupe: a near-verbatim restatement of an already-open
+  // QUESTION in a different document (token-Jaccard >= SIMILARITY_THRESHOLD,
+  // topic tags compatible) is tagged meta.upstreamOf and still persisted for
+  // audit, but hidden from the default open listing by listPortalItems. The
+  // canonical is the OLDEST matching item; already-hidden children are
+  // skipped so every twin points straight at its canonical. Exact same-doc
+  // dedupe above is unchanged; non-question types are never fuzzy-matched.
+  let upstreamOf: string | undefined;
+  if (input.type === 'question') {
+    let best: PortalItem | undefined;
+    let bestScore = 0;
+    for (const candidate of state.portalItems) {
+      if (
+        candidate.type !== 'question' ||
+        candidate.status !== 'open' ||
+        candidate.meta?.archived === true ||
+        candidate.meta?.superseded === true ||
+        candidate.meta?.upstreamOf !== undefined ||
+        candidate.docPath === input.docPath
+      ) {
+        continue;
+      }
+      const candidateTopic = candidate.meta?.topic;
+      const inputTopic = input.meta?.topic;
+      // Topic veto: both tagged → must match; either untagged → allowed.
+      if (candidateTopic !== undefined && inputTopic !== undefined && candidateTopic !== inputTopic) {
+        continue;
+      }
+      const score = questionSimilarity(candidate.title, input.title);
+      if (score > bestScore) {
+        bestScore = score;
+        best = candidate;
+      }
+    }
+    if (best && bestScore >= SIMILARITY_THRESHOLD) {
+      upstreamOf = best.id;
+    }
   }
 
   // Cap: never grow beyond MAX_PORTAL_ITEMS — archive the oldest open item
@@ -121,7 +190,8 @@ export function addPortalItem(manager: ProjectStateManager, input: PortalItemInp
   if (input.gaps !== undefined) item.gaps = input.gaps;
   if (input.threadId !== undefined) item.threadId = input.threadId;
   if (input.answer !== undefined) item.answer = input.answer;
-  if (input.meta !== undefined) item.meta = input.meta;
+  if (upstreamOf !== undefined) item.meta = { ...(input.meta || {}), upstreamOf };
+  else if (input.meta !== undefined) item.meta = input.meta;
 
   state.portalItems.push(item);
   manager.saveState(state);
@@ -153,12 +223,36 @@ export function answerPortalItem(manager: ProjectStateManager, id: string, answe
   // (same type + docPath + slug) so the user is never asked the same question
   // twice. Twins are hidden via meta.superseded; their ids stay untouched.
   const key = dedupeKey(item);
+  const supersededIds = new Set<string>([item.id]);
   for (const twin of state.portalItems || []) {
     if (twin.id === item.id || twin.status !== 'open' || twin.meta?.archived === true) {
       continue;
     }
     if (dedupeKey(twin) === key) {
       twin.meta = { ...(twin.meta || {}), superseded: true };
+      supersededIds.add(twin.id);
+    }
+  }
+  // P2 cascade — every still-open item whose meta.upstreamOf points at the
+  // answered item or one of its superseded twins follows them into
+  // meta.superseded. Loops until no new child is found so legacy
+  // upstreamOf chains (child → child) fully collapse.
+  let cascaded = true;
+  while (cascaded) {
+    cascaded = false;
+    for (const child of state.portalItems || []) {
+      if (
+        child.status !== 'open' ||
+        child.meta?.archived === true ||
+        child.meta?.superseded === true ||
+        child.meta?.upstreamOf === undefined ||
+        !supersededIds.has(child.meta.upstreamOf)
+      ) {
+        continue;
+      }
+      child.meta = { ...(child.meta || {}), superseded: true };
+      supersededIds.add(child.id);
+      cascaded = true;
     }
   }
   manager.saveState(state);
@@ -183,10 +277,16 @@ export function dismissPortalItem(manager: ProjectStateManager, id: string): Por
 /**
  * Lists non-archived portal items, optionally filtered by status/type/phaseId/topic. Sorted with
  * open items first, then by createdAt descending within each status bucket.
+ * P2 — items tagged meta.upstreamOf (fuzzy cross-doc duplicates of a canonical
+ * open question) are excluded by default; pass includeUpstream to audit them.
  */
 export function listPortalItems(manager: ProjectStateManager, filter?: PortalListFilter): PortalItem[] {
   const state = manager.getState();
-  let items = (state.portalItems || []).filter(i => i.meta?.archived !== true && i.meta?.superseded !== true);
+  let items = (state.portalItems || []).filter(i =>
+    i.meta?.archived !== true &&
+    i.meta?.superseded !== true &&
+    (filter?.includeUpstream === true || i.meta?.upstreamOf === undefined)
+  );
 
   if (filter?.status !== undefined) {
     items = items.filter(i => i.status === filter.status);

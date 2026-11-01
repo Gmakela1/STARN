@@ -78,6 +78,8 @@ export interface PortalItemMeta extends Record<string, unknown> {
   answerQueued?: boolean;
   /** P5 — ICD-system topic tag parsed from the question title (QUESTION_TOPICS in src/specialists/open-questions.ts); undefined for pre-tag items. */
   topic?: string;
+  /** P2 — set on a fuzzy cross-doc twin of an already-open question; value is the canonical item id. Hidden from the default listing. */
+  upstreamOf?: string;
 }
 
 export interface PortalItem {

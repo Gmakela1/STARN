@@ -148,8 +148,17 @@ export async function applyAnswer(
   // count) AND the session is idle, run ONE incorporation turn reusing the
   // same prompt machinery as the autopilot chain's pre-phase incorporation.
   const counterQuestions: PortalItem[] = [];
+  // P2 — hidden items (archived, superseded twins, upstreamOf-tagged fuzzy
+  // duplicates) are not "open" for trigger purposes: only items the user can
+  // still see and answer keep the incorporation trigger from firing.
   const openRemaining = (stateManager.getState().portalItems || [])
-    .filter(i => i.docPath === item.docPath && i.status === 'open' && i.meta?.archived !== true)
+    .filter(i =>
+      i.docPath === item.docPath &&
+      i.status === 'open' &&
+      i.meta?.archived !== true &&
+      i.meta?.superseded !== true &&
+      i.meta?.upstreamOf === undefined
+    )
     .length;
   if (openRemaining === 0 && !deps.isBusy?.()) {
     const phase = ORDERED_WORKFLOW_PHASES.find(p => p.id === phaseId)!;

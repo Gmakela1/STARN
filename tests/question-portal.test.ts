@@ -10,7 +10,9 @@ import {
   listPortalItems,
   clearResolvedThread,
   dedupeOpenPortalItems,
-  archiveDuplicateOpenPortalItems
+  archiveDuplicateOpenPortalItems,
+  questionSimilarity,
+  SIMILARITY_THRESHOLD
 } from '../src/core/question-portal.js';
 import { PortalItem } from '../src/workspace/types.js';
 
@@ -90,7 +92,7 @@ describe('question portal store', () => {
     expect(listPortalItems(stateMgr)).toHaveLength(1);
   });
 
-  it('same title but DIFFERENT docPath creates two distinct items even while running', () => {
+  it('P2 cross-doc twin above threshold: tagged meta.upstreamOf, persisted for audit, hidden from default listing', () => {
     const state = stateMgr.getState();
     state.autopilot!.running = true;
     stateMgr.saveState(state);
@@ -110,8 +112,103 @@ describe('question portal store', () => {
       source: 'autopilot'
     });
 
+    // Not merged: the twin is its own persisted item (audit trail) pointing at
+    // the canonical (oldest) open item.
     expect(inArch.id).not.toBe(inConops.id);
+    expect(inArch.meta?.upstreamOf).toBe(inConops.id);
+    expect(inConops.meta?.upstreamOf).toBeUndefined();
+    // Hidden from the default open listing; visible with includeUpstream.
+    expect(listPortalItems(stateMgr).map(i => i.id)).toEqual([inConops.id]);
+    expect(listPortalItems(stateMgr, { includeUpstream: true }).map(i => i.id))
+      .toEqual([inArch.id, inConops.id]);
+  });
+
+  it('P2 cross-doc twin below threshold: two distinct open items, both visible', () => {
+    const inConops = addPortalItem(stateMgr, {
+      type: 'question', severity: 'normal', docPath: 'docs/CONOPS.md',
+      title: 'What gauge wire?', source: 'autopilot'
+    });
+    const inArch = addPortalItem(stateMgr, {
+      type: 'question', severity: 'normal', docPath: 'docs/ARCHITECTURE.md',
+      title: 'What max voltage?', source: 'autopilot'
+    });
+    expect(inArch.meta?.upstreamOf).toBeUndefined();
+    expect(listPortalItems(stateMgr).map(i => i.id)).toEqual([inArch.id, inConops.id]);
+  });
+
+  it('P2 topic veto: both tagged with DIFFERENT topics never merges, even at identical slugs', () => {
+    addPortalItem(stateMgr, {
+      type: 'question', severity: 'normal', docPath: 'docs/ICD.md',
+      title: 'Same title', source: 'autopilot', meta: { topic: 'electrical' }
+    });
+    const other = addPortalItem(stateMgr, {
+      type: 'question', severity: 'normal', docPath: 'docs/ARCHITECTURE.md',
+      title: 'Same title', source: 'autopilot', meta: { topic: 'mechanical' }
+    });
+    expect(other.meta?.upstreamOf).toBeUndefined();
     expect(listPortalItems(stateMgr)).toHaveLength(2);
+  });
+
+  it('P2 topic veto: either topic undefined → merge allowed (tagged when similar)', () => {
+    const canonical = addPortalItem(stateMgr, {
+      type: 'question', severity: 'normal', docPath: 'docs/ICD.md',
+      title: 'Same title', source: 'autopilot', meta: { topic: 'electrical' }
+    });
+    const child = addPortalItem(stateMgr, {
+      type: 'question', severity: 'normal', docPath: 'docs/ARCHITECTURE.md',
+      title: 'Same title', source: 'autopilot'
+    });
+    expect(child.meta?.upstreamOf).toBe(canonical.id);
+  });
+
+  it('P2 cascade: answering the canonical supersedes its open upstreamOf children (chains recurse)', () => {
+    const canonical = addPortalItem(stateMgr, {
+      type: 'question', severity: 'normal', docPath: 'docs/CONOPS.md',
+      title: 'What is the max voltage?', source: 'autopilot'
+    });
+    const child = addPortalItem(stateMgr, {
+      type: 'question', severity: 'normal', docPath: 'docs/RTM.md',
+      title: 'What is the max voltage?', source: 'autopilot'
+    });
+    expect(child.meta?.upstreamOf).toBe(canonical.id);
+
+    // Legacy chain data: a grandchild pointing at the child (pre-flat tagging).
+    const state = stateMgr.getState();
+    state.portalItems!.push({
+      id: 'legacy_grandchild',
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/BOM.md',
+      title: 'What is the max pack voltage?',
+      status: 'open',
+      source: 'autopilot',
+      createdAt: '2024-12-01T00:00:00.000Z',
+      updatedAt: '2024-12-01T00:00:00.000Z',
+      meta: { upstreamOf: child.id }
+    });
+    stateMgr.saveState(state);
+
+    answerPortalItem(stateMgr, canonical.id, '48V');
+
+    const stored = stateMgr.getState().portalItems!;
+    expect(stored.find(i => i.id === child.id)?.meta?.superseded).toBe(true);
+    expect(stored.find(i => i.id === child.id)?.status).toBe('open');
+    expect(stored.find(i => i.id === 'legacy_grandchild')?.meta?.superseded).toBe(true);
+    // Hidden children are gone from the default listing (the answered
+    // canonical itself is still listed — status answered, not hidden).
+    expect(listPortalItems(stateMgr).map(i => i.id)).toEqual([canonical.id]);
+    // The children are also superseded, so even includeUpstream (which lifts
+    // ONLY the upstreamOf filter) reveals nothing extra here.
+  });
+
+  it('P2 questionSimilarity: pure token-Jaccard over questionSlug tokens; threshold exported', () => {
+    expect(questionSimilarity('What is the max voltage?', 'Q1. What is the max voltage?')).toBe(1);
+    expect(questionSimilarity('What gauge wire?', 'What is the max voltage?'))
+      .toBeLessThan(SIMILARITY_THRESHOLD);
+    // 3 shared of {same,doc,follow,up}+{unrelated,doc,follow,up} → 3/5 = 0.6.
+    expect(questionSimilarity('Same doc follow up', 'Unrelated doc follow up')).toBeCloseTo(0.6);
+    expect(questionSimilarity('', 'What voltage?')).toBe(0);
+    expect(SIMILARITY_THRESHOLD).toBeGreaterThan(0.5);
   });
 
   it('answerPortalItem sets answer + status answered + bumps updatedAt', () => {
@@ -474,11 +571,18 @@ describe('question portal store', () => {
       expect(second.id).toBe(first.id);
     });
 
-    it('does not dedupe across different docPath or type', () => {
-      addPortalItem(stateMgr, base);
-      addPortalItem(stateMgr, { ...base, docPath: 'docs/ICD.md' });
-      addPortalItem(stateMgr, { ...base, type: 'flag' });
-      expect(listPortalItems(stateMgr)).toHaveLength(3);
+    it('P2 re-scope: cross-doc same-slug twin is tagged (hidden), different type never merges', () => {
+      const canonical = addPortalItem(stateMgr, base);
+      const crossDoc = addPortalItem(stateMgr, { ...base, docPath: 'docs/ICD.md' });
+      const flag = addPortalItem(stateMgr, { ...base, type: 'flag' });
+      // Cross-doc twin: a SEPARATE persisted item tagged upstreamOf (not merged
+      // onto the canonical); different type is never fuzzy-matched.
+      expect(crossDoc.id).not.toBe(canonical.id);
+      expect(crossDoc.meta?.upstreamOf).toBe(canonical.id);
+      expect(flag.meta?.upstreamOf).toBeUndefined();
+      const listed = listPortalItems(stateMgr);
+      expect(listed).toHaveLength(2);
+      expect(listed.map(i => i.id).sort()).toEqual([canonical.id, flag.id].sort());
     });
 
     it('does not dedupe onto an answered item', () => {

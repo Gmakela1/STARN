@@ -207,6 +207,52 @@ describe('applyAnswer', () => {
     expect(emitStatusMock).not.toHaveBeenCalled();
   });
 
+  it('(g) only hidden items remain (superseded twins + upstreamOf children): incorporation still fires', async () => {
+    const s = stateMgr.getState();
+    s.autopilot!.docStatus['conops'] = 'passed';
+    stateMgr.saveState(s);
+
+    const canonical = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What is the max voltage?',
+      source: 'autopilot'
+    });
+    // Cross-doc twin → tagged meta.upstreamOf (hidden from the default listing).
+    const hiddenChild = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/RTM.md',
+      title: 'What is the max voltage?',
+      source: 'autopilot'
+    });
+    expect(hiddenChild.meta?.upstreamOf).toBe(canonical.id);
+    // Legacy same-doc twin with the same slug (pushed directly, pre-slug data).
+    const state = stateMgr.getState();
+    state.portalItems!.push({
+      id: 'legacy_twin',
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'Q2. What is the max voltage?',
+      status: 'open',
+      source: 'autopilot',
+      createdAt: '2024-12-01T00:00:00.000Z',
+      updatedAt: '2024-12-01T00:00:00.000Z'
+    });
+    stateMgr.saveState(state);
+
+    executeTurnMock.mockResolvedValue(makeTurnResult({ specialistId: 'conops' }));
+    await applyAnswer(deps, canonical.id, '48V nominal');
+
+    // Hidden items must NOT keep the incorporation trigger from firing.
+    expect(executeTurnMock).toHaveBeenCalledTimes(2); // incorporation + immediate ripple scan
+    const after = stateMgr.getState().portalItems!;
+    expect(after.find(i => i.id === hiddenChild.id)?.meta?.superseded).toBe(true);
+    expect(after.find(i => i.id === 'legacy_twin')?.meta?.superseded).toBe(true);
+  });
+
   it('(e) busy: no incorporation turn — the chain incorporates pending answers itself', async () => {
     const item = addPortalItem(stateMgr, {
       type: 'question',
