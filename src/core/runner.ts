@@ -8,7 +8,7 @@ import { SHARED_EDIT_INSTRUCTIONS } from '../specialists/shared.js';
 import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { runDiscovery } from './discovery.js';
 import { classifyRequest } from './classifier.js';
-import { parseOpenQuestionsFromContent, questionSlug, questionTopic } from './open-questions-parser.js';
+import { parseOpenQuestionsFromContent, questionSlug, questionTopic, buildUpstreamQuestionContext } from './open-questions-parser.js';
 import { capQuestionsPerDoc } from '../specialists/open-questions.js';
 import { runAgentToolLoop } from './agent-loop.js';
 import { maybeCompact } from './compaction.js';
@@ -391,7 +391,11 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     }
 
     onStatusUpdate?.(`Asking ${specialist.name} to prepare the first draft…`);
-    const enhancedSystemPrompt = `${specialist.systemPrompt}\n\n${discovery.discoveryText}${existingBaselineText}${SHARED_EDIT_INSTRUCTIONS}`;
+    // Upstream open questions: already-tracked questions in OTHER docs, injected
+    // before the existing-baseline block so the no-re-ask rule fires (they are
+    // context, not an instruction to evolve the current doc).
+    const upstreamQuestionContext = buildUpstreamQuestionContext(projectPath, targetDocPath);
+    const enhancedSystemPrompt = `${specialist.systemPrompt}\n\n${discovery.discoveryText}${upstreamQuestionContext}${existingBaselineText}${SHARED_EDIT_INSTRUCTIONS}`;
 
     const transcriptionOn = options.transcriptionEnabled !== false;
     const transcriberGated =
