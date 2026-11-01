@@ -33,9 +33,41 @@ import {
   QUESTION_CAP_PER_DOC,
   capQuestionsPerDoc
 } from '../src/specialists/open-questions.js';
-import { questionSlug } from '../src/core/open-questions-parser.js';
+import { questionSlug, questionTopic } from '../src/core/open-questions-parser.js';
+import { QUESTION_TOPICS } from '../src/specialists/open-questions.js';
 
 // ── Parser generalization ─────────────────────────────────────────────────────
+
+describe('questionTopic — ICD-system tag extraction', () => {
+  it('extracts the lowercased normalized tag from a tagged title', () => {
+    expect(questionTopic('[ELECTRICAL] Bus voltage.')).toBe('electrical');
+    expect(questionTopic('**Q3. [CONTROLS-DATA] CAN baud rate.**')).toBe('controls-data');
+    expect(questionTopic('**Q1. [Controls Data] Protocol.**')).toBe('controls-data');
+  });
+
+  it('yields undefined for untagged titles (older docs, pre-tag questions)', () => {
+    expect(questionTopic('**Q1. Bus voltage.**')).toBeUndefined();
+    expect(questionTopic('Bus voltage.')).toBeUndefined();
+    expect(questionTopic('')).toBeUndefined();
+  });
+
+  it('is tolerant of unknown tags — returns the normalized value for Other-bucketing', () => {
+    expect(questionTopic('**Q2. [SOFTWARE] Update cadence.**')).toBe('software');
+  });
+
+  it('exposes QUESTION_TOPICS as the four ICD interface categories (E/M/D/T)', () => {
+    expect([...QUESTION_TOPICS]).toEqual(['electrical', 'mechanical', 'controls-data', 'thermal']);
+  });
+
+  it('parses tagged questions end-to-end with the generalized parser', () => {
+    const doc = `# DOC\n\n## Open Questions\n\n**Q1. [MECHANICAL] Bolt pattern.** TBD.\n\n**Q2. Bus voltage.** TBD.\n\n## Next\nBody`;
+    const qs = parseOpenQuestionsFromContent(doc);
+    expect(qs).toHaveLength(2);
+    expect(qs[0]).toContain('[MECHANICAL]');
+    expect(questionTopic(qs[0])).toBe('mechanical');
+    expect(questionTopic(qs[1])).toBeUndefined();
+  });
+});
 
 describe('parseOpenQuestionsFromContent — generalized heading matching', () => {
   it('parses CONOPS-style numbered heading (backward compatible)', () => {
@@ -331,6 +363,13 @@ describe('Open Questions rules injection', () => {
 
   it('rules text prefers explicitly-marked provisional values for non-blocking items', () => {
     expect(OPEN_QUESTIONS_SECTION_RULES).toContain('clearly labeled PROVISIONAL with its basis');
+  });
+
+  it('rules text mandates an ICD-system bracket tag on every question title (fixed enum)', () => {
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('MUST begin with an ICD system tag in brackets');
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('[ELECTRICAL], [MECHANICAL], [CONTROLS-DATA], or [THERMAL]');
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('tag it with the dominant one');
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('Qn numbering prefix is retained');
   });
 
   it('capQuestionsPerDoc keeps the first 9 items in order and passes through short lists', () => {

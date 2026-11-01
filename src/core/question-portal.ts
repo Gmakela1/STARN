@@ -8,6 +8,8 @@ export interface PortalListFilter {
   status?: PortalItem['status'];
   type?: PortalItemType;
   phaseId?: string;
+  /** ICD-system topic tag on meta.topic (QUESTION_TOPICS values or any normalized tag). */
+  topic?: string;
 }
 
 /**
@@ -179,7 +181,7 @@ export function dismissPortalItem(manager: ProjectStateManager, id: string): Por
 }
 
 /**
- * Lists non-archived portal items, optionally filtered by status/type/phaseId. Sorted with
+ * Lists non-archived portal items, optionally filtered by status/type/phaseId/topic. Sorted with
  * open items first, then by createdAt descending within each status bucket.
  */
 export function listPortalItems(manager: ProjectStateManager, filter?: PortalListFilter): PortalItem[] {
@@ -195,6 +197,9 @@ export function listPortalItems(manager: ProjectStateManager, filter?: PortalLis
   if (filter?.phaseId !== undefined && filter.phaseId !== '') {
     const prefix = `docs/${filter.phaseId}.md`.toLowerCase();
     items = items.filter(i => i.docPath !== undefined && i.docPath.toLowerCase().startsWith(prefix));
+  }
+  if (filter?.topic !== undefined && filter.topic !== '') {
+    items = items.filter(i => i.meta?.topic === filter.topic);
   }
 
   return [...items].sort((a, b) => {

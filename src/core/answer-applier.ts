@@ -26,6 +26,8 @@ export interface AnswerApplierDeps {
       title: string;
       detail?: string;
       source: 'autopilot';
+      /** ICD-system topic parsed from the title tag; undefined when untagged. */
+      topic?: string;
     }>) => void;
     /** Live status updates from the runner (ripple scan/fix turns). */
     onStatusUpdate?: (status: string) => void;
@@ -158,6 +160,7 @@ export async function applyAnswer(
       title: string;
       detail?: string;
       source: 'autopilot';
+      topic?: string;
     }> = [];
     deps.emitStatus?.(`Incorporating pending user answers in ${phase.name}…`);
     let result: TurnResult;
@@ -244,13 +247,11 @@ export async function applyAnswer(
     // items on the original thread (same as the autopilot's incorporation).
     const threadId = item.threadId || item.id;
     for (const q of counterQuestionItems) {
+      const { topic, ...qRest } = q;
       counterQuestions.push(addPortalItem(stateManager, {
-        type: 'question',
-        severity: 'normal',
-        docPath: q.docPath,
-        title: q.title,
-        detail: q.detail,
+        ...qRest,
         source: 'autopilot',
+        meta: topic ? { topic } : undefined,
         threadId
       }));
     }

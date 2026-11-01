@@ -255,6 +255,30 @@ describe('question portal store', () => {
     expect(listPortalItems(stateMgr, { status: 'answered', type: 'flag' })).toHaveLength(0);
   });
 
+  it('listPortalItems filters by meta.topic; untagged items are excluded by a topic filter (P5)', () => {
+    const e = addPortalItem(stateMgr, {
+      type: 'question', severity: 'normal', docPath: 'docs/ICD.md',
+      title: 'Bus voltage', source: 'autopilot', meta: { topic: 'electrical' }
+    });
+    const m = addPortalItem(stateMgr, {
+      type: 'question', severity: 'normal', docPath: 'docs/ICD.md',
+      title: 'Bolt pattern', source: 'autopilot', meta: { topic: 'mechanical' }
+    });
+    addPortalItem(stateMgr, {
+      type: 'question', severity: 'normal', docPath: 'docs/CONOPS.md',
+      title: 'Pre-tag legacy question', source: 'autopilot'
+    });
+
+    const electrical = listPortalItems(stateMgr, { topic: 'electrical' });
+    expect(electrical.map(i => i.id)).toEqual([e.id]);
+    expect(listPortalItems(stateMgr, { topic: 'mechanical' }).map(i => i.id)).toEqual([m.id]);
+    // No topic filter → everything (including untagged) is returned.
+    expect(listPortalItems(stateMgr)).toHaveLength(3);
+    // Unknown topics match nothing; empty string is treated as no filter.
+    expect(listPortalItems(stateMgr, { topic: 'software' })).toHaveLength(0);
+    expect(listPortalItems(stateMgr, { topic: '' })).toHaveLength(3);
+  });
+
   it('listPortalItems filters by phaseId against the docPath prefix (case-insensitive)', () => {
     addPortalItem(stateMgr, {
       type: 'question',

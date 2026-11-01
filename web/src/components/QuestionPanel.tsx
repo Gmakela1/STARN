@@ -14,6 +14,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { AnswerState, PortalItem } from '../types/api';
 import { renderDetail } from '../lib/portalDetail';
+import { groupPortalItemsByTopic } from '../lib/portalGrouping';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 // React Bits (reactbits.dev) component — see web/src/components/reactbits.
 import VoicePill from './reactbits/VoicePill/VoicePill';
@@ -941,7 +942,19 @@ export default function QuestionPanel({
 
       {items.length >= 2 && (
         <div className="flex overflow-x-auto gap-1.5 border-b border-[#2a3342] px-3 py-1.5">
-          {items.map(navItem => {
+          {/* P5 — ICD-system topic grouping (portalGrouping lib): text headers
+              with counts; no color-only distinction, no emoji. Unknown or
+              missing meta.topic lands in the "Other" section. */}
+          {groupPortalItemsByTopic(items).map(group => (
+            <div key={group.topic} className="flex shrink-0 items-center gap-1.5">
+              <div
+                role="heading"
+                aria-level={3}
+                className="shrink-0 whitespace-nowrap px-1 text-[10px] font-semibold uppercase tracking-wide text-[#6e7d92]"
+              >
+                {group.label} ({group.items.length})
+              </div>
+              {group.items.map(navItem => {
             const isActive = navItem.id === activeId;
             // §3 — lifecycle dot: rose for parked/blocking, sky while an answer
             // is queued/applying for that item, amber for plain pending. The
@@ -974,6 +987,8 @@ export default function QuestionPanel({
               </button>
             );
           })}
+            </div>
+          ))}
         </div>
       )}
 

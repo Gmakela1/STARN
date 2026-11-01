@@ -8,7 +8,7 @@ import { SHARED_EDIT_INSTRUCTIONS } from '../specialists/shared.js';
 import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { runDiscovery } from './discovery.js';
 import { classifyRequest } from './classifier.js';
-import { parseOpenQuestionsFromContent, questionSlug } from './open-questions-parser.js';
+import { parseOpenQuestionsFromContent, questionSlug, questionTopic } from './open-questions-parser.js';
 import { capQuestionsPerDoc } from '../specialists/open-questions.js';
 import { runAgentToolLoop } from './agent-loop.js';
 import { maybeCompact } from './compaction.js';
@@ -67,6 +67,8 @@ export interface TurnOptions {
     title: string;
     detail?: string;
     source: 'autopilot';
+    /** ICD-system topic parsed from the title tag; undefined for untagged questions. */
+    topic?: string;
   }>) => void;
   /**
    * Presentation-specific formatters for quick-command outputs. Defaults to
@@ -655,6 +657,9 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
             severity: 'normal' as const,
             docPath: `docs/${specialist.id.toUpperCase()}.md`,
             title,
+            // ICD-system topic parsed from the title's bracket tag; undefined
+            // for untagged questions (tolerant for older docs).
+            topic: questionTopic(title),
             source: 'autopilot' as const
           }));
           // Document order is the model's priority ranking (blocking

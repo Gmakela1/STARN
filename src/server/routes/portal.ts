@@ -11,9 +11,10 @@ export const portalModule: RouteModule = {
       const status = url.searchParams.get('status') as any || undefined;
       const type = url.searchParams.get('type') as any || undefined;
       const phaseId = url.searchParams.get('phaseId') || undefined;
+      const topic = url.searchParams.get('topic') || undefined;
       // Heal duplicates persisted by earlier runs before listing.
       archiveDuplicateOpenPortalItems(deps.stateManager);
-      const items = listPortalItems(deps.stateManager, { status, type, phaseId });
+      const items = listPortalItems(deps.stateManager, { status, type, phaseId, topic });
       // Board #53B — answers still pending in the session's answer queue are
       // surfaced as item meta so a reload renders the queued chip from data
       // (answer frames are excluded from SSE backfill). Decorated copies only:

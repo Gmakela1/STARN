@@ -5,7 +5,7 @@ import { ProjectStateManager, ORDERED_WORKFLOW_PHASES, defaultAutopilotState } f
 import { PortalItem, PortalItemType, AutopilotState, ProjectState } from '../workspace/types.js';
 import { TurnResult } from './runner.js';
 import { approveArtifact } from './approvals.js';
-import { addPortalItem, answerPortalItem, listPortalItems } from './question-portal.js';
+import { addPortalItem, answerPortalItem, listPortalItems, type PortalItemInput } from './question-portal.js';
 import { PENDING_INCORPORATION_MARKER, stripPendingBlock, INCORPORATION_CRITIC_FOCUS, buildIncorporationPrompt } from './incorporation-prompt.js';
 import { runRippleScan, summarizeDiff, RippleSource, RippleDeps } from './ripple.js';
 import { Logger } from '../util/logger.js';
@@ -47,6 +47,8 @@ export interface AutopilotDeps {
       title: string;
       detail?: string;
       source: 'autopilot';
+      /** ICD-system topic parsed from the title tag; undefined when untagged. */
+      topic?: string;
     }>) => void;
     /** Live status updates from the runner (discovery, drafting, critic). */
     onStatusUpdate?: (status: string) => void;
@@ -62,6 +64,23 @@ export interface AutopilotDeps {
   onSettled?: () => void;
   /** Optional logger for routing decisions (pending-answer incorporation). */
   logger?: Logger;
+}
+
+/**
+ * Runner onQuestions payload → portal input; the flat ICD-system topic tag
+ * parsed from the question title lands on meta.topic (undefined when untagged).
+ */
+function questionPayloadToPortalInput(item: {
+  type: 'question';
+  severity: 'normal';
+  docPath: string;
+  title: string;
+  detail?: string;
+  source: 'autopilot';
+  topic?: string;
+}): PortalItemInput {
+  const { topic, ...rest } = item;
+  return { ...rest, meta: topic ? { topic } : undefined };
 }
 
 /**
@@ -298,10 +317,7 @@ export class AutopilotDriver {
           signal,
           onQuestions: (items) => {
             for (const item of items) {
-              const portalItem = addPortalItem(stateManager, {
-                ...item,
-                source: 'autopilot'
-              });
+              const portalItem = addPortalItem(stateManager, questionPayloadToPortalInput(item));
               this.emit({ kind: 'question', item: portalItem });
             }
           },
@@ -344,10 +360,7 @@ export class AutopilotDriver {
             signal,
             onQuestions: (items) => {
               for (const item of items) {
-                const portalItem = addPortalItem(stateManager, {
-                  ...item,
-                  source: 'autopilot'
-                });
+                const portalItem = addPortalItem(stateManager, questionPayloadToPortalInput(item));
                 this.emit({ kind: 'question', item: portalItem });
               }
             },
@@ -567,10 +580,7 @@ export class AutopilotDriver {
         signal,
         onQuestions: (items) => {
           for (const item of items) {
-            const portalItem = addPortalItem(stateManager, {
-              ...item,
-              source: 'autopilot'
-            });
+            const portalItem = addPortalItem(stateManager, questionPayloadToPortalInput(item));
             this.emit({ kind: 'question', item: portalItem });
           }
         },

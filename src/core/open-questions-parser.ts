@@ -45,6 +45,19 @@ export function questionSlug(title: string): string {
 }
 
 /**
+ * Extracts the optional ICD-system topic tag from a question title and
+ * returns it lowercased/normalized (whitespace/underscores → hyphen), e.g.
+ * "**Q3. [ELECTRICAL] Pilot diameter.**" → "electrical". Tolerant: a missing
+ * tag (older docs, untagged questions) yields undefined; an unknown tag still
+ * yields its normalized value so callers can bucket it as "Other".
+ */
+export function questionTopic(title: string): string | undefined {
+  const match = title.match(/^\s*(?:\*\*)?\s*(?:Q\d+\s*[.:)]?\s*\**\s*)?\[([^\]]{1,40})\]/);
+  if (!match) return undefined;
+  return match[1].trim().toLowerCase().replace(/[\s_]+/g, '-') || undefined;
+}
+
+/**
  * Extracts question items (Q1, Q2, ... format) from a section's text.
  */
 function extractQuestionItems(sectionText: string): string[] {

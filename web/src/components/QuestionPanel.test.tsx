@@ -399,6 +399,34 @@ describe('QuestionPanel', () => {
     expect(onFocusDocument).toHaveBeenCalledWith(B);
   });
 
+  // ————— P5 — ICD-system topic grouping of the chip strip —————
+  it('groups the chip strip by meta.topic with labeled headers and counts', () => {
+    const e1 = makeItem({ id: 'E1', title: 'Bus voltage', meta: { topic: 'electrical' } });
+    const e2 = makeItem({ id: 'E2', title: 'Connector pinout', meta: { topic: 'electrical' } });
+    const t1 = makeItem({ id: 'T1', title: 'Cooling airflow', meta: { topic: 'thermal' } });
+    const props = baseProps({ items: [e1, e2, t1] });
+    renderWithUser(<QuestionPanel {...props} />);
+
+    // Group headers carry the label and count as text (no color-only signal).
+    expect(screen.getByRole('heading', { name: 'Electrical (2)' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Thermal (1)' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Other/ })).not.toBeInTheDocument();
+    // Every chip still renders.
+    expect(screen.getByRole('button', { name: /Bus voltage/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Cooling airflow/ })).toBeInTheDocument();
+  });
+
+  it('untagged and unknown-topic items land in the "Other" group (null-safe)', () => {
+    const untagged = makeItem({ id: 'U', title: 'Legacy untagged' });
+    const unknown = makeItem({ id: 'K', title: 'Software cadence', meta: { topic: 'software' } });
+    const props = baseProps({ items: [untagged, unknown] });
+    renderWithUser(<QuestionPanel {...props} />);
+
+    expect(screen.getByRole('heading', { name: 'Other (2)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Legacy untagged/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Software cadence/ })).toBeInTheDocument();
+  });
+
   it('open onto an item: onFocusDocument fires for the active item once', () => {
     const item = makeItem({ id: 'A', title: 'Question A', detail: 'About SS-09.a' });
     const onFocusDocument = vi.fn();

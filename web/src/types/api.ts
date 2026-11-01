@@ -194,6 +194,8 @@ export interface PortalItemMeta extends Record<string, unknown> {
   answerHistory?: PortalAnswerHistoryEntry[];
   /** Board #53B — answer is pending in the server answer queue (in-memory only). */
   answerQueued?: boolean;
+  /** P5 — ICD-system topic tag parsed from the question title (QUESTION_TOPICS in src/specialists/open-questions.ts); undefined for pre-tag items. */
+  topic?: string;
 }
 
 export interface PortalItem {

@@ -356,6 +356,8 @@ export class ServerSessionManager {
       title: string;
       detail?: string;
       source: 'autopilot';
+      /** ICD-system topic parsed from the title tag; undefined when untagged. */
+      topic?: string;
     }>) => void;
     onStatusUpdate?: (status: string) => void;
     onToolCall?: (tool: string, args: unknown) => void;
