@@ -25,7 +25,12 @@ export const fsReadHandler: ToolHandler = {
   async execute(args: { path: string }, context: ToolExecutionContext): Promise<ToolExecutionResponse> {
     const safeBase = path.resolve(context.projectPath);
     const target = path.resolve(safeBase, args.path);
-    if (!target.startsWith(safeBase)) {
+    // Sibling-prefix + case-insensitive guard: on win32 (case-insensitive FS)
+    // compare lowercased so 'BASE-x' can never pass as 'BASE'/'BASE' + sep.
+    const ci = process.platform === 'win32';
+    const base = ci ? safeBase.toLowerCase() : safeBase;
+    const resolved = ci ? target.toLowerCase() : target;
+    if (resolved !== base && !resolved.startsWith(base + path.sep)) {
       return { success: false, error: 'Path traversal is not permitted.' };
     }
     if (!fs.existsSync(target)) {

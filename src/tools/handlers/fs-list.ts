@@ -20,7 +20,11 @@ export const fsListHandler: ToolHandler = {
   async execute(args: { dir?: string }, context: ToolExecutionContext): Promise<ToolExecutionResponse> {
     const safeBase = path.resolve(context.projectPath);
     const target = path.resolve(safeBase, args.dir || '.');
-    if (!target.startsWith(safeBase)) {
+    // Sibling-prefix + case-insensitive guard (see fs-read.ts).
+    const ci = process.platform === 'win32';
+    const base = ci ? safeBase.toLowerCase() : safeBase;
+    const resolved = ci ? target.toLowerCase() : target;
+    if (resolved !== base && !resolved.startsWith(base + path.sep)) {
       return { success: false, error: 'Path traversal is not permitted.' };
     }
     if (!fs.existsSync(target)) {
