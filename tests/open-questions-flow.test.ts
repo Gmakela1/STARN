@@ -28,6 +28,11 @@ import {
 } from '../src/workspace/state.js';
 import { ProjectState } from '../src/workspace/types.js';
 import { SpecialistRegistry } from '../src/specialists/registry.js';
+import {
+  OPEN_QUESTIONS_SECTION_RULES,
+  QUESTION_CAP_PER_DOC,
+  capQuestionsPerDoc
+} from '../src/specialists/open-questions.js';
 import { questionSlug } from '../src/core/open-questions-parser.js';
 
 // ── Parser generalization ─────────────────────────────────────────────────────
@@ -318,6 +323,27 @@ describe('formatOpenQuestionsReport', () => {
 // ── Specialist registry rules injection ───────────────────────────────────────
 
 describe('Open Questions rules injection', () => {
+  it('rules text contains the 9-entry cap and blocking-priority directive', () => {
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('MUST NOT exceed 9 entries');
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('BLOCKING');
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('procurement blockers, safety thresholds, baseline conflicts');
+  });
+
+  it('rules text prefers explicitly-marked provisional values for non-blocking items', () => {
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('clearly labeled PROVISIONAL with its basis');
+  });
+
+  it('capQuestionsPerDoc keeps the first 9 items in order and passes through short lists', () => {
+    const twelve = Array.from({ length: 12 }, (_, i) => `Question ${i + 1}`);
+    expect(QUESTION_CAP_PER_DOC).toBe(9);
+    const capped = capQuestionsPerDoc(twelve);
+    expect(capped).toHaveLength(9);
+    expect(capped[0]).toBe('Question 1');
+    expect(capped[8]).toBe('Question 9');
+    expect(capQuestionsPerDoc(['a', 'b'])).toEqual(['a', 'b']);
+    expect(capQuestionsPerDoc<string[]>([])).toEqual([]);
+  });
+
   it('every document specialist except conops and general includes the shared rules', () => {
     const registry = new SpecialistRegistry();
     for (const pkg of registry.listSpecialists()) {

@@ -5,6 +5,26 @@
  * enabling the roadmap panel to flag documents and the pre-turn interview to
  * collect user answers for LLM incorporation.
  */
+/**
+ * Maximum Open Questions entries the portal collects per document per turn.
+ * Enforced by the runner's onQuestions hook; upstream producers should apply
+ * capQuestionsPerDoc() so they share the same semantics.
+ */
+export const QUESTION_CAP_PER_DOC = 9;
+
+/**
+ * Caps a question list to QUESTION_CAP_PER_DOC entries per document.
+ * Input order is preserved and IS the priority ranking: the parser returns
+ * questions in document order, and the model ranks blocking questions first
+ * in that order.
+ *
+ * @param questions - items in priority order (titles or portal item objects)
+ * @returns at most QUESTION_CAP_PER_DOC items, original order
+ */
+export function capQuestionsPerDoc<T>(questions: readonly T[]): T[] {
+  return questions.slice(0, QUESTION_CAP_PER_DOC);
+}
+
 export const OPEN_QUESTIONS_SECTION_RULES = `OPEN QUESTIONS SECTION (MANDATORY):
 - Include a \`## Open Questions\` section listing ANY genuinely unresolved questions that need user input before this deliverable can be considered complete. Format each as a numbered list item: **Q1. <short question title>.** <context and what is not yet confirmed>, followed by a **Why it matters:** explanation.
 - Do NOT silently assume answers or invent default values for genuinely open items.
@@ -12,4 +32,6 @@ export const OPEN_QUESTIONS_SECTION_RULES = `OPEN QUESTIONS SECTION (MANDATORY):
 - Questions the user explicitly defers or skips stay in the Open Questions section.
 - When the prompt contains PREVIOUSLY ANSWERED context, treat those decisions as settled: do NOT re-ask, re-open, or restate them in the Open Questions section; only genuinely NEW unresolved items may appear there.
 - Entries under a "## User Answers (Pending Incorporation)" section are user answers awaiting incorporation: apply them to the relevant sections IN PLACE, then delete that section.
+- The Open Questions section MUST NOT exceed 9 entries. Prioritize genuinely BLOCKING questions (procurement blockers, safety thresholds, baseline conflicts) over informational ones.
+- For a non-blocking unresolved item, prefer recording an explicitly-marked provisional value in the document body (clearly labeled PROVISIONAL with its basis) over adding a question.
 - If nothing is genuinely unresolved, omit the Open Questions section entirely.`;

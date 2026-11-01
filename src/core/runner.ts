@@ -9,6 +9,7 @@ import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { runDiscovery } from './discovery.js';
 import { classifyRequest } from './classifier.js';
 import { parseOpenQuestionsFromContent, questionSlug } from './open-questions-parser.js';
+import { capQuestionsPerDoc } from '../specialists/open-questions.js';
 import { runAgentToolLoop } from './agent-loop.js';
 import { maybeCompact } from './compaction.js';
 import { Logger } from '../util/logger.js';
@@ -656,6 +657,13 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
             title,
             source: 'autopilot' as const
           }));
+          // Document order is the model's priority ranking (blocking
+          // questions first); keep only the top entries per doc/turn.
+          const preCapCount = questionItems.length;
+          questionItems = capQuestionsPerDoc(questionItems);
+          if (questionItems.length < preCapCount) {
+            options.logger?.warn(`Open questions for ${specialist.id} truncated to cap (${questionItems.length} of ${preCapCount} posted)`);
+          }
         }
       } catch (_e) {
         // ignore read errors — an unreadable doc yields no questions

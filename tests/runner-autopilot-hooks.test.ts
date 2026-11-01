@@ -268,6 +268,39 @@ describe('Core Runner autopilot hooks', () => {
     ]);
   });
 
+  it('onQuestions truncates to QUESTION_CAP_PER_DOC, preserves order, and warns', async () => {
+    approveRequirements(stateMgr, tempDir);
+    const titles = Array.from({ length: 12 }, (_, i) => `Blocking question number ${i + 1} about hardware.`);
+    installBomMock(tempDir, mockClient, {
+      draftContent: bomDocWithOpenQuestions(titles),
+      criticResults: [{ passed: true, score: 8.9 }]
+    });
+    const hook = vi.fn();
+    const logger = { info: vi.fn(), warn: vi.fn() };
+
+    await CoreRunner.executeTurn({
+      userPrompt: 'Draft the BOM',
+      projectPath: tempDir,
+      stateManager: stateMgr,
+      client: mockClient,
+      model: 'test-model',
+      toolRegistry,
+      specialistRegistry,
+      forceSpecialistId: 'bom',
+      onQuestions: hook,
+      sessionMessages: [],
+      logger: logger as any
+    });
+
+    expect(hook).toHaveBeenCalledTimes(1);
+    const items = hook.mock.calls[0][0];
+    expect(items).toHaveLength(9);
+    // Order preserved: first 9 questions win (document order = priority).
+    expect(items[0].title).toContain('number 1 about');
+    expect(items[8].title).toContain('number 9 about');
+    expect(logger.warn).toHaveBeenCalledWith('Open questions for bom truncated to cap (9 of 12 posted)');
+  });
+
   it('onQuestions parses the FINAL content after critic revisions settle', async () => {
     approveRequirements(stateMgr, tempDir);
     installBomMock(tempDir, mockClient, {
