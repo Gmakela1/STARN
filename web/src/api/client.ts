@@ -10,6 +10,7 @@ import {
   IssuesSummary,
   PendingCheckpoint,
   PortalAnswerResult,
+  PortalItem,
   PortalListResponse,
   ProjectInfo,
   ProjectIssue,
@@ -87,6 +88,13 @@ export const api = {
     call<PortalAnswerResult>('POST', `/api/portal/${encodeURIComponent(id)}/answer`, { answer }),
   dismissPortalItem: (id: string) =>
     call<{ success: boolean }>('POST', `/api/portal/${encodeURIComponent(id)}/dismiss`),
+  // Research gate — confirm (optionally edited) proposal / reject proposal / undo auto-apply.
+  confirmProposal: (id: string, answer?: string) =>
+    call<{ applied: boolean }>('POST', `/api/portal/${encodeURIComponent(id)}/confirm-proposal`, answer === undefined ? undefined : { answer }),
+  rejectProposal: (id: string) =>
+    call<{ rejected: boolean }>('POST', `/api/portal/${encodeURIComponent(id)}/reject-proposal`),
+  undoAutoApplied: (id: string) =>
+    call<{ item: PortalItem }>('POST', `/api/portal/${encodeURIComponent(id)}/undo-auto`),
 
   // Action comments & flags
   postActionComment: (actionId: string, stepId: number, text: string) =>

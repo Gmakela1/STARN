@@ -835,3 +835,120 @@ describe('QuestionPanel', () => {
     expect(dotOf('Question C')?.className).toContain('bg-amber-400');
   });
 });
+// ————— Research gate states (portal research gate package) —————
+
+describe('QuestionPanel research gate', () => {
+  it('researching item shows a "Researching…" status chip', () => {
+    const item = makeItem({ meta: { researching: true } });
+    renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
+    expect(screen.getByText('Researching…')).toBeTruthy();
+  });
+
+  it('non-researching plain item shows no researching chip', () => {
+    renderWithUser(<QuestionPanel {...baseProps()} />);
+    expect(screen.queryByText('Researching…')).toBeNull();
+  });
+
+  it('proposed answer card: renders answer, sources, confidence; YES/EDIT/NO call the gate handlers', async () => {
+    const item = makeItem({
+      meta: {
+        proposedAnswer: {
+          answer: '48V per the vendor datasheet.',
+          sources: [{ title: 'Vendor datasheet', url: 'https://vendor.example/ds.pdf' }],
+          confidence: 0.7,
+          rationale: 'Stated verbatim.'
+        },
+      },
+    });
+    const props = baseProps({
+      items: [item],
+      onConfirmProposal: vi.fn(async () => {}),
+      onRejectProposal: vi.fn(async () => {}),
+      onUndoAuto: vi.fn(async () => {}),
+    });
+    const { user } = renderWithUser(<QuestionPanel {...props} />);
+
+    expect(screen.getByText('Research proposal — 70% confidence')).toBeTruthy();
+    expect(screen.getByText('48V per the vendor datasheet.')).toBeTruthy();
+    const sourceLink = screen.getByRole('link', { name: 'Vendor datasheet' });
+    expect(sourceLink.getAttribute('href')).toBe('https://vendor.example/ds.pdf');
+
+    await user.click(screen.getByRole('button', { name: 'Use proposal answer' }));
+    expect(props.onConfirmProposal).toHaveBeenCalledWith(item.id, undefined);
+
+    // EDIT: inline textarea pre-filled with the proposal, confirm-with-text.
+    await user.click(screen.getByRole('button', { name: 'Edit proposal answer' }));
+    const textarea = screen.getByLabelText('Edit proposal') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('48V per the vendor datasheet.');
+    await user.type(textarea, ' (edited)');
+    await user.click(screen.getByRole('button', { name: 'Use edited answer' }));
+    expect(props.onConfirmProposal).toHaveBeenCalledWith(item.id, '48V per the vendor datasheet. (edited)');
+
+    // NO: reject clears the proposal, item stays open plain.
+    await user.click(screen.getByRole('button', { name: 'Reject proposal' }));
+    expect(props.onRejectProposal).toHaveBeenCalledWith(item.id);
+  });
+
+  it('proposal action failure surfaces an alert (no color-only signal)', async () => {
+    const item = makeItem({
+      meta: {
+        proposedAnswer: { answer: '48V', sources: [], confidence: 0.7, rationale: '' },
+      },
+    });
+    const props = baseProps({
+      items: [item],
+      onConfirmProposal: vi.fn(async () => { throw new Error('Item no longer open'); }),
+    });
+    const { user } = renderWithUser(<QuestionPanel {...props} />);
+    await user.click(screen.getByRole('button', { name: 'Use proposal answer' }));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByText('Item no longer open')).toBeTruthy();
+  });
+
+  it('auto-applied banner: UNDO visible pre-incorporation and calls onUndoAuto', async () => {
+    const item = makeItem({
+      status: 'answered',
+      answer: '48V',
+      meta: {
+        autoApplied: {
+          answer: '48V',
+          appendedText: '\n\n## User Answers (Pending Incorporation)\n\n**Q**\nAnswer: 48V\n',
+          confidence: 0.96,
+          sources: [],
+          rationale: 'Vendor datasheet.',
+        },
+      },
+    });
+    const props = baseProps({
+      items: [item],
+      onConfirmProposal: vi.fn(async () => {}),
+      onRejectProposal: vi.fn(async () => {}),
+      onUndoAuto: vi.fn(async () => {}),
+    });
+    const { user } = renderWithUser(<QuestionPanel {...props} />);
+
+    expect(screen.getByText(/Auto-applied from research \(96% confidence\) — pending incorporation/)).toBeTruthy();
+    const undo = screen.getByRole('button', { name: 'Undo auto-applied answer' });
+    await user.click(undo);
+    expect(props.onUndoAuto).toHaveBeenCalledWith(item.id);
+  });
+
+  it('auto-applied banner: incorporated items show NO undo button', () => {
+    const item = makeItem({
+      status: 'answered',
+      answer: '48V',
+      meta: {
+        autoApplied: {
+          answer: '48V',
+          confidence: 0.96,
+          sources: [],
+          rationale: '',
+          incorporated: true,
+        },
+      },
+    });
+    renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
+    expect(screen.queryByRole('button', { name: 'Undo auto-applied answer' })).toBeNull();
+    expect(screen.getByText(/Auto-applied from research \(96% confidence\)/)).toBeTruthy();
+  });
+});

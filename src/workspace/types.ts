@@ -63,6 +63,8 @@ export type PortalItemSeverity = 'blocking' | 'normal';
 export interface PortalAnswerHistoryEntry {
   text: string;
   at: string;
+  /** Provenance: 'research-gate' (auto/confirmed) or 'user-confirmed-research'. */
+  source?: string;
 }
 
 /**
@@ -80,6 +82,35 @@ export interface PortalItemMeta extends Record<string, unknown> {
   topic?: string;
   /** P2 — set on a fuzzy cross-doc twin of an already-open question; value is the canonical item id. Hidden from the default listing. */
   upstreamOf?: string;
+  /** Research gate — a read-only research turn is running for this item (async, post-intake). */
+  researching?: boolean;
+  /** Research gate — critic verdict below auto threshold: proposal awaiting user YES/NO/EDIT. */
+  proposedAnswer?: ProposedAnswer;
+  /** Research gate — a high-confidence answer was auto-applied; UNDO available until incorporation. */
+  autoApplied?: AutoAppliedAnswer;
+}
+
+export interface ResearchSource {
+  title: string;
+  url?: string;
+}
+
+export interface ProposedAnswer {
+  answer: string;
+  sources: ResearchSource[];
+  confidence: number;
+  rationale: string;
+}
+
+export interface AutoAppliedAnswer {
+  answer: string;
+  /** Exact text appended to the doc's pending-answers block; removed verbatim on undo. */
+  appendedText?: string;
+  confidence: number;
+  sources: ResearchSource[];
+  rationale: string;
+  /** In-memory list decoration (portal GET): pending block already incorporated → no UNDO. */
+  incorporated?: boolean;
 }
 
 export interface PortalItem {

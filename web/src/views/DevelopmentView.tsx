@@ -1340,9 +1340,35 @@ export default function DevelopmentView({
         {surface !== 'closed' && (
           <QuestionPanel
             surface={surface}
-            items={visibleItems.filter(i => i.status === 'open')}
+            items={visibleItems.filter(i => i.status === 'open' || (i.status === 'answered' && i.meta?.autoApplied))}
             answerStates={answerStates}
             onSubmit={handleQueueAnswer}
+            onConfirmProposal={async (id, editedText) => {
+              try {
+                await api.confirmProposal(id, editedText);
+                await refreshDoc();
+              } catch (err) {
+                appendEntry({ role: 'system', text: `Couldn't apply the research proposal — ${(err as Error).message}.` });
+                throw err;
+              }
+            }}
+            onRejectProposal={async (id) => {
+              try {
+                await api.rejectProposal(id);
+              } catch (err) {
+                appendEntry({ role: 'system', text: `Couldn't reject the research proposal — ${(err as Error).message}.` });
+                throw err;
+              }
+            }}
+            onUndoAuto={async (id) => {
+              try {
+                await api.undoAutoApplied(id);
+                await refreshDoc();
+              } catch (err) {
+                appendEntry({ role: 'system', text: `Couldn't undo the auto-applied answer — ${(err as Error).message}.` });
+                throw err;
+              }
+            }}
             onDismiss={async (id) => {
               setDismissedIds(prev => new Set(prev).add(id));
               try {

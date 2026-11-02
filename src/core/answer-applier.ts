@@ -89,14 +89,22 @@ function phaseIdFromDocPath(docPath: string): string {
  * doc is marked 'revised' (from 'auto-approved'/'passed' only). Returns
  * counter-questions raised by the incorporation turn.
  */
+export interface ApplyAnswerOptions {
+  /** Research-gate provenance: recorded on the item's saved history entry. */
+  provenance?: string;
+}
+
 export async function applyAnswer(
   deps: AnswerApplierDeps,
   itemId: string,
-  answerText: string
+  answerText: string,
+  options?: ApplyAnswerOptions
 ): Promise<{
   updatedItem: PortalItem;
   affectedDocs: string[];
   counterQuestions: PortalItem[];
+  /** Exact bytes appended to the doc's pending-answers block (undefined when the doc was empty). */
+  appendedText?: string;
 }> {
   const { stateManager, projectPath } = deps;
 
@@ -134,14 +142,17 @@ export async function applyAnswer(
   // block (created if missing) — no per-answer specialist turn. If the doc
   // is missing/empty there is nothing to edit; the answer still lands on the
   // item and reaches the next turn via context.
+  // appendedText is the exact bytes added after the pre-existing content —
+  // returned so the research gate can remove it verbatim on UNDO.
+  let appendedText: string | undefined;
   if (existingContent.trim()) {
     const displayTitle = item.title.replace(/^Q\d+[\.:\)]\s*/, '');
-    const pendingBlock = `${existingContent.trimEnd()}\n\n${PENDING_INCORPORATION_MARKER}\n\n**${displayTitle}**\nAnswer: ${answerText}\n`;
-    fs.writeFileSync(docFilePath, pendingBlock, 'utf-8');
+    appendedText = `\n\n${PENDING_INCORPORATION_MARKER}\n\n**${displayTitle}**\nAnswer: ${answerText}\n`;
+    fs.writeFileSync(docFilePath, existingContent.trimEnd() + appendedText, 'utf-8');
   }
 
   // 4. Mark the item answered.
-  const updatedItem = answerPortalItem(stateManager, itemId, answerText);
+  const updatedItem = answerPortalItem(stateManager, itemId, answerText, options?.provenance);
 
   // 5. Incorporation trigger: when the LAST open question for this docPath is
   // answered (recounted AFTER this answer landed — the answered item does not
@@ -295,5 +306,5 @@ export async function applyAnswer(
     }
   }
 
-  return { updatedItem, affectedDocs: [], counterQuestions };
+  return { updatedItem, affectedDocs: [], counterQuestions, appendedText };
 }

@@ -15,9 +15,11 @@ import { ToolRegistry } from '../tools/registry.js';
 import { SpecialistRegistry } from '../specialists/registry.js';
 import { Logger } from '../util/logger.js';
 import { AutopilotDriver, AutopilotEvent } from '../core/autopilot.js';
-import { applyAnswer } from '../core/answer-applier.js';
+import { applyAnswer, AnswerApplierDeps } from '../core/answer-applier.js';
+import { runResearchGate, ResearchGateDeps, undoAutoApplied } from '../core/research-gate.js';
 import { AnswerQueue, AnswerApplyResult, AnswerFrameEvent } from '../core/answer-queue.js';
 import { EventBus } from '../core/event-bus.js';
+import { PortalItem } from '../workspace/types.js';
 
 export interface SessionDeps {
   projectPath: string;
@@ -321,6 +323,12 @@ export class ServerSessionManager {
       // keeps it from overlapping one already in flight.
       void this.drainWithGuard();
     }
+    // Portal research gate (post-intake enrichment, async, non-blocking):
+    // each NEW open question published at intake kicks a read-only research
+    // turn + research critic. Failure = the item stays a plain open question.
+    if (event.kind === 'question') {
+      this.maybeRunResearchGate(event.item);
+    }
     // Answer frames are point-in-time: a reconnect must not re-fire
     // answer_applied (duplicate chat entries) or a stale answer_queued
     // (downgrading an open chip). They still fan out live below; only the
@@ -537,23 +545,85 @@ export class ServerSessionManager {
    */
   private async applyAnswerNow(itemId: string, answer: string): Promise<AnswerApplyResult> {
     try {
-      const result = await applyAnswer(
-        {
-          stateManager: this.deps.stateManager,
-          projectPath: this.deps.projectPath,
-          executeTurn: this.createAnswerExecuteTurn(),
-          isBusy: () => this.busy && !this.drainHoldsGuard,
-          emitStatus: (message) => this.publish({ kind: 'status', message }),
-          emitPhase: (phaseId, status, name) => this.publish({ kind: 'phase', phaseId, status, name }),
-          emitEvent: (ev) => this.publish(ev)
-        },
-        itemId,
-        answer
-      );
+      const result = await applyAnswer(this.answerApplierDeps(), itemId, answer);
       return { ok: true, item: result.updatedItem, affectedDocs: result.affectedDocs };
     } catch (err: any) {
       return { ok: false, error: err?.message ?? String(err) };
     }
+  }
+
+  // ── Portal research gate ────────────────────────────────────────────
+
+  /** Item ids with a research-gate run in flight (in-memory dedupe only). */
+  private readonly gateInFlight = new Set<string>();
+
+  /**
+   * Fires the research gate for one newly-intaken open question — async,
+   * never awaited by the publishing turn. Dedupe: items already
+   * researching/proposed/auto-applied or with a run in flight are skipped.
+   */
+  private maybeRunResearchGate(item: PortalItem): void {
+    if (!item || item.type !== 'question' || item.status !== 'open' || !item.docPath) return;
+    if (item.meta?.researching === true || item.meta?.proposedAnswer || item.meta?.autoApplied) return;
+    if (this.gateInFlight.has(item.id)) return;
+    this.gateInFlight.add(item.id);
+    void runResearchGate(this.buildResearchGateDeps(), item).finally(() => {
+      this.gateInFlight.delete(item.id);
+    });
+  }
+
+  /** Research-gate deps: drafting client for the loop, critic client for the rubric. */
+  private buildResearchGateDeps(): ResearchGateDeps {
+    return {
+      client: this.roleClients.drafting.client,
+      model: this.roleClients.drafting.model,
+      criticClient: this.roleClients.critic.client,
+      criticModel: this.roleClients.critic.model,
+      projectPath: this.deps.projectPath,
+      stateManager: this.deps.stateManager,
+      toolRegistry: this.deps.toolRegistry,
+      logger: this.deps.logger,
+      emitStatus: (message) => this.publish({ kind: 'status', message }),
+      applyAnswer: async (itemId, answer) => {
+        const result = await applyAnswer(this.answerApplierDeps(), itemId, answer, { provenance: 'research-gate' });
+        return { updatedItem: result.updatedItem, appendedText: result.appendedText };
+      }
+    };
+  }
+
+  /** Shared AnswerApplierDeps (answer queue drain, research gate, confirm route). */
+  private answerApplierDeps(): AnswerApplierDeps {
+    return {
+      stateManager: this.deps.stateManager,
+      projectPath: this.deps.projectPath,
+      executeTurn: this.createAnswerExecuteTurn(),
+      isBusy: () => this.busy && !this.drainHoldsGuard,
+      emitStatus: (message) => this.publish({ kind: 'status', message }),
+      emitPhase: (phaseId, status, name) => this.publish({ kind: 'phase', phaseId, status, name }),
+      emitEvent: (ev) => this.publish(ev)
+    };
+  }
+
+  /**
+   * Confirms a research proposal (user YES or edited text): routes the answer
+   * through the SAME answer-applier path with 'user-confirmed-research'
+   * provenance. Throws on item-not-found / no-longer-open (route maps codes).
+   */
+  async applyConfirmedProposal(itemId: string, answer: string): Promise<void> {
+    await applyAnswer(this.answerApplierDeps(), itemId, answer, { provenance: 'user-confirmed-research' });
+  }
+
+  /** Core undo wrapper with SSE status (route for POST /api/portal/:id/undo-auto). */
+  async undoAutoAppliedAnswer(itemId: string): Promise<PortalItem> {
+    return undoAutoApplied(
+      {
+        stateManager: this.deps.stateManager,
+        projectPath: this.deps.projectPath,
+        logger: this.deps.logger,
+        emitStatus: (message) => this.publish({ kind: 'status', message })
+      },
+      itemId
+    );
   }
   autopilotResume(docId?: string): void {
     // Prevent double-start: if already running, reject.

@@ -200,8 +200,9 @@ export function addPortalItem(manager: ProjectStateManager, input: PortalItemInp
 
 /**
  * Marks a portal item answered, storing the answer text.
+ * Optional provenance lands on the saved history entry (research-gate answers).
  */
-export function answerPortalItem(manager: ProjectStateManager, id: string, answer: string): PortalItem {
+export function answerPortalItem(manager: ProjectStateManager, id: string, answer: string, provenance?: string): PortalItem {
   const state = manager.getState();
   const item = (state.portalItems || []).find(i => i.id === id);
   if (!item) {
@@ -217,7 +218,10 @@ export function answerPortalItem(manager: ProjectStateManager, id: string, answe
   const priorHistory = Array.isArray(item.meta?.answerHistory) ? item.meta!.answerHistory : [];
   item.meta = {
     ...(item.meta || {}),
-    answerHistory: [...priorHistory, { text: answer, at: item.updatedAt }].slice(-ANSWER_HISTORY_CAP)
+    answerHistory: [
+      ...priorHistory,
+      provenance ? { text: answer, at: item.updatedAt, source: provenance } : { text: answer, at: item.updatedAt }
+    ].slice(-ANSWER_HISTORY_CAP)
   };
   // Stable identity — answering one question supersedes any still-open twin
   // (same type + docPath + slug) so the user is never asked the same question

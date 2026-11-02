@@ -37,6 +37,12 @@ export interface QuestionPanelProps {
   onFocusDocument?: (item: PortalItem) => void;
   /** Parent-driven deep-link focus (design §5.E); token prevents re-adoption. */
   focusRequest?: { id: string; token: number } | null;
+  /** Research gate — confirm a proposal (editedText overrides the proposal text). */
+  onConfirmProposal?: (id: string, editedText?: string) => Promise<void>;
+  /** Research gate — reject a proposal (item stays a plain open question). */
+  onRejectProposal?: (id: string) => Promise<void>;
+  /** Research gate — undo an auto-applied answer (pre-incorporation window). */
+  onUndoAuto?: (id: string) => Promise<void>;
 }
 
 /** §1.4.1 — per-phase chip visuals, keyed off the AnswerPhase union (moved from QuestionBar). */
@@ -146,7 +152,10 @@ export default function QuestionPanel({
   selectedDocName,
   onOpenDocument,
   onFocusDocument,
-  focusRequest
+  focusRequest,
+  onConfirmProposal,
+  onRejectProposal,
+  onUndoAuto
 }: QuestionPanelProps) {
   const [activeId, setActiveId] = useState<string>(items[0]?.id ?? '');
   // Board #53A — drafts seed from the module store so close/reopen, unmount,
@@ -159,6 +168,12 @@ export default function QuestionPanel({
   const [submitError, setSubmitError] = useState<string | null>(null);
   /** Item id with a submit in flight — gates the Send button (never Enter). */
   const [submittingId, setSubmittingId] = useState<string | null>(null);
+  /** Research gate — inline proposal edit (one item at a time). */
+  const [proposalEdit, setProposalEdit] = useState<{ id: string; text: string } | null>(null);
+  /** Research gate — item id with a proposal/undo action in flight. */
+  const [gateActionId, setGateActionId] = useState<string | null>(null);
+  /** Research gate — last proposal/undo action error per item id. */
+  const [gateActionError, setGateActionError] = useState<Record<string, string>>({});
   /**
    * Snapshot of just-applied items so the 8s "Resolved ✓" dwell keeps rendering
    * after the item leaves the open pool (the open-only poll carries it away).
@@ -371,6 +386,7 @@ export default function QuestionPanel({
   const voiceActive =
     voiceItem !== null &&
     voiceItem.type !== 'parked' &&
+    voiceItem.status === 'open' &&
     voicePhase !== 'queued' &&
     voicePhase !== 'applying' &&
     voicePhase !== 'applied' &&
@@ -500,6 +516,31 @@ export default function QuestionPanel({
     }
   };
 
+  /** Shared proposal/undo action wrapper: per-item in-flight flag + error catch. */
+  const runGateAction = async (id: string, action: () => Promise<void>): Promise<void> => {
+    setGateActionId(id);
+    setGateActionError(prev => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    try {
+      await action();
+      setProposalEdit(prev => (prev?.id === id ? null : prev));
+    } catch (err) {
+      setGateActionError(prev => ({ ...prev, [id]: err instanceof Error ? err.message : 'Action failed.' }));
+    } finally {
+      setGateActionId(prev => (prev === id ? null : prev));
+    }
+  };
+  const confirmProposal = (id: string, editedText?: string): Promise<void> =>
+    runGateAction(id, () => (onConfirmProposal ? onConfirmProposal(id, editedText) : Promise.resolve()));
+  const rejectProposal = (id: string): Promise<void> =>
+    runGateAction(id, () => (onRejectProposal ? onRejectProposal(id) : Promise.resolve()));
+  const undoAuto = (id: string): Promise<void> =>
+    runGateAction(id, () => (onUndoAuto ? onUndoAuto(id) : Promise.resolve()));
+
   const renderStateChip = (id: string): ReactNode => {
     const st = answerStates[id];
     if (!st) return null;
@@ -600,6 +641,11 @@ export default function QuestionPanel({
     const isParked = item.type === 'parked';
     const dwellActive =
       answerStates[item.id]?.phase === 'applied' || recentlyResolved[item.id] !== undefined;
+    // Research gate states: auto-applied (answered + snapshot) / proposed / researching.
+    const auto = item.status === 'answered' ? item.meta?.autoApplied : undefined;
+    const autoAppliedActive = auto !== undefined;
+    const proposal = item.status === 'open' ? item.meta?.proposedAnswer : undefined;
+    const researching = item.status === 'open' && item.meta?.researching === true;
 
     let cardTone = 'border-l-amber-500 bg-amber-950/10';
     let labelText = 'AI needs input';
@@ -612,6 +658,12 @@ export default function QuestionPanel({
       labelClass = 'text-rose-200';
       iconClass = 'text-rose-400';
       LabelIcon = TriangleAlert;
+    } else if (autoAppliedActive) {
+      cardTone = 'border-l-[#3b4658] bg-[#0d1017]/70';
+      labelText = 'Auto-applied from research';
+      labelClass = 'text-[#a8b3c4]';
+      iconClass = 'text-[#c4b5fd]';
+      LabelIcon = CheckCircle2;
     } else if (dwellActive) {
       cardTone = 'border-l-[#3b4658] bg-[#0d1017]/70';
       labelText = 'Resolved ✓';
@@ -666,6 +718,11 @@ export default function QuestionPanel({
           <div className="flex min-w-0 items-center gap-2">
             <LabelIcon className={`h-4 w-4 shrink-0 ${iconClass}`} aria-hidden />
             <span className={`text-xs font-bold ${labelClass}`}>{labelText}</span>
+            {researching && (
+              <span className="inline-flex min-h-[24px] items-center gap-1.5 rounded-full border border-violet-700/50 bg-violet-950/40 px-2.5 py-0.5 text-[11px] font-medium text-violet-300">
+                <Loader2 className="h-3 w-3 motion-safe:animate-spin" aria-hidden /> Researching…
+              </span>
+            )}
             {item.docPath && (
               <span className="max-w-[120px] truncate text-[11px] font-mono text-[#6e7d92]">
                 {item.docPath.split('/').pop()}
@@ -719,6 +776,95 @@ export default function QuestionPanel({
         )}
 
         {detailView && <div className="mt-1.5">{detailView}</div>}
+
+        {proposal && (
+          <div className="mt-2 rounded-md border border-[#8b5cf6]/50 bg-[#2e1065]/20 p-2.5">
+            <p className="text-[11px] font-semibold text-violet-300">
+              Research proposal — {Math.round(proposal.confidence * 100)}% confidence
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-[#e8edf5]">{proposal.answer}</p>
+            {proposal.sources.length > 0 && (
+              <ul className="mt-1 list-inside list-disc space-y-0.5">
+                {proposal.sources.map((s, i) => (
+                  <li key={i} className="text-[11px] text-[#a8b3c4]">
+                    {s.url ? (
+                      <a href={s.url} target="_blank" rel="noreferrer" className="underline hover:text-[#e8edf5]">{s.title || s.url}</a>
+                    ) : (
+                      s.title
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {proposal.rationale && <p className="mt-1 text-[11px] text-[#6e7d92]">{proposal.rationale}</p>}
+            {gateActionError[item.id] && (
+              <p role="alert" className="mt-1 rounded-md border border-rose-800/60 bg-rose-950/40 px-2.5 py-1 text-xs text-rose-300">
+                {gateActionError[item.id]}
+              </p>
+            )}
+            {proposalEdit?.id === item.id ? (
+              <div className="mt-1.5 space-y-1">
+                <label htmlFor={`proposal-edit-${item.id}`} className="text-[11px] font-semibold text-[#a8b3c4]">
+                  Edit proposal
+                </label>
+                <textarea
+                  id={`proposal-edit-${item.id}`}
+                  value={proposalEdit.text}
+                  onChange={e => setProposalEdit({ id: item.id, text: e.target.value })}
+                  className="min-h-[64px] w-full resize-y rounded-lg border border-[#3b4658] bg-[#05070c] px-2.5 py-2 text-xs text-[#e8edf5] focus:border-[#ff2a3c] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/40"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => confirmProposal(item.id, proposalEdit.text)}
+                    disabled={gateActionId === item.id}
+                    aria-label="Use edited answer"
+                    className="min-h-[32px] rounded-lg border border-rose-700/40 bg-[#d61f2c] px-2.5 text-[11px] font-semibold text-white transition hover:bg-[#e11d3f] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
+                  >
+                    Use edited answer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProposalEdit(null)}
+                    aria-label="Cancel edit"
+                    className="min-h-[32px] rounded-lg border border-[#3b4658] bg-[#0d1017] px-2.5 text-[11px] font-medium text-[#a8b3c4] transition hover:bg-[#11151d] focus:ring-2 focus:ring-[#ff2a3c]/60"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => confirmProposal(item.id)}
+                  disabled={gateActionId === item.id}
+                  aria-label="Use proposal answer"
+                  className="min-h-[32px] rounded-lg border border-rose-700/40 bg-[#d61f2c] px-2.5 text-[11px] font-semibold text-white transition hover:bg-[#e11d3f] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
+                >
+                  Use proposal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProposalEdit({ id: item.id, text: proposal.answer })}
+                  aria-label="Edit proposal answer"
+                  className="min-h-[32px] rounded-lg border border-[#3b4658] bg-[#0d1017] px-2.5 text-[11px] font-medium text-[#a8b3c4] transition hover:bg-[#11151d] focus:ring-2 focus:ring-[#ff2a3c]/60"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => rejectProposal(item.id)}
+                  disabled={gateActionId === item.id}
+                  aria-label="Reject proposal"
+                  className="min-h-[32px] rounded-lg border border-[#3b4658] bg-[#0d1017] px-2.5 text-[11px] font-medium text-[#a8b3c4] transition hover:bg-[#11151d] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
+                >
+                  Reject
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {isParked && item.gaps && item.gaps.length > 0 && (
           <div className="mt-2 space-y-1">
@@ -774,13 +920,43 @@ export default function QuestionPanel({
           <label htmlFor="question-panel-composer" className="text-xs font-semibold text-[#a8b3c4]">
             Your answer
           </label>
-          {dwellActive ? (
-            <div
-              role="status"
-              className="flex min-h-[96px] items-center gap-2 rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 py-2.5 text-sm font-medium text-[#e8edf5]"
-            >
-              <Check className="h-4 w-4" aria-hidden /> Resolved ✓
-            </div>
+          {dwellActive || autoAppliedActive ? (
+            autoAppliedActive && auto ? (
+              <div
+                role="status"
+                className="rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 py-2.5 text-sm font-medium text-[#e8edf5]"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Check className="h-4 w-4" aria-hidden />
+                  <span>
+                    Auto-applied from research ({Math.round(auto.confidence * 100)}% confidence) — pending incorporation
+                  </span>
+                  {!auto.incorporated && (
+                    <button
+                      type="button"
+                      onClick={() => undoAuto(item.id)}
+                      disabled={gateActionId === item.id}
+                      aria-label="Undo auto-applied answer"
+                      className="min-h-[32px] rounded-lg border border-[#3b4658] bg-[#0d1017] px-2.5 text-[11px] font-semibold text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
+                    >
+                      Undo
+                    </button>
+                  )}
+                </div>
+                {gateActionError[item.id] && (
+                  <p role="alert" className="mt-1 rounded-md border border-rose-800/60 bg-rose-950/40 px-2.5 py-1 text-xs text-rose-300">
+                    {gateActionError[item.id]}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div
+                role="status"
+                className="flex min-h-[96px] items-center gap-2 rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 py-2.5 text-sm font-medium text-[#e8edf5]"
+              >
+                <Check className="h-4 w-4" aria-hidden /> Resolved ✓
+              </div>
+            )
           ) : (
             <>
               {/* Recording indicator (Alt-initiated only — pill-initiated
@@ -862,10 +1038,10 @@ export default function QuestionPanel({
               </div>
             </>
           )}
-          {!dwellActive && (
+          {!dwellActive && !autoAppliedActive && (
             <p className="text-xs text-[#6e7d92]">Usually 1–3 sentences is enough.</p>
           )}
-          {!dwellActive && submitError && (
+          {!dwellActive && !autoAppliedActive && submitError && (
             <p role="alert" className="mt-1.5 rounded-md border border-rose-800/60 bg-rose-950/40 px-2.5 py-1.5 text-xs text-rose-300">
               {submitError}
             </p>
