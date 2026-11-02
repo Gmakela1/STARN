@@ -626,6 +626,20 @@ export async function runResearchGate(deps: ResearchGateDeps, item: PortalItem):
     setItemResearching(deps.stateManager, item.id, false);
 
     if (assessment.verdict === 'auto') {
+      // Fresh-state guard (mirrors the storeProposal check): a wall-clock cap
+      // can abandon this run while it later completes — re-read state for this
+      // item right before appending and bail when anything changed since the
+      // assessment (status moved, answer/sections already written, another
+      // re-fired run owns meta.researching). Prevents late double-append.
+      const fresh = (deps.stateManager.getState().portalItems || []).find(i => i.id === item.id);
+      if (
+        !fresh || fresh.status !== 'open' ||
+        fresh.meta?.autoApplied || fresh.meta?.proposedAnswer ||
+        fresh.meta?.sections || fresh.meta?.researching === true
+      ) {
+        deps.emitStatus?.(`Research exhausted for: ${short} — left as open question`);
+        return {};
+      }
       deps.emitStatus?.(`Research answer auto-applied (${Math.round(assessment.confidence * 100)}% confidence): ${short}`);
       const applied = await applyAutoAnswer(deps, item, assessment, research);
       if (!applied) {

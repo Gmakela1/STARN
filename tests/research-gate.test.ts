@@ -193,6 +193,36 @@ describe('research gate wiring', () => {
     expect(applierDeps.executeTurn).not.toHaveBeenCalled();
   });
 
+  it('fresh-state guard: state changed between assessment and apply → auto-apply bails, no append', async () => {
+    // A hung-then-late-completing abandoned run writes its sections AFTER this
+    // run's critic (assessment) but BEFORE this run's auto-apply — the same
+    // window storeProposal already guards. Simulate by mutating fresh state at
+    // the end of the critic turn.
+    const realCritic = criticClient.chatCompletion;
+    criticClient.chatCompletion = vi.fn(async (...args: Parameters<typeof realCritic>) => {
+      const result = await realCritic(...args);
+      const state = stateMgr.getState();
+      const mutated = (state.portalItems || []).find(i => i.id === item.id)!;
+      mutated.meta = { ...(mutated.meta || {}), sections: { bluf: 'Late abandoned-run section write.' } };
+      stateMgr.saveState(state);
+      return result;
+    });
+    const applySpy = vi.fn(gateDeps.applyAnswer);
+    gateDeps.applyAnswer = applySpy;
+
+    await runResearchGate(gateDeps, item);
+
+    // No answer was appended and the item stays a plain open question.
+    expect(applySpy).not.toHaveBeenCalled();
+    const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
+    expect(stored.status).toBe('open');
+    expect(stored.meta?.autoApplied).toBeUndefined();
+    const doc = fs.readFileSync(path.join(tmpDir, 'docs', 'CONOPS.md'), 'utf-8');
+    expect(doc).not.toContain('## User Answers (Pending Incorporation)');
+    const statuses = emitStatus.mock.calls.map(c => c[0] as string);
+    expect(statuses.some(s => s.includes('left as open question'))).toBe(true);
+  });
+
   it('propose tier: critic below auto threshold stores proposedAnswer, item stays open', async () => {
     criticClient.chatCompletion = vi.fn(async () =>
       chat(JSON.stringify({ confidence: 0.45, verdict: 'propose', rationale: 'Forum-sourced.' }))
