@@ -248,7 +248,7 @@ describe('research gate wiring', () => {
 
   it('failure discipline: research loop fails → plain item, status event, no throw', async () => {
     researchClient.chatCompletion = vi.fn(async () => { throw new Error('model exploded'); });
-    await expect(runResearchGate(gateDeps, item)).resolves.toBeUndefined();
+    await expect(runResearchGate(gateDeps, item)).resolves.toEqual({});
     const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
     expect(stored.status).toBe('open');
     expect(stored.meta?.researching).toBe(false);
@@ -259,7 +259,7 @@ describe('research gate wiring', () => {
     // Critic says auto, but the answer-applier wiring throws — the gate must
     // swallow it and leave the item as a plain open question.
     gateDeps.applyAnswer = async () => { throw new Error('applier exploded'); };
-    await expect(runResearchGate(gateDeps, item)).resolves.toBeUndefined();
+    await expect(runResearchGate(gateDeps, item)).resolves.toEqual({});
     const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
     expect(stored.status).toBe('open');
     expect(stored.meta?.researching).toBe(false);

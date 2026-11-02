@@ -6,6 +6,7 @@ import { PortalItem, PortalItemType, AutopilotState, ProjectState } from '../wor
 import { TurnResult } from './runner.js';
 import { approveArtifact } from './approvals.js';
 import { addPortalItem, answerPortalItem, listPortalItems, type PortalItemInput } from './question-portal.js';
+import type { QuestionSections } from './open-questions-parser.js';
 import { PENDING_INCORPORATION_MARKER, stripPendingBlock, extractPendingBlock, INCORPORATION_CRITIC_FOCUS, buildIncorporationPrompt } from './incorporation-prompt.js';
 import { runRippleScan, summarizeDiff, RippleSource, RippleDeps } from './ripple.js';
 import { Logger } from '../util/logger.js';
@@ -53,6 +54,8 @@ export interface AutopilotDeps {
       source: 'autopilot';
       /** ICD-system topic parsed from the title tag; undefined when untagged. */
       topic?: string;
+      /** Format-v2 decision-memo sections parsed tolerantly from the entry; undefined for legacy entries. */
+      sections?: QuestionSections;
     }>) => void;
     /** Live status updates from the runner (discovery, drafting, critic). */
     onStatusUpdate?: (status: string) => void;
@@ -82,9 +85,14 @@ function questionPayloadToPortalInput(item: {
   detail?: string;
   source: 'autopilot';
   topic?: string;
+  sections?: QuestionSections;
 }): PortalItemInput {
-  const { topic, ...rest } = item;
-  return { ...rest, meta: topic ? { topic } : undefined };
+  const { topic, sections, ...rest } = item;
+  // Format-v2 decision-memo sections land on meta.sections alongside the topic tag.
+  const meta = topic || sections
+    ? { ...(topic ? { topic } : {}), ...(sections ? { sections } : {}) }
+    : undefined;
+  return { ...rest, meta };
 }
 
 /**

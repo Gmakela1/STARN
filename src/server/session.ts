@@ -16,7 +16,7 @@ import { SpecialistRegistry } from '../specialists/registry.js';
 import { Logger } from '../util/logger.js';
 import { AutopilotDriver, AutopilotEvent } from '../core/autopilot.js';
 import { applyAnswer, AnswerApplierDeps } from '../core/answer-applier.js';
-import { runResearchGate, ResearchGateDeps, undoAutoApplied, recoverStaleResearchingItems } from '../core/research-gate.js';
+import { runResearchGate, runResearchBackfill, listBackfillEligibleItems, ResearchGateDeps, undoAutoApplied, recoverStaleResearchingItems } from '../core/research-gate.js';
 import { webFetchHandler } from '../tools/handlers/web-fetch.js';
 import { AnswerQueue, AnswerApplyResult, AnswerFrameEvent } from '../core/answer-queue.js';
 import { EventBus } from '../core/event-bus.js';
@@ -383,6 +383,8 @@ export class ServerSessionManager {
       source: 'autopilot';
       /** ICD-system topic parsed from the title tag; undefined when untagged. */
       topic?: string;
+      /** Format-v2 decision-memo sections parsed tolerantly from the entry; undefined for legacy entries. */
+      sections?: import('../core/open-questions-parser.js').QuestionSections;
     }>) => void;
     onStatusUpdate?: (status: string) => void;
     onToolCall?: (tool: string, args: unknown) => void;
@@ -574,6 +576,9 @@ export class ServerSessionManager {
   /** Item ids with a research-gate run in flight (in-memory dedupe only). */
   private readonly gateInFlight = new Set<string>();
 
+  /** Research-all backfill single-run guard (in-memory, per session). */
+  private researchAllInFlight = false;
+
   /**
    * Fires the research gate for one newly-intaken open question — async,
    * never awaited by the publishing turn. Dedupe: items already
@@ -587,6 +592,34 @@ export class ServerSessionManager {
     void runResearchGate(this.buildResearchGateDeps(), item).finally(() => {
       this.gateInFlight.delete(item.id);
     });
+  }
+
+  /**
+   * Starts the legacy backfill ("Research open questions") for POST
+   * /api/portal/research-all: runs runResearchBackfill over the eligible
+   * legacy items (listBackfillEligibleItems — not researching/proposed/
+   * auto-applied, no meta.sections yet), sequentially, sharing gateInFlight
+   * dedupe with the per-item gate. Single-run guarded; the route refuses
+   * while the autopilot chain runs. Publishes the kickoff status event;
+   * per-item events come from the gate machinery itself. Returns the
+   * eligible-item count (0 → still started, nothing to do).
+   */
+  startResearchBackfill(): { started: boolean; count: number } {
+    if (this.researchAllInFlight) return { started: false, count: 0 };
+    this.researchAllInFlight = true;
+    try {
+      const eligible = listBackfillEligibleItems(this.deps.stateManager, this.gateInFlight);
+      this.publish({ kind: 'status', message: `Researching ${eligible.length} open questions…` });
+      void runResearchBackfill({ ...this.buildResearchGateDeps(), inFlight: this.gateInFlight })
+        .catch(err => this.deps.logger?.warn(`Research-all backfill failed: ${err?.message ?? err}`))
+        .finally(() => {
+          this.researchAllInFlight = false;
+        });
+      return { started: true, count: eligible.length };
+    } catch (err) {
+      this.researchAllInFlight = false;
+      throw err;
+    }
   }
 
   /** Research-gate deps: drafting client for the loop, critic client for the rubric. */

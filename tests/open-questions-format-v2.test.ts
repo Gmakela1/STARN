@@ -1,0 +1,121 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import {
+  parseOpenQuestionEntries,
+  parseOpenQuestionsFromContent,
+  extractQuestionSections,
+  questionSlug
+} from '../src/core/open-questions-parser.js';
+import { ProjectStateManager } from '../src/workspace/state.js';
+import { addPortalItem } from '../src/core/question-portal.js';
+
+const V2_DOC = `# Doc
+
+## Open Questions
+
+**Q1. [THERMAL] Which motor coolant is approved?**
+BLUF: Use the 50/50 glycol loop per the thermal dossier.
+Research findings: The thermal dossier baselines a 50/50 glycol loop; the Pump-X vendor datasheet confirms compatibility.
+Main suggestion: Glycol 50/50 — cheap and compatible; trade-off: slightly worse heat capacity than straight water.
+Alternatives: Straight water — best heat capacity but freezes below 0 C; dielectric fluid — no corrosion but 3x cost.
+Defer: Deferring stalls the pump BOM line and the THERMAL.md baseline.
+Why it matters: legacy background line.
+
+**Q2. [ELECTRICAL] Bus voltage.** 48V or 72V?
+
+## Next Section
+`;
+
+const LEGACY_DOC = `# Doc
+
+## Open Questions
+
+**Q1. System voltage.** 48V or 72V?
+**Why it matters:** affects motor choice.
+
+**Q2. Pilot diameter.** Not yet confirmed.
+
+## Next Section
+`;
+
+describe('format-v2 question parsing (decision memo)', () => {
+  it('extracts all labeled sections from a v2 entry', () => {
+    const entries = parseOpenQuestionEntries(V2_DOC);
+    expect(entries).toHaveLength(2);
+    const first = entries[0];
+    expect(first.title).toBe('[THERMAL] Which motor coolant is approved?');
+    expect(first.sections?.bluf).toContain('50/50 glycol loop');
+    expect(first.sections?.findings).toContain('thermal dossier');
+    expect(first.sections?.suggestion).toContain('Glycol 50/50');
+    expect(first.sections?.alternatives).toContain('Straight water');
+    expect(first.sections?.defer).toContain('pump BOM line');
+    // Legacy alias "Why it matters" maps to background context.
+    expect(first.sections?.background).toContain('legacy background line');
+  });
+
+  it('title stays the parse key: v2 title slugs like a plain title', () => {
+    const entries = parseOpenQuestionEntries(V2_DOC);
+    expect(questionSlug(entries[0].title)).toBe(questionSlug('[THERMAL] Which motor coolant is approved?'));
+  });
+
+  it('legacy entries: sections undefined (or background only), titles unchanged', () => {
+    const entries = parseOpenQuestionEntries(LEGACY_DOC);
+    expect(entries).toHaveLength(2);
+    // Existing legacy behavior: the mid-string closing bold marker is retained
+    // verbatim (only trailing markers are stripped) — unchanged by format v2.
+    expect(entries[0].title).toBe('System voltage.** 48V or 72V?');
+    expect(entries[0].title).not.toContain('affects motor choice');
+    expect(entries[0].sections?.background).toBe('affects motor choice.');
+    expect(entries[0].sections?.bluf).toBeUndefined();
+    expect(entries[0].sections?.suggestion).toBeUndefined();
+    expect(entries[1].title).toBe('Pilot diameter.** Not yet confirmed.');
+    expect(entries[1].sections).toBeUndefined();
+  });
+
+  it('parseOpenQuestionsFromContent keeps returning titles only (v2 sections stripped)', () => {
+    const titles = parseOpenQuestionsFromContent(V2_DOC);
+    expect(titles).toHaveLength(2);
+    expect(titles[0]).toBe('[THERMAL] Which motor coolant is approved?');
+    expect(titles[0]).not.toContain('BLUF');
+  });
+
+  it('extractQuestionSections: no labels → undefined; partial labels → only those keys', () => {
+    expect(extractQuestionSections('no labels at all')).toBeUndefined();
+    const partial = extractQuestionSections('**Q1. Question.**\nDefer: blocks nothing automated.');
+    expect(partial?.defer).toBe('blocks nothing automated.');
+    expect(partial?.bluf).toBeUndefined();
+  });
+
+  it('meta.sections persists through the portal store', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'starn-sections-persist-'));
+    try {
+      const stateManager = new ProjectStateManager(tmpDir);
+      stateManager.getOrCreateState('p1', 'Sections Persist');
+      addPortalItem(stateManager, {
+        type: 'question',
+        severity: 'normal',
+        docPath: 'docs/CONOPS.md',
+        title: 'Bus voltage.',
+        source: 'autopilot',
+        meta: {
+          sections: {
+            bluf: '48V nominal.',
+            findings: 'CONOPS baseline. Sources: CONOPS.md',
+            suggestion: '48V — matches the selected battery.',
+            alternatives: '72V — lighter harness but no supplier.',
+            defer: 'Blocks the electrical BOM.'
+          }
+        }
+      });
+      // Re-read from disk: sections survive persistence.
+      const reloaded = new ProjectStateManager(tmpDir);
+      const stored = (reloaded.getState().portalItems || []).find(i => i.title === 'Bus voltage.');
+      expect(stored?.meta?.sections?.bluf).toBe('48V nominal.');
+      expect(stored?.meta?.sections?.alternatives).toContain('72V');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});

@@ -5,6 +5,7 @@ import { PortalItem } from '../workspace/types.js';
 import { TurnResult } from './runner.js';
 import { addPortalItem, answerPortalItem, ANSWER_HISTORY_CAP } from './question-portal.js';
 import { PENDING_INCORPORATION_MARKER, stripPendingBlock, INCORPORATION_CRITIC_FOCUS, buildIncorporationPrompt } from './incorporation-prompt.js';
+import type { QuestionSections } from './open-questions-parser.js';
 import { runRippleScan, summarizeDiff, RippleDeps } from './ripple.js';
 import type { AutopilotEvent, AutopilotDocStatus } from './autopilot.js';
 
@@ -28,6 +29,8 @@ export interface AnswerApplierDeps {
       source: 'autopilot';
       /** ICD-system topic parsed from the title tag; undefined when untagged. */
       topic?: string;
+      /** Format-v2 decision-memo sections parsed tolerantly from the entry; undefined for legacy entries. */
+      sections?: QuestionSections;
     }>) => void;
     /** Live status updates from the runner (ripple scan/fix turns). */
     onStatusUpdate?: (status: string) => void;
@@ -181,6 +184,7 @@ export async function applyAnswer(
       detail?: string;
       source: 'autopilot';
       topic?: string;
+      sections?: QuestionSections;
     }> = [];
     deps.emitStatus?.(`Incorporating pending user answers in ${phase.name}…`);
     let result: TurnResult;
@@ -267,11 +271,13 @@ export async function applyAnswer(
     // items on the original thread (same as the autopilot's incorporation).
     const threadId = item.threadId || item.id;
     for (const q of counterQuestionItems) {
-      const { topic, ...qRest } = q;
+      const { topic, sections, ...qRest } = q;
       counterQuestions.push(addPortalItem(stateManager, {
         ...qRest,
         source: 'autopilot',
-        meta: topic ? { topic } : undefined,
+        meta: topic || sections
+          ? { ...(topic ? { topic } : {}), ...(sections ? { sections } : {}) }
+          : undefined,
         threadId
       }));
     }

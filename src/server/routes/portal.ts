@@ -1,7 +1,6 @@
 import { archiveDuplicateOpenPortalItems, listPortalItems, dismissPortalItem } from '../../core/question-portal.js';
 import { clearProposal, undoAutoApplied, isAutoAppliedIncorporated } from '../../core/research-gate.js';
 import { readJsonBody, ok, fail, sendJson, RouteModule } from './kit.js';
-
 export const portalModule: RouteModule = {
   name: 'portal',
   match: (url, segments) => segments[1] === 'portal',
@@ -40,6 +39,16 @@ export const portalModule: RouteModule = {
           : item;
       });
       return ok(res, { items: decorated });
+    }
+
+    if (segments[1] === 'portal' && segments.length === 3 && segments[2] === 'research-all' && method === 'POST') {
+      // Busy guard: research-all never overlaps a running autopilot chain.
+      if (deps.stateManager.getState().autopilot?.running) {
+        return fail(res, 409, 'Autopilot chain is running — research-all is unavailable');
+      }
+      const session = deps.session;
+      if (!session) return fail(res, 503, 'No active session');
+      return ok(res, session.startResearchBackfill());
     }
 
     if (segments[1] === 'portal' && segments.length === 4 && segments[3] === 'answer' && method === 'POST') {

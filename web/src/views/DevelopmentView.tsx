@@ -1369,6 +1369,10 @@ export default function DevelopmentView({
                 throw err;
               }
             }}
+            onResearchAll={async () => {
+              await api.researchAll();
+              await refreshDoc();
+            }}
             onDismiss={async (id) => {
               setDismissedIds(prev => new Set(prev).add(id));
               try {

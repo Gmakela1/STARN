@@ -1,3 +1,5 @@
+import type { QuestionSections } from '../core/open-questions-parser.js';
+
 export interface ProjectRecord {
   id: string;
   name: string;
@@ -88,6 +90,8 @@ export interface PortalItemMeta extends Record<string, unknown> {
   proposedAnswer?: ProposedAnswer;
   /** Research gate — a high-confidence answer was auto-applied; UNDO available until incorporation. */
   autoApplied?: AutoAppliedAnswer;
+  /** Format-v2 decision-memo sections — parsed from the doc entry (extractQuestionSections) or written by the research-gate backfill. */
+  sections?: QuestionSections;
 }
 
 export interface ResearchSource {

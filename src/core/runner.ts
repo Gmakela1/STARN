@@ -9,7 +9,7 @@ import { SHARED_EDIT_INSTRUCTIONS } from '../specialists/shared.js';
 import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { runDiscovery } from './discovery.js';
 import { classifyRequest } from './classifier.js';
-import { parseOpenQuestionsFromContent, questionSlug, questionTopic, buildUpstreamQuestionContext } from './open-questions-parser.js';
+import { parseOpenQuestionsFromContent, parseOpenQuestionEntries, questionSlug, questionTopic, buildUpstreamQuestionContext, QuestionSections } from './open-questions-parser.js';
 import { capQuestionsPerDoc } from '../specialists/open-questions.js';
 import { runAgentToolLoop } from './agent-loop.js';
 import {
@@ -78,6 +78,8 @@ export interface TurnOptions {
     source: 'autopilot';
     /** ICD-system topic parsed from the title tag; undefined for untagged questions. */
     topic?: string;
+    /** Format-v2 decision-memo sections parsed tolerantly from the entry; undefined for legacy entries. */
+    sections?: QuestionSections;
   }>) => void;
   /**
    * Presentation-specific formatters for quick-command outputs. Defaults to
@@ -717,23 +719,27 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
         title: string;
         detail?: string;
         source: 'autopilot';
+        topic?: string;
+        sections?: QuestionSections;
       }> = [];
       try {
         const artifactPath = path.join(projectPath, 'docs', `${specialist.id.toUpperCase()}.md`);
         if (fs.existsSync(artifactPath)) {
           const artifactContent = fs.readFileSync(artifactPath, 'utf-8');
-          questionItems = parseOpenQuestionsFromContent(artifactContent)
+          questionItems = parseOpenQuestionEntries(artifactContent)
             // Diff-based posting: only questions that did not exist in the doc
             // before this turn are new; pre-existing ones are already on the board.
-            .filter(title => !preTurnQuestionSlugs.has(questionSlug(title)))
-            .map(title => ({
+            .filter(entry => !preTurnQuestionSlugs.has(questionSlug(entry.title)))
+            .map(entry => ({
             type: 'question' as const,
             severity: 'normal' as const,
             docPath: `docs/${specialist.id.toUpperCase()}.md`,
-            title,
+            title: entry.title,
             // ICD-system topic parsed from the title's bracket tag; undefined
             // for untagged questions (tolerant for older docs).
-            topic: questionTopic(title),
+            topic: questionTopic(entry.title),
+            // Format-v2 decision-memo sections; undefined for legacy entries.
+            sections: entry.sections,
             source: 'autopilot' as const
           }));
           // Document order is the model's priority ranking (blocking

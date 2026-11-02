@@ -95,6 +95,8 @@ export const api = {
     call<{ rejected: boolean }>('POST', `/api/portal/${encodeURIComponent(id)}/reject-proposal`),
   undoAutoApplied: (id: string) =>
     call<{ item: PortalItem }>('POST', `/api/portal/${encodeURIComponent(id)}/undo-auto`),
+  // Research-all backfill — runs the gate machinery over every eligible legacy open question.
+  researchAll: () => call<{ started: boolean; count: number }>('POST', '/api/portal/research-all'),
 
   // Action comments & flags
   postActionComment: (actionId: string, stepId: number, text: string) =>

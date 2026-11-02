@@ -16,14 +16,88 @@ import { PENDING_INCORPORATION_MARKER } from './incorporation-prompt.js';
 export const OPEN_QUESTIONS_HEADING = /^##\s*(?:\d+\.?\s*)?Open Questions.*$/im;
 
 /**
- * Cuts a captured question entry at the "Why it matters" explanation marker,
- * if present, and trims leftover markdown bold markers from the tail. Titles
- * must stay short and stable so portal dedupe (by slug) works across turns.
+ * Format-v2 labeled sections of a decision-memo question entry (rules text in
+ * src/specialists/open-questions.ts). All fields optional — legacy single-line
+ * entries parse with no sections; legacy "Why it matters:" entries map that
+ * explanation to `background`. Mirrored in web/src/types/api.ts.
+ */
+export interface QuestionSections {
+  /** BLUF — one-sentence recommendation up front. */
+  bluf?: string;
+  /** Research findings incl. cited source names. */
+  findings?: string;
+  /** Main suggestion: recommended option + its trade-off. */
+  suggestion?: string;
+  /** Alternatives, each with its trade-off. */
+  alternatives?: string;
+  /** Cost/impact of deferring this decision. */
+  defer?: string;
+  /** Legacy alias: "Why it matters:" maps here. */
+  background?: string;
+}
+
+/** One parsed question entry: the title (the parse/dedupe key) plus optional v2 sections. */
+export interface ParsedQuestionItem {
+  title: string;
+  sections?: QuestionSections;
+}
+
+type QuestionSectionKey = keyof QuestionSections;
+
+/** Labeled-section matchers. The five v2 labels are line-anchored (they start
+ * their own line in the decision-memo format); the legacy "Why it matters"
+ * alias may sit mid-line, matching the original strip rule. */
+const SECTION_LABEL_MATCHERS: Array<{ key: QuestionSectionKey; re: RegExp }> = [
+  { key: 'bluf', re: /^[ \t]*(?:\*\*)?[ \t]*BLUF[ \t]*:[ \t]*/im },
+  { key: 'findings', re: /^[ \t]*(?:\*\*)?[ \t]*(?:Research[ \t]+findings|Findings)[ \t]*:[ \t]*/im },
+  { key: 'suggestion', re: /^[ \t]*(?:\*\*)?[ \t]*(?:Main[ \t]+suggestion|Suggestion)[ \t]*:[ \t]*/im },
+  { key: 'alternatives', re: /^[ \t]*(?:\*\*)?[ \t]*Alternatives[ \t]*:[ \t]*/im },
+  { key: 'defer', re: /^[ \t]*(?:\*\*)?[ \t]*Defer[ \t]*:[ \t]*/im },
+  { key: 'background', re: /\*{0,2}[ \t]*Why it matters[ \t]*:[ \t]*/i }
+];
+
+/**
+ * Extracts the optional labeled sections (BLUF / Research findings / Main
+ * suggestion / Alternatives / Defer; legacy "Why it matters" → background)
+ * from a captured question entry. Tolerant: missing sections stay undefined;
+ * each value runs from its label to the next label (in text order) or the end.
+ * Returns undefined when no labeled section is present.
+ */
+export function extractQuestionSections(entryText: string): QuestionSections | undefined {
+  const hits: Array<{ key: QuestionSectionKey; start: number; bodyStart: number }> = [];
+  for (const { key, re } of SECTION_LABEL_MATCHERS) {
+    const match = entryText.match(re);
+    if (match && match.index !== undefined) {
+      hits.push({ key, start: match.index, bodyStart: match.index + match[0].length });
+    }
+  }
+  if (hits.length === 0) return undefined;
+  hits.sort((a, b) => a.start - b.start);
+  const sections: QuestionSections = {};
+  for (let i = 0; i < hits.length; i++) {
+    const end = i + 1 < hits.length ? hits[i + 1].start : entryText.length;
+    const value = entryText.slice(hits[i].bodyStart, end).trim().replace(/^\*+/, '').replace(/\*+$/, '').trim();
+    if (value) sections[hits[i].key] = value;
+  }
+  return Object.keys(sections).length > 0 ? sections : undefined;
+}
+
+/**
+ * Cuts a captured question entry at the first labeled-section marker — the
+ * legacy "Why it matters" explanation (may sit mid-line, matching the original
+ * strip rule) or a line-anchored format-v2 section label (BLUF, Research
+ * findings, Main suggestion, Alternatives, Defer) — and trims leftover
+ * markdown bold markers from the tail. Titles must stay short and stable so
+ * portal dedupe (by slug) works across turns.
  */
 function stripWhyItMatters(qText: string): string {
-  const marker = qText.search(/\*{0,2}\s*Why it matters\s*:/i);
-  const cut = marker >= 0 ? qText.slice(0, marker) : qText;
-  return cut.trim().replace(/\*+$/, '').trim();
+  let cut = qText.search(/\*{0,2}\s*Why it matters\s*:/i);
+  for (const { re } of SECTION_LABEL_MATCHERS) {
+    const match = qText.match(re);
+    if (match && match.index !== undefined && (cut < 0 || match.index < cut)) cut = match.index;
+  }
+  const sliced = cut >= 0 ? qText.slice(0, cut) : qText;
+  return sliced.trim().replace(/\*+$/, '').trim();
 }
 
 /**
@@ -61,44 +135,59 @@ export function questionTopic(title: string): string | undefined {
 }
 
 /**
- * Extracts question items (Q1, Q2, ... format) from a section's text.
+ * Extracts question entries (Q1, Q2, ... format) from a section's text as
+ * { title, sections? } pairs: the title is the stable parse key; sections are
+ * the optional format-v2 labeled fields extracted tolerantly from the entry
+ * body. Missing sections are omitted (legacy entries parse exactly as before).
  */
-function extractQuestionItems(sectionText: string): string[] {
-  const questions: string[] = [];
+function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
+  const entries: ParsedQuestionItem[] = [];
   const qRegex = /(?:^|\n)\s*(?:\*\*)?(?:Q\d+|-\s*\*\*Question)\s*[\.:\)]?\s*\**\s*(.*?)(?=\n\s*(?:\*\*)?(?:Q\d+|-\s*\*\*Question)|\n\s*##|\n\s*$|$)/gs;
 
   let match;
   while ((match = qRegex.exec(sectionText)) !== null) {
-    const qText = stripWhyItMatters(match[1]);
-    if (qText && qText.length > 5) {
-      questions.push(qText);
+    const title = stripWhyItMatters(match[1]);
+    if (title && title.length > 5) {
+      entries.push({ title, sections: extractQuestionSections(match[1]) });
     }
   }
 
   // Fallback: split by numbered lines (Q1., Q2., etc.)
-  if (questions.length === 0) {
+  if (entries.length === 0) {
     const lines = sectionText.split('\n');
     let currentQ = '';
     for (const line of lines) {
       const numberedMatch = line.match(/^\s*(?:\*\*)?(Q\d+|Question\s*\d+)\s*[\.:\)]?\s*\**\s*(.*)/i);
       if (numberedMatch) {
-        if (currentQ.trim()) questions.push(stripWhyItMatters(currentQ.trim()));
+        if (currentQ.trim()) {
+          const title = stripWhyItMatters(currentQ.trim());
+          if (title) entries.push({ title, sections: extractQuestionSections(currentQ.trim()) });
+        }
         currentQ = numberedMatch[2];
       } else if (currentQ && line.trim() && !line.match(/^\s*$/)) {
         currentQ += ' ' + line.trim();
       }
     }
-    if (currentQ.trim()) questions.push(stripWhyItMatters(currentQ.trim()));
+    if (currentQ.trim()) {
+      const title = stripWhyItMatters(currentQ.trim());
+      if (title) entries.push({ title, sections: extractQuestionSections(currentQ.trim()) });
+    }
   }
 
-  return questions.filter(q => q.length > 3);
+  return entries.filter(e => e.title.length > 3);
+}
+
+/** Backward-compatible title-only view of extractQuestionEntries. */
+function extractQuestionItems(sectionText: string): string[] {
+  return extractQuestionEntries(sectionText).map(entry => entry.title);
 }
 
 /**
  * Parses open questions from any document containing a "## Open Questions"
- * section (with optional numeric prefix). Works across all specialist documents.
+ * section (with optional numeric prefix) as { title, sections? } entries —
+ * the format-v2 sections (see QuestionSections) are extracted tolerantly.
  */
-export function parseOpenQuestionsFromContent(docContent: string): string[] {
+export function parseOpenQuestionEntries(docContent: string): ParsedQuestionItem[] {
   const headingMatch = docContent.match(OPEN_QUESTIONS_HEADING);
   if (!headingMatch || headingMatch.index === undefined) return [];
 
@@ -110,7 +199,15 @@ export function parseOpenQuestionsFromContent(docContent: string): string[] {
     ? afterHeader.slice(0, nextSectionMatch.index)
     : afterHeader;
 
-  return extractQuestionItems(sectionText);
+  return extractQuestionEntries(sectionText);
+}
+
+/**
+ * Parses open questions from any document containing a "## Open Questions"
+ * section (with optional numeric prefix). Works across all specialist documents.
+ */
+export function parseOpenQuestionsFromContent(docContent: string): string[] {
+  return parseOpenQuestionEntries(docContent).map(entry => entry.title);
 }
 
 /**

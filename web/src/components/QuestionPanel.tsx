@@ -43,6 +43,8 @@ export interface QuestionPanelProps {
   onRejectProposal?: (id: string) => Promise<void>;
   /** Research gate — undo an auto-applied answer (pre-incorporation window). */
   onUndoAuto?: (id: string) => Promise<void>;
+  /** Research-all backfill — run the gate machinery over every eligible legacy open question. */
+  onResearchAll?: () => Promise<void>;
 }
 
 /** §1.4.1 — per-phase chip visuals, keyed off the AnswerPhase union (moved from QuestionBar). */
@@ -155,7 +157,8 @@ export default function QuestionPanel({
   focusRequest,
   onConfirmProposal,
   onRejectProposal,
-  onUndoAuto
+  onUndoAuto,
+  onResearchAll
 }: QuestionPanelProps) {
   const [activeId, setActiveId] = useState<string>(items[0]?.id ?? '');
   // Board #53A — drafts seed from the module store so close/reopen, unmount,
@@ -174,6 +177,9 @@ export default function QuestionPanel({
   const [gateActionId, setGateActionId] = useState<string | null>(null);
   /** Research gate — last proposal/undo action error per item id. */
   const [gateActionError, setGateActionError] = useState<Record<string, string>>({});
+  /** Research-all backfill — one run in flight at a time (client state; per-item researching chips come from data). */
+  const [researchAllBusy, setResearchAllBusy] = useState(false);
+  const [researchAllError, setResearchAllError] = useState<string | null>(null);
   /**
    * Snapshot of just-applied items so the 8s "Resolved ✓" dwell keeps rendering
    * after the item leaves the open pool (the open-only poll carries it away).
@@ -541,6 +547,20 @@ export default function QuestionPanel({
   const undoAuto = (id: string): Promise<void> =>
     runGateAction(id, () => (onUndoAuto ? onUndoAuto(id) : Promise.resolve()));
 
+  /** Research-all backfill kickoff: single in-flight run, parent owns the data refresh. */
+  const researchAll = async (): Promise<void> => {
+    if (!onResearchAll || researchAllBusy) return;
+    setResearchAllBusy(true);
+    setResearchAllError(null);
+    try {
+      await onResearchAll();
+    } catch (err) {
+      setResearchAllError(err instanceof Error ? err.message : "Couldn't start research.");
+    } finally {
+      setResearchAllBusy(false);
+    }
+  };
+
   const renderStateChip = (id: string): ReactNode => {
     const st = answerStates[id];
     if (!st) return null;
@@ -776,6 +796,43 @@ export default function QuestionPanel({
         )}
 
         {detailView && <div className="mt-1.5">{detailView}</div>}
+
+        {/* Format-v2 decision-memo sections (meta.sections): BLUF headline is
+            prominent, findings carry cited sources, suggestion/alternatives/
+            defer follow. Legacy items without sections render exactly as
+            before. No emoji; text-only section labels. */}
+        {(() => {
+          const s = item.meta?.sections;
+          if (!s) return null;
+          const rows: Array<{ label: string; text: string; prominent?: boolean }> = [];
+          if (s.bluf) rows.push({ label: 'BLUF', text: s.bluf, prominent: true });
+          if (s.findings) rows.push({ label: 'Research findings', text: s.findings });
+          if (s.suggestion) rows.push({ label: 'Main suggestion', text: s.suggestion });
+          if (s.alternatives) rows.push({ label: 'Alternatives', text: s.alternatives });
+          if (s.defer) rows.push({ label: 'Defer', text: s.defer });
+          if (s.background) rows.push({ label: 'Background', text: s.background });
+          if (rows.length === 0) return null;
+          return (
+            <div className="mt-1.5 space-y-1.5 rounded-md border border-[#2a3342] bg-[#0d1017]/70 p-2.5">
+              {rows.map(row => (
+                <div key={row.label}>
+                  <p
+                    role={row.prominent ? 'heading' : undefined}
+                    aria-level={row.prominent ? 4 : undefined}
+                    className={`text-[11px] font-semibold uppercase tracking-wide ${row.prominent ? 'text-violet-300' : 'text-[#6e7d92]'}`}
+                  >
+                    {row.label}
+                  </p>
+                  <p
+                    className={`whitespace-pre-line text-xs leading-relaxed ${row.prominent ? 'font-bold text-[#e8edf5]' : 'text-[#a8b3c4]'}`}
+                  >
+                    {row.text}
+                  </p>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
 
         {proposal && (
           <div className="mt-2 rounded-md border border-[#8b5cf6]/50 bg-[#2e1065]/20 p-2.5">
@@ -1089,6 +1146,26 @@ export default function QuestionPanel({
             </span>
           )}
           <div className="ml-auto flex shrink-0 items-center gap-1">
+            {onResearchAll && items.some(i => i.type === 'question') && (
+              <>
+                {researchAllError && (
+                  <p role="alert" className="max-w-[180px] truncate text-[11px] text-rose-300" title={researchAllError}>
+                    {researchAllError}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { void researchAll(); }}
+                  disabled={researchAllBusy}
+                  aria-label="Research open questions"
+                  title="Research open questions"
+                  className="flex min-h-[32px] items-center gap-1.5 rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-2.5 text-[11px] font-semibold text-violet-200 transition hover:bg-[#3b1d7a]/50 focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Loader2 className={`h-3.5 w-3.5 ${researchAllBusy ? 'motion-safe:animate-spin' : ''}`} aria-hidden />
+                  Research open questions
+                </button>
+              </>
+            )}
             {item?.docPath &&
               onOpenDocument &&
               item.docPath.split('/').pop() !== selectedDocName && (

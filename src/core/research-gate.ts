@@ -47,6 +47,7 @@ import {
   buildSettledDecisionsSection
 } from './research-preflight.js';
 import { PENDING_INCORPORATION_MARKER } from './incorporation-prompt.js';
+import type { QuestionSections } from './open-questions-parser.js';
 
 /** Research-turn allow-list: reads + web research only — no write tools. */
 export const RESEARCH_GATE_ALLOWED_TOOLS = [...PREFLIGHT_ALLOWED_TOOLS] as string[];
@@ -544,16 +545,29 @@ export async function undoAutoApplied(deps: UndoAutoDeps, itemId: string): Promi
 }
 
 /**
+ * What one gate run produced: research/assessment are set when a research turn
+ * returned a usable answer (any critic tier — auto, propose or none). Empty
+ * object when the item was not eligible, was already gated, or research was
+ * exhausted. Consumed by the legacy backfill (runResearchBackfill) to build
+ * format-v2 sections from real research output.
+ */
+export interface ResearchGateOutcome {
+  research?: QuestionResearch;
+  assessment?: ResearchAssessment;
+}
+
+/**
  * Gate orchestrator for ONE item: researching → research turn → critic →
  * verdict routing. NEVER throws and NEVER blocks the drafting turn: any error
  * leaves the item as a plain open question (meta.researching cleared) with a
- * status event. Runs POST-INTAKE (async).
+ * status event. Runs POST-INTAKE (async). Returns the run's outcome (see
+ * ResearchGateOutcome) so callers can enrich the item from real research.
  */
-export async function runResearchGate(deps: ResearchGateDeps, item: PortalItem): Promise<void> {
+export async function runResearchGate(deps: ResearchGateDeps, item: PortalItem): Promise<ResearchGateOutcome> {
   const short = shortResearchTitle(item.title);
   try {
-    if (item.status !== 'open' || item.type !== 'question' || !item.docPath) return;
-    if (item.meta?.researching === true || item.meta?.proposedAnswer || item.meta?.autoApplied) return;
+    if (item.status !== 'open' || item.type !== 'question' || !item.docPath) return {};
+    if (item.meta?.researching === true || item.meta?.proposedAnswer || item.meta?.autoApplied) return {};
 
     setItemResearching(deps.stateManager, item.id, true);
     deps.emitStatus?.(`Researching answer for: ${short}`);
@@ -562,7 +576,7 @@ export async function runResearchGate(deps: ResearchGateDeps, item: PortalItem):
     if (!research || !research.answer.trim()) {
       setItemResearching(deps.stateManager, item.id, false);
       deps.emitStatus?.(`Research exhausted for: ${short} — left as open question`);
-      return;
+      return {};
     }
 
     // Pre-critic verification: fetch the top cited URL so the critic grades
@@ -577,8 +591,9 @@ export async function runResearchGate(deps: ResearchGateDeps, item: PortalItem):
       const applied = await applyAutoAnswer(deps, item, assessment, research);
       if (!applied) {
         deps.emitStatus?.(`Research exhausted for: ${short} — left as open question`);
+        return {};
       }
-      return;
+      return { research, assessment };
     }
     if (assessment.verdict === 'propose') {
       const stored = storeProposal(deps.stateManager, item.id, {
@@ -590,9 +605,10 @@ export async function runResearchGate(deps: ResearchGateDeps, item: PortalItem):
       deps.emitStatus?.(stored
         ? `Research proposal ready for review: ${short}`
         : `Research exhausted for: ${short} — left as open question`);
-      return;
+      return stored ? { research, assessment } : {};
     }
     deps.emitStatus?.(`Research exhausted for: ${short} — left as open question`);
+    return { research, assessment };
   } catch (err: any) {
     try {
       setItemResearching(deps.stateManager, item.id, false);
@@ -601,5 +617,130 @@ export async function runResearchGate(deps: ResearchGateDeps, item: PortalItem):
     }
     deps.logger?.warn(`Research gate failed for item ${item.id}: ${err?.message || err}`);
     deps.emitStatus?.(`Research failed for: ${short} — left as open question`);
+    return {};
   }
+}
+
+// ── Legacy backfill ("Research open questions") ─────────────────────────
+
+/** Char caps for backfill-enriched sections (model-supplied text, capped). */
+const SECTION_BLUF_CAP = 240;
+const SECTION_FINDINGS_CAP = 800;
+const SECTION_SUGGESTION_CAP = 1200;
+
+/**
+ * Builds format-v2 decision-memo sections from a completed gate run — real
+ * evidence only (researched answer + cited sources + critic rationale); no
+ * field is fabricated when its underlying text is missing. BLUF is the first
+ * sentence of the researched answer; findings carry the critic rationale (or
+ * the researcher's reasoning) plus the cited source names; the main
+ * suggestion is the researched answer itself. Alternatives/defer are omitted
+ * unless research supplied them.
+ */
+export function buildQuestionSections(
+  research: QuestionResearch,
+  assessment?: ResearchAssessment
+): QuestionSections {
+  const sections: QuestionSections = {};
+  const answer = research.answer.trim();
+  if (!answer) return sections;
+  const firstSentence = answer.split(/(?<=[.!?])\s+/)[0] ?? answer;
+  sections.bluf = firstSentence.length > SECTION_BLUF_CAP ? firstSentence.slice(0, SECTION_BLUF_CAP) : firstSentence;
+  const findingsBase = (assessment?.rationale || research.reasoning || '').trim();
+  const sourceNames = research.sources.map(s => s.title).filter(Boolean);
+  const findings = [
+    findingsBase,
+    sourceNames.length > 0 ? `Sources: ${sourceNames.join('; ')}` : ''
+  ].filter(Boolean).join('\n\n');
+  if (findings) sections.findings = findings.length > SECTION_FINDINGS_CAP ? findings.slice(0, SECTION_FINDINGS_CAP) : findings;
+  sections.suggestion = answer.length > SECTION_SUGGESTION_CAP ? answer.slice(0, SECTION_SUGGESTION_CAP) : answer;
+  return sections;
+}
+
+/**
+ * Merges format-v2 sections into meta.sections on a portal item (atomic
+ * read-fresh → mutate → save). Open and answered items are written (a
+ * dismissed item is left alone); a stale researching flag is cleared on the
+ * way. Returns false when the item vanished or was dismissed.
+ */
+export function writeItemSections(
+  stateManager: ProjectStateManager,
+  itemId: string,
+  sections: QuestionSections
+): boolean {
+  const state = stateManager.getState();
+  const item = (state.portalItems || []).find(i => i.id === itemId);
+  if (!item || item.status === 'dismissed') return false;
+  item.meta = { ...(item.meta || {}), researching: false, sections };
+  stateManager.saveState(state);
+  return true;
+}
+
+/**
+ * Open question items eligible for the research-all backfill: still open, not
+ * already gated (researching/proposedAnswer/autoApplied), not already
+ * enriched (meta.sections), and not in the optional in-flight set. Snapshot
+ * only — each backfill iteration re-validates against fresh state.
+ */
+export function listBackfillEligibleItems(
+  stateManager: ProjectStateManager,
+  inFlight?: ReadonlySet<string>
+): PortalItem[] {
+  return (stateManager.getState().portalItems || []).filter(item =>
+    item.type === 'question' &&
+    item.status === 'open' &&
+    item.docPath &&
+    item.meta?.researching !== true &&
+    !item.meta?.proposedAnswer &&
+    !item.meta?.autoApplied &&
+    !item.meta?.sections &&
+    !(inFlight?.has(item.id))
+  );
+}
+
+export interface ResearchBackfillDeps extends ResearchGateDeps {
+  /** Item ids with a gate run already in flight (session dedupe) — skipped. */
+  inFlight?: ReadonlySet<string>;
+}
+
+export interface ResearchBackfillResult {
+  /** Items the backfill ran the gate machinery on (sequential). */
+  processed: number;
+  /** Items that got format-v2 sections written onto meta.sections. */
+  enriched: number;
+}
+
+/**
+ * Legacy backfill ("Research open questions"): runs the existing per-item
+ * gate machinery (runResearchGate — researching flag, research turn, critic,
+ * verdict routing) SEQUENTIALLY (for..of await — bounded, never parallel)
+ * over the eligible legacy items (listBackfillEligibleItems). On completion
+ * (any tier with real research output) the item's meta.sections are written
+ * in format v2 from the research answer, cited sources and critic rationale —
+ * legacy items gain the decision-memo experience without fabricating
+ * evidence; an auto-applied item keeps its stored answer text. Per-item gate
+ * failures leave the item a plain open question (runResearchGate never
+ * throws) and never stop the loop.
+ */
+export async function runResearchBackfill(deps: ResearchBackfillDeps): Promise<ResearchBackfillResult> {
+  const eligibleIds = listBackfillEligibleItems(deps.stateManager, deps.inFlight).map(item => item.id);
+  let processed = 0;
+  let enriched = 0;
+  for (const itemId of eligibleIds) {
+    // Re-validate against FRESH state each iteration: earlier iterations
+    // mutate state (answers applied, proposals stored, dismissals).
+    const item = deps.stateManager.getState().portalItems?.find(i => i.id === itemId);
+    if (!item || item.status !== 'open' || item.meta?.researching === true || item.meta?.proposedAnswer || item.meta?.autoApplied || item.meta?.sections) {
+      continue;
+    }
+    const outcome = await runResearchGate(deps, item);
+    processed++;
+    if (outcome.research?.answer.trim()) {
+      const sections = buildQuestionSections(outcome.research, outcome.assessment);
+      if (Object.keys(sections).length > 0 && writeItemSections(deps.stateManager, item.id, sections)) {
+        enriched++;
+      }
+    }
+  }
+  return { processed, enriched };
 }

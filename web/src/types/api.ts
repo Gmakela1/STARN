@@ -186,6 +186,21 @@ export interface PortalAnswerHistoryEntry {
   source?: string;
 }
 
+export interface QuestionSections {
+  /** BLUF — one-sentence recommendation up front. */
+  bluf?: string;
+  /** Research findings incl. cited source names. */
+  findings?: string;
+  /** Main suggestion: recommended option + its trade-off. */
+  suggestion?: string;
+  /** Alternatives, each with its trade-off. */
+  alternatives?: string;
+  /** Cost/impact of deferring this decision. */
+  defer?: string;
+  /** Legacy alias: "Why it matters:" maps here. */
+  background?: string;
+}
+
 /**
  * Free-form metadata map on a portal item. Mirrors src/workspace/types.ts
  * (web does not import core sources); keep the two definitions in sync.
@@ -206,6 +221,8 @@ export interface PortalItemMeta extends Record<string, unknown> {
   proposedAnswer?: ProposedAnswer;
   /** Research gate — a high-confidence answer was auto-applied; UNDO available until incorporation. */
   autoApplied?: AutoAppliedAnswer;
+  /** Format-v2 decision-memo sections — parsed from the doc entry or written by the research-gate backfill. */
+  sections?: QuestionSections;
 }
 
 export interface ResearchSource {
