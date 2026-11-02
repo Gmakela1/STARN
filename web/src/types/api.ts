@@ -223,6 +223,15 @@ export interface PortalItemMeta extends Record<string, unknown> {
   autoApplied?: AutoAppliedAnswer;
   /** Format-v2 decision-memo sections — parsed from the doc entry or written by the research-gate backfill. */
   sections?: QuestionSections;
+  /** T-C answer-thread — advisory chat turns on this question (capped, oldest-trimmed; server appends only). */
+  thread?: PortalThreadMessage[];
+}
+
+/** One advisory answer-thread turn: the user's question or the specialist's reply. */
+export interface PortalThreadMessage {
+  role: 'user' | 'specialist';
+  text: string;
+  ts: number;
 }
 
 export interface ResearchSource {

@@ -20,7 +20,26 @@ import { runResearchGate, runResearchBackfill, listBackfillEligibleItems, Resear
 import { webFetchHandler } from '../tools/handlers/web-fetch.js';
 import { AnswerQueue, AnswerApplyResult, AnswerFrameEvent } from '../core/answer-queue.js';
 import { EventBus } from '../core/event-bus.js';
-import { PortalItem } from '../workspace/types.js';
+import { PortalItem, PortalThreadMessage } from '../workspace/types.js';
+import { sanitizeResearchLine } from '../core/research-preflight.js';
+
+// ── T-C answer-thread (advisory specialist Q&A) ──────────────────────────
+/** Max persisted thread messages per item (trim oldest, keep the first). */
+export const THREAD_MESSAGE_CAP = 20;
+/** Advisory reply hard cap (chars). */
+const THREAD_REPLY_CHAR_CAP = 2000;
+/** Advisory turn budget: quick read-only Q&A, no web research for v1. */
+const THREAD_MAX_TURNS = 3;
+/** Thread-turn allow-list: reads only — NO write tools ever, NO web_search for v1. */
+const THREAD_ALLOWED_TOOLS = ['fs_read', 'fs_list', 'state_read'] as const;
+/**
+ * Appended to the answering specialist's own system prompt. The specialist
+ * prompt carries drafting/file-writing mandates; this directive overrides
+ * them for this advisory-only turn, and THREAD_ALLOWED_TOOLS is the hard gate.
+ */
+export const ADVISORY_SYSTEM_DIRECTIVE = `ADVISORY TURN OVERRIDE (ADVICE ONLY — NOT A DRAFTING TURN):
+The drafting instructions in your system prompt (write files, produce a document, Open Questions section) DO NOT apply to this turn. Do NOT call fs_write, fs_edit or state_update.
+You are answering a user's clarifying question about an open question. ADVISE ONLY: never draft or edit documents. Answer from the project docs, recorded decisions, and prior research. Be concise (<=150 words). If unsure, say what would resolve it. Your final reply is PLAIN TEXT only — no headings, no markdown fences.`;
 
 export interface SessionDeps {
   projectPath: string;
@@ -683,6 +702,133 @@ export class ServerSessionManager {
       },
       itemId
     );
+  }
+
+  // ── T-C answer-thread (advisory specialist Q&A) ────────────────────
+
+  /** Item ids with an advisory thread turn in flight (in-memory lock only). */
+  private readonly threadInFlight = new Set<string>();
+
+  /**
+   * Appends one thread message to a portal item: synchronous read-fresh →
+   * mutate → save (atomic vs other async work in this process). Trims past
+   * THREAD_MESSAGE_CAP, always keeping the first message for context.
+   * Returns null when the item no longer exists.
+   */
+  private appendThreadMessage(itemId: string, message: PortalThreadMessage): PortalItem | null {
+    const state = this.deps.stateManager.getState();
+    const item = (state.portalItems || []).find(i => i.id === itemId);
+    if (!item) return null;
+    const prior = Array.isArray(item.meta?.thread) ? item.meta!.thread : [];
+    const appended = [...prior, message];
+    // Cap: keep the first message (original question context) plus the most
+    // recent turns when over THREAD_MESSAGE_CAP.
+    const trimmed = appended.length > THREAD_MESSAGE_CAP
+      ? [appended[0], ...appended.slice(appended.length - THREAD_MESSAGE_CAP + 1)]
+      : appended;
+    item.meta = { ...(item.meta || {}), thread: trimmed };
+    item.updatedAt = new Date().toISOString();
+    this.deps.stateManager.saveState(state);
+    return item;
+  }
+
+  /** Specialist package for the item's doc (docs/CONOPS.md → 'conops'); general fallback. */
+  private specialistForDoc(docPath?: string): import('../specialists/types.js').SpecialistPackage {
+    const base = docPath ? path.basename(docPath).replace(/\.md$/i, '').toLowerCase() : '';
+    return this.deps.specialistRegistry.get(base) ?? this.deps.specialistRegistry.get('general')!;
+  }
+
+  /**
+   * One advisory thread turn for ONE open question: quick read-only
+   * specialist Q&A (runAgentToolLoop, THREAD_ALLOWED_TOOLS, fresh
+   * priorMessages). Returns the sanitized plain-text reply, or null when the
+   * turn produced nothing usable. Never throws (ESC abort propagates).
+   */
+  private async runAdvisoryTurn(item: PortalItem): Promise<string | null> {
+    const specialist = this.specialistForDoc(item.docPath);
+    const history = (Array.isArray(item.meta?.thread) ? item.meta!.thread : []) as PortalThreadMessage[];
+    const sections = item.meta?.sections;
+    const parts = [
+      `OPEN QUESTION: ${item.title}`,
+      sections
+        ? `RECORDED SECTIONS:\n${[
+            sections.bluf ? `BLUF: ${sections.bluf}` : '',
+            sections.findings ? `Research findings: ${sections.findings}` : '',
+            sections.suggestion ? `Main suggestion: ${sections.suggestion}` : '',
+            sections.alternatives ? `Alternatives: ${sections.alternatives}` : '',
+            sections.defer ? `Defer: ${sections.defer}` : ''
+          ].filter(Boolean).join('\n')}`
+        : '',
+      item.meta?.proposedAnswer ? `RESEARCH PROPOSAL: ${item.meta.proposedAnswer.answer}` : '',
+      history.length > 0
+        ? `THREAD HISTORY (oldest first):\n${history.map(m => `${m.role === 'user' ? 'User' : 'Specialist'}: ${m.text}`).join('\n')}`
+        : '',
+      `The user's new question follows. Reply with plain text only (no headings, no markdown fences), per your instructions.`
+    ];
+    const userMessage = parts.filter(Boolean).join('\n\n');
+    try {
+      const { runAgentToolLoop } = await import('../core/agent-loop.js');
+      const result = await runAgentToolLoop({
+        client: this.roleClients.drafting.client,
+        model: this.roleClients.drafting.model,
+        systemPrompt: `${specialist.systemPrompt}\n\n${ADVISORY_SYSTEM_DIRECTIVE}`,
+        userMessage,
+        toolRegistry: this.deps.toolRegistry,
+        allowedTools: [...THREAD_ALLOWED_TOOLS],
+        context: { projectPath: this.deps.projectPath, stateManager: this.deps.stateManager },
+        maxTurns: THREAD_MAX_TURNS,
+        priorMessages: [],
+        logger: this.deps.logger,
+        docId: 'advisory-thread'
+      });
+      const reply = (result.finalResponse || '')
+        .split('\n')
+        .map(sanitizeResearchLine)
+        .join('\n')
+        .trim();
+      return reply ? reply.slice(0, THREAD_REPLY_CHAR_CAP) : null;
+    } catch (err: any) {
+      if (err?.name === 'AbortError') throw err; // ESC must abort, not degrade silently.
+      this.deps.logger?.warn(`Advisory thread turn failed for item ${item.id}: ${err?.message || err}`);
+      return null;
+    }
+  }
+
+  /**
+   * Handles one user message on an open question's advisory thread (route for
+   * POST /api/portal/:id/thread). Persists the user message, runs the
+   * read-only advisory turn, persists the sanitized specialist reply, and
+   * emits a status event. Serialized per item via threadInFlight — a second
+   * turn on the SAME item while one is in flight throws (route maps to 409);
+   * different items and chain turns are independent. Throws on
+   * item-not-found / non-open / non-question items.
+   */
+  async postThreadMessage(itemId: string, text: string): Promise<PortalItem> {
+    const state = this.deps.stateManager.getState();
+    const item = (state.portalItems || []).find(i => i.id === itemId);
+    if (!item) throw new Error(`Portal item not found: ${itemId}`);
+    if (item.type !== 'question' || item.status !== 'open') {
+      throw new Error('Thread is only available on open question items');
+    }
+    if (this.threadInFlight.has(itemId)) {
+      throw new Error(`An advisory reply is already in progress for this item: ${itemId}`);
+    }
+    this.threadInFlight.add(itemId);
+    try {
+      this.appendThreadMessage(itemId, { role: 'user', text, ts: Date.now() });
+      const fresh = (this.deps.stateManager.getState().portalItems || []).find(i => i.id === itemId)!;
+      const reply = await this.runAdvisoryTurn(fresh);
+      if (reply) {
+        this.appendThreadMessage(itemId, { role: 'specialist', text: reply, ts: Date.now() });
+        this.publish({ kind: 'status', message: 'Advisory reply added' });
+      } else {
+        this.publish({ kind: 'status', message: 'Advisory reply failed — try again' });
+      }
+      const updated = (this.deps.stateManager.getState().portalItems || []).find(i => i.id === itemId);
+      return updated ?? item;
+    } finally {
+      this.threadInFlight.delete(itemId);
+    }
   }
   autopilotResume(docId?: string): void {
     // Prevent double-start: if already running, reject.

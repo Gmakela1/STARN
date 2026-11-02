@@ -51,6 +51,29 @@ export const portalModule: RouteModule = {
       return ok(res, session.startResearchBackfill());
     }
 
+    // T-C answer-thread: one advisory Q&A turn on an open question. Allowed
+    // while the autopilot chain runs (independent read-only state access);
+    // serialized per item by the session's threadInFlight lock (409 below).
+    if (segments[1] === 'portal' && segments.length === 4 && segments[3] === 'thread' && method === 'POST') {
+      const itemId = decodeURIComponent(segments[2]);
+      const body = await readJsonBody(req);
+      const text = String(body?.text ?? '').trim();
+      if (!text) return fail(res, 400, 'Missing "text"');
+      if (text.length > 1000) return fail(res, 400, 'Message too long (max 1000 chars)');
+      const session = deps.session;
+      if (!session) return fail(res, 503, 'No active session');
+      try {
+        const item = await session.postThreadMessage(itemId, text);
+        return ok(res, { item });
+      } catch (err: any) {
+        const message = err?.message ?? String(err);
+        if (message.includes('in progress')) return fail(res, 409, message);
+        if (message.includes('not found')) return fail(res, 404, message);
+        if (message.includes('open question items')) return fail(res, 409, message);
+        return fail(res, 500, message);
+      }
+    }
+
     if (segments[1] === 'portal' && segments.length === 4 && segments[3] === 'answer' && method === 'POST') {
       const itemId = decodeURIComponent(segments[2]);
       const body = await readJsonBody(req);

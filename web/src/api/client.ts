@@ -97,6 +97,9 @@ export const api = {
     call<{ item: PortalItem }>('POST', `/api/portal/${encodeURIComponent(id)}/undo-auto`),
   // Research-all backfill — runs the gate machinery over every eligible legacy open question.
   researchAll: () => call<{ started: boolean; count: number }>('POST', '/api/portal/research-all'),
+  // T-C answer-thread — one advisory specialist Q&A turn on an open question.
+  postThreadMessage: (id: string, text: string) =>
+    call<{ item: PortalItem }>('POST', `/api/portal/${encodeURIComponent(id)}/thread`, { text }),
 
   // Action comments & flags
   postActionComment: (actionId: string, stepId: number, text: string) =>

@@ -1373,6 +1373,9 @@ export default function DevelopmentView({
               await api.researchAll();
               await refreshDoc();
             }}
+            onThreadMessage={async (id, text) => {
+              await api.postThreadMessage(id, text);
+            }}
             onDismiss={async (id) => {
               setDismissedIds(prev => new Set(prev).add(id));
               try {

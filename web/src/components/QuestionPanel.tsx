@@ -45,6 +45,8 @@ export interface QuestionPanelProps {
   onUndoAuto?: (id: string) => Promise<void>;
   /** Research-all backfill — run the gate machinery over every eligible legacy open question. */
   onResearchAll?: () => Promise<void>;
+  /** T-C answer-thread — one advisory specialist Q&A turn on an open question. */
+  onThreadMessage?: (id: string, text: string) => Promise<void>;
 }
 
 /** §1.4.1 — per-phase chip visuals, keyed off the AnswerPhase union (moved from QuestionBar). */
@@ -158,7 +160,8 @@ export default function QuestionPanel({
   onConfirmProposal,
   onRejectProposal,
   onUndoAuto,
-  onResearchAll
+  onResearchAll,
+  onThreadMessage
 }: QuestionPanelProps) {
   const [activeId, setActiveId] = useState<string>(items[0]?.id ?? '');
   // Board #53A — drafts seed from the module store so close/reopen, unmount,
@@ -180,6 +183,10 @@ export default function QuestionPanel({
   /** Research-all backfill — one run in flight at a time (client state; per-item researching chips come from data). */
   const [researchAllBusy, setResearchAllBusy] = useState(false);
   const [researchAllError, setResearchAllError] = useState<string | null>(null);
+  /** T-C answer-thread — per-item advisory draft, in-flight flag, and last error. */
+  const [threadDrafts, setThreadDrafts] = useState<Record<string, string>>({});
+  const [threadBusyId, setThreadBusyId] = useState<string | null>(null);
+  const [threadErrors, setThreadErrors] = useState<Record<string, string>>({});
   /**
    * Snapshot of just-applied items so the 8s "Resolved ✓" dwell keeps rendering
    * after the item leaves the open pool (the open-only poll carries it away).
@@ -561,6 +568,33 @@ export default function QuestionPanel({
     }
   };
 
+  /** T-C answer-thread — one advisory question per item; the specialist reply lands via the poll. */
+  const handleThreadSubmit = async (id: string, text: string): Promise<void> => {
+    const trimmed = text.trim();
+    if (!trimmed || !onThreadMessage) return;
+    if (threadBusyId !== null) return;
+    setThreadErrors(prev => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setThreadBusyId(id);
+    try {
+      await onThreadMessage(id, trimmed);
+      setThreadDrafts(prev => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    } catch (err) {
+      setThreadErrors(prev => ({ ...prev, [id]: err instanceof Error ? err.message : "Couldn't get a reply." }));
+    } finally {
+      setThreadBusyId(prev => (prev === id ? null : prev));
+    }
+  };
+
   const renderStateChip = (id: string): ReactNode => {
     const st = answerStates[id];
     if (!st) return null;
@@ -830,6 +864,76 @@ export default function QuestionPanel({
                   </p>
                 </div>
               ))}
+            </div>
+          );
+        })()}
+
+        {/* T-C answer-thread — advisory chat with the specialist. Read-only
+            advice: the transcript is user-right-aligned, specialist replies
+            carry a text label (no color-only roles, no emoji); replies arrive
+            via the parent poll. Answers still go through the response fields. */}
+        {item.type === 'question' && item.status === 'open' && onThreadMessage && (() => {
+          const thread = item.meta?.thread ?? [];
+          const threadBusy = threadBusyId === item.id;
+          return (
+            <div className="mt-2 rounded-md border border-[#2a3342] bg-[#0d1017]/70 p-2.5">
+              <p className="text-[11px] font-semibold text-[#a8b3c4]">Ask the specialist</p>
+              <p className="mt-0.5 text-[11px] text-[#6e7d92]">
+                Advisory only — your answer goes through the response fields.
+              </p>
+              {thread.length > 0 && (
+                <ul className="mt-1.5 max-h-56 space-y-1.5 overflow-y-auto">
+                  {thread.map((m, i) => (
+                    <li key={`${m.ts}-${i}`} className={m.role === 'user' ? 'flex justify-end' : ''}>
+                      {m.role === 'user' ? (
+                        <p className="max-w-[85%] rounded-lg bg-[#2e1065]/40 px-2.5 py-1.5 text-right text-xs leading-relaxed text-[#e8edf5]">
+                          {m.text}
+                        </p>
+                      ) : (
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-300">Specialist</p>
+                          <p className="whitespace-pre-line text-xs leading-relaxed text-[#a8b3c4]">{m.text}</p>
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {threadErrors[item.id] && (
+                <p role="alert" className="mt-1 rounded-md border border-rose-800/60 bg-rose-950/40 px-2.5 py-1 text-xs text-rose-300">
+                  {threadErrors[item.id]}
+                </p>
+              )}
+              <div className="mt-1.5 flex items-end gap-2">
+                <textarea
+                  aria-label="Advisory question"
+                  value={threadDrafts[item.id] ?? ''}
+                  onChange={e => setThreadDrafts(prev => ({ ...prev, [item.id]: e.target.value }))}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      void handleThreadSubmit(item.id, threadDrafts[item.id] ?? '');
+                    }
+                  }}
+                  disabled={threadBusyId !== null}
+                  maxLength={1000}
+                  placeholder="Ask a clarifying question…"
+                  className="min-h-[44px] min-w-0 flex-1 resize-y rounded-lg border border-[#3b4658] bg-[#05070c] px-2.5 py-2 text-xs text-[#e8edf5] placeholder:text-[#6e7d92] focus:border-[#ff2a3c] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/40 disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleThreadSubmit(item.id, threadDrafts[item.id] ?? '');
+                  }}
+                  disabled={threadBusyId !== null || !(threadDrafts[item.id] ?? '').trim()}
+                  aria-label="Send advisory question"
+                  title="Send advisory question — or press Enter"
+                  className="flex min-h-[44px] shrink-0 items-center gap-1.5 self-end rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 text-xs font-semibold text-violet-200 transition hover:bg-[#3b1d7a]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {threadBusy && <Loader2 className="h-3 w-3 motion-safe:animate-spin" aria-hidden />}
+                  Ask
+                </button>
+              </div>
             </div>
           );
         })()}
