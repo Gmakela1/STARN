@@ -6,7 +6,7 @@ import { PortalItem, PortalItemType, AutopilotState, ProjectState } from '../wor
 import { TurnResult } from './runner.js';
 import { approveArtifact } from './approvals.js';
 import { addPortalItem, answerPortalItem, listPortalItems, type PortalItemInput } from './question-portal.js';
-import { PENDING_INCORPORATION_MARKER, stripPendingBlock, INCORPORATION_CRITIC_FOCUS, buildIncorporationPrompt } from './incorporation-prompt.js';
+import { PENDING_INCORPORATION_MARKER, stripPendingBlock, extractPendingBlock, INCORPORATION_CRITIC_FOCUS, buildIncorporationPrompt } from './incorporation-prompt.js';
 import { runRippleScan, summarizeDiff, RippleSource, RippleDeps } from './ripple.js';
 import { Logger } from '../util/logger.js';
 
@@ -582,6 +582,11 @@ export class AutopilotDriver {
       // incorporation turn actually edited the document (no-op incorporations
       // never ripple).
       const beforeContent = readDocContent(projectPath, phaseId) ?? '';
+      // Pre-turn snapshot of the pending block: a failed turn may still have
+      // consumed the block (e.g. the agent-loop budget rescue forced a final
+      // no-tools write of the full doc without it). The snapshot is the only
+      // way to restore the answers for the next chain start.
+      const pendingBlockSnapshot = extractPendingBlock(beforeContent);
       const result = await executeTurn({
         userPrompt: buildIncorporationPrompt(phaseId),
         forceSpecialistId: phaseId,
@@ -605,6 +610,9 @@ export class AutopilotDriver {
       if (result?.error || result?.criticFailed) {
         logger?.warn(`Autopilot: incorporation turn for ${phaseId} failed (${result.output?.slice(0, 120) || 'unknown error'})`);
         this.emit({ kind: 'status', message: `Incorporation turn for ${phase.name} failed — continuing with the pending answers left in place for the next chain start.` });
+        if (pendingBlockSnapshot) {
+          this.restoreConsumedPendingBlock(phaseId, pendingBlockSnapshot);
+        }
         continue;
       }
       // Guard: if the specialist turn left the block in place, strip it so
@@ -648,6 +656,50 @@ export class AutopilotDriver {
         continue;
       }
       rippleSources?.push({ phaseId, diff, external: false });
+    }
+  }
+
+  /**
+   * Preserve-answers guarantee for failed incorporation turns: a failed turn
+   * may have consumed the pending block anyway (budget-exhaustion rescue
+   * write, overzealous specialist edit). Re-reads the doc from disk; when
+   * the block is ABSENT and the pre-turn snapshot exists, re-appends the
+   * snapshot block (with the marker) to the end of the doc so the answers
+   * stay retryable on the next chain start. A block still present on disk
+   * (normal failure path) is left untouched, and a doc whose body already
+   * contains the first answer line (half-moved block) is not duplicated.
+   * Never throws: an unreadable/unwritable doc skips the restore.
+   *
+   * @param phaseId Workflow phase id — derives docs/ID.md.
+   * @param snapshot Pending block text captured before the turn (starts with
+   *   the marker heading); must be non-null.
+   */
+  private restoreConsumedPendingBlock(phaseId: string, snapshot: string): void {
+    const { projectPath, logger } = this.deps;
+    const content = readDocContent(projectPath, phaseId);
+    if (content === null) {
+      return;
+    }
+    if (content.includes(PENDING_INCORPORATION_MARKER)) {
+      // Normal failure path: the block survived the turn — nothing to do.
+      return;
+    }
+    // Half-moved guard: if the first answer line is already in the doc body,
+    // restoring the snapshot would duplicate it.
+    const firstAnswerLine = snapshot
+      .slice(snapshot.indexOf('\n') + 1)
+      .split('\n')
+      .map(line => line.trim())
+      .find(line => line.length > 0);
+    if (firstAnswerLine && content.includes(firstAnswerLine)) {
+      return;
+    }
+    try {
+      const restored = content.trimEnd() + '\n\n' + snapshot.trimEnd() + '\n';
+      fs.writeFileSync(path.join(projectPath, 'docs', `${phaseId.toUpperCase()}.md`), restored, 'utf-8');
+      logger?.warn(`Restored unincorporated answers block for ${phaseId} after failed incorporation turn`);
+    } catch {
+      // ignore: unwritable doc — nothing more we can do here
     }
   }
 

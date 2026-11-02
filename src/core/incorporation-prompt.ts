@@ -9,6 +9,37 @@
 export const PENDING_INCORPORATION_MARKER = '## User Answers (Pending Incorporation)';
 
 /**
+ * Extracts the '## User Answers (Pending Incorporation)' block from doc
+ * content: the marker heading and everything up to the next heading of any
+ * level (or end of document). Returns null when no block is present. Inverse
+ * companion of stripPendingBlock — used by the autopilot incorporation flow
+ * to snapshot the block before a turn so a failed turn that consumed it can
+ * re-append the snapshot (preserve-answers guarantee).
+ *
+ * @param content Full document content.
+ * @returns The block text (starting with the marker heading), or null.
+ */
+export function extractPendingBlock(content: string): string | null {
+  const idx = content.indexOf(PENDING_INCORPORATION_MARKER);
+  if (idx < 0) {
+    return null;
+  }
+  const tail = content.slice(idx);
+  const nl = tail.indexOf('\n');
+  if (nl < 0) {
+    // Marker is the last line of the document.
+    return tail;
+  }
+  const body = tail.slice(nl + 1);
+  const nextHeading = body.match(/^#{1,6} /m);
+  if (nextHeading && nextHeading.index !== undefined) {
+    return tail.slice(0, nl + 1 + nextHeading.index);
+  }
+  // No later heading: the block extends to end of document.
+  return tail;
+}
+
+/**
  * Removes a '## User Answers (Pending Incorporation)' block from doc content:
  * the marker heading and everything up to the next heading of any level (or
  * end of document). Used as the deterministic guard when a specialist turn

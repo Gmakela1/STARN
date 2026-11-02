@@ -572,10 +572,12 @@ describe('AutopilotDriver', () => {
     // The chain then continues to the current phase (bom).
     expect(executeTurnMock.mock.calls[1][0].forceSpecialistId).toBe('bom');
 
-    // Pending block removed after incorporation (guard strip).
+    // Pending block removed after incorporation (guard strip); success path
+    // must NOT restore it from the snapshot.
     const reqDoc = fs.readFileSync(path.join(tmpDir, 'docs', 'REQUIREMENTS.md'), 'utf-8');
     expect(reqDoc).not.toContain('## User Answers (Pending Incorporation)');
     expect(reqDoc).toContain('Approved normative text.');
+    expect(loggerStub.warn).not.toHaveBeenCalledWith(expect.stringContaining('Restored unincorporated answers block'));
 
     // Routing fired the logger + a status event.
     expect(loggerStub.info).toHaveBeenCalledWith(expect.stringContaining('pending user answers found in docs/REQUIREMENTS.md'));
@@ -684,6 +686,109 @@ describe('AutopilotDriver', () => {
     // revision is NOT committed as final — no approval/park of REQUIREMENTS).
     expect(capturedEvents.some(e => e.kind === 'status' && (e as any).message.includes('Incorporation turn for System Requirements failed'))).toBe(true);
     expect((capturedEvents.find(e => e.kind === 'complete') as any).reason).toBe('finished');
+    // Exactly one pending block — no duplicate from the failed turn.
+    expect(reqDoc.split('## User Answers (Pending Incorporation)').length - 1).toBe(1);
+  });
+
+  it('re-appends the pending block from the snapshot when a failed incorporation turn consumed it', async () => {
+    const pendingContent = '# REQUIREMENTS\n\nApproved normative text.\n\n## User Answers (Pending Incorporation)\n\n**Bus current**\nAnswer: derive from motor max output at 72 V\n';
+    // Budget-rescue style failure: the forced no-tools write consumed the
+    // block (marker gone) with the answers reworded into the body.
+    const consumedContent = '# REQUIREMENTS\n\nApproved normative text.\n\n## Bus Electrical\n\nBus current derives from the motor max output at 72 V.\n';
+    await preApprovePhase(tmpDir, stateMgr, 'conops');
+    await preApprovePhase(tmpDir, stateMgr, 'architecture');
+    await preApprovePhase(tmpDir, stateMgr, 'icd');
+    await preApprovePhase(tmpDir, stateMgr, 'capabilities');
+    await preApprovePhase(tmpDir, stateMgr, 'requirements', pendingContent);
+
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string }) => {
+      if (opts.forceSpecialistId === 'requirements') {
+        writeDoc(tmpDir, 'requirements', consumedContent);
+        return {
+          ...makeTurnResult('requirements'),
+          criticFailed: true,
+          criticResult: { passed: false, score: 5.5, summary: 'failed incorporation', strengths: [], weaknesses: ['answers not incorporated'], actionableGuidance: 'redo' }
+        };
+      }
+      writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nDeliverable content.\n`);
+      return makeTurnResult(opts.forceSpecialistId);
+    });
+
+    const driver = createDriver();
+    driver.start();
+
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    // Block restored from the pre-turn snapshot: marker + answers back in
+    // the doc, retryable on the next chain start.
+    const reqDoc = fs.readFileSync(path.join(tmpDir, 'docs', 'REQUIREMENTS.md'), 'utf-8');
+    expect(reqDoc).toContain('## User Answers (Pending Incorporation)');
+    expect(reqDoc).toContain('Answer: derive from motor max output at 72 V');
+    expect(reqDoc.split('## User Answers (Pending Incorporation)').length - 1).toBe(1);
+    expect(capturedEvents.some(e => e.kind === 'status' && (e as any).message.includes('Incorporation turn for System Requirements failed'))).toBe(true);
+  });
+
+  it('does not restore a duplicate block when the failed turn half-moved the first answer line into the body', async () => {
+    const pendingContent = '# REQUIREMENTS\n\nApproved normative text.\n\n## User Answers (Pending Incorporation)\n\n**Bus current**\nAnswer: derive from motor max output at 72 V\n';
+    const halfMovedContent = '# REQUIREMENTS\n\nApproved normative text.\n\n**Bus current** partially moved into the body.\n';
+    await preApprovePhase(tmpDir, stateMgr, 'conops');
+    await preApprovePhase(tmpDir, stateMgr, 'architecture');
+    await preApprovePhase(tmpDir, stateMgr, 'icd');
+    await preApprovePhase(tmpDir, stateMgr, 'capabilities');
+    await preApprovePhase(tmpDir, stateMgr, 'requirements', pendingContent);
+
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string }) => {
+      if (opts.forceSpecialistId === 'requirements') {
+        writeDoc(tmpDir, 'requirements', halfMovedContent);
+        return { ...makeTurnResult('requirements'), error: true, output: 'turn blew up' };
+      }
+      writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nDeliverable content.\n`);
+      return makeTurnResult(opts.forceSpecialistId);
+    });
+
+    const driver = createDriver();
+    driver.start();
+
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    // Containment guard: the first answer line is already in the doc — do
+    // not duplicate the block.
+    const reqDoc = fs.readFileSync(path.join(tmpDir, 'docs', 'REQUIREMENTS.md'), 'utf-8');
+    expect(reqDoc).not.toContain('## User Answers (Pending Incorporation)');
+  });
+
+  it('logs a warn when it restores the consumed pending block after a failed incorporation turn', async () => {
+    const pendingContent = '# REQUIREMENTS\n\nApproved normative text.\n\n## User Answers (Pending Incorporation)\n\n**Bus current**\nAnswer: derive from motor max output at 72 V\n';
+    const consumedContent = '# REQUIREMENTS\n\nApproved normative text.\n';
+    await preApprovePhase(tmpDir, stateMgr, 'conops');
+    await preApprovePhase(tmpDir, stateMgr, 'architecture');
+    await preApprovePhase(tmpDir, stateMgr, 'icd');
+    await preApprovePhase(tmpDir, stateMgr, 'capabilities');
+    await preApprovePhase(tmpDir, stateMgr, 'requirements', pendingContent);
+
+    const loggerStub: any = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+
+    executeTurnMock.mockImplementation(async (opts: { forceSpecialistId: string }) => {
+      if (opts.forceSpecialistId === 'requirements') {
+        writeDoc(tmpDir, 'requirements', consumedContent);
+        return { ...makeTurnResult('requirements'), error: true, output: 'turn blew up' };
+      }
+      writeDoc(tmpDir, opts.forceSpecialistId, `# ${opts.forceSpecialistId.toUpperCase()}\n\nDeliverable content.\n`);
+      return makeTurnResult(opts.forceSpecialistId);
+    });
+
+    const driver = createDriver({ logger: loggerStub as any });
+    driver.start();
+
+    await vi.waitFor(() => {
+      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
+    }, { timeout: 5000, interval: 50 });
+
+    expect(loggerStub.warn).toHaveBeenCalledWith(expect.stringContaining('Restored unincorporated answers block for requirements'));
   });
 
   // ── Ripple scan: change-impact flags cross-doc discrepancies after incorporation ──
