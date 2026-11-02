@@ -210,9 +210,13 @@ export default function DashboardView({
                 >
                   <div className="min-w-0 flex-1 space-y-0.5">
                     <div className="text-[11px] font-mono text-[#6e7d92]">
-                      STARN · needs input · {item.docPath ? fileBase(item.docPath) : 'unknown'}
+                      STARN · needs input{item.meta?.topic ? ` · ${item.meta.topic}` : ''} · {item.docPath ? fileBase(item.docPath) : 'unknown'}
                     </div>
                     <div className="truncate text-sm text-[#e8edf5]">{item.title}</div>
+                    {/* Research backfill — BLUF preview under the (shortened) title when format-v2 sections exist. */}
+                    {item.meta?.sections?.bluf && (
+                      <div className="truncate text-[11px] text-[#a8b3c4]">{item.meta.sections.bluf}</div>
+                    )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5 self-center">
                     <span className="text-[11px] text-[#6e7d92] tabular-nums">

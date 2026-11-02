@@ -178,3 +178,28 @@ describe('DashboardView needs-input rows (design §5.E)', () => {
     expect(scroller?.className).not.toContain('bg-');
   });
 });
+describe('DashboardView needs-input BLUF preview (research backfill)', () => {
+  it('shows the topic tag and the BLUF preview under the short title when format-v2 sections exist', async () => {
+    fetchDashboardMock.mockResolvedValue(buildData([
+      buildItem({
+        title: 'Traction motor voltage…',
+        meta: { topic: 'powertrain', sections: { bluf: 'The traction motor requires 48V nominal.' } }
+      })
+    ]));
+    renderWithUser(<DashboardView />);
+
+    const provenance = await screen.findByText((content, el) =>
+      el?.tagName === 'DIV' && content.includes('STARN · needs input · powertrain · REQUIREMENTS.md')
+    );
+    expect(provenance.textContent).toContain('powertrain');
+    expect(await screen.findByText('The traction motor requires 48V nominal.')).toBeInTheDocument();
+  });
+
+  it('renders no BLUF preview when the item has no format-v2 sections', async () => {
+    fetchDashboardMock.mockResolvedValue(buildData([buildItem()]));
+    renderWithUser(<DashboardView />);
+
+    await screen.findByRole('button', { name: /What operating voltage/i });
+    expect(screen.queryByText(/48V nominal/)).not.toBeInTheDocument();
+  });
+});

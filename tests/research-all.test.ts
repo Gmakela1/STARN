@@ -6,6 +6,7 @@ import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import {
   runResearchBackfill,
+  RESEARCH_GATE_ITEM_TIMEOUT_MS,
   ResearchGateDeps,
   ResearchBackfillDeps
 } from '../src/core/research-gate.js';
@@ -218,6 +219,43 @@ describe('runResearchBackfill (core)', () => {
     expect(stored.meta?.sections).toBeUndefined();
     expect(stored.meta?.researching).toBe(false);
   });
+
+  it('a hung gate run is abandoned at the cap and the loop CONTINUES to the next item', async () => {
+    vi.useFakeTimers();
+    try {
+      const hang = makeItem(stateMgr, { title: 'Hangs forever question?' });
+      const ok = makeItem(stateMgr, { title: 'Completes normally question?' });
+      // First item's research loop never settles; the second completes.
+      agentLoopMock.mockImplementationOnce(() => new Promise<never>(() => {}));
+      agentLoopMock.mockImplementationOnce(async () => ({ finalResponse: RESEARCH_JSON }));
+      const pending = runResearchBackfill(gateDeps);
+      const assertion = expect(pending).resolves.toEqual({ processed: 2, enriched: 1 });
+      await vi.advanceTimersByTimeAsync(RESEARCH_GATE_ITEM_TIMEOUT_MS);
+      await assertion;
+
+      const stored = (id: string) => (stateMgr.getState().portalItems || []).find(i => i.id === id)!;
+      const hungItem = stored(hang.id);
+      expect(hungItem.meta?.researching).toBe(false); // spinner never persists
+      expect(hungItem.meta?.sections).toBeUndefined(); // left as open question
+      expect(stored(ok.id).meta?.sections?.bluf).toBe('The main contactor is rated for 48V DC.');
+      const statuses = emitStatus.mock.calls.map(c => c[0] as string);
+      expect(statuses.some(s => s.startsWith('Research timed out for: Hangs forever question?'))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('enrichment rewrites a wall-of-text title to the short form, preserving the original', async () => {
+    const longTitle = 'Q1. ' + 'B'.repeat(100);
+    const item = makeItem(stateMgr, { title: longTitle });
+    const result = await runResearchBackfill(gateDeps);
+    expect(result).toEqual({ processed: 1, enriched: 1 });
+    const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
+    expect(stored.title).toBe('B'.repeat(57) + '…');
+    expect(stored.meta?.originalTitle).toBe(longTitle);
+    expect(stored.detail).toBe(longTitle); // full question text preserved
+    expect(stored.meta?.sections?.bluf).toBe('The main contactor is rated for 48V DC.');
+  });
 });
 
 // ── Endpoint POST /api/portal/research-all ──────────────────────────
@@ -368,5 +406,94 @@ describe('POST /api/portal/research-all', () => {
     await vi.waitFor(() => {
       expect(agentLoopMock).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+// ── Live gate caller (session.maybeRunResearchGate) ──────────────────
+
+describe('maybeRunResearchGate (live gate)', () => {
+  let tempDir: string;
+  let stateManager: ProjectStateManager;
+  let session: any;
+  let openRouterClient: any;
+
+  beforeEach(() => {
+    agentLoopMock.mockReset().mockImplementation(async () => ({ finalResponse: RESEARCH_JSON }));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'starn-research-live-'));
+    fs.mkdirSync(path.join(tempDir, 'docs'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'docs', 'CONOPS.md'), '# CONOPS\n\nBaseline.\n', 'utf-8');
+    stateManager = new ProjectStateManager(tempDir);
+    stateManager.getOrCreateState('p1', 'Live Gate Test');
+    openRouterClient = new OpenRouterClient({ apiKey: 'mock' });
+    vi.spyOn(openRouterClient, 'chatCompletion').mockImplementation(async () =>
+      chat(JSON.stringify({ confidence: 0.5, corroborated: false, verdict: 'propose', rationale: 'Vendor spec states the rating.' }))
+    );
+    session = new ServerSessionManager({
+      projectPath: tempDir,
+      stateManager,
+      apiKey: 'mock',
+      providers: [],
+      assignments: {
+        drafting: { providerId: 'openrouter', model: 'test-model' },
+        critic: { providerId: 'openrouter', model: 'test-model' },
+        classifier: { providerId: 'openrouter', model: 'test-model' },
+        compaction: { providerId: 'openrouter', model: 'test-model' },
+        transcriber: { providerId: 'openrouter', model: DEFAULT_TRANSCRIBER_MODEL }
+      },
+      clientFactory: () => openRouterClient,
+      toolRegistry: new ToolRegistry(),
+      specialistRegistry: new SpecialistRegistry()
+    } as any);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const stored = (id: string) => (stateManager.getState().portalItems || []).find(i => i.id === id)!;
+
+  it('enriches the item with format-v2 sections and rewrites a wall-of-text title', async () => {
+    const long = 'Q1. ' + 'C'.repeat(100);
+    const item = addPortalItem(stateManager, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: long,
+      source: 'autopilot'
+    } as any);
+
+    (session as any).maybeRunResearchGate(item);
+
+    await vi.waitFor(() => {
+      expect(stored(item.id).meta?.sections?.bluf).toBe('The main contactor is rated for 48V DC.');
+    });
+    expect(stored(item.id).title).toBe('C'.repeat(57) + '…');
+    expect(stored(item.id).meta?.originalTitle).toBe(long);
+    expect(stored(item.id).meta?.researching).toBe(false);
+  });
+
+  it('a hung run is abandoned at the cap — researching cleared, in-flight slot released', async () => {
+    vi.useFakeTimers();
+    try {
+      agentLoopMock.mockImplementation(() => new Promise<never>(() => {}));
+      const item = addPortalItem(stateManager, {
+        type: 'question',
+        severity: 'normal',
+        docPath: 'docs/CONOPS.md',
+        title: 'Kelly controller question?',
+        source: 'autopilot'
+      } as any);
+
+      (session as any).maybeRunResearchGate(item);
+      await vi.advanceTimersByTimeAsync(RESEARCH_GATE_ITEM_TIMEOUT_MS);
+
+      expect(stored(item.id).meta?.researching).toBe(false);
+      expect(stored(item.id).status).toBe('open');
+      expect(stored(item.id).meta?.sections).toBeUndefined();
+      expect((session as any).gateInFlight.has(item.id)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

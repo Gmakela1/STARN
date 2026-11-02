@@ -16,7 +16,20 @@ import { SpecialistRegistry } from '../specialists/registry.js';
 import { Logger } from '../util/logger.js';
 import { AutopilotDriver, AutopilotEvent } from '../core/autopilot.js';
 import { applyAnswer, AnswerApplierDeps } from '../core/answer-applier.js';
-import { runResearchGate, runResearchBackfill, listBackfillEligibleItems, ResearchGateDeps, undoAutoApplied, recoverStaleResearchingItems } from '../core/research-gate.js';
+import {
+  runGateWithTimeout,
+  runResearchBackfill,
+  listBackfillEligibleItems,
+  ResearchGateDeps,
+  undoAutoApplied,
+  recoverStaleResearchingItems,
+  buildQuestionSections,
+  writeItemSections,
+  rewriteShortTitle,
+  setItemResearching,
+  shortResearchTitle,
+  RESEARCH_GATE_ITEM_TIMEOUT_MS
+} from '../core/research-gate.js';
 import { webFetchHandler } from '../tools/handlers/web-fetch.js';
 import { AnswerQueue, AnswerApplyResult, AnswerFrameEvent } from '../core/answer-queue.js';
 import { EventBus } from '../core/event-bus.js';
@@ -608,9 +621,32 @@ export class ServerSessionManager {
     if (item.meta?.researching === true || item.meta?.proposedAnswer || item.meta?.autoApplied) return;
     if (this.gateInFlight.has(item.id)) return;
     this.gateInFlight.add(item.id);
-    void runResearchGate(this.buildResearchGateDeps(), item).finally(() => {
-      this.gateInFlight.delete(item.id);
-    });
+    // Per-item wall-clock cap (same race as the legacy backfill loop): a hung
+    // research turn / verify fetch / critic call must not wedge intake
+    // forever. On timeout the hung run is abandoned (not cancelled — no
+    // AbortSignal), the researching flag is cleared and the item stays a
+    // plain open question.
+    void runGateWithTimeout(this.buildResearchGateDeps(), item)
+      .then(({ outcome, timedOut }) => {
+        if (timedOut) {
+          setItemResearching(this.deps.stateManager, item.id, false);
+          this.deps.logger?.warn(`Research gate timed out for item ${item.id} after ${RESEARCH_GATE_ITEM_TIMEOUT_MS}ms`);
+          this.publish({ kind: 'status', message: `Research timed out for: ${shortResearchTitle(item.title)} — left as open question` });
+          return;
+        }
+        // Enrichment: the same format-v2 sections + short-title rewrite the
+        // legacy backfill applies, from real research output only.
+        if (outcome.research?.answer.trim()) {
+          const sections = buildQuestionSections(outcome.research, outcome.assessment);
+          if (Object.keys(sections).length > 0 && writeItemSections(this.deps.stateManager, item.id, sections)) {
+            rewriteShortTitle(this.deps.stateManager, item.id);
+          }
+        }
+      })
+      .catch(err => this.deps.logger?.warn(`Research gate failed for item ${item.id}: ${err?.message ?? err}`))
+      .finally(() => {
+        this.gateInFlight.delete(item.id);
+      });
   }
 
   /**

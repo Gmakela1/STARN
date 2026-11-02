@@ -9,12 +9,15 @@ import { applyAnswer, AnswerApplierDeps } from '../src/core/answer-applier.js';
 import {
   parseResearchReply,
   runResearchGate,
+  runGateWithTimeout,
+  rewriteShortTitle,
   assessResearch,
   applyAutoAnswer,
   undoAutoApplied,
   recoverStaleResearchingItems,
   isAutoAppliedIncorporated,
   RESEARCH_GATE_ALLOWED_TOOLS,
+  RESEARCH_GATE_ITEM_TIMEOUT_MS,
   ResearchGateDeps,
   ResearchAssessment,
   QuestionResearch
@@ -422,6 +425,52 @@ describe('research gate wiring', () => {
       await expect(
         undoAutoApplied({ stateManager: stateMgr, projectPath: tmpDir }, item.id)
       ).rejects.toThrow(/no auto-applied/i);
+    });
+  });
+
+  describe('per-item gate timeout (runGateWithTimeout)', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('abandons a hung gate run at the wall-clock cap — resolves, never rejects', async () => {
+      vi.useFakeTimers();
+      const hungDeps: ResearchGateDeps = {
+        ...gateDeps,
+        // The research loop's client call never settles — the exact hang that
+        // wedged the live backfill (Kelly controller item).
+        client: { chatCompletion: vi.fn(() => new Promise<never>(() => {})) } as any
+      };
+      const pending = runGateWithTimeout(hungDeps, item);
+      const assertion = expect(pending).resolves.toEqual({ outcome: {}, timedOut: true });
+      await vi.advanceTimersByTimeAsync(RESEARCH_GATE_ITEM_TIMEOUT_MS);
+      await assertion;
+    });
+
+    it('returns the gate outcome untouched when the run finishes inside the cap', async () => {
+      const res = await runGateWithTimeout(gateDeps, item);
+      expect(res.timedOut).toBe(false);
+      expect(res.outcome.research?.answer).toContain('48V');
+    });
+  });
+
+  describe('short-title rewrite (rewriteShortTitle)', () => {
+    it('rewrites a wall-of-text title, persists the original, mirrors it into an empty detail', () => {
+      const long = 'Q1. ' + 'A'.repeat(100);
+      const wall = makeItem(stateMgr, { title: long });
+      expect(rewriteShortTitle(stateMgr, wall.id)).toBe(true);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === wall.id)!;
+      expect(stored.title).toBe('A'.repeat(57) + '…');
+      expect(stored.meta?.originalTitle).toBe(long);
+      expect(stored.detail).toBe(long); // panel body keeps the full question
+    });
+
+    it('no-op when the title is already short (no originalTitle churn)', () => {
+      const plain = makeItem(stateMgr);
+      expect(rewriteShortTitle(stateMgr, plain.id)).toBe(false);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === plain.id)!;
+      expect(stored.title).toBe('What is the main contactor voltage rating?');
+      expect(stored.meta?.originalTitle).toBeUndefined();
     });
   });
 });

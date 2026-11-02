@@ -62,6 +62,12 @@ export const UNVERIFIED_CONFIDENCE_CAP = 0.85;
 const ANSWER_CHAR_CAP = 4000;
 const REASONING_CHAR_CAP = 1000;
 const SOURCE_CAP = 6;
+/**
+ * Per-item wall-clock cap for a whole gate run (research turn + verifyTopSource
+ * fetch + critic). A hung model call or fetch must not wedge the backfill
+ * loop or intake forever — runGateWithTimeout abandons the run at this cap.
+ */
+export const RESEARCH_GATE_ITEM_TIMEOUT_MS = 180_000;
 
 export interface QuestionResearch {
   answer: string;
@@ -386,6 +392,39 @@ export function setItemResearching(stateManager: ProjectStateManager, itemId: st
   stateManager.saveState(state);
 }
 
+/** Result of runGateWithTimeout: the gate outcome, plus whether the wall-clock cap fired. */
+export interface GateRunResult {
+  outcome: ResearchGateOutcome;
+  timedOut: boolean;
+}
+
+/**
+ * Races ONE gate run against a per-item wall-clock timer
+ * (RESEARCH_GATE_ITEM_TIMEOUT_MS). Resolves, never rejects and never cancels
+ * the hung call (the gate has no AbortSignal): on timeout the run's promise is
+ * simply abandoned. A late completion is harmless — the caller clears
+ * meta.researching (idempotent flag write) and any late section write lands
+ * on an item that subsequent runs skip (meta.sections present → ineligible).
+ */
+export async function runGateWithTimeout(
+  deps: ResearchGateDeps,
+  item: PortalItem,
+  timeoutMs: number = RESEARCH_GATE_ITEM_TIMEOUT_MS
+): Promise<GateRunResult> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout: Promise<GateRunResult> = new Promise(resolve => {
+    timer = setTimeout(() => resolve({ outcome: {}, timedOut: true }), timeoutMs);
+  });
+  try {
+    return await Promise.race([
+      runResearchGate(deps, item).then(outcome => ({ outcome, timedOut: false })),
+      timeout
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Stores meta.proposedAnswer on an open item (atomic read-fresh → mutate →
  * save). Returns false when the item vanished or is no longer open.
@@ -677,6 +716,33 @@ export function writeItemSections(
 }
 
 /**
+ * Rewrites a portal item's wall-of-text title to the short display form
+ * (shortResearchTitle) once the format-v2 sections are written, persisting
+ * the original in meta.originalTitle and — when the item has no detail —
+ * mirroring the full original text into item.detail so the panel body keeps
+ * the complete question (no information lost by shortening). Only rewrites
+ * when the short form differs. The title stays the dedupe/slug key going
+ * forward: dedupe keys already computed on the old titles remain; future
+ * dedupe uses the new short titles (fine — canonical items are already tagged
+ * via meta.upstreamOf). Atomic read-fresh → mutate → save. Returns false when
+ * the item vanished, was dismissed, or the title is already short.
+ */
+export function rewriteShortTitle(stateManager: ProjectStateManager, itemId: string): boolean {
+  const state = stateManager.getState();
+  const item = (state.portalItems || []).find(i => i.id === itemId);
+  if (!item || item.status === 'dismissed') return false;
+  const short = shortResearchTitle(item.title);
+  if (short === item.title) return false;
+  const original = item.title;
+  item.meta = { ...(item.meta || {}), originalTitle: original };
+  item.title = short;
+  if (!item.detail) item.detail = original;
+  item.updatedAt = new Date().toISOString();
+  stateManager.saveState(state);
+  return true;
+}
+
+/**
  * Open question items eligible for the research-all backfill: still open, not
  * already gated (researching/proposedAnswer/autoApplied), not already
  * enriched (meta.sections), and not in the optional in-flight set. Snapshot
@@ -720,7 +786,10 @@ export interface ResearchBackfillResult {
  * legacy items gain the decision-memo experience without fabricating
  * evidence; an auto-applied item keeps its stored answer text. Per-item gate
  * failures leave the item a plain open question (runResearchGate never
- * throws) and never stop the loop.
+ * throws) and never stop the loop. A hung gate run (stuck research turn /
+ * verify fetch / critic call) is abandoned at RESEARCH_GATE_ITEM_TIMEOUT_MS:
+ * the researching flag is cleared, the item stays a plain open question, and
+ * the loop CONTINUES to the next item.
  */
 export async function runResearchBackfill(deps: ResearchBackfillDeps): Promise<ResearchBackfillResult> {
   const eligibleIds = listBackfillEligibleItems(deps.stateManager, deps.inFlight).map(item => item.id);
@@ -733,12 +802,24 @@ export async function runResearchBackfill(deps: ResearchBackfillDeps): Promise<R
     if (!item || item.status !== 'open' || item.meta?.researching === true || item.meta?.proposedAnswer || item.meta?.autoApplied || item.meta?.sections) {
       continue;
     }
-    const outcome = await runResearchGate(deps, item);
+    const { outcome, timedOut } = await runGateWithTimeout(deps, item);
+    if (timedOut) {
+      // Hung gate call abandoned (not cancelled — no signal reaches it). The
+      // flag write is idempotent and a late section write lands on an item
+      // later runs skip (meta.sections present → ineligible). Counted as
+      // processed, never as enriched; the loop moves on.
+      setItemResearching(deps.stateManager, item.id, false);
+      deps.logger?.warn(`Research gate timed out for item ${item.id} after ${RESEARCH_GATE_ITEM_TIMEOUT_MS}ms`);
+      deps.emitStatus?.(`Research timed out for: ${shortResearchTitle(item.title)} — left as open question`);
+      processed++;
+      continue;
+    }
     processed++;
     if (outcome.research?.answer.trim()) {
       const sections = buildQuestionSections(outcome.research, outcome.assessment);
       if (Object.keys(sections).length > 0 && writeItemSections(deps.stateManager, item.id, sections)) {
         enriched++;
+        rewriteShortTitle(deps.stateManager, item.id);
       }
     }
   }
