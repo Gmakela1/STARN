@@ -46,6 +46,7 @@ describe('research gate portal routes', () => {
   let server: http.Server;
   let stateManager: ProjectStateManager;
   let session: ServerSessionManager;
+  let openRouterClient: OpenRouterClient;
   const BASELINE = '# CONOPS\n\nBaseline.\n';
   const APPENDED = '\n\n## User Answers (Pending Incorporation)\n\n**Contactor rating**\nAnswer: 48V\n';
 
@@ -68,6 +69,26 @@ describe('research gate portal routes', () => {
     return item;
   }
 
+  /** Fresh session deps bound to the current tempDir/stateManager (recovery test builds a second session). */
+  function makeSessionDeps(): ConstructorParameters<typeof ServerSessionManager>[0] {
+    return {
+      projectPath: tempDir,
+      stateManager,
+      apiKey: 'mock',
+      providers: [],
+      assignments: {
+        drafting: { providerId: 'openrouter', model: 'test-model' },
+        critic: { providerId: 'openrouter', model: 'test-model' },
+        classifier: { providerId: 'openrouter', model: 'test-model' },
+        compaction: { providerId: 'openrouter', model: 'test-model' },
+        transcriber: { providerId: 'openrouter', model: DEFAULT_TRANSCRIBER_MODEL }
+      },
+      clientFactory: () => openRouterClient,
+      toolRegistry: new ToolRegistry(),
+      specialistRegistry: new SpecialistRegistry()
+    };
+  }
+
   beforeEach(async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'starn-research-gate-routes-'));
     fs.mkdirSync(path.join(tempDir, 'docs'), { recursive: true });
@@ -85,28 +106,13 @@ describe('research gate portal routes', () => {
       counterQuestions: []
     }));
 
-    const client = new OpenRouterClient({ apiKey: 'mock' });
-    vi.spyOn(client, 'chatCompletion').mockImplementation(async () => ({
+    openRouterClient = new OpenRouterClient({ apiKey: 'mock' });
+    vi.spyOn(openRouterClient, 'chatCompletion').mockImplementation(async () => ({
       content: '# Unused',
       raw: {}
     }));
 
-    session = new ServerSessionManager({
-      projectPath: tempDir,
-      stateManager,
-      apiKey: 'mock',
-      providers: [],
-      assignments: {
-        drafting: { providerId: 'openrouter', model: 'test-model' },
-        critic: { providerId: 'openrouter', model: 'test-model' },
-        classifier: { providerId: 'openrouter', model: 'test-model' },
-        compaction: { providerId: 'openrouter', model: 'test-model' },
-        transcriber: { providerId: 'openrouter', model: DEFAULT_TRANSCRIBER_MODEL }
-      },
-      clientFactory: () => client,
-      toolRegistry: new ToolRegistry(),
-      specialistRegistry: new SpecialistRegistry()
-    });
+    session = new ServerSessionManager(makeSessionDeps());
 
     server = createHttpServer({ projectPath: tempDir, stateManager, session });
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -116,6 +122,18 @@ describe('research gate portal routes', () => {
     vi.restoreAllMocks();
     await new Promise<void>((resolve, reject) => server.close(err => (err ? reject(err) : resolve())));
     fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('session start: stale researching tombstone is cleared and the gate re-fires', async () => {
+    const item = seedItem({ meta: { researching: true } });
+    const callsBefore = openRouterClient.chatCompletion.mock.calls.length;
+    // "Session start": a fresh session manager over the same project state.
+    new ServerSessionManager(makeSessionDeps());
+    await vi.waitFor(() => {
+      const stored = (stateManager.getState().portalItems || []).find((i: any) => i.id === item.id)!;
+      expect(stored.meta?.researching).toBe(false);
+    });
+    expect(openRouterClient.chatCompletion.mock.calls.length).toBe(callsBefore + 1);
   });
 
   it('confirm-proposal: edited text routes through the applier with user-confirmed-research provenance; proposal cleared', async () => {

@@ -16,7 +16,8 @@ import { SpecialistRegistry } from '../specialists/registry.js';
 import { Logger } from '../util/logger.js';
 import { AutopilotDriver, AutopilotEvent } from '../core/autopilot.js';
 import { applyAnswer, AnswerApplierDeps } from '../core/answer-applier.js';
-import { runResearchGate, ResearchGateDeps, undoAutoApplied } from '../core/research-gate.js';
+import { runResearchGate, ResearchGateDeps, undoAutoApplied, recoverStaleResearchingItems } from '../core/research-gate.js';
+import { webFetchHandler } from '../tools/handlers/web-fetch.js';
 import { AnswerQueue, AnswerApplyResult, AnswerFrameEvent } from '../core/answer-queue.js';
 import { EventBus } from '../core/event-bus.js';
 import { PortalItem } from '../workspace/types.js';
@@ -109,6 +110,22 @@ export class ServerSessionManager {
     this._autopilotEnabled = deps.autopilotEnabled ?? true;
     this._voiceInputModel = deps.voiceInputModel?.trim() || DEFAULT_VOICE_INPUT_MODEL;
     this.roleClients = this.buildRoleClients();
+    this.recoverStaleResearchGate();
+  }
+
+  /**
+   * Session-start recovery: a crash/disconnect mid-research leaves open
+   * questions flagged meta.researching=true forever (spinner + gate guard
+   * skip). Clears the stale tombstones and re-fires the gate for exactly
+   * those items so they actually get researched, not just un-stuck.
+   */
+  private recoverStaleResearchGate(): void {
+    const recoveredIds = recoverStaleResearchingItems(this.deps.stateManager);
+    const state = this.deps.stateManager.getState();
+    for (const id of recoveredIds) {
+      const item = (state.portalItems || []).find(i => i.id === id);
+      if (item) this.maybeRunResearchGate(item);
+    }
   }
 
   private buildRoleClients(): RoleClients {
@@ -587,6 +604,15 @@ export class ServerSessionManager {
       applyAnswer: async (itemId, answer) => {
         const result = await applyAnswer(this.answerApplierDeps(), itemId, answer, { provenance: 'research-gate' });
         return { updatedItem: result.updatedItem, appendedText: result.appendedText };
+      },
+      // Verified-source corroboration: fetch the top cited URL with the
+      // web_fetch handler (SSRF-guarded) so the critic grades real content.
+      verifySource: async (url) => {
+        const res = await webFetchHandler.execute(
+          { url },
+          { projectPath: this.deps.projectPath, stateManager: this.deps.stateManager }
+        );
+        return res.success ? { ok: true, excerpt: String(res.result ?? '') } : { ok: false };
       }
     };
   }

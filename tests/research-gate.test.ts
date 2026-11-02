@@ -12,6 +12,8 @@ import {
   assessResearch,
   applyAutoAnswer,
   undoAutoApplied,
+  recoverStaleResearchingItems,
+  isAutoAppliedIncorporated,
   RESEARCH_GATE_ALLOWED_TOOLS,
   ResearchGateDeps,
   ResearchAssessment,
@@ -98,7 +100,12 @@ describe('research gate wiring', () => {
     researchClient = { chatCompletion: vi.fn(async () => chat(GOOD_JSON)) };
     criticClient = {
       chatCompletion: vi.fn(async () =>
-        chat(JSON.stringify({ confidence: 0.97, verdict: 'auto', rationale: 'Vendor datasheet, stated verbatim.' }))
+        chat(JSON.stringify({
+          confidence: 0.97,
+          corroborated: true,
+          verdict: 'auto',
+          rationale: 'Vendor datasheet, stated verbatim.'
+        }))
       )
     };
     registry = new ToolRegistry();
@@ -121,7 +128,8 @@ describe('research gate wiring', () => {
       applyAnswer: async (itemId, answer) => {
         const r = await applyAnswer(applierDeps, itemId, answer, { provenance: 'research-gate' });
         return { updatedItem: r.updatedItem, appendedText: r.appendedText };
-      }
+      },
+      verifySource: async () => ({ ok: true, excerpt: 'Manufacturer datasheet: contactor coil rated 48V DC.' })
     };
   });
 
@@ -257,6 +265,124 @@ describe('research gate wiring', () => {
     expect(stored.meta?.researching).toBe(false);
     expect(stored.meta?.autoApplied).toBeUndefined();
     expect(emitStatus.mock.calls.some(c => String(c[0]).includes('Research failed for:'))).toBe(true);
+  });
+
+  describe('source verification (blocker: asserted titles are not authority)', () => {
+    it('uncorroborating fetched content caps confidence at 0.85 → propose, never auto', async () => {
+      criticClient.chatCompletion = vi.fn(async () =>
+        chat(JSON.stringify({
+          confidence: 0.97,
+          corroborated: false,
+          verdict: 'auto',
+          rationale: 'Asserted Manufacturer Datasheet title over a forum URL.'
+        }))
+      );
+      gateDeps.verifySource = async () => ({ ok: true, excerpt: 'Forum thread: opinions only, no specs.' });
+      await runResearchGate(gateDeps, item);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
+      expect(stored.status).toBe('open');
+      expect(stored.meta?.proposedAnswer!.confidence).toBeLessThanOrEqual(0.85);
+      expect(stored.meta?.autoApplied).toBeUndefined();
+    });
+
+    it('fetch failure caps confidence at 0.85 → propose, never auto', async () => {
+      criticClient.chatCompletion = vi.fn(async () =>
+        chat(JSON.stringify({ confidence: 0.99, corroborated: true, verdict: 'auto', rationale: 'x' }))
+      );
+      gateDeps.verifySource = async () => ({ ok: false });
+      await runResearchGate(gateDeps, item);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
+      expect(stored.status).toBe('open');
+      expect(stored.meta?.proposedAnswer!.confidence).toBeLessThanOrEqual(0.85);
+      expect(stored.meta?.autoApplied).toBeUndefined();
+    });
+
+    it('corroborating fetched content allows the full tier (auto)', async () => {
+      gateDeps.verifySource = async () => ({ ok: true, excerpt: 'Datasheet: coil rated 48V DC.' });
+      await runResearchGate(gateDeps, item);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
+      expect(stored.status).toBe('answered');
+      expect(stored.meta?.autoApplied!.confidence).toBe(0.97);
+    });
+
+    it('critic prompt carries the actual fetched excerpt as verified evidence', async () => {
+      await assessResearch(gateDeps, item, {
+        answer: '48V',
+        sources: [{ title: 'ds', url: 'https://vendor.example/ds.pdf' }],
+        reasoning: ''
+      }, { ok: true, excerpt: 'RATED 48V CONTINUOUS DUTY' });
+      const prompt = String(criticClient.chatCompletion.mock.calls[0][0].messages[0].content);
+      expect(prompt).toContain('VERIFIED SOURCE EVIDENCE');
+      expect(prompt).toContain('RATED 48V CONTINUOUS DUTY');
+    });
+
+    it('no fetchable cited URL → unverified → capped', async () => {
+      gateDeps.verifySource = async () => {
+        throw new Error('should not be called without a fetchable URL');
+      };
+      // Research reply cites only a project doc (no URL) → nothing to fetch.
+      researchClient.chatCompletion = vi.fn(async () =>
+        chat(JSON.stringify({ answer: '48V', sources: [{ title: 'Project doc' }], reasoning: '' }))
+      );
+      criticClient.chatCompletion = vi.fn(async () =>
+        chat(JSON.stringify({ confidence: 0.98, corroborated: true, verdict: 'auto', rationale: 'x' }))
+      );
+      await runResearchGate(gateDeps, item);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
+      expect(stored.status).toBe('open');
+      expect(stored.meta?.proposedAnswer!.confidence).toBeLessThanOrEqual(0.85);
+      expect(stored.meta?.autoApplied).toBeUndefined();
+    });
+  });
+
+  describe('stale researching recovery (blocker: crash mid-research leaves spinner forever)', () => {
+    it('recoverStaleResearchingItems clears stale tombstones and returns their ids', () => {
+      const stale = makeItem(stateMgr);
+      const fresh = makeItem(stateMgr, { title: 'Fresh question?' });
+      const state = stateMgr.getState();
+      (state.portalItems || []).find(i => i.id === stale.id)!.meta = { researching: true };
+      stateMgr.saveState(state);
+
+      const recovered = recoverStaleResearchingItems(stateMgr);
+      expect(recovered).toEqual([stale.id]);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === stale.id)!;
+      expect(stored.meta?.researching).toBe(false);
+      const untouched = (stateMgr.getState().portalItems || []).find(i => i.id === fresh.id)!;
+      expect(untouched.meta?.researching).toBeUndefined();
+    });
+
+    it('no tombstones → no-op with no save churn', () => {
+      makeItem(stateMgr);
+      expect(recoverStaleResearchingItems(stateMgr)).toEqual([]);
+    });
+  });
+
+  describe('incorporated signal (residual: undo vs incorporated text)', () => {
+    it('isAutoAppliedIncorporated: block consumed → true; block+appended bytes present → false', () => {
+      const docPath = path.join(tmpDir, 'docs', 'CONOPS.md');
+      const appended = '\n\n## User Answers (Pending Incorporation)\n\n**Q**\nAnswer: 48V\n';
+      const answeredItem: PortalItem = {
+        id: 'x1', type: 'question', status: 'answered', docPath: 'docs/CONOPS.md',
+        title: 'Q', source: 'autopilot', meta: { autoApplied: { answer: '48V', appendedText: appended } }
+      } as any;
+
+      fs.writeFileSync(docPath, '# CONOPS\n\nIncorporated verbatim: 48V.\n', 'utf-8');
+      expect(isAutoAppliedIncorporated(tmpDir, answeredItem)).toBe(true);
+
+      fs.writeFileSync(docPath, '# CONOPS\n\nBaseline.' + appended, 'utf-8');
+      expect(isAutoAppliedIncorporated(tmpDir, answeredItem)).toBe(false);
+    });
+
+    it('undo refuses when nothing was appended (no appendedText snapshot) — same signal as GET decoration', async () => {
+      await runResearchGate(gateDeps, item);
+      const state = stateMgr.getState();
+      const stored = (state.portalItems || []).find(i => i.id === item.id)!;
+      stored.meta = { ...(stored.meta || {}), autoApplied: { ...stored.meta!.autoApplied!, appendedText: undefined } };
+      stateMgr.saveState(state);
+      await expect(
+        undoAutoApplied({ stateManager: stateMgr, projectPath: tmpDir }, item.id)
+      ).rejects.toThrow(/already incorporated/i);
+    });
   });
 
   describe('undo', () => {

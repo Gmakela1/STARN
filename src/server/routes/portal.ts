@@ -1,7 +1,5 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { archiveDuplicateOpenPortalItems, listPortalItems, dismissPortalItem } from '../../core/question-portal.js';
-import { clearProposal, undoAutoApplied } from '../../core/research-gate.js';
+import { clearProposal, undoAutoApplied, isAutoAppliedIncorporated } from '../../core/research-gate.js';
 import { readJsonBody, ok, fail, sendJson, RouteModule } from './kit.js';
 
 export const portalModule: RouteModule = {
@@ -32,20 +30,14 @@ export const portalModule: RouteModule = {
       // Research gate — an auto-applied item whose appended answer has left
       // the doc (incorporated into normative text) gets an in-memory marker so
       // the panel stops offering UNDO (answerQueued decoration precedent:
-      // point-in-time, never persisted).
+      // point-in-time, never persisted). Uses the SAME incorporated signal as
+      // the undo route (isAutoAppliedIncorporated) so the two cannot drift.
       decorated = decorated.map(item => {
         const auto = item.meta?.autoApplied;
-        if (!auto || auto.incorporated === true || item.status !== 'answered') return item;
-        let incorporated = true;
-        if (auto.appendedText && item.docPath) {
-          try {
-            incorporated = !fs.readFileSync(path.join(deps.projectPath, item.docPath), 'utf-8').includes(auto.appendedText);
-          } catch {
-            incorporated = true;
-          }
-        }
-        if (!incorporated) return item;
-        return { ...item, meta: { ...(item.meta ?? {}), autoApplied: { ...auto, incorporated: true } } };
+        if (!auto || auto.incorporated === true) return item;
+        return isAutoAppliedIncorporated(deps.projectPath, item)
+          ? { ...item, meta: { ...(item.meta ?? {}), autoApplied: { ...auto, incorporated: true } } }
+          : item;
       });
       return ok(res, { items: decorated });
     }
