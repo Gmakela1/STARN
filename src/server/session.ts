@@ -24,8 +24,7 @@ import {
   undoAutoApplied,
   recoverStaleResearchingItems,
   buildQuestionSections,
-  writeItemSections,
-  rewriteShortTitle,
+  enrichItem,
   setItemResearching,
   shortResearchTitle,
   RESEARCH_GATE_ITEM_TIMEOUT_MS
@@ -638,8 +637,8 @@ export class ServerSessionManager {
         // legacy backfill applies, from real research output only.
         if (outcome.research?.answer.trim()) {
           const sections = buildQuestionSections(outcome.research, outcome.assessment);
-          if (Object.keys(sections).length > 0 && writeItemSections(this.deps.stateManager, item.id, sections)) {
-            rewriteShortTitle(this.deps.stateManager, item.id);
+          if (Object.keys(sections).length > 0) {
+            enrichItem(this.deps.stateManager, item.id, sections);
           }
         }
       })

@@ -730,6 +730,26 @@ export function writeItemSections(
 }
 
 /**
+ * Enriches ONE item with format-v2 sections AND the short-title rewrite in a
+ * single helper call — the anti-drift seam between the two backfill/gate
+ * call sites. writeItemSections writes meta.sections (atomic read-fresh →
+ * mutate → save); rewriteShortTitle then swaps a wall-of-text title for the
+ * short form, persists meta.originalTitle and mirrors the original into an
+ * empty detail. Returns false when the section write failed (item vanished /
+ * dismissed); the title rewrite is a safe no-op when the title is already
+ * short.
+ */
+export function enrichItem(
+  stateManager: ProjectStateManager,
+  itemId: string,
+  sections: QuestionSections
+): boolean {
+  if (!writeItemSections(stateManager, itemId, sections)) return false;
+  rewriteShortTitle(stateManager, itemId);
+  return true;
+}
+
+/**
  * Rewrites a portal item's wall-of-text title to the short display form
  * (shortResearchTitle) once the format-v2 sections are written, persisting
  * the original in meta.originalTitle and — when the item has no detail —
@@ -788,6 +808,8 @@ export interface ResearchBackfillResult {
   processed: number;
   /** Items that got format-v2 sections written onto meta.sections. */
   enriched: number;
+  /** Legacy enriched items (sections, wall-of-text title, no originalTitle) repaired by the normalize pass. */
+  normalized: number;
 }
 
 /**
@@ -806,6 +828,22 @@ export interface ResearchBackfillResult {
  * the loop CONTINUES to the next item.
  */
 export async function runResearchBackfill(deps: ResearchBackfillDeps): Promise<ResearchBackfillResult> {
+  // Normalize pass (BEFORE eligibility filtering): items already enriched
+  // (meta.sections) pre-date the short-title rewrite when they came through
+  // the intake path — repair them in place (short title + originalTitle +
+  // detail mirror) with NO research and NO section change, so the legacy
+  // wall-of-text titles vanish on the next Research-all click.
+  let normalized = 0;
+  for (const item of deps.stateManager.getState().portalItems || []) {
+    if (
+      item.type !== 'question' ||
+      !item.meta?.sections ||
+      item.meta?.originalTitle ||
+      item.title.length <= 200
+    ) continue;
+    if (rewriteShortTitle(deps.stateManager, item.id)) normalized++;
+  }
+
   const eligibleIds = listBackfillEligibleItems(deps.stateManager, deps.inFlight).map(item => item.id);
   let processed = 0;
   let enriched = 0;
@@ -831,11 +869,10 @@ export async function runResearchBackfill(deps: ResearchBackfillDeps): Promise<R
     processed++;
     if (outcome.research?.answer.trim()) {
       const sections = buildQuestionSections(outcome.research, outcome.assessment);
-      if (Object.keys(sections).length > 0 && writeItemSections(deps.stateManager, item.id, sections)) {
+      if (Object.keys(sections).length > 0 && enrichItem(deps.stateManager, item.id, sections)) {
         enriched++;
-        rewriteShortTitle(deps.stateManager, item.id);
       }
     }
   }
-  return { processed, enriched };
+  return { processed, enriched, normalized };
 }

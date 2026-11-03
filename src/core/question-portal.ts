@@ -1,6 +1,7 @@
 import { PortalItem, PortalItemType } from '../workspace/types.js';
 import { ProjectStateManager, defaultAutopilotState } from '../workspace/state.js';
 import { questionSlug } from './open-questions-parser.js';
+import { shortResearchTitle } from './research-gate.js';
 
 export type PortalItemInput = Omit<PortalItem, 'id' | 'createdAt' | 'updatedAt' | 'status'>;
 
@@ -37,11 +38,14 @@ function createItemId(): string {
   return `p_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
 
-function dedupeKey(item: Pick<PortalItem, 'type' | 'docPath' | 'title'>): string {
+function dedupeKey(item: Pick<PortalItem, 'type' | 'docPath' | 'title'> & { meta?: { originalTitle?: string } }): string {
   // Stable identity: docPath + question slug (wording-variant tolerant, Qn
   // prefix and "Why it matters" text excluded). Type stays in the key so
   // questions never dedupe onto flags/gaps items.
-  return JSON.stringify([item.type, item.docPath ?? '', questionSlug(item.title)]);
+  // Short-title rewrite: a rewritten item dedupes on its ORIGINAL title
+  // (meta.originalTitle), so a re-intake of the same wall-of-text question
+  // still dedupes onto it instead of creating a short-titled twin.
+  return JSON.stringify([item.type, item.docPath ?? '', questionSlug(item.meta?.originalTitle ?? item.title)]);
 }
 
 /**
@@ -192,6 +196,23 @@ export function addPortalItem(manager: ProjectStateManager, input: PortalItemInp
   if (input.answer !== undefined) item.answer = input.answer;
   if (upstreamOf !== undefined) item.meta = { ...(input.meta || {}), upstreamOf };
   else if (input.meta !== undefined) item.meta = input.meta;
+
+  // Intake-path short-title rewrite: a question created WITH format-v2
+  // sections gets the same wall-of-text treatment the research gate applies
+  // on enrichment (shortResearchTitle) — short display title, the original
+  // preserved in meta.originalTitle, and the original mirrored into an empty
+  // detail. Dedupe above already keyed on the pre-rewrite title (same
+  // precedent as the gate's rewriteShortTitle). No-op for short titles and
+  // non-question types.
+  if (item.type === 'question' && item.meta?.sections) {
+    const short = shortResearchTitle(item.title);
+    if (short !== item.title) {
+      const original = item.title;
+      item.meta = { ...(item.meta || {}), originalTitle: original };
+      item.title = short;
+      if (!item.detail) item.detail = original;
+    }
+  }
 
   state.portalItems.push(item);
   manager.saveState(state);

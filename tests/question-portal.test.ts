@@ -686,3 +686,95 @@ describe('question portal store', () => {
     });
   });
 });
+
+describe('addPortalItem — intake-path short-title rewrite (sections present)', () => {
+  let tmpDir: string;
+  let stateMgr: ProjectStateManager;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), 'starn-portal-rewrite-test-' + Date.now());
+    fs.mkdirSync(tmpDir, { recursive: true });
+    stateMgr = new ProjectStateManager(tmpDir);
+    stateMgr.getOrCreateState('test', 'Test');
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const SECTIONS = { bluf: '48V nominal.', suggestion: '48V battery.' };
+
+  it('a question created WITH sections and a wall-of-text title is shortened at creation', () => {
+    const longTitle = 'Q1. ' + 'B'.repeat(1180);
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: longTitle,
+      source: 'autopilot',
+      meta: { sections: SECTIONS }
+    });
+    expect(item.title).toBe('B'.repeat(57) + '…');
+    expect(item.meta?.originalTitle).toBe(longTitle);
+    expect(item.detail).toBe(longTitle); // detail mirror — no information loss
+    expect(item.meta?.sections).toEqual(SECTIONS);
+  });
+
+  it('an existing detail is preserved; short titles with sections are left alone', () => {
+    const withDetail = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'Q1. ' + 'C'.repeat(300),
+      detail: 'Battery pack nominal',
+      source: 'autopilot',
+      meta: { sections: SECTIONS }
+    });
+    expect(withDetail.detail).toBe('Battery pack nominal');
+    expect(withDetail.meta?.originalTitle).toBe('Q1. ' + 'C'.repeat(300));
+
+    const short = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'Bus voltage?',
+      source: 'autopilot',
+      meta: { sections: SECTIONS }
+    });
+    expect(short.title).toBe('Bus voltage?');
+    expect(short.meta?.originalTitle).toBeUndefined();
+  });
+
+  it('non-question types with meta are untouched; dedupe still keys on the original title', () => {
+    const flag = addPortalItem(stateMgr, {
+      type: 'gap' as any,
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'G'.repeat(300),
+      source: 'autopilot',
+      meta: { sections: SECTIONS } as any
+    });
+    expect(flag.title).toBe('G'.repeat(300));
+
+    const longTitle = 'Q2. ' + 'D'.repeat(400);
+    addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: longTitle,
+      source: 'autopilot',
+      meta: { sections: SECTIONS }
+    });
+    const twin = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: longTitle,
+      source: 'autopilot',
+      meta: { sections: SECTIONS }
+    });
+    // Same pre-rewrite title → the second add dedupes onto the first.
+    expect(stateMgr.getState().portalItems!.filter(i => i.type === 'question')).toHaveLength(1);
+    expect(twin.meta?.originalTitle).toBe(longTitle);
+  });
+});

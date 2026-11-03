@@ -145,7 +145,7 @@ describe('runResearchBackfill (core)', () => {
     });
 
     const result = await runResearchBackfill(gateDeps);
-    expect(result).toEqual({ processed: 1, enriched: 1 });
+    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0 });
     expect(maxActive).toBe(1); // for..of await — never parallel
 
     const stored = (id: string) => (stateMgr.getState().portalItems || []).find(i => i.id === id)!;
@@ -170,7 +170,7 @@ describe('runResearchBackfill (core)', () => {
   it('skips items in the in-flight dedupe set', async () => {
     const plain = makeItem(stateMgr);
     const result = await runResearchBackfill({ ...gateDeps, inFlight: new Set([plain.id]) });
-    expect(result).toEqual({ processed: 0, enriched: 0 });
+    expect(result).toEqual({ processed: 0, enriched: 0, normalized: 0 });
     expect(researchClient.chatCompletion).not.toHaveBeenCalled();
     expect(agentLoopMock).not.toHaveBeenCalled();
   });
@@ -200,7 +200,7 @@ describe('runResearchBackfill (core)', () => {
     };
     const item = makeItem(stateMgr);
     const result = await runResearchBackfill(gateDeps);
-    expect(result).toEqual({ processed: 1, enriched: 1 });
+    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0 });
     const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
     expect(stored.status).toBe('answered');
     expect(stored.answer).toContain('48V DC');
@@ -213,7 +213,7 @@ describe('runResearchBackfill (core)', () => {
     agentLoopMock.mockImplementation(async () => ({ finalResponse: 'no json at all' }));
     const item = makeItem(stateMgr);
     const result = await runResearchBackfill(gateDeps);
-    expect(result).toEqual({ processed: 1, enriched: 0 });
+    expect(result).toEqual({ processed: 1, enriched: 0, normalized: 0 });
     const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
     expect(stored.status).toBe('open');
     expect(stored.meta?.sections).toBeUndefined();
@@ -229,7 +229,7 @@ describe('runResearchBackfill (core)', () => {
       agentLoopMock.mockImplementationOnce(() => new Promise<never>(() => {}));
       agentLoopMock.mockImplementationOnce(async () => ({ finalResponse: RESEARCH_JSON }));
       const pending = runResearchBackfill(gateDeps);
-      const assertion = expect(pending).resolves.toEqual({ processed: 2, enriched: 1 });
+      const assertion = expect(pending).resolves.toEqual({ processed: 2, enriched: 1, normalized: 0 });
       await vi.advanceTimersByTimeAsync(RESEARCH_GATE_ITEM_TIMEOUT_MS);
       await assertion;
 
@@ -249,12 +249,64 @@ describe('runResearchBackfill (core)', () => {
     const longTitle = 'Q1. ' + 'B'.repeat(100);
     const item = makeItem(stateMgr, { title: longTitle });
     const result = await runResearchBackfill(gateDeps);
-    expect(result).toEqual({ processed: 1, enriched: 1 });
+    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0 });
     const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
     expect(stored.title).toBe('B'.repeat(57) + '…');
     expect(stored.meta?.originalTitle).toBe(longTitle);
     expect(stored.detail).toBe(longTitle); // full question text preserved
     expect(stored.meta?.sections?.bluf).toBe('The main contactor is rated for 48V DC.');
+  });
+
+  it('normalize pass: legacy enriched items (sections, long title, no originalTitle) get short titles WITHOUT re-researching', async () => {
+    // 13-item fixture: the intake-parsed sections path (question-portal) wrote
+    // meta.sections but pre-dates the short-title rewrite — the exact live
+    // damage reported by the user.
+    const wall = (n: number) => `Q${n}. ${'B'.repeat(200)} charging question ${n}?`;
+    const legacy = Array.from({ length: 13 }, (_, n) =>
+      makeItem(stateMgr, {
+        title: `Legacy question ${n + 1}?`,
+        meta: { sections: { bluf: `Bluf ${n + 1}.` } }
+      })
+    );
+    // Already-repaired item: originalTitle present → NOT re-normalized.
+    const repaired = makeItem(stateMgr, {
+      title: 'Repaired question?',
+      meta: { sections: { bluf: 'Bluf repaired.' }, originalTitle: 'O'.repeat(300) }
+    });
+    // Long title WITHOUT sections but with a proposal: ineligible, untouched.
+    const plainLong = makeItem(stateMgr, {
+      title: 'Proposed question?',
+      meta: { proposedAnswer: { answer: 'x', sources: [], confidence: 0.5, rationale: '' } }
+    });
+    // Force the pre-fix legacy state: wall-of-text titles, empty detail.
+    const state0 = stateMgr.getState();
+    legacy.forEach((item, n) => {
+      const s = (state0.portalItems || []).find(i => i.id === item.id)!;
+      s.title = wall(n + 1);
+      s.detail = undefined;
+    });
+    (state0.portalItems || []).find(i => i.id === plainLong.id)!.title = 'P'.repeat(300);
+    stateMgr.saveState(state0);
+
+    const result = await runResearchBackfill(gateDeps);
+
+    expect(result).toEqual({ processed: 0, enriched: 0, normalized: 13 });
+    // No research machinery touched the legacy items.
+    expect(researchClient.chatCompletion).not.toHaveBeenCalled();
+    expect(criticClient.chatCompletion).not.toHaveBeenCalled();
+    expect(agentLoopMock).not.toHaveBeenCalled();
+
+    const stored = (id: string) => (stateMgr.getState().portalItems || []).find(i => i.id === id)!;
+    for (const [n, item] of legacy.entries()) {
+      const s = stored(item.id);
+      expect(s.title).toBe('B'.repeat(57) + '…');
+      expect(s.title.length).toBe(58); // 57 chars + '…'
+      expect(s.meta?.originalTitle).toBe(wall(n + 1));
+      expect(s.detail).toBe(wall(n + 1)); // full question text mirrored
+      expect(s.meta?.sections?.bluf).toBe(`Bluf ${n + 1}.`); // sections untouched
+    }
+    expect(stored(repaired.id).meta?.originalTitle).toBe('O'.repeat(300));
+    expect(stored(plainLong.id).meta?.originalTitle).toBeUndefined();
   });
 });
 
