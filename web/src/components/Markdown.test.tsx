@@ -95,9 +95,14 @@ describe('Markdown document presentation v2', () => {
     expect(chips).toEqual(['SS-3', 'BOM-12', 'ICD-2.a']);
   });
 
-  it('marks a "**BLUF:**" bold-lead paragraph as the recommendation callout', () => {
+  it('marks a "**BLUF:**" bold-lead paragraph as the recommendation callout (brass, Target icon, label)', () => {
     const { container } = render(<Markdown content={'**BLUF:** Use the 50/50 glycol loop.'} />);
-    expect(container.querySelector('p.sf-bluf-callout')).not.toBeNull();
+    const callout = container.querySelector('.sf-bluf-callout');
+    expect(callout).not.toBeNull();
+    // Brief §4.5: lucide Target icon + "Bottom Line Up Front" label above lead.
+    expect(callout!.querySelector('.sf-bluf-label svg')).not.toBeNull();
+    expect(callout!.querySelector('.sf-bluf-label')!.textContent).toContain('Bottom Line Up Front');
+    expect(callout!.querySelector('p')!.textContent).toContain('Use the 50/50 glycol loop.');
   });
 
   it('renders blockquotes as left-rule obsidian panels', () => {
@@ -113,6 +118,33 @@ describe('Markdown document presentation v2', () => {
     expect(wrapper.getAttribute('role')).toBe('region');
     expect(wrapper.getAttribute('aria-label')).toBe('Data table — scrolls horizontally');
     expect(wrapper.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('does not use position:sticky on table headers (dead through the overflow-x wrapper)', () => {
+    const { container } = render(<Markdown content={'| A | B |\n| --- | --- |\n| 1 | 2 |'} />);
+    const th = container.querySelector('th') as HTMLElement;
+    // Regression lock (critic aa83f169): sticky positioning fails against an
+    // overflow-x container, so the thead must not claim it (inline style or
+    // class-based). Visual weight comes from CSS bg/border instead.
+    expect(th.style.position).not.toBe('sticky');
+    expect(th.className).not.toContain('sticky');
+    expect(getComputedStyle(th).position).not.toBe('sticky');
+  });
+
+  it('renders requirement chips as keyboard-activatable jump buttons', () => {
+    render(<Markdown content={'Refs SS-3 in the doc.'} />);
+    const chip = screen.getByRole('button', { name: 'Jump to requirement SS-3' });
+    expect(chip).toHaveAttribute('tabindex', '0');
+    // Enter and Space synthesize a click event (delegated handler jumps).
+    const clicks: Event[] = [];
+    chip.addEventListener('click', e => clicks.push(e));
+    chip.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(clicks).toHaveLength(1);
+    chip.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    expect(clicks).toHaveLength(2);
+    // Other keys do not activate.
+    chip.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    expect(clicks).toHaveLength(2);
   });
 
   it('callout header: icon, label H2 with anchor id, and an item count chip', () => {

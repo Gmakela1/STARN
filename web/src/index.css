@@ -271,13 +271,25 @@ html, body, #root {
   color: var(--sf-text-2);
 }
 
-/* "**BLUF:**" bold lead / question-card BLUF hero: recommendation callout with
-   a crimson-tinged border and surface tint (lead text itself stays bold). */
+/* "**BLUF:**" bold-lead paragraph → recommendation callout per brief §4.5:
+   brass surface tint + brass border-left, Target icon + "Bottom Line Up Front"
+   label above the lead text. Brass = recommendation hue (not crimson=power). */
 .sf-bluf-callout {
-  background: color-mix(in srgb, #ff2a3c calc(var(--sf-callout-tint) * 12%), transparent);
-  border-left: 3px solid var(--sf-power);
+  background: color-mix(in srgb, #d9a441 calc(var(--sf-callout-tint) * 12%), transparent);
+  border-left: 3px solid var(--sf-brass);
   border-radius: 0.25rem;
   padding: 0.5rem 0.75rem;
+  margin: 0.75em 0;
+}
+.sf-bluf-callout .sf-bluf-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--sf-brass);
 }
 
 /* Requirement-ID chip: inline mono badge, token-tinted bg, brass text. */
@@ -296,7 +308,14 @@ html, body, #root {
 
 /* Tables: brass thead on token border, token-tint row striping (positional,
    not color-alone). The wrapper (.doc-table-scroll + overflow-x-auto) is the
-   scroll region with region semantics + keyboard focus. */
+   scroll region with region semantics + keyboard focus.
+
+   CSS limitation (critic aa83f169): thead is NOT position:sticky. Sticky fails
+   through an overflow-x wrapper — overflow-x:auto computes overflow-y to auto,
+   so the wrapper (not the doc pane) becomes the sticky containing block, and
+   vertical stickiness against the doc-pane scroll container is dead. Horizontal
+   containment is required, so the thead keeps strong visual weight (brass text
+   on tinted bg + token border) instead. */
 .doc-prose .doc-table-scroll {
   margin: 0.75em 0;
 }
@@ -304,8 +323,6 @@ html, body, #root {
   color: var(--sf-brass);
   border-color: var(--sf-border-weak);
   background: var(--sf-hover);
-  position: sticky;
-  top: 0;
 }
 .doc-prose .doc-table-scroll tbody tr:nth-child(even) {
   background: var(--sf-row-tint);

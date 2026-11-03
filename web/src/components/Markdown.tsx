@@ -1,5 +1,5 @@
 import { Fragment, ReactNode } from 'react';
-import { Inbox, MessageSquare } from 'lucide-react';
+import { Inbox, MessageSquare, Target } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 /**
@@ -41,7 +41,9 @@ function countSectionItems(lines: string[]): number {
 /**
  * Requirement-ID chip (SS-3, ICD-2.a, BOM-14…). Boundary-anchored so it never
  * fires mid-word: a leading \w (e.g. "CLASS3") or trailing \w (e.g. "SS-1x")
- * blocks the match.
+ * blocks the match. Chips are click/keyboard-activatable; the doc pane's
+ * delegated click handler (DevelopmentView.handleDocChipClick) does the jump.
+ * Keyboard: Enter/Space synthesizes a real click event so delegation works.
  */
 const REQ_CHIP = /\b(SS|ICD|DD|Cap|Req|BOM|WI|TP)-?[A-Z]?-?\d+(\.[a-z])?\b/g;
 
@@ -57,7 +59,21 @@ function pushPlainText(nodes: ReactNode[], text: string, keyPrefix: string): voi
   while ((match = REQ_CHIP.exec(text)) !== null) {
     if (match.index > last) nodes.push(text.slice(last, match.index));
     nodes.push(
-      <span key={`${keyPrefix}-chip${i++}`} className="sf-req-chip">
+      <span
+        key={`${keyPrefix}-chip${i++}`}
+        className="sf-req-chip"
+        tabIndex={0}
+        role="button"
+        aria-label={`Jump to requirement ${match[0]}`}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            // Span synthesization: only <button> auto-clicks on keypress, so
+            // dispatch explicitly — the event bubbles to the doc-pane handler.
+            e.currentTarget.click();
+          }
+        }}
+      >
         {match[0]}
       </span>
     );
@@ -266,18 +282,28 @@ function renderBlocks(lines: string[], keyPrefix: string): ReactNode[] {
     ) {
       buf.push(lines[i++]);
     }
-    // "**BLUF:**" bold lead → recommendation callout (crimson-tinged border).
+    // "**BLUF:**" bold lead → recommendation callout (brief §4.5): brass
+    // border-left, Target icon, "Bottom Line Up Front" label above the lead.
     const isBluf = buf[0].startsWith('**BLUF:**');
-    blocks.push(
-      <p key={key} className={`my-1.5${isBluf ? ' sf-bluf-callout' : ''}`}>
-        {buf.map((l, idx) => (
-          <Fragment key={idx}>
-            {renderInline(l, `${key}-l${idx}`)}
-            {idx < buf.length - 1 ? ' ' : null}
-          </Fragment>
-        ))}
-      </p>
-    );
+    const content = buf.map((l, idx) => (
+      <Fragment key={idx}>
+        {renderInline(l, `${key}-l${idx}`)}
+        {idx < buf.length - 1 ? ' ' : null}
+      </Fragment>
+    ));
+    if (isBluf) {
+      blocks.push(
+        <div key={key} className="sf-bluf-callout">
+          <span className="sf-bluf-label">
+            <Target className="h-3.5 w-3.5" aria-hidden />
+            Bottom Line Up Front
+          </span>
+          <p className="my-1.5">{content}</p>
+        </div>
+      );
+    } else {
+      blocks.push(<p key={key} className="my-1.5">{content}</p>);
+    }
   }
 
   return blocks;
