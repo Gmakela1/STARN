@@ -670,6 +670,8 @@ export default function QuestionPanel({
 
   let body: ReactNode = null;
   let composer: ReactNode = null;
+  // V2 card order — the advisory chat moves below the response area (footer).
+  let threadPanel: ReactNode = null;
 
   if (!item) {
     body = (
@@ -726,8 +728,36 @@ export default function QuestionPanel({
       LabelIcon = Check;
     }
 
+    const sectionsMeta = item.meta?.sections;
+    const hasSections =
+      !!sectionsMeta &&
+      !!(sectionsMeta.bluf || sectionsMeta.findings || sectionsMeta.suggestion ||
+        sectionsMeta.alternatives || sectionsMeta.defer || sectionsMeta.background);
+
     const detailView = (() => {
       if (!item.detail) return null;
+      // Sections-first detail (v2): when decision-memo sections exist, the raw
+      // legacy body hides behind a muted "Original detail" collapsible.
+      if (hasSections) {
+        const open = showFull === item.id;
+        return (
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowFull(prev => (prev === item.id ? null : item.id))}
+              aria-expanded={open}
+              className="rounded text-[11px] font-medium text-[#6e7d92] hover:text-[#a8b3c4] focus:ring-2 focus:ring-[#ff2a3c]/60"
+            >
+              Original detail
+            </button>
+            {open && (
+              <p className="mt-1 whitespace-pre-line rounded-md border border-[#2a3342] bg-[#05070c]/60 p-2.5 text-xs leading-relaxed text-[#6e7d92]">
+                {item.detail}
+              </p>
+            )}
+          </div>
+        );
+      }
       const r = renderDetail(item.detail);
       const isOpen = showFull === item.id;
       if (r.bullets.length === 0 && !r.wasTruncated && r.overflow === 0) {
@@ -799,9 +829,33 @@ export default function QuestionPanel({
           )}
         </div>
 
-        <p className="mt-1.5 text-sm font-bold text-[#e8edf5]" title={item.title}>
-          {item.title}
-        </p>
+        {/* V2 card order: short title + topic chip lead the card. */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <p className="text-sm font-bold text-[#e8edf5]" title={item.title}>
+            {item.title}
+          </p>
+          {item.meta?.topic && (
+            <span className="rounded bg-[#11151d] px-1.5 py-0.5 text-[10px] font-mono text-[#a8b3c4]">
+              {item.meta.topic}
+            </span>
+          )}
+        </div>
+
+        {/* V2: BLUF is a standalone hero callout above the memo sections. */}
+        {item.meta?.sections?.bluf && (
+          <div className="sf-bluf-callout mt-1.5">
+            <p
+              role="heading"
+              aria-level={4}
+              className="text-[11px] font-semibold uppercase tracking-wide text-[#ffb3bd]"
+            >
+              BLUF
+            </p>
+            <p className="whitespace-pre-line text-xs font-bold leading-relaxed text-[#e8edf5]">
+              {item.meta.sections.bluf}
+            </p>
+          </div>
+        )}
 
         {/* §3 board #52 — item returned as a follow-up after an applied answer.
             The chip is a disclosure toggle; expanding lists the prior answers
@@ -838,102 +892,35 @@ export default function QuestionPanel({
         {(() => {
           const s = item.meta?.sections;
           if (!s) return null;
-          const rows: Array<{ label: string; text: string; prominent?: boolean }> = [];
-          if (s.bluf) rows.push({ label: 'BLUF', text: s.bluf, prominent: true });
-          if (s.findings) rows.push({ label: 'Research findings', text: s.findings });
-          if (s.suggestion) rows.push({ label: 'Main suggestion', text: s.suggestion });
-          if (s.alternatives) rows.push({ label: 'Alternatives', text: s.alternatives });
-          if (s.defer) rows.push({ label: 'Defer', text: s.defer });
-          if (s.background) rows.push({ label: 'Background', text: s.background });
+          // V2: BLUF renders as the hero callout above; tone marks primary /
+          // secondary / muted emphasis for the remaining memo rows.
+          const rows: Array<{ label: string; text: string; tone: 'primary' | 'secondary' | 'muted' }> = [];
+          if (s.findings) rows.push({ label: 'Research findings', text: s.findings, tone: 'secondary' });
+          if (s.suggestion) rows.push({ label: 'Main suggestion', text: s.suggestion, tone: 'primary' });
+          if (s.alternatives) rows.push({ label: 'Alternatives', text: s.alternatives, tone: 'secondary' });
+          if (s.defer) rows.push({ label: 'Defer', text: s.defer, tone: 'muted' });
+          if (s.background) rows.push({ label: 'Background', text: s.background, tone: 'muted' });
           if (rows.length === 0) return null;
           return (
             <div className="mt-1.5 space-y-1.5 rounded-md border border-[#2a3342] bg-[#0d1017]/70 p-2.5">
               {rows.map(row => (
                 <div key={row.label}>
-                  <p
-                    role={row.prominent ? 'heading' : undefined}
-                    aria-level={row.prominent ? 4 : undefined}
-                    className={`text-[11px] font-semibold uppercase tracking-wide ${row.prominent ? 'text-violet-300' : 'text-[#6e7d92]'}`}
-                  >
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6e7d92]">
                     {row.label}
                   </p>
                   <p
-                    className={`whitespace-pre-line text-xs leading-relaxed ${row.prominent ? 'font-bold text-[#e8edf5]' : 'text-[#a8b3c4]'}`}
+                    className={`whitespace-pre-line text-xs leading-relaxed ${
+                      row.tone === 'primary'
+                        ? 'text-[#e8edf5]'
+                        : row.tone === 'muted'
+                          ? 'text-[#6e7d92]'
+                          : 'text-[#a8b3c4]'
+                    }`}
                   >
                     {row.text}
                   </p>
                 </div>
               ))}
-            </div>
-          );
-        })()}
-
-        {/* T-C answer-thread — advisory chat with the specialist. Read-only
-            advice: the transcript is user-right-aligned, specialist replies
-            carry a text label (no color-only roles, no emoji); replies arrive
-            via the parent poll. Answers still go through the response fields. */}
-        {item.type === 'question' && item.status === 'open' && onThreadMessage && (() => {
-          const thread = item.meta?.thread ?? [];
-          const threadBusy = threadBusyId === item.id;
-          return (
-            <div className="mt-2 rounded-md border border-[#2a3342] bg-[#0d1017]/70 p-2.5">
-              <p className="text-[11px] font-semibold text-[#a8b3c4]">Ask the specialist</p>
-              <p className="mt-0.5 text-[11px] text-[#6e7d92]">
-                Advisory only — your answer goes through the response fields.
-              </p>
-              {thread.length > 0 && (
-                <ul className="mt-1.5 max-h-56 space-y-1.5 overflow-y-auto">
-                  {thread.map((m, i) => (
-                    <li key={`${m.ts}-${i}`} className={m.role === 'user' ? 'flex justify-end' : ''}>
-                      {m.role === 'user' ? (
-                        <p className="max-w-[85%] rounded-lg bg-[#2e1065]/40 px-2.5 py-1.5 text-right text-xs leading-relaxed text-[#e8edf5]">
-                          {m.text}
-                        </p>
-                      ) : (
-                        <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-300">Specialist</p>
-                          <p className="whitespace-pre-line text-xs leading-relaxed text-[#a8b3c4]">{m.text}</p>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {threadErrors[item.id] && (
-                <p role="alert" className="mt-1 rounded-md border border-rose-800/60 bg-rose-950/40 px-2.5 py-1 text-xs text-rose-300">
-                  {threadErrors[item.id]}
-                </p>
-              )}
-              <div className="mt-1.5 flex items-end gap-2">
-                <textarea
-                  aria-label="Advisory question"
-                  value={threadDrafts[item.id] ?? ''}
-                  onChange={e => setThreadDrafts(prev => ({ ...prev, [item.id]: e.target.value }))}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      void handleThreadSubmit(item.id, threadDrafts[item.id] ?? '');
-                    }
-                  }}
-                  disabled={threadBusyId !== null}
-                  maxLength={1000}
-                  placeholder="Ask a clarifying question…"
-                  className="min-h-[44px] min-w-0 flex-1 resize-y rounded-lg border border-[#3b4658] bg-[#05070c] px-2.5 py-2 text-xs text-[#e8edf5] placeholder:text-[#6e7d92] focus:border-[#ff2a3c] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/40 disabled:opacity-50"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleThreadSubmit(item.id, threadDrafts[item.id] ?? '');
-                  }}
-                  disabled={threadBusyId !== null || !(threadDrafts[item.id] ?? '').trim()}
-                  aria-label="Send advisory question"
-                  title="Send advisory question — or press Enter"
-                  className="flex min-h-[44px] shrink-0 items-center gap-1.5 self-end rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 text-xs font-semibold text-violet-200 transition hover:bg-[#3b1d7a]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {threadBusy && <Loader2 className="h-3 w-3 motion-safe:animate-spin" aria-hidden />}
-                  Ask
-                </button>
-              </div>
             </div>
           );
         })()}
@@ -1072,6 +1059,74 @@ export default function QuestionPanel({
         )}
       </div>
     );
+
+    // V2 card order — the advisory chat renders below the response area in the
+    // footer. Handlers/markup unchanged from the in-body version.
+    threadPanel = item.type === 'question' && item.status === 'open' && onThreadMessage ? (() => {
+      const thread = item.meta?.thread ?? [];
+      const threadBusy = threadBusyId === item.id;
+      return (
+        <div className="rounded-md border border-[#2a3342] bg-[#0d1017]/70 p-2.5">
+          <p className="text-[11px] font-semibold text-[#a8b3c4]">Ask the specialist</p>
+          <p className="mt-0.5 text-[11px] text-[#6e7d92]">
+            Advisory only — your answer goes through the response fields.
+          </p>
+          {thread.length > 0 && (
+            <ul className="mt-1.5 max-h-56 space-y-1.5 overflow-y-auto">
+              {thread.map((m, i) => (
+                <li key={`${m.ts}-${i}`} className={m.role === 'user' ? 'flex justify-end' : ''}>
+                  {m.role === 'user' ? (
+                    <p className="max-w-[85%] rounded-lg bg-[#2e1065]/40 px-2.5 py-1.5 text-right text-xs leading-relaxed text-[#e8edf5]">
+                      {m.text}
+                    </p>
+                  ) : (
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-300">Specialist</p>
+                      <p className="whitespace-pre-line text-xs leading-relaxed text-[#a8b3c4]">{m.text}</p>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {threadErrors[item.id] && (
+            <p role="alert" className="mt-1 rounded-md border border-rose-800/60 bg-rose-950/40 px-2.5 py-1 text-xs text-rose-300">
+              {threadErrors[item.id]}
+            </p>
+          )}
+          <div className="mt-1.5 flex items-end gap-2">
+            <textarea
+              aria-label="Advisory question"
+              value={threadDrafts[item.id] ?? ''}
+              onChange={e => setThreadDrafts(prev => ({ ...prev, [item.id]: e.target.value }))}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  void handleThreadSubmit(item.id, threadDrafts[item.id] ?? '');
+                }
+              }}
+              disabled={threadBusyId !== null}
+              maxLength={1000}
+              placeholder="Ask a clarifying question…"
+              className="min-h-[44px] min-w-0 flex-1 resize-y rounded-lg border border-[#3b4658] bg-[#05070c] px-2.5 py-2 text-xs text-[#e8edf5] placeholder:text-[#6e7d92] focus:border-[#ff2a3c] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/40 disabled:opacity-50"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                void handleThreadSubmit(item.id, threadDrafts[item.id] ?? '');
+              }}
+              disabled={threadBusyId !== null || !(threadDrafts[item.id] ?? '').trim()}
+              aria-label="Send advisory question"
+              title="Send advisory question — or press Enter"
+              className="flex min-h-[44px] shrink-0 items-center gap-1.5 self-end rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 text-xs font-semibold text-violet-200 transition hover:bg-[#3b1d7a]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {threadBusy && <Loader2 className="h-3 w-3 motion-safe:animate-spin" aria-hidden />}
+              Ask
+            </button>
+          </div>
+        </div>
+      );
+    })() : null;
 
     if (!isParked) {
       const composingDisabled =
@@ -1351,8 +1406,11 @@ export default function QuestionPanel({
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">{body}</div>
 
-      {composer && (
-        <footer className="shrink-0 border-t border-[#2a3342] bg-[#0d1017]/70 p-3">{composer}</footer>
+      {(composer || threadPanel) && (
+        <footer className="shrink-0 space-y-2 border-t border-[#2a3342] bg-[#0d1017]/70 p-3">
+          {composer}
+          {threadPanel}
+        </footer>
       )}
     </div>
   );

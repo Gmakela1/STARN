@@ -61,3 +61,88 @@ describe('Markdown table containment', () => {
     expect(wrapper.className).toContain('overflow-x-auto');
   });
 });
+
+// Document presentation v2 (design brief applied): special-section callouts,
+// requirement-ID chips, table recipe wrapper, blockquote panel, and the size
+// variant prop shared by the doc pane and question panels.
+describe('Markdown document presentation v2', () => {
+  it('wraps the "Open Questions" H2 section in the amber callout class', () => {
+    const { container } = render(<Markdown content={'## Open Questions\n\nAwaiting answers.'} />);
+    const callout = container.querySelector('.sf-callout-open-questions');
+    expect(callout).not.toBeNull();
+    expect(callout!.textContent).toContain('Awaiting answers.');
+  });
+
+  it('wraps the "User Answers (Pending Incorporation)" H2 section in the violet callout class', () => {
+    const { container } = render(
+      <Markdown content={'## User Answers (Pending Incorporation)\n\nSS-3 pending.'} />
+    );
+    const callout = container.querySelector('.sf-callout-user-answers');
+    expect(callout).not.toBeNull();
+    expect(callout!.querySelectorAll('.sf-req-chip')).toHaveLength(1);
+  });
+
+  it('does not card-wrap non-special H2 sections in panel variant', () => {
+    const { container } = render(<Markdown content={'## Normal Section\n\nBody.'} />);
+    expect(container.querySelector('.sf-h2-section')).toBeNull();
+  });
+
+  it('renders requirement-ID chips for standalone tokens only, never mid-word', () => {
+    const { container } = render(
+      <Markdown content={'Refs SS-3, BOM-12 and ICD-2.a — but never midword like CLASS3.'} />
+    );
+    const chips = Array.from(container.querySelectorAll('.sf-req-chip')).map(c => c.textContent);
+    expect(chips).toEqual(['SS-3', 'BOM-12', 'ICD-2.a']);
+  });
+
+  it('marks a "**BLUF:**" bold-lead paragraph as the recommendation callout', () => {
+    const { container } = render(<Markdown content={'**BLUF:** Use the 50/50 glycol loop.'} />);
+    expect(container.querySelector('p.sf-bluf-callout')).not.toBeNull();
+  });
+
+  it('renders blockquotes as left-rule obsidian panels', () => {
+    const { container } = render(<Markdown content={'> Quoted guidance.'} />);
+    expect(container.querySelector('blockquote.sf-quote')).not.toBeNull();
+  });
+
+  it('keeps the sf-table-wrap recipe class on the scroll container', () => {
+    const { container } = render(<Markdown content={'| A | B |\n| --- | --- |\n| 1 | 2 |'} />);
+    const wrapper = container.querySelector('.doc-table-scroll') as HTMLElement;
+    expect(wrapper).not.toBeNull();
+    // Region semantics + keyboard focus per the brief (§5).
+    expect(wrapper.getAttribute('role')).toBe('region');
+    expect(wrapper.getAttribute('aria-label')).toBe('Data table — scrolls horizontally');
+    expect(wrapper.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('callout header: icon, label H2 with anchor id, and an item count chip', () => {
+    const { container } = render(
+      <Markdown content={'## Open Questions\n\n- Q5 contactor rating?\n- Q6 harness gauge?\n\nAwaiting answers.'} />
+    );
+    const callout = container.querySelector('.sf-callout-open-questions') as HTMLElement;
+    const head = callout.querySelector('.sf-callout-head');
+    expect(head).not.toBeNull();
+    expect(head!.querySelector('svg')).not.toBeNull();
+    // H2 keeps the mini-TOC anchor id (slug of the section title).
+    const h2 = callout.querySelector('h2');
+    expect(h2!.id).toBe('open-questions');
+    expect(callout.querySelector('.sf-callout-count')!.textContent).toBe('2');
+  });
+
+  it('document variant wraps non-special H2 sections in cards carrying the anchor id', () => {
+    const { container } = render(
+      <Markdown content={'## System Overview\n\nBody text.'} variant="document" />
+    );
+    const card = container.querySelector('.sf-h2-section') as HTMLElement;
+    expect(card).not.toBeNull();
+    expect(card.querySelector('h2')!.id).toBe('system-overview');
+    expect(card.textContent).toContain('Body text.');
+  });
+
+  it('exposes the size variant on the root container (document vs panel)', () => {
+    const doc = render(<Markdown content="x" variant="document" />).container.firstChild as HTMLElement;
+    expect(doc.className).toContain('doc-prose-document');
+    const panel = render(<Markdown content="x" />).container.firstChild as HTMLElement;
+    expect(panel.className).toContain('doc-prose-panel');
+  });
+});

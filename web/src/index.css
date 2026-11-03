@@ -16,6 +16,12 @@ body,
   --sf-hover: #171c26; --sf-border-weak: #2a3342; --sf-border-strong: #3b4658;
   --sf-text: #e8edf5; --sf-text-2: #a8b3c4; --sf-text-mut: #6e7d92;
   --sf-power: #ff2a3c; --sf-power-btn: #d61f2c; --sf-brass: #d9a441;
+  /* Document presentation v2 (design brief §2): row-stripe tint (positional,
+     not hue), brass H1 hero hairline, and the callout bg-alpha multiplier knob
+     (callout bg = color-mix with calc(var(--sf-callout-tint) * N%)). */
+  --sf-row-tint: rgba(148, 163, 184, 0.045);
+  --sf-hero-hairline: rgba(217, 164, 65, 0.35);
+  --sf-callout-tint: 0.5;
 }
 
 /* Nebula wash: two radial-gradients + void base on html/body/#root (static, no cost) */
@@ -186,6 +192,157 @@ html, body, #root {
 .doc-prose th {
   background: var(--sf-hover);
   color: #a8b3c4;
+}
+
+/* ===== Document presentation v2 — structured markdown rendering =========== */
+/* Variants share the .doc-prose base; doubled class selectors here beat the   */
+/* inline tailwind utilities on child blocks (list spacing, heading margins).  */
+
+/* Document variant: 75ch measure, slightly larger base, relaxed leading. */
+.doc-prose.doc-prose-document {
+  max-width: 75ch;
+  font-size: clamp(1rem, 0.97rem + 0.15vw, 1.05rem);
+  line-height: 1.7;
+}
+.doc-prose.doc-prose-document ul,
+.doc-prose.doc-prose-document ol {
+  line-height: 1.7;
+}
+
+/* H1 = title hero: brass-tinted rule under, clamped size, no card. */
+.doc-prose.doc-prose-document h1 {
+  font-size: clamp(1.5rem, 1.1rem + 1.5vw, 2rem);
+  border-bottom: 1px solid var(--sf-hero-hairline);
+  margin-top: 0.25em;
+}
+
+/* H2 section boundary: subtle card separation — obsidian-2 surface (--sf-raised),
+   1px token border, existing rounded-lg radius recipe. */
+.sf-h2-section {
+  background: var(--sf-raised);
+  border: 1px solid var(--sf-border-weak);
+  border-radius: 0.5rem;
+  padding: 0.1rem 1rem 0.75rem;
+  margin: 1rem 0;
+}
+/* Section/callout H2 header: card-header rule per the brief (§4.2). */
+.sf-h2-section > h2,
+.sf-h2-callout > h2 {
+  margin: 0.35rem 0 0.6rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--sf-border-weak);
+}
+
+/* Special-section callout base (radius + token border), tint applied per class. */
+.sf-h2-callout {
+  border: 1px solid var(--sf-border-weak);
+  border-radius: 0.5rem;
+  padding: 0.1rem 1rem 0.75rem;
+  margin: 1rem 0;
+}
+/* "## Open Questions": amber-tinted panel + amber left rule. Tint is derived
+   through the --sf-callout-tint knob (0.5 * 16% = 8% alpha). */
+.sf-callout-open-questions {
+  background: color-mix(in srgb, #f59e0b calc(var(--sf-callout-tint) * 16%), transparent);
+  border-left: 3px solid #f59e0b;
+}
+/* "## User Answers (Pending Incorporation)": violet-tinted review panel. */
+.sf-callout-user-answers {
+  background: color-mix(in srgb, #8b5cf6 calc(var(--sf-callout-tint) * 16%), transparent);
+  border-left: 3px solid #8b5cf6;
+}
+/* Callout header row: lucide icon + label + count chip (brief §4.3/§4.4). */
+.sf-callout-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.sf-callout-head svg {
+  flex-shrink: 0;
+}
+.sf-callout-count {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.7rem;
+  line-height: 1;
+  background: var(--sf-raised);
+  border: 1px solid var(--sf-border-weak);
+  border-radius: 999px;
+  padding: 0.2em 0.5em;
+  color: var(--sf-text-2);
+}
+
+/* "**BLUF:**" bold lead / question-card BLUF hero: recommendation callout with
+   a crimson-tinged border and surface tint (lead text itself stays bold). */
+.sf-bluf-callout {
+  background: color-mix(in srgb, #ff2a3c calc(var(--sf-callout-tint) * 12%), transparent);
+  border-left: 3px solid var(--sf-power);
+  border-radius: 0.25rem;
+  padding: 0.5rem 0.75rem;
+}
+
+/* Requirement-ID chip: inline mono badge, token-tinted bg, brass text. */
+.sf-req-chip {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.8em;
+  line-height: 1.4;
+  background: var(--sf-raised);
+  border: 1px solid rgba(217, 164, 65, 0.35);
+  color: var(--sf-brass);
+  border-radius: 4px;
+  padding: 0 0.35em;
+  cursor: pointer;
+}
+
+/* Tables: brass thead on token border, token-tint row striping (positional,
+   not color-alone). The wrapper (.doc-table-scroll + overflow-x-auto) is the
+   scroll region with region semantics + keyboard focus. */
+.doc-prose .doc-table-scroll {
+  margin: 0.75em 0;
+}
+.doc-prose .doc-table-scroll th {
+  color: var(--sf-brass);
+  border-color: var(--sf-border-weak);
+  background: var(--sf-hover);
+  position: sticky;
+  top: 0;
+}
+.doc-prose .doc-table-scroll tbody tr:nth-child(even) {
+  background: var(--sf-row-tint);
+}
+
+/* Blockquote: left-rule obsidian-2 panel. */
+.doc-prose blockquote {
+  border-left: 3px solid var(--sf-border-strong);
+  background: var(--sf-raised);
+  border-radius: 0.25rem;
+  padding: 0.5rem 0.9rem;
+  margin: 0.75em 0;
+  color: var(--sf-text-2);
+}
+
+/* Mini-TOC (doc pane): CSS-sticky strip; hidden <3 sections or <lg by the
+   component classes (hidden lg:block). */
+.doc-toc {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--sf-panel);
+  border-bottom: 1px solid var(--sf-border-weak);
+  padding: 0.5rem 0;
+}
+.doc-toc a {
+  color: var(--sf-text-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.72rem;
+}
+.doc-toc a:hover,
+.doc-toc a:focus-visible {
+  color: var(--sf-brass);
+}
+/* IntersectionObserver active section (brief §6: violet-400 active item). */
+.doc-toc a.doc-toc__active {
+  color: #a78bfa;
 }
 
 /* ========================================================================= */

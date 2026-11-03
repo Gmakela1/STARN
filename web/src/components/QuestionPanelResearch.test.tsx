@@ -129,4 +129,72 @@ describe('QuestionPanel — research-all button + format-v2 sections', () => {
     expect(screen.getByText('Background')).toBeInTheDocument();
     expect(screen.getByText('affects motor choice.')).toBeInTheDocument();
   });
+
+  it('list card shows the topic tag and BLUF preview line when sections exist', () => {
+    const item = makeItem({
+      title: 'Contactor voltage.',
+      meta: {
+        topic: 'ELEC',
+        sections: { bluf: 'The main contactor is rated for 48V DC.' }
+      }
+    });
+    renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
+    expect(screen.getByText('Contactor voltage.')).toBeInTheDocument();
+    expect(screen.getByText('ELEC')).toBeInTheDocument();
+    expect(screen.getByText('The main contactor is rated for 48V DC.')).toBeInTheDocument();
+  });
+
+  it('sections-first detail: raw legacy body hides behind a muted collapsible when sections exist', async () => {
+    const wall = 'W'.repeat(400);
+    const item = makeItem({
+      meta: { sections: { bluf: 'Use the 50/50 glycol loop.' } },
+      detail: wall
+    });
+    const { user } = renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
+    expect(screen.getByText('Use the 50/50 glycol loop.')).toBeInTheDocument();
+    expect(screen.queryByText(wall)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Original detail' }));
+    expect(screen.getByText(wall)).toBeInTheDocument();
+  });
+
+  it('sections with no original text behind them render no collapsible; no sections keeps the plain detail', () => {
+    renderWithUser(<QuestionPanel {...baseProps({ items: [makeItem({ meta: { sections: { bluf: 'Bluf.' } } })] })} />);
+    expect(screen.queryByText('Original detail')).not.toBeInTheDocument();
+  });
+
+  // V2 card order: short title + topic chip → BLUF hero → findings →
+  // suggestion (primary) → alternatives → defer (muted) → response area →
+  // advisory chat (footer). Here we lock the headline invariants: BLUF hero
+  // precedes the findings row, and the topic chip sits with the title.
+  it('v2 card order: BLUF hero before findings; topic chip beside the title', () => {
+    const item = makeItem({
+      title: 'Coolant choice.',
+      meta: {
+        topic: 'THERM',
+        sections: {
+          bluf: 'Use the 50/50 glycol loop.',
+          findings: 'Thermal dossier baselines glycol.',
+          suggestion: 'Glycol 50/50 — cheap and compatible.',
+          alternatives: 'Straight water — freezes below 0 C.',
+          defer: 'Stalls the pump BOM line.'
+        }
+      }
+    });
+    // onThreadMessage is required for the footer advisory thread to mount.
+    const { container } = renderWithUser(
+      <QuestionPanel {...baseProps({ items: [item], onThreadMessage: vi.fn(async () => {}) })} />
+    );
+    const hero = container.querySelector('.sf-bluf-callout');
+    expect(hero).not.toBeNull();
+    expect(hero!.textContent).toContain('Use the 50/50 glycol loop.');
+    const findings = screen.getByText('Research findings');
+    // BLUF hero must precede the findings row in DOM order.
+    expect(hero!.compareDocumentPosition(findings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Topic chip renders beside the short title.
+    expect(screen.getByText('THERM')).toBeInTheDocument();
+    // Advisory chat lives in the footer, after the response area.
+    const composer = screen.getByLabelText('Send answer');
+    const chat = screen.getByText('Ask the specialist');
+    expect(composer.compareDocumentPosition(chat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });

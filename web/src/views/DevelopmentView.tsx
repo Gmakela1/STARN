@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import {
   FileText,
   Pencil,
@@ -47,7 +47,7 @@ import {
 import type { PromptBarSource } from '../components/reactbits/PromptBar/PromptBar';
 import { useTurnStream, ChatEntry, ActivityMeta } from '../api/useTurnStream';
 import { useAutopilotEvents, AutopilotLiveEvent } from '../hooks/useAutopilotEvents';
-import Markdown from '../components/Markdown';
+import Markdown, { slugifyHeading } from '../components/Markdown';
 import DocDiff from '../components/DocDiff';
 import { docNeedsApproval } from '../lib/workflowState';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
@@ -822,6 +822,56 @@ export default function DevelopmentView({
     [roadmap, selectedPhase]
   );
   const docHasTable = useMemo(() => /(?:^|\n)\s*\|/m.test(doc?.content ?? ''), [doc]);
+  // Mini-TOC: H2 titles from the rendered doc (matches Markdown.tsx slug ids);
+  // rendered sticky in the doc pane when 3+ sections exist.
+  const docToc = useMemo(
+    () =>
+      (doc?.content.match(/^##\s+(.+)$/gm) ?? []).map(h => h.replace(/^##\s+/, '').trim()),
+    [doc]
+  );
+  // Mini-TOC active-section tracking (design brief §6): IntersectionObserver
+  // over the rendered H2 anchors; the last section whose band crosses the top
+  // quarter of the doc scroll container wins. Re-armed per doc / mode switch.
+  const [activeTocId, setActiveTocId] = useState<string | null>(null);
+  useEffect(() => {
+    if (docToc.length < 3 || diffOpen || editing) return;
+    const targets = docToc
+      .map(t => document.getElementById(slugifyHeading(t)))
+      .filter((el): el is HTMLElement => el !== null);
+    if (targets.length === 0 || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      entries => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) setActiveTocId(entry.target.id);
+        }
+      },
+      { root: docContentRef.current, rootMargin: '0px 0px -65% 0px', threshold: 0 }
+    );
+    targets.forEach(t => observer.observe(t));
+    return () => observer.disconnect();
+  }, [docToc, doc, diffOpen, editing]);
+
+  /** Mini-TOC click: motion-safe smooth scroll + focus the section card. */
+  const handleTocClick = (e: ReactMouseEvent<HTMLAnchorElement>, slug: string): void => {
+    e.preventDefault();
+    const heading = document.getElementById(slug);
+    if (!heading) return;
+    const reduced =
+      typeof window.matchMedia === 'function'
+        ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        : false;
+    heading.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+    const card = heading.closest('section');
+    if (card instanceof HTMLElement) card.focus({ preventScroll: true });
+  };
+
+  /** Req-chip click-through (brief §4.6): flash the block containing the ID
+      via the existing anchor machinery (reuse, no new highlight style). */
+  const handleDocChipClick = (e: ReactMouseEvent<HTMLDivElement>): void => {
+    const chip = (e.target as HTMLElement).closest('.sf-req-chip');
+    if (!(chip instanceof HTMLElement) || !docContentRef.current) return;
+    applyAnchorHighlight(docContentRef.current, chip.textContent?.trim() ?? '');
+  };
 
   // Apply once the item's doc is loaded AND rendered (doc identity check keeps
   // the wrong/placeholder DOM from producing a false "couldn't locate").
@@ -1650,7 +1700,7 @@ export default function DevelopmentView({
             if (file) void handleFileUpload(file);
           }}
         >
-          <div ref={docContentRef} className="h-full overflow-y-auto">
+          <div ref={docContentRef} onClick={handleDocChipClick} className="h-full overflow-y-auto">
           {editing ? (
             <textarea
               value={draft}
@@ -1662,13 +1712,37 @@ export default function DevelopmentView({
           ) : doc ? (
             <div className={`px-6 py-4 ${docHasTable ? '' : 'max-w-[72ch]'}`}>
               <p className="mb-3 font-mono text-[11px] text-[#6e7d92]">{doc.path}</p>
+              {/* Mini-TOC: CSS-sticky section links; hidden under 3 sections
+                  or below lg. Anchors target H2 ids emitted by Markdown. */}
+              {docToc.length >= 3 && (
+                <nav aria-label="Document sections" className="doc-toc sticky top-0 mb-2 hidden lg:block">
+                  <ul className="flex flex-wrap gap-x-4 gap-y-1">
+                    {docToc.map((title, i) => {
+                      const slug = slugifyHeading(title);
+                      const active = activeTocId === slug;
+                      return (
+                        <li key={`${i}-${title}`}>
+                          <a
+                            href={`#${slug}`}
+                            aria-current={active ? 'true' : undefined}
+                            className={active ? 'doc-toc__active' : undefined}
+                            onClick={e => handleTocClick(e, slug)}
+                          >
+                            {title}
+                          </a>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </nav>
+              )}
               {/* Diff pane replaces the rendered doc while toggled on; the
                   content equality check drops the pane when the doc was
                   refreshed after the snapshot was fetched (stale guard). */}
               {diffOpen && docDiff && doc.content === docDiff.current ? (
                 <DocDiff approved={docDiff.approved!} current={docDiff.current} />
               ) : (
-                <Markdown content={doc.content} />
+                <Markdown content={doc.content} variant="document" />
               )}
             </div>
           ) : (
