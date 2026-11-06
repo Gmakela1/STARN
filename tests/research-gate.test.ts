@@ -504,6 +504,38 @@ describe('research gate wiring', () => {
       expect(stored.title).toBe('What is the main contactor voltage rating?');
       expect(stored.meta?.originalTitle).toBeUndefined();
     });
+
+    it('cuts at the first sentence boundary inside the first 120 chars (keeps the sentence whole)', () => {
+      const firstSentence =
+        '[ELECTRICAL] Should the traction inverter main bus run at 48 V nominal or 72 V nominal?';
+      // First sentence ends well past the 60-char display cap but inside 120.
+      expect(firstSentence.length).toBeGreaterThan(60);
+      expect(firstSentence.length).toBeLessThan(120);
+      const original = `Q1. ${firstSentence} The load profile and the cranking spec disagree, so the pack choice is still open.`;
+      const wall = makeItem(stateMgr, { title: original });
+      expect(rewriteShortTitle(stateMgr, wall.id)).toBe(true);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === wall.id)!;
+      expect(stored.title).toBe(firstSentence);
+      expect(stored.meta?.originalTitle).toBe(original);
+      expect(stored.detail).toBe(original);
+    });
+
+    it('cuts at a word boundary, never mid-word, when the first sentence runs past 120 chars', () => {
+      const stripped = Array.from({ length: 45 }, (_, i) => `segment${i}`).join(' ');
+      const original = `Q1. ${stripped}`;
+      // One long first sentence (> 200 chars) with no sentence boundary at all.
+      expect(stripped.length).toBeGreaterThan(200);
+      const wall = makeItem(stateMgr, { title: original });
+      expect(rewriteShortTitle(stateMgr, wall.id)).toBe(true);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === wall.id)!;
+      expect(stored.title.endsWith('…')).toBe(true);
+      const stem = stored.title.slice(0, -1);
+      expect(stem.length).toBeLessThanOrEqual(60);
+      // Word boundary: the original continues with a space at the cut point.
+      expect(stripped.startsWith(stem)).toBe(true);
+      expect(stripped[stem.length]).toBe(' ');
+      expect(stored.meta?.originalTitle).toBe(original);
+    });
   });
 
   describe('topic preservation on enrichment (F2 grouping)', () => {

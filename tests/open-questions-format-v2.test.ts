@@ -120,6 +120,36 @@ describe('format-v2 question parsing (decision memo)', () => {
     }
   });
 
+  it('header = number + topic + short question only: trailing explanation is cut from the title', () => {
+    // The bold header line carries ONLY the question; the explanation belongs
+    // in the labeled sections. The parser must not trust the model here.
+    const doc = '# Doc\n\n## Open Questions\n\n**Q2. [ELECTRICAL] Main bus voltage?** Because the load profile and the cranking spec disagree, we need to decide the nominal pack voltage this week.\n\n## Next Section\n';
+    const entries = parseOpenQuestionEntries(doc);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].title).toBe('[ELECTRICAL] Main bus voltage?');
+    expect(entries[0].title).not.toContain('Because');
+    expect(entries[0].title).not.toContain('load profile');
+  });
+
+  it('a single long question with no sentence boundary is kept whole (no mid-question cut)', () => {
+    const longQuestion =
+      '[ELECTRICAL] Which PWM switching frequency should the traction inverter use to keep audible noise below the operator threshold?';
+    expect(longQuestion.length).toBeGreaterThan(90);
+    const doc = `# Doc\n\n## Open Questions\n\n**Q3. ${longQuestion}**\n\n## Next Section\n`;
+    const entries = parseOpenQuestionEntries(doc);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].title).toBe(longQuestion);
+  });
+
+  it('a header with no question mark is left intact (imperative / noun-phrase title)', () => {
+    const doc = '# Doc\n\n## Open Questions\n\n**Q4. [MECHANICAL] Pilot diameter to be confirmed against the ME1115 shaft drawing**\n\n## Next Section\n';
+    const entries = parseOpenQuestionEntries(doc);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].title).toBe(
+      '[MECHANICAL] Pilot diameter to be confirmed against the ME1115 shaft drawing'
+    );
+  });
+
   it('splits nested numbered "**Qn." sub-list lines into separate entries (F3 blob regression)', () => {
     // Parked-doc Section 6 bodies sometimes use a numbered sub-list; without
     // the "1. " variant in the entry boundary the second numbered question

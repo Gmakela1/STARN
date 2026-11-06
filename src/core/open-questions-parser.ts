@@ -83,6 +83,47 @@ export function extractQuestionSections(entryText: string): QuestionSections | u
 }
 
 /**
+ * Format-v2 header contract: the bold header line carries ONLY the question
+ * (`**Qn. [TOPIC] <short question>**`). Headers longer than this are cut at
+ * the first sentence boundary so the title never becomes a wall of text.
+ * Mirrors the prompt rule in src/specialists/open-questions.ts.
+ */
+export const QUESTION_HEADER_CHAR_CAP = 90;
+
+/**
+ * Words allowed after a "?" before the tail counts as trailing explanation
+ * (e.g. "Main bus voltage?** Because the load profile…") and is dropped.
+ */
+const HEADER_TAIL_WORD_LIMIT = 8;
+
+/**
+ * Enforces the format-v2 header contract on a captured title: drops a trailing
+ * explanation after the first "?" when it runs longer than
+ * HEADER_TAIL_WORD_LIMIT words, and — for a header over
+ * QUESTION_HEADER_CHAR_CAP chars — cuts at the first sentence boundary
+ * (". " / "? " / "! "). A header that is one long question with no interior
+ * sentence boundary is kept whole (never cut mid-question), and a header with
+ * no "?" is left intact. Tolerant: legacy titles under the cap are unchanged.
+ *
+ * @param title - the raw captured header text (section labels already cut)
+ * @returns the header-contract title, markdown bold markers trimmed
+ */
+export function trimHeaderExplanation(title: string): string {
+  let text = title.trim();
+  const questionMark = text.indexOf('?');
+  if (questionMark >= 0) {
+    const tail = text.slice(questionMark + 1).trim();
+    const tailWords = tail.split(/\s+/).filter(Boolean).length;
+    if (tailWords > HEADER_TAIL_WORD_LIMIT) text = text.slice(0, questionMark + 1);
+  }
+  if (text.length > QUESTION_HEADER_CHAR_CAP) {
+    const boundary = text.match(/[.?!]\s/);
+    if (boundary && boundary.index !== undefined) text = text.slice(0, boundary.index + 1);
+  }
+  return text.trim().replace(/\*+$/, '').trim();
+}
+
+/**
  * Cuts a captured question entry at the first labeled-section marker — the
  * legacy "Why it matters" explanation (may sit mid-line, matching the original
  * strip rule) or a line-anchored format-v2 section label (BLUF, Research
@@ -191,9 +232,11 @@ export function inferQuestionTopic(text: string): string | undefined {
 
 /**
  * Extracts question entries (Q1, Q2, ... format) from a section's text as
- * { title, sections? } pairs: the title is the stable parse key; sections are
- * the optional format-v2 labeled fields extracted tolerantly from the entry
- * body. Missing sections are omitted (legacy entries parse exactly as before).
+ * { title, sections? } pairs: the title is the stable parse key (section
+ * labels and any trailing header explanation cut — see trimHeaderExplanation);
+ * sections are the optional format-v2 labeled fields extracted tolerantly from
+ * the entry body. Missing sections are omitted (legacy entries parse exactly
+ * as before).
  */
 function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
   const entries: ParsedQuestionItem[] = [];
@@ -209,7 +252,7 @@ function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
 
   let match;
   while ((match = qRegex.exec(sectionText)) !== null) {
-    const title = stripWhyItMatters(match[1]);
+    const title = trimHeaderExplanation(stripWhyItMatters(match[1]));
     if (title && title.length > 5) {
       entries.push({ title, sections: extractQuestionSections(match[1]) });
     }
@@ -223,7 +266,7 @@ function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
       const numberedMatch = line.match(/^\s*(?:\*\*)?(Q\d+|Question\s*\d+)\s*[\.:\)]?\s*\**\s*(.*)/i);
       if (numberedMatch) {
         if (currentQ.trim()) {
-          const title = stripWhyItMatters(currentQ.trim());
+          const title = trimHeaderExplanation(stripWhyItMatters(currentQ.trim()));
           if (title) entries.push({ title, sections: extractQuestionSections(currentQ.trim()) });
         }
         currentQ = numberedMatch[2];
@@ -232,7 +275,7 @@ function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
       }
     }
     if (currentQ.trim()) {
-      const title = stripWhyItMatters(currentQ.trim());
+      const title = trimHeaderExplanation(stripWhyItMatters(currentQ.trim()));
       if (title) entries.push({ title, sections: extractQuestionSections(currentQ.trim()) });
     }
   }

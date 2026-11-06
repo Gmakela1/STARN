@@ -132,12 +132,35 @@ export interface UndoAutoDeps {
   emitStatus?: (message: string) => void;
 }
 
+/** Hard cap on the short display form of a question title (excluding the ellipsis). */
+const SHORT_TITLE_CHAR_CAP = 60;
+/** Window searched for a sentence boundary before the char cap applies. */
+const SHORT_TITLE_BOUNDARY_WINDOW = 120;
+
 /**
- * Short display title for status events: Qn prefix stripped, hard-capped.
+ * Short display title for status events and the portal card: Qn prefix
+ * stripped, then cut at the first sentence boundary (". " / "? " / "! ") found
+ * inside the first SHORT_TITLE_BOUNDARY_WINDOW chars, so a header written as
+ * one full question keeps that question whole instead of being truncated
+ * mid-sentence. When no sentence boundary exists in that window, the title is
+ * truncated at a word boundary near SHORT_TITLE_CHAR_CAP (never mid-word,
+ * unless the head contains no space at all) and marked with an ellipsis.
+ *
+ * @param title - the stored question title (may carry a "Qn. " prefix)
+ * @returns the short display title — never longer than
+ *          SHORT_TITLE_BOUNDARY_WINDOW + 1 chars (sentence cut) or
+ *          SHORT_TITLE_CHAR_CAP + 1 chars (word cut)
  */
 export function shortResearchTitle(title: string): string {
   const stripped = title.replace(/^Q\d+[\.:)]\s*/, '');
-  return stripped.length > 60 ? stripped.slice(0, 57) + '…' : stripped;
+  if (stripped.length <= SHORT_TITLE_CHAR_CAP) return stripped;
+  const window = stripped.slice(0, SHORT_TITLE_BOUNDARY_WINDOW);
+  const boundary = window.match(/[.?!]\s/);
+  if (boundary && boundary.index !== undefined) return stripped.slice(0, boundary.index + 1);
+  const head = stripped.slice(0, SHORT_TITLE_CHAR_CAP);
+  const lastSpace = head.lastIndexOf(' ');
+  const stem = lastSpace > 0 ? head.slice(0, lastSpace) : stripped.slice(0, SHORT_TITLE_CHAR_CAP - 3);
+  return `${stem}…`;
 }
 
 /**
@@ -779,15 +802,17 @@ export function ensureItemTopic(
 
 /**
  * Rewrites a portal item's wall-of-text title to the short display form
- * (shortResearchTitle) once the format-v2 sections are written, persisting
- * the original in meta.originalTitle and — when the item has no detail —
- * mirroring the full original text into item.detail so the panel body keeps
- * the complete question (no information lost by shortening). Only rewrites
- * when the short form differs. The title stays the dedupe/slug key going
- * forward: dedupe keys already computed on the old titles remain; future
+ * (shortResearchTitle: cut at the first sentence boundary inside the first 120
+ * chars, else word-truncated) once the format-v2 sections are written,
+ * persisting the original in meta.originalTitle and — when the item has no
+ * detail — mirroring the full original text into item.detail so the panel body
+ * keeps the complete question (no information lost by shortening). Only
+ * rewrites when the short form differs. The title stays the dedupe/slug key
+ * going forward: dedupe keys already computed on the old titles remain; future
  * dedupe uses the new short titles (fine — canonical items are already tagged
- * via meta.upstreamOf). Atomic read-fresh → mutate → save. Returns false when
- * the item vanished, was dismissed, or the title is already short.
+ * via meta.upstreamOf; dedupeKey prefers meta.originalTitle anyway). Atomic
+ * read-fresh → mutate → save. Returns false when the item vanished, was
+ * dismissed, or the title is already short.
  */
 export function rewriteShortTitle(stateManager: ProjectStateManager, itemId: string): boolean {
   const state = stateManager.getState();
