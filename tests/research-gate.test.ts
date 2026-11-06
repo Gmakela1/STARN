@@ -12,6 +12,7 @@ import {
   runGateWithTimeout,
   rewriteShortTitle,
   enrichItem,
+  ensureItemTopic,
   assessResearch,
   applyAutoAnswer,
   undoAutoApplied,
@@ -527,6 +528,42 @@ describe('research gate wiring', () => {
       })).toBe(true);
       const stored = (stateMgr.getState().portalItems || []).find(i => i.id === tagged.id)!;
       expect(stored.meta?.topic).toBe('thermal');
+    });
+
+    it('infers meta.topic from title + BLUF keywords when no bracket tag exists (R5)', () => {
+      const untagged = makeItem(stateMgr, {
+        title: 'Fuse selectivity decision',
+        meta: { sections: { bluf: 'Use a 200 A branch fuse sized to the pack voltage.' } }
+      });
+      expect(ensureItemTopic(stateMgr, untagged.id)).toBe(true);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === untagged.id)!;
+      expect(stored.meta?.topic).toBe('electrical');
+    });
+
+    it('leaves a low-evidence untagged question untagged (R5)', () => {
+      const vague = makeItem(stateMgr, { title: 'What is the project name?' });
+      expect(ensureItemTopic(stateMgr, vague.id)).toBe(false);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === vague.id)!;
+      expect(stored.meta?.topic).toBeUndefined();
+    });
+
+    it('bracket tag beats keyword inference (R5)', () => {
+      const tagged = makeItem(stateMgr, {
+        title: 'Q1. [THERMAL] Fuse current rating and pack voltage for the battery?'
+      });
+      expect(ensureItemTopic(stateMgr, tagged.id)).toBe(true);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === tagged.id)!;
+      expect(stored.meta?.topic).toBe('thermal');
+    });
+
+    it('existing meta.topic beats everything (R5)', () => {
+      const topiced = makeItem(stateMgr, {
+        title: 'Q1. [THERMAL] Fuse current rating and pack voltage for the battery?',
+        meta: { topic: 'mechanical' }
+      });
+      expect(ensureItemTopic(stateMgr, topiced.id)).toBe(false);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === topiced.id)!;
+      expect(stored.meta?.topic).toBe('mechanical');
     });
   });
 });

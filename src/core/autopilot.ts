@@ -5,7 +5,7 @@ import { ProjectStateManager, ORDERED_WORKFLOW_PHASES, defaultAutopilotState } f
 import { PortalItem, PortalItemType, AutopilotState, ProjectState } from '../workspace/types.js';
 import { TurnResult } from './runner.js';
 import { approveArtifact } from './approvals.js';
-import { addPortalItem, answerPortalItem, listPortalItems, type PortalItemInput } from './question-portal.js';
+import { addPortalItem, addQuestionItemIfValid, answerPortalItem, listPortalItems, type PortalItemInput } from './question-portal.js';
 import type { QuestionSections } from './open-questions-parser.js';
 import { PENDING_INCORPORATION_MARKER, stripPendingBlock, extractPendingBlock, INCORPORATION_CRITIC_FOCUS, buildIncorporationPrompt } from './incorporation-prompt.js';
 import { runRippleScan, summarizeDiff, RippleSource, RippleDeps } from './ripple.js';
@@ -330,18 +330,7 @@ export class AutopilotDriver {
           // runner additionally excludes general/change-impact).
           preflight: true,
           signal,
-          onQuestions: (items) => {
-            for (const item of items) {
-              try {
-                const portalItem = addPortalItem(stateManager, questionPayloadToPortalInput(item));
-                this.emit({ kind: 'question', item: portalItem });
-              } catch (err) {
-                // Empty-title guard (F3): skip the malformed entry, never
-                // park the whole phase run on one junk question.
-                this.deps.logger?.warn(`Skipped malformed question item: ${err instanceof Error ? err.message : err}`);
-              }
-            }
-          },
+          onQuestions: (items) => this.recordTurnQuestions(items),
           onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
           onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args })
         });
@@ -383,18 +372,7 @@ export class AutopilotDriver {
             // honor that by skipping.
             skipPreflight: true,
             signal,
-            onQuestions: (items) => {
-              for (const item of items) {
-                try {
-                  const portalItem = addPortalItem(stateManager, questionPayloadToPortalInput(item));
-                  this.emit({ kind: 'question', item: portalItem });
-                } catch (err) {
-                  // Empty-title guard (F3): skip the malformed entry, never
-                  // park the whole phase run on one junk question.
-                  this.deps.logger?.warn(`Skipped malformed question item: ${err instanceof Error ? err.message : err}`);
-                }
-              }
-            },
+            onQuestions: (items) => this.recordTurnQuestions(items),
             onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
             onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args })
           });
@@ -579,6 +557,27 @@ export class AutopilotDriver {
   }
 
   /**
+   * Shared onQuestions hook for every autopilot turn: stores each model-derived
+   * question via addQuestionItemIfValid and emits a 'question' event. Items
+   * with an empty title (F3 bare-button guard) are skipped, never fatal —
+   * one warning with the skipped count is logged. Real storage errors propagate.
+   */
+  private recordTurnQuestions(items: Parameters<typeof questionPayloadToPortalInput>[0][]): void {
+    let skipped = 0;
+    for (const item of items) {
+      const portalItem = addQuestionItemIfValid(this.deps.stateManager, questionPayloadToPortalInput(item));
+      if (!portalItem) {
+        skipped++;
+        continue;
+      }
+      this.emit({ kind: 'question', item: portalItem });
+    }
+    if (skipped > 0) {
+      this.deps.logger?.warn(`Skipped ${skipped} malformed question item(s) with an empty title`);
+    }
+  }
+
+  /**
    * Runs one incorporation specialist turn per approved doc that still
    * carries a pending-answers block, before the current phase executes. The
    * specialist revises its own document's normative text to incorporate the
@@ -614,18 +613,7 @@ export class AutopilotDriver {
         // accuracy so the turn is not re-graded against the full rubric.
         criticFocus: INCORPORATION_CRITIC_FOCUS,
         signal,
-        onQuestions: (items) => {
-          for (const item of items) {
-            try {
-              const portalItem = addPortalItem(stateManager, questionPayloadToPortalInput(item));
-              this.emit({ kind: 'question', item: portalItem });
-            } catch (err) {
-              // Empty-title guard (F3): skip the malformed entry, never
-              // park the whole phase run on one junk question.
-              this.deps.logger?.warn(`Skipped malformed question item: ${err instanceof Error ? err.message : err}`);
-            }
-          }
-        },
+        onQuestions: (items) => this.recordTurnQuestions(items),
         onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
         onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args })
       });

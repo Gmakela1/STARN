@@ -5,6 +5,7 @@ import os from 'node:os';
 import { ProjectStateManager } from '../src/workspace/state.js';
 import {
   addPortalItem,
+  addQuestionItemIfValid,
   answerPortalItem,
   dismissPortalItem,
   listPortalItems,
@@ -778,14 +779,35 @@ describe('addPortalItem — intake-path short-title rewrite (sections present)',
     expect(twin.meta?.originalTitle).toBe(longTitle);
   });
 
-  it('rejects question items with an empty trimmed title (F3 bare-button guard)', () => {
-    expect(() => addPortalItem(stateMgr, {
+  it('addQuestionItemIfValid skips question items with an empty trimmed title (F3 bare-button guard)', () => {
+    const result = addQuestionItemIfValid(stateMgr, {
       type: 'question',
       severity: 'normal',
       docPath: 'docs/CONOPS.md',
       title: '   ',
       source: 'autopilot'
-    })).toThrow(/title must not be empty/i);
+    });
+    expect(result).toBeUndefined();
     expect(stateMgr.getState().portalItems ?? []).toHaveLength(0);
+  });
+
+  it('addQuestionItemIfValid delegates to addPortalItem for a valid title and for non-question types', () => {
+    const question = addQuestionItemIfValid(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'Real question?',
+      source: 'autopilot'
+    });
+    expect(question?.title).toBe('Real question?');
+    const parked = addQuestionItemIfValid(stateMgr, {
+      type: 'parked',
+      severity: 'blocking',
+      docPath: 'docs/CONOPS.md',
+      title: '',
+      source: 'autopilot'
+    });
+    expect(parked).toBeDefined();
+    expect(stateMgr.getState().portalItems ?? []).toHaveLength(2);
   });
 });

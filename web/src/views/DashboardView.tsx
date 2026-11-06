@@ -26,6 +26,7 @@ import { PHASE_SUBTITLES } from '../components/roadmapMeta';
 import Galaxy from '../components/reactbits/Galaxy';
 import ShinyText from '../components/reactbits/ShinyText';
 import StartAutopilotButton from '../components/StartAutopilotButton';
+import { cleanQuestionTitle } from '../lib/portalGrouping';
 
 const money = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -212,7 +213,7 @@ export default function DashboardView({
                     <div className="text-[11px] font-mono text-[#6e7d92]">
                       STARN · needs input{item.meta?.topic ? ` · ${item.meta.topic}` : ''} · {item.docPath ? fileBase(item.docPath) : 'unknown'}
                     </div>
-                    <div className="truncate text-sm text-[#e8edf5]">{item.title}</div>
+                    <div className="truncate text-sm text-[#e8edf5]">{cleanQuestionTitle(item.title)}</div>
                     {/* Research backfill — BLUF preview under the (shortened) title when format-v2 sections exist. */}
                     {item.meta?.sections?.bluf && (
                       <div className="truncate text-[11px] text-[#a8b3c4]">{item.meta.sections.bluf}</div>

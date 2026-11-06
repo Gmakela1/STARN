@@ -6,7 +6,8 @@ import {
   parseOpenQuestionEntries,
   parseOpenQuestionsFromContent,
   extractQuestionSections,
-  questionSlug
+  questionSlug,
+  inferQuestionTopic
 } from '../src/core/open-questions-parser.js';
 import { ProjectStateManager } from '../src/workspace/state.js';
 import { addPortalItem } from '../src/core/question-portal.js';
@@ -130,5 +131,35 @@ describe('format-v2 question parsing (decision memo)', () => {
     expect(entries[0].title).not.toMatch(/\d+\. \*\*Q2\./);
     expect(entries[1].title).toContain('Verified 72 V continuous at the main bus');
     expect(entries[2].title).toContain('Verified 72 V peak under cranking');
+  });
+
+  it('does not split a numbered bare "1. Q3 …" line inside a findings body (R1)', () => {
+    const doc = '# Doc\n\n## Open Questions\n\n**Q1. [ELECTRICAL] Main bus voltage.** 48 V or 72 V?\n**Findings:**\n1. Q3 2024 revenue for the vendor grew 4%.\n2. Q4 results confirm the datasheet.\n\n## Next Section\n';
+    const entries = parseOpenQuestionEntries(doc);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].title).toContain('Main bus voltage');
+  });
+});
+
+describe('inferQuestionTopic (R5 keyword inference)', () => {
+  it('infers electrical', () => {
+    expect(inferQuestionTopic('Fuse selectivity decision: branch fuse current rating and pack voltage')).toBe('electrical');
+  });
+  it('infers mechanical', () => {
+    expect(inferQuestionTopic('ME1115 mounting bolt-circle discrepancy, chassis bracket clearance')).toBe('mechanical');
+  });
+  it('infers controls-data', () => {
+    expect(inferQuestionTopic('Motor controller model selection and CAN DBC definition')).toBe('controls-data');
+  });
+  it('infers thermal', () => {
+    expect(inferQuestionTopic('Coolant loop and heatsink derating at high ambient temperature')).toBe('thermal');
+  });
+  it('returns undefined for ambiguous or low-evidence text', () => {
+    expect(inferQuestionTopic('What is the project name?')).toBeUndefined();
+    expect(inferQuestionTopic('Battery fuse bracket bolt')).toBeUndefined();
+    expect(inferQuestionTopic('')).toBeUndefined();
+  });
+  it('does not match short tokens inside longer words', () => {
+    expect(inferQuestionTopic('Scan candidate scampi canal')).toBeUndefined();
   });
 });

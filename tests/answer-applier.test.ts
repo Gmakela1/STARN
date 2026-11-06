@@ -322,6 +322,35 @@ describe('applyAnswer', () => {
     expect(result.counterQuestions[0].source).toBe('autopilot');
   });
 
+  it('an empty-title counter-question does not abort applyAnswer (F3 guard)', async () => {
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What is the max voltage?',
+      source: 'autopilot'
+    });
+
+    executeTurnMock.mockImplementation(async (opts: { onQuestions?: (items: unknown[]) => void }) => {
+      opts.onQuestions?.([
+        { type: 'question', severity: 'normal', docPath: 'docs/CONOPS.md', title: '   ', source: 'autopilot' },
+        { type: 'question', severity: 'normal', docPath: 'docs/CONOPS.md', title: 'Q1. What gauge wire?', source: 'autopilot' }
+      ]);
+      return makeTurnResult({
+        specialistId: 'conops',
+        criticResult: { passed: true, score: 9.0, summary: 'pass', strengths: [], weaknesses: [], actionableGuidance: '' }
+      });
+    });
+
+    const result = await applyAnswer(deps, item.id, '12V nominal');
+
+    expect(result.counterQuestions).toHaveLength(1);
+    expect(result.counterQuestions[0].title).toBe('Q1. What gauge wire?');
+    const stored = stateMgr.getState().portalItems!.find(i => i.id === item.id)!;
+    expect(stored.status).toBe('answered');
+    expect(emitStatusMock).toHaveBeenCalledWith(expect.stringContaining('Skipped 1 malformed'));
+  });
+
   it('marks item answered with answer text', async () => {
     const item = addPortalItem(stateMgr, {
       type: 'question',

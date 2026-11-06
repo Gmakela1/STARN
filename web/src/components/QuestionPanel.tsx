@@ -14,7 +14,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { AnswerState, PortalItem } from '../types/api';
 import { renderDetail } from '../lib/portalDetail';
-import { groupPortalItemsByTopic } from '../lib/portalGrouping';
+import { cleanQuestionTitle, groupPortalItemsByTopic } from '../lib/portalGrouping';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 // React Bits (reactbits.dev) component — see web/src/components/reactbits.
 import VoicePill from './reactbits/VoicePill/VoicePill';
@@ -168,7 +168,7 @@ export default function QuestionPanel({
   // title blob) — drop them from the whole panel consistently.
   // Memoized on the prop identity: a fresh array per render would re-fire every
   // effect that depends on `items` (infinite render loop).
-  const items = useMemo(() => rawItems.filter(i => i.title.trim().length > 0), [rawItems]);
+  const items = useMemo(() => rawItems.filter(i => cleanQuestionTitle(i.title).length > 0), [rawItems]);
   const [activeId, setActiveId] = useState<string>(items[0]?.id ?? '');
   // Board #53A — drafts seed from the module store so close/reopen, unmount,
   // and page reload all restore the typed-but-unsubmitted answer.
@@ -642,7 +642,7 @@ export default function QuestionPanel({
           Questions from AI ({items.length})
         </span>
         {stripItem && (
-          <span className="min-w-0 flex-1 truncate text-[11px] text-[#a8b3c4]">{stripItem.title}</span>
+          <span className="min-w-0 flex-1 truncate text-[11px] text-[#a8b3c4]">{cleanQuestionTitle(stripItem.title)}</span>
         )}
         <button
           ref={expandRef}
@@ -837,8 +837,8 @@ export default function QuestionPanel({
 
         {/* V2 card order: short title + topic chip lead the card. */}
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
-          <p className="text-sm font-bold text-[#e8edf5]" title={item.title}>
-            {item.title}
+          <p className="text-sm font-bold text-[#e8edf5]" title={cleanQuestionTitle(item.title)}>
+            {cleanQuestionTitle(item.title)}
           </p>
           {item.meta?.topic && (
             <span className="rounded bg-[#11151d] px-1.5 py-0.5 text-[10px] font-mono text-[#a8b3c4]">
@@ -1401,7 +1401,7 @@ export default function QuestionPanel({
                 }`}
               >
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} aria-hidden />
-                <span className="max-w-[140px] truncate">{navItem.title}</span>
+                <span className="max-w-[140px] truncate">{cleanQuestionTitle(navItem.title)}</span>
               </button>
             );
           })}

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { ProjectStateManager, ORDERED_WORKFLOW_PHASES, defaultAutopilotState } from '../workspace/state.js';
 import { PortalItem } from '../workspace/types.js';
 import { TurnResult } from './runner.js';
-import { addPortalItem, answerPortalItem, ANSWER_HISTORY_CAP } from './question-portal.js';
+import { addQuestionItemIfValid, answerPortalItem, ANSWER_HISTORY_CAP } from './question-portal.js';
 import { PENDING_INCORPORATION_MARKER, stripPendingBlock, INCORPORATION_CRITIC_FOCUS, buildIncorporationPrompt } from './incorporation-prompt.js';
 import type { QuestionSections } from './open-questions-parser.js';
 import { runRippleScan, summarizeDiff, RippleDeps } from './ripple.js';
@@ -270,16 +270,27 @@ export async function applyAnswer(
     // 8. Counter-questions raised by the incorporation turn become portal
     // items on the original thread (same as the autopilot's incorporation).
     const threadId = item.threadId || item.id;
+    // F3 guard: empty-title counter-questions are skipped (never abort the
+    // applyAnswer flow after the doc was already rewritten).
+    let skippedCounterQuestions = 0;
     for (const q of counterQuestionItems) {
       const { topic, sections, ...qRest } = q;
-      counterQuestions.push(addPortalItem(stateManager, {
+      const stored = addQuestionItemIfValid(stateManager, {
         ...qRest,
         source: 'autopilot',
         meta: topic || sections
           ? { ...(topic ? { topic } : {}), ...(sections ? { sections } : {}) }
           : undefined,
         threadId
-      }));
+      });
+      if (stored) {
+        counterQuestions.push(stored);
+      } else {
+        skippedCounterQuestions++;
+      }
+    }
+    if (skippedCounterQuestions > 0) {
+      deps.emitStatus?.(`Skipped ${skippedCounterQuestions} malformed follow-up question(s) with an empty title.`);
     }
   }
 

@@ -48,7 +48,7 @@ import {
 } from './research-preflight.js';
 import { PENDING_INCORPORATION_MARKER } from './incorporation-prompt.js';
 import type { QuestionSections } from './open-questions-parser.js';
-import { questionTopic } from './open-questions-parser.js';
+import { questionTopic, inferQuestionTopic } from './open-questions-parser.js';
 
 /** Research-turn allow-list: reads + web research only — no write tools. */
 export const RESEARCH_GATE_ALLOWED_TOOLS = [...PREFLIGHT_ALLOWED_TOOLS] as string[];
@@ -753,12 +753,13 @@ export function enrichItem(
 
 /**
  * Ensures a portal item carries the ICD-system topic tag on meta.topic
- * (topic grouping seam). Copies an existing meta.topic unchanged; when
- * missing, parses the tag from the question title — preferring
+ * (topic grouping seam). Precedence: (1) an existing meta.topic is kept
+ * unchanged; (2) the bracket tag parsed from the question title — preferring
  * meta.originalTitle (set by the short-title rewrite, which still holds the
- * original "Qn. [TOPIC] …" text) over the possibly-rewritten title. Untagged
- * questions stay untagged (grouping puts them under "Other"). Returns false
- * when the item vanished or no write was needed.
+ * original "Qn. [TOPIC] …" text) over the possibly-rewritten title; (3)
+ * conservative keyword inference over (original) title + BLUF (inferQuestionTopic).
+ * Questions with neither stay untagged (grouping puts them under "Other").
+ * Returns false when the item vanished or no write was needed.
  */
 export function ensureItemTopic(
   stateManager: ProjectStateManager,
@@ -768,7 +769,8 @@ export function ensureItemTopic(
   const item = (state.portalItems || []).find(i => i.id === itemId);
   if (!item) return false;
   if (item.meta?.topic) return false;
-  const topic = questionTopic(item.meta?.originalTitle ?? item.title);
+  const topic = questionTopic(item.meta?.originalTitle ?? item.title)
+    ?? inferQuestionTopic(`${item.meta?.originalTitle ?? item.title} ${item.meta?.sections?.bluf ?? ''}`);
   if (!topic) return false;
   item.meta = { ...(item.meta || {}), topic };
   stateManager.saveState(state);
@@ -874,7 +876,8 @@ export async function runResearchBackfill(deps: ResearchBackfillDeps): Promise<R
 
   // Topic pass: legacy questions (already enriched, or short titles) that
   // never went through enrichItem lack meta.topic and would group under
-  // "Other". Tag them from the title tag — no research. Runs after the
+  // "Other". Tag them from the title tag, else conservative keyword
+  // inference (inferQuestionTopic) — no research. Runs after the
   // normalize pass (ensureItemTopic prefers meta.originalTitle). Iterates a
   // snapshot because ensureItemTopic saves state.
   let topicTagged = 0;

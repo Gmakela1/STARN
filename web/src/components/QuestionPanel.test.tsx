@@ -399,6 +399,18 @@ describe('QuestionPanel', () => {
     expect(onFocusDocument).toHaveBeenCalledWith(B);
   });
 
+  // ————— R6: display-only title cleanup (stored title untouched) —————
+  it('chip text strips markdown junk from the title (display only)', () => {
+    const item = makeItem({ id: 'J', title: 'Foo bar.**' });
+    const props = baseProps({ items: [item, makeItem({ id: 'K', title: 'Other question' })] });
+    renderWithUser(<QuestionPanel {...props} />);
+
+    const chip = screen.getByRole('button', { name: /Foo bar./ });
+    expect(chip).toHaveTextContent('Foo bar.');
+    expect(chip.textContent).not.toContain('*');
+    expect(item.title).toBe('Foo bar.**');
+  });
+
   // ————— P5 — ICD-system topic grouping of the chip strip —————
   it('groups the chip strip by meta.topic with labeled headers and counts', () => {
     const e1 = makeItem({ id: 'E1', title: 'Bus voltage', meta: { topic: 'electrical' } });

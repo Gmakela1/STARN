@@ -102,17 +102,26 @@ export function questionSimilarity(titleA: string, titleB: string): number {
 }
 
 /**
+ * Guarded add for model-derived question items (onQuestions hooks, counter-
+ * questions). F3 guard: an empty trimmed question title renders as a bare
+ * unlabeled button in the panel nav, so such items are skipped — returns
+ * undefined without storing anything and without throwing. Any other input
+ * delegates to addPortalItem (real storage errors still propagate).
+ * Callers count the undefined results and log once.
+ */
+export function addQuestionItemIfValid(manager: ProjectStateManager, input: PortalItemInput): PortalItem | undefined {
+  if (input.type === 'question' && !input.title.trim()) {
+    return undefined;
+  }
+  return addPortalItem(manager, input);
+}
+
+/**
  * Adds a portal item (or dedupes onto an existing open item with the same type, docPath and title).
- * Returns the stored PortalItem.
+ * Returns the stored PortalItem. Pure store operation: it does not validate
+ * titles — model-derived question input should go through addQuestionItemIfValid.
  */
 export function addPortalItem(manager: ProjectStateManager, input: PortalItemInput): PortalItem {
-  // F3 guard: an empty trimmed title renders as a bare unlabeled button in
-  // the panel nav. Reject question items without a real title (callers —
-  // e.g. the autopilot onQuestions loop — catch and skip the malformed
-  // entry instead of parking the run).
-  if (input.type === 'question' && !input.title.trim()) {
-    throw new Error('Portal item title must not be empty');
-  }
   const state = manager.getState();
   if (!state.portalItems) {
     state.portalItems = [];

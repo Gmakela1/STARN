@@ -145,7 +145,7 @@ describe('runResearchBackfill (core)', () => {
     });
 
     const result = await runResearchBackfill(gateDeps);
-    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0, topicTagged: 0 });
+    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0, topicTagged: 1 });
     expect(maxActive).toBe(1); // for..of await — never parallel
 
     const stored = (id: string) => (stateMgr.getState().portalItems || []).find(i => i.id === id)!;
@@ -170,7 +170,7 @@ describe('runResearchBackfill (core)', () => {
   it('skips items in the in-flight dedupe set', async () => {
     const plain = makeItem(stateMgr);
     const result = await runResearchBackfill({ ...gateDeps, inFlight: new Set([plain.id]) });
-    expect(result).toEqual({ processed: 0, enriched: 0, normalized: 0, topicTagged: 0 });
+    expect(result).toEqual({ processed: 0, enriched: 0, normalized: 0, topicTagged: 1 });
     expect(researchClient.chatCompletion).not.toHaveBeenCalled();
     expect(agentLoopMock).not.toHaveBeenCalled();
   });
@@ -200,7 +200,7 @@ describe('runResearchBackfill (core)', () => {
     };
     const item = makeItem(stateMgr);
     const result = await runResearchBackfill(gateDeps);
-    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0, topicTagged: 0 });
+    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0, topicTagged: 1 });
     const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
     expect(stored.status).toBe('answered');
     expect(stored.answer).toContain('48V DC');
@@ -213,7 +213,7 @@ describe('runResearchBackfill (core)', () => {
     agentLoopMock.mockImplementation(async () => ({ finalResponse: 'no json at all' }));
     const item = makeItem(stateMgr);
     const result = await runResearchBackfill(gateDeps);
-    expect(result).toEqual({ processed: 1, enriched: 0, normalized: 0, topicTagged: 0 });
+    expect(result).toEqual({ processed: 1, enriched: 0, normalized: 0, topicTagged: 1 });
     const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
     expect(stored.status).toBe('open');
     expect(stored.meta?.sections).toBeUndefined();
@@ -333,6 +333,24 @@ describe('runResearchBackfill (core)', () => {
     expect(stored(tagged.id).meta?.topic).toBe('mechanical');
     expect(stored(alreadyTopiced.id).meta?.topic).toBe('electrical');
     expect(stored(untagged.id).meta?.topic).toBeUndefined();
+  });
+
+  it('topic pass: untagged items get a conservative keyword-inferred meta.topic (R5)', async () => {
+    const inferred = makeItem(stateMgr, {
+      title: 'Fuse selectivity decision: branch fuse current rating and pack voltage',
+      meta: { sections: { bluf: 'Sentinel.' } }
+    });
+    const vague = makeItem(stateMgr, {
+      title: 'Plain enriched question?',
+      meta: { sections: { bluf: 'Sentinel.' } }
+    });
+
+    const result = await runResearchBackfill(gateDeps);
+
+    expect(result).toEqual({ processed: 0, enriched: 0, normalized: 0, topicTagged: 1 });
+    const stored = (id: string) => (stateMgr.getState().portalItems || []).find(i => i.id === id)!;
+    expect(stored(inferred.id).meta?.topic).toBe('electrical');
+    expect(stored(vague.id).meta?.topic).toBeUndefined();
   });
 });
 

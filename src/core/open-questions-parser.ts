@@ -135,6 +135,61 @@ export function questionTopic(title: string): string | undefined {
 }
 
 /**
+ * Keyword lists per ICD-system topic for inferQuestionTopic. Keys are the
+ * QUESTION_TOPICS values. Entries in SHORT_TOPIC_TOKENS must match as whole
+ * words (optional plural "s"); all other entries match at a word start
+ * (prefix), so "volt" covers "voltage" and "mount" covers "mounting".
+ */
+const TOPIC_KEYWORDS: Record<string, string[]> = {
+  electrical: ['fuse', 'voltage', 'vdc', 'volt', 'amp', 'current', 'battery', 'pack', 'charger', 'charge', 'lifepo4', 'lithium', 'cell', 'bms', 'contactor', 'breaker', 'wiring', 'circuit', 'insulation', 'isolation', 'kw', 'ah'],
+  mechanical: ['bolt', 'mount', 'bracket', 'chassis', 'torque', 'gearbox', 'drivetrain', 'frame', 'shaft', 'coupling', 'weight', 'dimension', 'clearance', 'hitch', 'fastener', 'housing', 'bore', 'flange'],
+  'controls-data': ['can', 'dbc', 'firmware', 'telemetry', 'sensor', 'protocol', 'throttle', 'ecu', 'signal', 'logging', 'interlock', 'controller model', 'calibration', 'parameter'],
+  thermal: ['temperature', 'thermal', 'cooling', 'heat', 'derating', 'coolant', 'ambient', 'heatsink', '°c']
+};
+
+const SHORT_TOPIC_TOKENS = new Set(['can', 'amp', 'ah', 'kw', 'bms', 'ecu', 'cell', 'pack']);
+
+/** Minimum distinct keyword hits the winning topic needs before it is trusted. */
+const MIN_TOPIC_SCORE = 2;
+
+/**
+ * Deterministic keyword inference of the ICD-system topic from free text
+ * (title + BLUF). Used only when a question carries no bracket tag: the
+ * winning topic must have at least MIN_TOPIC_SCORE distinct keyword hits AND
+ * strictly more than the runner-up; otherwise undefined (conservative — no
+ * guess, the item stays under "Other").
+ */
+export function inferQuestionTopic(text: string): string | undefined {
+  const haystack = text.toLowerCase();
+  let best: string | undefined;
+  let bestScore = 0;
+  let runnerUp = 0;
+  for (const [topic, keywords] of Object.entries(TOPIC_KEYWORDS)) {
+    let score = 0;
+    for (const keyword of keywords) {
+      let hit: boolean;
+      if (keyword === '°c') {
+        hit = haystack.includes(keyword);
+      } else if (SHORT_TOPIC_TOKENS.has(keyword)) {
+        hit = new RegExp(`\\b${keyword}s?(?![\\w'])`).test(haystack);
+      } else {
+        hit = new RegExp(`\\b${keyword}`).test(haystack);
+      }
+      if (hit) score++;
+    }
+    if (score > bestScore) {
+      runnerUp = bestScore;
+      bestScore = score;
+      best = topic;
+    } else if (score > runnerUp) {
+      runnerUp = score;
+    }
+  }
+  if (!best || bestScore < MIN_TOPIC_SCORE || bestScore <= runnerUp) return undefined;
+  return best;
+}
+
+/**
  * Extracts question entries (Q1, Q2, ... format) from a section's text as
  * { title, sections? } pairs: the title is the stable parse key; sections are
  * the optional format-v2 labeled fields extracted tolerantly from the entry
@@ -147,7 +202,10 @@ function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
   // numbered sub-lists, and without the "\d+. " variant in BOTH the start
   // pattern and the lookahead the second numbered question gets glued into
   // the first entry's title as one blob.
-  const qRegex = /(?:^|\n)\s*(?:\d+\.\s*)?(?:\*\*)?(?:Q\d+|-\s*\*\*Question)\s*[\.:\)]?\s*\**\s*(.*?)(?=\n\s*(?:\d+\.\s*)?(?:\*\*)?(?:Q\d+|-\s*\*\*Question)|\n\s*##|\n\s*$|$)/gs;
+  // The numeric prefix is only allowed when followed by the bold marker
+  // ((?=\*\*)) so bare finding lines like "1. Q3 2024 revenue" / "2. Q4
+  // results" inside a body are not entry boundaries.
+  const qRegex = /(?:^|\n)\s*(?:\d+\.\s*(?=\*\*))?(?:\*\*)?(?:Q\d+|-\s*\*\*Question)\s*[\.:\)]?\s*\**\s*(.*?)(?=\n\s*(?:\d+\.\s*(?=\*\*))?(?:\*\*)?(?:Q\d+|-\s*\*\*Question)|\n\s*##|\n\s*$|$)/gs;
 
   let match;
   while ((match = qRegex.exec(sectionText)) !== null) {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { PortalItem } from '../types/api';
-import { QUESTION_TOPICS, groupPortalItemsByTopic, itemTopic, topicLabel } from './portalGrouping';
+import { QUESTION_TOPICS, cleanQuestionTitle, groupPortalItemsByTopic, itemTopic, topicLabel } from './portalGrouping';
 
 function item(id: string, topic?: string, createdAt = '2026-01-01T00:00:00.000Z'): PortalItem {
   return {
@@ -71,5 +71,22 @@ describe('itemTopic / topicLabel', () => {
 
   it('QUESTION_TOPICS mirrors the core enum values', () => {
     expect([...QUESTION_TOPICS]).toEqual(['electrical', 'mechanical', 'controls-data', 'thermal']);
+  });
+});
+
+describe('cleanQuestionTitle', () => {
+  it('strips asterisks and backticks', () => {
+    expect(cleanQuestionTitle('Lithium-ion sub-chemistry and module architecture.**')).toBe('Lithium-ion sub-chemistry and module architecture.');
+    expect(cleanQuestionTitle('**Q3.** Use `CAN` bus?')).toBe('Q3. Use CAN bus?');
+  });
+
+  it('strips leading junk characters and collapses whitespace', () => {
+    expect(cleanQuestionTitle('/ BOM Q8 voltage   conflict; resolve')).toBe('BOM Q8 voltage conflict; resolve');
+    expect(cleanQuestionTitle(' — ) . Pack voltage')).toBe('Pack voltage');
+  });
+
+  it('leaves a clean title unchanged and returns empty for junk-only input', () => {
+    expect(cleanQuestionTitle('Main bus voltage?')).toBe('Main bus voltage?');
+    expect(cleanQuestionTitle('**')).toBe('');
   });
 });
