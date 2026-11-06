@@ -1,4 +1,4 @@
-import { PortalItem, PortalItemType } from '../workspace/types.js';
+import { PortalItem, PortalItemType, PortalThreadMessage } from '../workspace/types.js';
 import { ProjectStateManager, defaultAutopilotState } from '../workspace/state.js';
 import { questionSlug } from './open-questions-parser.js';
 import { shortResearchTitle } from './research-gate.js';
@@ -23,6 +23,45 @@ const MAX_PORTAL_ITEMS = 500;
 
 /** Board #52 — per-item saved answer history is capped to the most recent entries. */
 export const ANSWER_HISTORY_CAP = 20;
+
+/** Max persisted thread message rows per item (trim oldest, keep the first). */
+export const THREAD_MESSAGE_CAP = 20;
+
+/**
+ * True for rows that are permanent record: a committed answer ('recorded') or
+ * a concluded draft ('proposal'). The trim rule never drops these.
+ */
+function isPermanentThreadRow(row: PortalThreadMessage): boolean {
+  return row.kind === 'recorded' || row.kind === 'proposal';
+}
+
+/**
+ * Pure: appends one thread row and trims back to THREAD_MESSAGE_CAP.
+ *
+ * Trim rule: the FIRST row is always kept (original question context), then
+ * the oldest `message` row is dropped while the thread is over the cap.
+ * `recorded`/`proposal` rows are permanent and never dropped, so a thread of
+ * permanent rows alone may exceed the cap.
+ *
+ * @param thread Existing rows (undefined/null treated as empty; never mutated).
+ * @param row Row to append.
+ * @returns A new array of at most THREAD_MESSAGE_CAP rows unless it is made of
+ *   more permanent rows than the cap allows.
+ */
+export function appendThreadMessage(
+  thread: PortalThreadMessage[] | undefined,
+  row: PortalThreadMessage
+): PortalThreadMessage[] {
+  const next = [...(Array.isArray(thread) ? thread : []), row];
+  while (next.length > THREAD_MESSAGE_CAP) {
+    const oldestTrimmable = next.findIndex((m, i) => i > 0 && !isPermanentThreadRow(m));
+    if (oldestTrimmable === -1) {
+      break;
+    }
+    next.splice(oldestTrimmable, 1);
+  }
+  return next;
+}
 
 /**
  * P2 — minimum token-Jaccard similarity for a question to count as a fuzzy

@@ -33,11 +33,12 @@ import { webFetchHandler } from '../tools/handlers/web-fetch.js';
 import { AnswerQueue, AnswerApplyResult, AnswerFrameEvent } from '../core/answer-queue.js';
 import { EventBus } from '../core/event-bus.js';
 import { PortalItem, PortalThreadMessage } from '../workspace/types.js';
+import { appendThreadMessage as appendThreadRow, THREAD_MESSAGE_CAP } from '../core/question-portal.js';
 import { sanitizeResearchLine } from '../core/research-preflight.js';
 
 // ── T-C answer-thread (advisory specialist Q&A) ──────────────────────────
-/** Max persisted thread messages per item (trim oldest, keep the first). */
-export const THREAD_MESSAGE_CAP = 20;
+/** Max persisted thread messages per item (trim oldest, keep the first). Re-exported from core. */
+export { THREAD_MESSAGE_CAP };
 /** Advisory reply hard cap (chars). */
 const THREAD_REPLY_CHAR_CAP = 2000;
 /** Advisory turn budget: quick read-only Q&A, no web research for v1. */
@@ -747,21 +748,15 @@ export class ServerSessionManager {
   /**
    * Appends one thread message to a portal item: synchronous read-fresh →
    * mutate → save (atomic vs other async work in this process). Trims past
-   * THREAD_MESSAGE_CAP, always keeping the first message for context.
-   * Returns null when the item no longer exists.
+   * THREAD_MESSAGE_CAP via the pure core rule (keeps the first row and every
+   * `recorded`/`proposal` row). Returns null when the item no longer exists.
    */
   private appendThreadMessage(itemId: string, message: PortalThreadMessage): PortalItem | null {
     const state = this.deps.stateManager.getState();
     const item = (state.portalItems || []).find(i => i.id === itemId);
     if (!item) return null;
     const prior = Array.isArray(item.meta?.thread) ? item.meta!.thread : [];
-    const appended = [...prior, message];
-    // Cap: keep the first message (original question context) plus the most
-    // recent turns when over THREAD_MESSAGE_CAP.
-    const trimmed = appended.length > THREAD_MESSAGE_CAP
-      ? [appended[0], ...appended.slice(appended.length - THREAD_MESSAGE_CAP + 1)]
-      : appended;
-    item.meta = { ...(item.meta || {}), thread: trimmed };
+    item.meta = { ...(item.meta || {}), thread: appendThreadRow(prior, message) };
     item.updatedAt = new Date().toISOString();
     this.deps.stateManager.saveState(state);
     return item;

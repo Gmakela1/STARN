@@ -98,11 +98,29 @@ export interface PortalItemMeta extends Record<string, unknown> {
   thread?: PortalThreadMessage[];
 }
 
-/** One advisory answer-thread turn: the user's question or the specialist's reply. */
+/** How a user thread row was sent: 'ask' = advisory question (default for legacy rows), 'answer' = committed answer. */
+export type ThreadIntent = 'ask' | 'answer';
+
+/**
+ * One advisory answer-thread row: the user's question, the specialist's reply,
+ * a recorded (committed) answer, or a concluded proposal draft.
+ */
 export interface PortalThreadMessage {
   role: 'user' | 'specialist';
   text: string;
   ts: number;
+  /** user messages: 'ask' (default for legacy rows) | 'answer'. */
+  intent?: ThreadIntent;
+  /** absent => 'message'. 'recorded' = committed answer; 'proposal' = concluded draft. */
+  kind?: 'message' | 'recorded' | 'proposal';
+  /** kind === 'proposal' only */
+  proposal?: {
+    status: 'pending' | 'accepted' | 'rejected' | 'superseded';
+    /** Messages the draft was built from ("Based on 4 messages"). */
+    basedOn: number;
+    /** Set when the user used Edit. */
+    editedText?: string;
+  };
 }
 
 export interface ResearchSource {

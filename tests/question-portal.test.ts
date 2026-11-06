@@ -13,9 +13,11 @@ import {
   dedupeOpenPortalItems,
   archiveDuplicateOpenPortalItems,
   questionSimilarity,
+  appendThreadMessage,
+  THREAD_MESSAGE_CAP,
   SIMILARITY_THRESHOLD
 } from '../src/core/question-portal.js';
-import { PortalItem } from '../src/workspace/types.js';
+import { PortalItem, PortalThreadMessage } from '../src/workspace/types.js';
 
 describe('question portal store', () => {
   let tmpDir: string;
@@ -809,5 +811,64 @@ describe('addPortalItem — intake-path short-title rewrite (sections present)',
     });
     expect(parked).toBeDefined();
     expect(stateMgr.getState().portalItems ?? []).toHaveLength(2);
+  });
+});
+
+/** Pure thread-append + trim rule (Task 2). No filesystem, no state manager. */
+describe('appendThreadMessage', () => {
+  const row = (text: string, extra: Partial<PortalThreadMessage> = {}): PortalThreadMessage => ({
+    role: 'user',
+    text,
+    ts: 0,
+    ...extra
+  });
+
+  it('appends legacy rows (no intent/kind) and trims oldest-first exactly as before', () => {
+    let thread: PortalThreadMessage[] = [];
+    const appended: PortalThreadMessage[] = [];
+    for (let i = 1; i <= THREAD_MESSAGE_CAP + 4; i++) {
+      const next: PortalThreadMessage = { role: i % 2 === 1 ? 'user' : 'specialist', text: `m${i}`, ts: i };
+      appended.push(next);
+      thread = appendThreadMessage(thread, next);
+      // Pre-Task-2 inline rule in session.ts: keep the first row plus the
+      // most recent CAP-1 rows.
+      const legacy = appended.length > THREAD_MESSAGE_CAP
+        ? [appended[0], ...appended.slice(appended.length - THREAD_MESSAGE_CAP + 1)]
+        : appended;
+      expect(thread).toEqual(legacy);
+    }
+    expect(thread).toHaveLength(THREAD_MESSAGE_CAP);
+    expect(thread[0].text).toBe('m1');
+    expect(thread[thread.length - 1].text).toBe(`m${THREAD_MESSAGE_CAP + 4}`);
+    // The trim rule never invents intent/kind on legacy rows.
+    expect(thread.every(m => m.intent === undefined && m.kind === undefined)).toBe(true);
+  });
+
+  it('never drops recorded or proposal rows, even when they are the oldest', () => {
+    const recorded = row('recorded answer', { intent: 'answer', kind: 'recorded', ts: 1 });
+    const proposal = row('concluded draft', {
+      role: 'specialist',
+      kind: 'proposal',
+      ts: 2,
+      proposal: { status: 'superseded', basedOn: 1 }
+    });
+    let thread: PortalThreadMessage[] = [row('first', { ts: 0 }), recorded, proposal];
+    for (let i = 0; i < THREAD_MESSAGE_CAP + 4; i++) {
+      thread = appendThreadMessage(thread, row(`m${i}`, { ts: 10 + i }));
+    }
+    expect(thread).toHaveLength(THREAD_MESSAGE_CAP);
+    expect(thread.filter(m => m.kind === 'recorded')).toEqual([recorded]);
+    expect(thread.filter(m => m.kind === 'proposal')).toEqual([proposal]);
+  });
+
+  it('enforces the cap on message rows only: permanent rows never count against it', () => {
+    const permanent: PortalThreadMessage[] = [];
+    for (let i = 0; i < THREAD_MESSAGE_CAP + 5; i++) {
+      permanent.push(row(`r${i}`, { role: 'specialist', kind: 'recorded', ts: i }));
+    }
+    const result = appendThreadMessage(permanent, row('another record', { kind: 'recorded', ts: 99 }));
+    // No message row to trim → nothing is dropped, even past the cap.
+    expect(result).toHaveLength(THREAD_MESSAGE_CAP + 6);
+    expect(result.every(m => m.kind === 'recorded')).toBe(true);
   });
 });
