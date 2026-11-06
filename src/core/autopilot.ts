@@ -7,7 +7,7 @@ import { TurnResult } from './runner.js';
 import { approveArtifact } from './approvals.js';
 import { addPortalItem, addQuestionItemIfValid, answerPortalItem, listPortalItems, type PortalItemInput } from './question-portal.js';
 import type { QuestionSections } from './open-questions-parser.js';
-import { PENDING_INCORPORATION_MARKER, stripPendingBlock, extractPendingBlock, INCORPORATION_CRITIC_FOCUS, buildIncorporationPrompt } from './incorporation-prompt.js';
+import { PENDING_INCORPORATION_MARKER, stripPendingBlock, extractPendingBlock, INCORPORATION_CRITIC_FOCUS, buildIncorporationPrompt, collectThreadContext } from './incorporation-prompt.js';
 import { runRippleScan, summarizeDiff, RippleSource, RippleDeps } from './ripple.js';
 import { Logger } from '../util/logger.js';
 
@@ -606,8 +606,12 @@ export class AutopilotDriver {
       // no-tools write of the full doc without it). The snapshot is the only
       // way to restore the answers for the next chain start.
       const pendingBlockSnapshot = extractPendingBlock(beforeContent);
+      // The user's chat reasoning reaches the specialist here and nowhere
+      // else — it must never enter the document's pending block (UNDO byte
+      // contract).
+      const threadContext = collectThreadContext(stateManager, phaseId);
       const result = await executeTurn({
-        userPrompt: buildIncorporationPrompt(phaseId),
+        userPrompt: buildIncorporationPrompt(phaseId, threadContext),
         forceSpecialistId: phaseId,
         // The doc is already approved; scope the critic to incorporation
         // accuracy so the turn is not re-graded against the full rubric.

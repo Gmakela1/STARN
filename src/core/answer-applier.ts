@@ -4,7 +4,7 @@ import { ProjectStateManager, ORDERED_WORKFLOW_PHASES, defaultAutopilotState } f
 import { PortalItem } from '../workspace/types.js';
 import { TurnResult } from './runner.js';
 import { addQuestionItemIfValid, answerPortalItem, ANSWER_HISTORY_CAP } from './question-portal.js';
-import { PENDING_INCORPORATION_MARKER, stripPendingBlock, INCORPORATION_CRITIC_FOCUS, buildIncorporationPrompt } from './incorporation-prompt.js';
+import { PENDING_INCORPORATION_MARKER, stripPendingBlock, INCORPORATION_CRITIC_FOCUS, buildIncorporationPrompt, collectThreadContext } from './incorporation-prompt.js';
 import type { QuestionSections } from './open-questions-parser.js';
 import { runRippleScan, summarizeDiff, RippleDeps } from './ripple.js';
 import type { AutopilotEvent, AutopilotDocStatus } from './autopilot.js';
@@ -189,8 +189,11 @@ export async function applyAnswer(
     deps.emitStatus?.(`Incorporating pending user answers in ${phase.name}…`);
     let result: TurnResult;
     try {
+      // Advisory chat context goes into the PROMPT only — never into the
+      // document's pending block (UNDO byte contract).
+      const threadContext = collectThreadContext(deps.stateManager, phaseId);
       result = await deps.executeTurn({
-        userPrompt: buildIncorporationPrompt(phaseId),
+        userPrompt: buildIncorporationPrompt(phaseId, threadContext),
         forceSpecialistId: phaseId,
         // Scope the critic to incorporation accuracy (hybrid directive shared
         // with the autopilot chain's incorporation turns).
