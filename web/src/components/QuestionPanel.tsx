@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   Check,
@@ -145,7 +145,7 @@ function latestResolvedItem(resolved: Record<string, { item: PortalItem; until: 
  */
 export default function QuestionPanel({
   surface,
-  items,
+  items: rawItems,
   answerStates,
   onSubmit,
   onDismiss,
@@ -163,6 +163,12 @@ export default function QuestionPanel({
   onResearchAll,
   onThreadMessage
 }: QuestionPanelProps) {
+  // F3 guard: the core intake rejects empty-title questions; legacy persisted
+  // data may still hold some. Never render them (bare nav buttons / blank
+  // title blob) — drop them from the whole panel consistently.
+  // Memoized on the prop identity: a fresh array per render would re-fire every
+  // effect that depends on `items` (infinite render loop).
+  const items = useMemo(() => rawItems.filter(i => i.title.trim().length > 0), [rawItems]);
   const [activeId, setActiveId] = useState<string>(items[0]?.id ?? '');
   // Board #53A — drafts seed from the module store so close/reopen, unmount,
   // and page reload all restore the typed-but-unsubmitted answer.
@@ -1407,7 +1413,12 @@ export default function QuestionPanel({
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">{body}</div>
 
       {(composer || threadPanel) && (
-        <footer className="shrink-0 space-y-2 border-t border-[#2a3342] bg-[#0d1017]/70 p-3">
+        // F1 fix: without a height cap this footer's composer + advisory chat
+        // squeeze the min-h-0 flex-1 body (title/BLUF/findings/suggestion) down
+        // to a sliver once a thread exists. Capped at half the panel height;
+        // overflow scrolls INTERNALLY here — the thread list keeps its own
+        // max-h-56 scroller and never pushes the memo sections out of view.
+        <footer className="max-h-[50%] shrink-0 space-y-2 overflow-y-auto border-t border-[#2a3342] bg-[#0d1017]/70 p-3">
           {composer}
           {threadPanel}
         </footer>

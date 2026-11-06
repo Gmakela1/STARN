@@ -11,6 +11,7 @@ import {
   runResearchGate,
   runGateWithTimeout,
   rewriteShortTitle,
+  enrichItem,
   assessResearch,
   applyAutoAnswer,
   undoAutoApplied,
@@ -501,6 +502,31 @@ describe('research gate wiring', () => {
       const stored = (stateMgr.getState().portalItems || []).find(i => i.id === plain.id)!;
       expect(stored.title).toBe('What is the main contactor voltage rating?');
       expect(stored.meta?.originalTitle).toBeUndefined();
+    });
+  });
+
+  describe('topic preservation on enrichment (F2 grouping)', () => {
+    it('sets meta.topic from the originalTitle [TOPIC] tag when missing', () => {
+      const wall = makeItem(stateMgr, {
+        title: 'Q2. [ELECTRICAL] Verified 72 V continuous at the main bus? ' + 'B'.repeat(120)
+      });
+      expect(enrichItem(stateMgr, wall.id, {
+        bluf: '72 V nominal.',
+        suggestion: 'Run the 72 V bus.'
+      })).toBe(true);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === wall.id)!;
+      expect(stored.meta?.originalTitle).toBeTruthy();
+      expect(stored.meta?.topic).toBe('electrical');
+    });
+
+    it('keeps an existing meta.topic unchanged', () => {
+      const tagged = makeItem(stateMgr, { title: 'Coolant loop sizing.', meta: { topic: 'thermal' } });
+      expect(enrichItem(stateMgr, tagged.id, {
+        bluf: 'Glycol loop.',
+        suggestion: '50/50 glycol.'
+      })).toBe(true);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === tagged.id)!;
+      expect(stored.meta?.topic).toBe('thermal');
     });
   });
 });

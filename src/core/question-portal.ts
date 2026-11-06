@@ -106,6 +106,13 @@ export function questionSimilarity(titleA: string, titleB: string): number {
  * Returns the stored PortalItem.
  */
 export function addPortalItem(manager: ProjectStateManager, input: PortalItemInput): PortalItem {
+  // F3 guard: an empty trimmed title renders as a bare unlabeled button in
+  // the panel nav. Reject question items without a real title (callers —
+  // e.g. the autopilot onQuestions loop — catch and skip the malformed
+  // entry instead of parking the run).
+  if (input.type === 'question' && !input.title.trim()) {
+    throw new Error('Portal item title must not be empty');
+  }
   const state = manager.getState();
   if (!state.portalItems) {
     state.portalItems = [];

@@ -71,6 +71,47 @@ describe('QuestionPanel — advisory answer-thread chat', () => {
     expect(screen.getByText(/Yes — the datasheet rates the coil/)).toBeInTheDocument();
   });
 
+  it('F1 regression: with a thread, BLUF/findings/suggestion stay visible above the composer (footer capped, not squeezing the body)', () => {
+    const item = makeItem({
+      meta: {
+        thread: [{ role: 'user', text: 'What about the coil hold-in?', ts: 1 }],
+        sections: {
+          bluf: 'Close the 72 V bus with a selective fuse pair.',
+          findings: 'Vendor datasheet: upstream 60 A, downstream 30 A.',
+          suggestion: 'Use 60 A upstream and 30 A downstream.'
+        },
+      },
+    });
+    renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
+    const bluf = screen.getByText('Close the 72 V bus with a selective fuse pair.');
+    const findings = screen.getByText('Vendor datasheet: upstream 60 A, downstream 30 A.');
+    const suggestion = screen.getByText('Use 60 A upstream and 30 A downstream.');
+    const composerLabel = screen.getByText('Your answer');
+    const threadLabel = screen.getByText('Ask the specialist');
+    // DOM order: title card sections → composer → thread, all in document order.
+    const following = (a: Element, b: Element) =>
+      (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(following(bluf, findings)).toBe(true);
+    expect(following(findings, suggestion)).toBe(true);
+    expect(following(suggestion, composerLabel)).toBe(true);
+    expect(following(composerLabel, threadLabel)).toBe(true);
+    // The footer (composer + thread) is height-capped with internal scroll —
+    // it can never squeeze the min-h-0 flex-1 body holding the sections.
+    const footer = composerLabel.closest('footer');
+    expect(footer).not.toBeNull();
+    expect(footer!.className).toContain('max-h-[50%]');
+    expect(footer!.className).toContain('overflow-y-auto');
+    // The thread list keeps its own internal scroller (not footer-driven).
+    const threadList = threadLabel.parentElement!.querySelector('ul');
+    expect(threadList?.className).toContain('max-h-56');
+    expect(threadList?.className).toContain('overflow-y-auto');
+    // Body container keeps its grow/scroll contract (no max-h clamp hiding sections).
+    const body = bluf.closest('div.min-h-0');
+    expect(body).not.toBeNull();
+    expect(body!.className).toContain('flex-1');
+    expect(body!.className).not.toMatch(/max-h/);
+  });
+
   it('shows the advisory-only notice next to the chat input', () => {
     renderWithUser(<QuestionPanel {...baseProps()} />);
     expect(screen.getByText(/Advisory only — your answer goes through the response fields/)).toBeInTheDocument();

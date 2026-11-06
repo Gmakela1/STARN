@@ -118,4 +118,17 @@ describe('format-v2 question parsing (decision memo)', () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it('splits nested numbered "**Qn." sub-list lines into separate entries (F3 blob regression)', () => {
+    // Parked-doc Section 6 bodies sometimes use a numbered sub-list; without
+    // the "1. " variant in the entry boundary the second numbered question
+    // was glued into the first entry's title as one blob.
+    const doc = `# Doc\n\n## Open Questions\n\n**Q1. [ELECTRICAL] Main bus voltage.** 48 V or 72 V?\n1. **Q2. [ELECTRICAL] Verified 72 V continuous at the main bus?** Needs the load profile.\n2. **Q2. [ELECTRICAL] Verified 72 V peak under cranking?** Needs the crank spec.\n\n## Next Section\n`;
+    const entries = parseOpenQuestionEntries(doc);
+    expect(entries).toHaveLength(3);
+    expect(entries[0].title).toContain('Main bus voltage');
+    expect(entries[0].title).not.toMatch(/\d+\. \*\*Q2\./);
+    expect(entries[1].title).toContain('Verified 72 V continuous at the main bus');
+    expect(entries[2].title).toContain('Verified 72 V peak under cranking');
+  });
 });

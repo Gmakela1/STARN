@@ -951,4 +951,32 @@ describe('QuestionPanel research gate', () => {
     expect(screen.queryByRole('button', { name: 'Undo auto-applied answer' })).toBeNull();
     expect(screen.getByText(/Auto-applied from research \(96% confidence\)/)).toBeTruthy();
   });
+
+  // ————— F2: topic grouping header shows a real group when meta.topic exists —————
+  it('topic grouping: items with meta.topic land under their real group header', () => {
+    const a = makeItem({ title: 'Bus voltage', meta: { topic: 'electrical' } });
+    const b = makeItem({ id: 'C', title: 'Coolant loop', meta: { topic: 'thermal' } });
+    renderWithUser(<QuestionPanel {...baseProps({ items: [a, b] })} />);
+    expect(screen.getByText('Electrical (1)')).toBeInTheDocument();
+    expect(screen.getByText('Thermal (1)')).toBeInTheDocument();
+    expect(screen.queryByText(/Other \(/)).toBeNull();
+  });
+
+  // ————— F3: empty-title items never render a bare button —————
+  it('empty-title item is filtered out (no bare nav chip), real items still render', () => {
+    const blank = makeItem({ id: 'B', title: '   ' });
+    const real = makeItem({ id: 'C', title: 'Real open question' });
+    const real2 = makeItem({ id: 'D', title: 'Second real question' });
+    const { container } = renderWithUser(<QuestionPanel {...baseProps({ items: [blank, real, real2] })} />);
+    // Nav chips (topic-group buttons) render the item title — no chip may be bare.
+    const chips = Array.from(container.querySelectorAll('button')).filter(btn =>
+      btn.querySelector('span[class*="max-w-[140px]"]')
+    );
+    expect(chips).toHaveLength(2);
+    for (const chip of chips) {
+      expect(chip.textContent!.trim().length).toBeGreaterThan(0);
+    }
+    // Header count matches the filtered item list.
+    expect(screen.getByText('2')).toBeInTheDocument();
+  });
 });

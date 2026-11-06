@@ -777,4 +777,15 @@ describe('addPortalItem — intake-path short-title rewrite (sections present)',
     expect(stateMgr.getState().portalItems!.filter(i => i.type === 'question')).toHaveLength(1);
     expect(twin.meta?.originalTitle).toBe(longTitle);
   });
+
+  it('rejects question items with an empty trimmed title (F3 bare-button guard)', () => {
+    expect(() => addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: '   ',
+      source: 'autopilot'
+    })).toThrow(/title must not be empty/i);
+    expect(stateMgr.getState().portalItems ?? []).toHaveLength(0);
+  });
 });

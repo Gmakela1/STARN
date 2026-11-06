@@ -332,8 +332,14 @@ export class AutopilotDriver {
           signal,
           onQuestions: (items) => {
             for (const item of items) {
-              const portalItem = addPortalItem(stateManager, questionPayloadToPortalInput(item));
-              this.emit({ kind: 'question', item: portalItem });
+              try {
+                const portalItem = addPortalItem(stateManager, questionPayloadToPortalInput(item));
+                this.emit({ kind: 'question', item: portalItem });
+              } catch (err) {
+                // Empty-title guard (F3): skip the malformed entry, never
+                // park the whole phase run on one junk question.
+                this.deps.logger?.warn(`Skipped malformed question item: ${err instanceof Error ? err.message : err}`);
+              }
             }
           },
           onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
@@ -379,8 +385,14 @@ export class AutopilotDriver {
             signal,
             onQuestions: (items) => {
               for (const item of items) {
-                const portalItem = addPortalItem(stateManager, questionPayloadToPortalInput(item));
-                this.emit({ kind: 'question', item: portalItem });
+                try {
+                  const portalItem = addPortalItem(stateManager, questionPayloadToPortalInput(item));
+                  this.emit({ kind: 'question', item: portalItem });
+                } catch (err) {
+                  // Empty-title guard (F3): skip the malformed entry, never
+                  // park the whole phase run on one junk question.
+                  this.deps.logger?.warn(`Skipped malformed question item: ${err instanceof Error ? err.message : err}`);
+                }
               }
             },
             onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
@@ -604,8 +616,14 @@ export class AutopilotDriver {
         signal,
         onQuestions: (items) => {
           for (const item of items) {
-            const portalItem = addPortalItem(stateManager, questionPayloadToPortalInput(item));
-            this.emit({ kind: 'question', item: portalItem });
+            try {
+              const portalItem = addPortalItem(stateManager, questionPayloadToPortalInput(item));
+              this.emit({ kind: 'question', item: portalItem });
+            } catch (err) {
+              // Empty-title guard (F3): skip the malformed entry, never
+              // park the whole phase run on one junk question.
+              this.deps.logger?.warn(`Skipped malformed question item: ${err instanceof Error ? err.message : err}`);
+            }
           }
         },
         onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),

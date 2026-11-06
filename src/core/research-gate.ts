@@ -48,6 +48,7 @@ import {
 } from './research-preflight.js';
 import { PENDING_INCORPORATION_MARKER } from './incorporation-prompt.js';
 import type { QuestionSections } from './open-questions-parser.js';
+import { questionTopic } from './open-questions-parser.js';
 
 /** Research-turn allow-list: reads + web research only — no write tools. */
 export const RESEARCH_GATE_ALLOWED_TOOLS = [...PREFLIGHT_ALLOWED_TOOLS] as string[];
@@ -746,6 +747,31 @@ export function enrichItem(
 ): boolean {
   if (!writeItemSections(stateManager, itemId, sections)) return false;
   rewriteShortTitle(stateManager, itemId);
+  ensureItemTopic(stateManager, itemId);
+  return true;
+}
+
+/**
+ * Ensures a portal item carries the ICD-system topic tag on meta.topic
+ * (topic grouping seam). Copies an existing meta.topic unchanged; when
+ * missing, parses the tag from the question title — preferring
+ * meta.originalTitle (set by the short-title rewrite, which still holds the
+ * original "Qn. [TOPIC] …" text) over the possibly-rewritten title. Untagged
+ * questions stay untagged (grouping puts them under "Other"). Returns false
+ * when the item vanished or no write was needed.
+ */
+export function ensureItemTopic(
+  stateManager: ProjectStateManager,
+  itemId: string
+): boolean {
+  const state = stateManager.getState();
+  const item = (state.portalItems || []).find(i => i.id === itemId);
+  if (!item) return false;
+  if (item.meta?.topic) return false;
+  const topic = questionTopic(item.meta?.originalTitle ?? item.title);
+  if (!topic) return false;
+  item.meta = { ...(item.meta || {}), topic };
+  stateManager.saveState(state);
   return true;
 }
 

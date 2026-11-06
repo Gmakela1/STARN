@@ -142,7 +142,12 @@ export function questionTopic(title: string): string | undefined {
  */
 function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
   const entries: ParsedQuestionItem[] = [];
-  const qRegex = /(?:^|\n)\s*(?:\*\*)?(?:Q\d+|-\s*\*\*Question)\s*[\.:\)]?\s*\**\s*(.*?)(?=\n\s*(?:\*\*)?(?:Q\d+|-\s*\*\*Question)|\n\s*##|\n\s*$|$)/gs;
+  // Entry boundary: a "Qn."/- "**Question" line, optionally behind a numbered
+  // sub-list prefix ("1. **Q2. …") — parked-doc Section 6 bodies sometimes use
+  // numbered sub-lists, and without the "\d+. " variant in BOTH the start
+  // pattern and the lookahead the second numbered question gets glued into
+  // the first entry's title as one blob.
+  const qRegex = /(?:^|\n)\s*(?:\d+\.\s*)?(?:\*\*)?(?:Q\d+|-\s*\*\*Question)\s*[\.:\)]?\s*\**\s*(.*?)(?=\n\s*(?:\d+\.\s*)?(?:\*\*)?(?:Q\d+|-\s*\*\*Question)|\n\s*##|\n\s*$|$)/gs;
 
   let match;
   while ((match = qRegex.exec(sectionText)) !== null) {
