@@ -145,7 +145,7 @@ describe('runResearchBackfill (core)', () => {
     });
 
     const result = await runResearchBackfill(gateDeps);
-    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0 });
+    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0, topicTagged: 0 });
     expect(maxActive).toBe(1); // for..of await — never parallel
 
     const stored = (id: string) => (stateMgr.getState().portalItems || []).find(i => i.id === id)!;
@@ -170,7 +170,7 @@ describe('runResearchBackfill (core)', () => {
   it('skips items in the in-flight dedupe set', async () => {
     const plain = makeItem(stateMgr);
     const result = await runResearchBackfill({ ...gateDeps, inFlight: new Set([plain.id]) });
-    expect(result).toEqual({ processed: 0, enriched: 0, normalized: 0 });
+    expect(result).toEqual({ processed: 0, enriched: 0, normalized: 0, topicTagged: 0 });
     expect(researchClient.chatCompletion).not.toHaveBeenCalled();
     expect(agentLoopMock).not.toHaveBeenCalled();
   });
@@ -200,7 +200,7 @@ describe('runResearchBackfill (core)', () => {
     };
     const item = makeItem(stateMgr);
     const result = await runResearchBackfill(gateDeps);
-    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0 });
+    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0, topicTagged: 0 });
     const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
     expect(stored.status).toBe('answered');
     expect(stored.answer).toContain('48V DC');
@@ -213,7 +213,7 @@ describe('runResearchBackfill (core)', () => {
     agentLoopMock.mockImplementation(async () => ({ finalResponse: 'no json at all' }));
     const item = makeItem(stateMgr);
     const result = await runResearchBackfill(gateDeps);
-    expect(result).toEqual({ processed: 1, enriched: 0, normalized: 0 });
+    expect(result).toEqual({ processed: 1, enriched: 0, normalized: 0, topicTagged: 0 });
     const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
     expect(stored.status).toBe('open');
     expect(stored.meta?.sections).toBeUndefined();
@@ -229,7 +229,7 @@ describe('runResearchBackfill (core)', () => {
       agentLoopMock.mockImplementationOnce(() => new Promise<never>(() => {}));
       agentLoopMock.mockImplementationOnce(async () => ({ finalResponse: RESEARCH_JSON }));
       const pending = runResearchBackfill(gateDeps);
-      const assertion = expect(pending).resolves.toEqual({ processed: 2, enriched: 1, normalized: 0 });
+      const assertion = expect(pending).resolves.toEqual({ processed: 2, enriched: 1, normalized: 0, topicTagged: 0 });
       await vi.advanceTimersByTimeAsync(RESEARCH_GATE_ITEM_TIMEOUT_MS);
       await assertion;
 
@@ -249,7 +249,7 @@ describe('runResearchBackfill (core)', () => {
     const longTitle = 'Q1. ' + 'B'.repeat(100);
     const item = makeItem(stateMgr, { title: longTitle });
     const result = await runResearchBackfill(gateDeps);
-    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0 });
+    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0, topicTagged: 0 });
     const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
     expect(stored.title).toBe('B'.repeat(57) + '…');
     expect(stored.meta?.originalTitle).toBe(longTitle);
@@ -290,7 +290,7 @@ describe('runResearchBackfill (core)', () => {
 
     const result = await runResearchBackfill(gateDeps);
 
-    expect(result).toEqual({ processed: 0, enriched: 0, normalized: 13 });
+    expect(result).toEqual({ processed: 0, enriched: 0, normalized: 13, topicTagged: 0 });
     // No research machinery touched the legacy items.
     expect(researchClient.chatCompletion).not.toHaveBeenCalled();
     expect(criticClient.chatCompletion).not.toHaveBeenCalled();
@@ -307,6 +307,32 @@ describe('runResearchBackfill (core)', () => {
     }
     expect(stored(repaired.id).meta?.originalTitle).toBe('O'.repeat(300));
     expect(stored(plainLong.id).meta?.originalTitle).toBeUndefined();
+  });
+
+  it('topic pass: legacy enriched items get meta.topic from the title tag WITHOUT re-researching', async () => {
+    const tagged = makeItem(stateMgr, {
+      title: 'Q3. [MECHANICAL] Chassis rail gauge?',
+      meta: { sections: { bluf: 'Sentinel.' } }
+    });
+    const alreadyTopiced = makeItem(stateMgr, {
+      title: 'Q4. [MECHANICAL] Frame material?',
+      meta: { sections: { bluf: 'Sentinel.' }, topic: 'electrical' }
+    });
+    const untagged = makeItem(stateMgr, {
+      title: 'Plain enriched question?',
+      meta: { sections: { bluf: 'Sentinel.' } }
+    });
+
+    const result = await runResearchBackfill(gateDeps);
+
+    expect(result).toEqual({ processed: 0, enriched: 0, normalized: 0, topicTagged: 1 });
+    expect(researchClient.chatCompletion).not.toHaveBeenCalled();
+    expect(criticClient.chatCompletion).not.toHaveBeenCalled();
+    expect(agentLoopMock).not.toHaveBeenCalled();
+    const stored = (id: string) => (stateMgr.getState().portalItems || []).find(i => i.id === id)!;
+    expect(stored(tagged.id).meta?.topic).toBe('mechanical');
+    expect(stored(alreadyTopiced.id).meta?.topic).toBe('electrical');
+    expect(stored(untagged.id).meta?.topic).toBeUndefined();
   });
 });
 

@@ -836,6 +836,8 @@ export interface ResearchBackfillResult {
   enriched: number;
   /** Legacy enriched items (sections, wall-of-text title, no originalTitle) repaired by the normalize pass. */
   normalized: number;
+  /** Visible questions that gained meta.topic (parsed from the title tag) in the topic pass — no research. */
+  topicTagged: number;
 }
 
 /**
@@ -870,6 +872,17 @@ export async function runResearchBackfill(deps: ResearchBackfillDeps): Promise<R
     if (rewriteShortTitle(deps.stateManager, item.id)) normalized++;
   }
 
+  // Topic pass: legacy questions (already enriched, or short titles) that
+  // never went through enrichItem lack meta.topic and would group under
+  // "Other". Tag them from the title tag — no research. Runs after the
+  // normalize pass (ensureItemTopic prefers meta.originalTitle). Iterates a
+  // snapshot because ensureItemTopic saves state.
+  let topicTagged = 0;
+  for (const item of [...(deps.stateManager.getState().portalItems || [])]) {
+    if (item.type !== 'question' || item.status === 'dismissed') continue;
+    if (ensureItemTopic(deps.stateManager, item.id)) topicTagged++;
+  }
+
   const eligibleIds = listBackfillEligibleItems(deps.stateManager, deps.inFlight).map(item => item.id);
   let processed = 0;
   let enriched = 0;
@@ -900,5 +913,5 @@ export async function runResearchBackfill(deps: ResearchBackfillDeps): Promise<R
       }
     }
   }
-  return { processed, enriched, normalized };
+  return { processed, enriched, normalized, topicTagged };
 }
