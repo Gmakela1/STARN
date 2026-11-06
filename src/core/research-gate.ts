@@ -48,7 +48,7 @@ import {
 } from './research-preflight.js';
 import { PENDING_INCORPORATION_MARKER } from './incorporation-prompt.js';
 import type { QuestionSections } from './open-questions-parser.js';
-import { questionTopic, inferQuestionTopic } from './open-questions-parser.js';
+import { questionTopic, inferQuestionTopic, firstSentenceEnd } from './open-questions-parser.js';
 
 /** Research-turn allow-list: reads + web research only — no write tools. */
 export const RESEARCH_GATE_ALLOWED_TOOLS = [...PREFLIGHT_ALLOWED_TOOLS] as string[];
@@ -132,19 +132,26 @@ export interface UndoAutoDeps {
   emitStatus?: (message: string) => void;
 }
 
-/** Hard cap on the short display form of a question title (excluding the ellipsis). */
+/**
+ * Hard cap on the short display form of a question title (excluding the
+ * ellipsis). Deliberately SHORTER than the parser's 90-char authoring cap
+ * (QUESTION_HEADER_CHAR_CAP): this is the card-title display budget, so a
+ * legitimate 61–90-char question is still ellipsis-cut on the card.
+ */
 const SHORT_TITLE_CHAR_CAP = 60;
 /** Window searched for a sentence boundary before the char cap applies. */
 const SHORT_TITLE_BOUNDARY_WINDOW = 120;
 
 /**
  * Short display title for status events and the portal card: Qn prefix
- * stripped, then cut at the first sentence boundary (". " / "? " / "! ") found
- * inside the first SHORT_TITLE_BOUNDARY_WINDOW chars, so a header written as
- * one full question keeps that question whole instead of being truncated
- * mid-sentence. When no sentence boundary exists in that window, the title is
- * truncated at a word boundary near SHORT_TITLE_CHAR_CAP (never mid-word,
- * unless the head contains no space at all) and marked with an ellipsis.
+ * stripped, then cut at the first sentence boundary found inside the first
+ * SHORT_TITLE_BOUNDARY_WINDOW chars — via the shared, abbreviation-safe
+ * firstSentenceEnd (so "No. 6 AWG" / "e.g. " / "i.e. " / "vs. " never cut) —
+ * so a header written as one full question keeps that question whole instead
+ * of being truncated mid-sentence. When no sentence boundary exists in that
+ * window, the title is truncated at a word boundary near
+ * SHORT_TITLE_CHAR_CAP (never mid-word, unless the head contains no space at
+ * all) and marked with an ellipsis.
  *
  * @param title - the stored question title (may carry a "Qn. " prefix)
  * @returns the short display title — never longer than
@@ -154,9 +161,8 @@ const SHORT_TITLE_BOUNDARY_WINDOW = 120;
 export function shortResearchTitle(title: string): string {
   const stripped = title.replace(/^Q\d+[\.:)]\s*/, '');
   if (stripped.length <= SHORT_TITLE_CHAR_CAP) return stripped;
-  const window = stripped.slice(0, SHORT_TITLE_BOUNDARY_WINDOW);
-  const boundary = window.match(/[.?!]\s/);
-  if (boundary && boundary.index !== undefined) return stripped.slice(0, boundary.index + 1);
+  const end = firstSentenceEnd(stripped, SHORT_TITLE_BOUNDARY_WINDOW);
+  if (end >= 0) return stripped.slice(0, end + 1);
   const head = stripped.slice(0, SHORT_TITLE_CHAR_CAP);
   const lastSpace = head.lastIndexOf(' ');
   const stem = lastSpace > 0 ? head.slice(0, lastSpace) : stripped.slice(0, SHORT_TITLE_CHAR_CAP - 3);

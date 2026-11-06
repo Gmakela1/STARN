@@ -78,6 +78,12 @@ export interface TurnOptions {
     source: 'autopilot';
     /** ICD-system topic parsed from the title tag; undefined for untagged questions. */
     topic?: string;
+    /**
+     * Untrimmed header text when the format-v2 header contract cut the title —
+     * persisted as meta.originalTitle so portal dedupe keeps keying on the raw
+     * header. Undefined when nothing was cut.
+     */
+    originalTitle?: string;
     /** Format-v2 decision-memo sections parsed tolerantly from the entry; undefined for legacy entries. */
     sections?: QuestionSections;
   }>) => void;
@@ -735,6 +741,10 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
             severity: 'normal' as const,
             docPath: `docs/${specialist.id.toUpperCase()}.md`,
             title: entry.title,
+            // Header contract cut the title: keep the raw header as the dedupe
+            // key (meta.originalTitle), so wording variants that differ only
+            // after the "?" stay distinct and legacy untrimmed items still match.
+            ...(entry.rawTitle !== entry.title ? { originalTitle: entry.rawTitle } : {}),
             // ICD-system topic parsed from the title's bracket tag; undefined
             // for untagged questions (tolerant for older docs).
             topic: questionTopic(entry.title),

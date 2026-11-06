@@ -24,15 +24,21 @@ const MAX_PORTAL_ITEMS = 500;
 /** Board #52 — per-item saved answer history is capped to the most recent entries. */
 export const ANSWER_HISTORY_CAP = 20;
 
-/** Max persisted thread message rows per item (trim oldest, keep the first). */
+/**
+ * Max persisted thread ROWS per item (trim the oldest message row, keep the
+ * first). `recorded`/`proposal` rows are never dropped but DO occupy rows, so
+ * they shrink the number of message rows a thread can hold.
+ */
 export const THREAD_MESSAGE_CAP = 20;
 
 /**
  * True for rows that are permanent record: a committed answer ('recorded') or
  * a concluded draft ('proposal'). The trim rule never drops these.
+ * Tolerant of a null/undefined row (hand-edited or corrupt meta.thread): such
+ * a row is treated as trimmable instead of throwing on `row.kind`.
  */
-function isPermanentThreadRow(row: PortalThreadMessage): boolean {
-  return row.kind === 'recorded' || row.kind === 'proposal';
+function isPermanentThreadRow(row: PortalThreadMessage | null | undefined): boolean {
+  return row != null && (row.kind === 'recorded' || row.kind === 'proposal');
 }
 
 /**
@@ -263,7 +269,9 @@ export function addPortalItem(manager: ProjectStateManager, input: PortalItemInp
     const short = shortResearchTitle(item.title);
     if (short !== item.title) {
       const original = item.title;
-      item.meta = { ...(item.meta || {}), originalTitle: original };
+      // Keep a caller-supplied originalTitle (the parser's raw header): it is
+      // the dedupe key, and the pre-rewrite title is already a trimmed form.
+      item.meta = { ...(item.meta || {}), originalTitle: item.meta?.originalTitle ?? original };
       item.title = short;
       if (!item.detail) item.detail = original;
     }

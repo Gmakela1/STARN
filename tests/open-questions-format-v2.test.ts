@@ -7,8 +7,10 @@ import {
   parseOpenQuestionsFromContent,
   extractQuestionSections,
   questionSlug,
-  inferQuestionTopic
+  inferQuestionTopic,
+  QUESTION_HEADER_CHAR_CAP
 } from '../src/core/open-questions-parser.js';
+import { OPEN_QUESTIONS_SECTION_RULES } from '../src/specialists/open-questions.js';
 import { ProjectStateManager } from '../src/workspace/state.js';
 import { addPortalItem } from '../src/core/question-portal.js';
 
@@ -134,7 +136,7 @@ describe('format-v2 question parsing (decision memo)', () => {
   it('a single long question with no sentence boundary is kept whole (no mid-question cut)', () => {
     const longQuestion =
       '[ELECTRICAL] Which PWM switching frequency should the traction inverter use to keep audible noise below the operator threshold?';
-    expect(longQuestion.length).toBeGreaterThan(90);
+    expect(longQuestion.length).toBeGreaterThan(QUESTION_HEADER_CHAR_CAP);
     const doc = `# Doc\n\n## Open Questions\n\n**Q3. ${longQuestion}**\n\n## Next Section\n`;
     const entries = parseOpenQuestionEntries(doc);
     expect(entries).toHaveLength(1);
@@ -168,6 +170,63 @@ describe('format-v2 question parsing (decision memo)', () => {
     const entries = parseOpenQuestionEntries(doc);
     expect(entries).toHaveLength(1);
     expect(entries[0].title).toContain('Main bus voltage');
+  });
+});
+
+describe('abbreviation-safe header cut + raw-title preservation', () => {
+  /** Parses ONE header line and returns the entry (title + rawTitle + sections). */
+  const parseTitle = (header: string) =>
+    parseOpenQuestionEntries(`# Doc\n\n## Open Questions\n\n**Q1. ${header}**\n\n## Next Section\n`)[0];
+
+  it('the prompt rule and the parser cap cannot drift apart', () => {
+    expect(QUESTION_HEADER_CHAR_CAP).toBe(90);
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('90 characters');
+  });
+
+  it('keeps an abbreviation-led over-cap header whole (No. / e.g. / i.e. / approx. / vs.)', () => {
+    // The sentence-boundary cut must not fire on an abbreviation: the question
+    // mark would be lost and the portal title would become "… use No.".
+    const headers = [
+      '[ELECTRICAL] Should we use No. 6 AWG cable for the main bus run, given the 100 A continuous rating and the 2 m length?',
+      '[ELECTRICAL] Which conductor size should the harness use, e.g. A 6 AWG with a 2 m run, for the 100 A main bus today?',
+      '[THERMAL] Is the coolant loop adequate, i.e. The drop stays under 3 percent, for the continuous 100 A main bus run today?',
+      '[MECHANICAL] Does the approx. 2 m main bus run need a mid-span support clamp to survive the 5 g chassis vibration load?',
+      '[MECHANICAL] Should the lug spec follow the 48 V vs. Kelly controller pack choice for the main bus run, pending confirmation?'
+    ];
+    for (const header of headers) {
+      expect(header.length).toBeGreaterThan(QUESTION_HEADER_CHAR_CAP);
+      const entry = parseTitle(header);
+      expect(entry.title).toBe(header);
+      expect(entry.rawTitle).toBe(header);
+    }
+  });
+
+  it('still cuts at a genuine sentence boundary inside an over-cap header', () => {
+    const header =
+      '[ELECTRICAL] Main bus voltage for the traction inverter is unresolved. The pack choice blocks the harness BOM line this week.';
+    expect(header.length).toBeGreaterThan(QUESTION_HEADER_CHAR_CAP);
+    const entry = parseTitle(header);
+    expect(entry.title).toBe('[ELECTRICAL] Main bus voltage for the traction inverter is unresolved.');
+    // The raw header stays on rawTitle (portal dedupe keys on it).
+    expect(entry.rawTitle).toBe(header);
+    // Nothing is lost: the cut sentence is retrievable as background context.
+    expect(entry.sections?.background).toContain('blocks the harness BOM line');
+  });
+
+  it('the raw header survives on rawTitle when only the trailing explanation is dropped', () => {
+    const header =
+      '[ELECTRICAL] Main bus voltage? Because the load profile and the cranking spec disagree, we need to decide the nominal pack voltage this week.';
+    const entry = parseTitle(header);
+    expect(entry.title).toBe('[ELECTRICAL] Main bus voltage?');
+    expect(entry.rawTitle).toBe(header);
+    expect(entry.sections?.background).toContain('load profile and the cranking spec disagree');
+  });
+
+  it('never drops a tail that itself contains a "?" (quoted query / two-question header)', () => {
+    const header =
+      '[CONTROLS-DATA] Should the telemetry doc keep the query "?node=main" in the gateway link and expose it to operators?';
+    const entry = parseTitle(header);
+    expect(entry.title).toBe(header);
   });
 });
 

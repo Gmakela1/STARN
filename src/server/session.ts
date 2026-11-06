@@ -33,12 +33,16 @@ import { webFetchHandler } from '../tools/handlers/web-fetch.js';
 import { AnswerQueue, AnswerApplyResult, AnswerFrameEvent } from '../core/answer-queue.js';
 import { EventBus } from '../core/event-bus.js';
 import { PortalItem, PortalThreadMessage } from '../workspace/types.js';
-import { appendThreadMessage as appendThreadRow, THREAD_MESSAGE_CAP } from '../core/question-portal.js';
+import { appendThreadMessage as appendThreadRow } from '../core/question-portal.js';
 import { sanitizeResearchLine } from '../core/research-preflight.js';
 
 // ── T-C answer-thread (advisory specialist Q&A) ──────────────────────────
-/** Max persisted thread messages per item (trim oldest, keep the first). Re-exported from core. */
-export { THREAD_MESSAGE_CAP };
+/**
+ * Max persisted thread rows per item — re-exported from core, where the trim
+ * rule lives (first row kept, `recorded`/`proposal` rows never dropped, so an
+ * all-permanent thread may exceed the cap).
+ */
+export { THREAD_MESSAGE_CAP } from '../core/question-portal.js';
 /** Advisory reply hard cap (chars). */
 const THREAD_REPLY_CHAR_CAP = 2000;
 /** Advisory turn budget: quick read-only Q&A, no web research for v1. */
@@ -415,6 +419,8 @@ export class ServerSessionManager {
       source: 'autopilot';
       /** ICD-system topic parsed from the title tag; undefined when untagged. */
       topic?: string;
+      /** Untrimmed header text when the header contract cut the title; undefined otherwise. */
+      originalTitle?: string;
       /** Format-v2 decision-memo sections parsed tolerantly from the entry; undefined for legacy entries. */
       sections?: import('../core/open-questions-parser.js').QuestionSections;
     }>) => void;

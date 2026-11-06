@@ -268,6 +268,38 @@ describe('Core Runner autopilot hooks', () => {
     ]);
   });
 
+  it('onQuestions carries the raw header on originalTitle when the header contract cut the title', async () => {
+    approveRequirements(stateMgr, tempDir);
+    const rawHeader =
+      '[ELECTRICAL] Main bus voltage? Because the load profile and the cranking spec disagree, we need a decision this week.';
+    installBomMock(tempDir, mockClient, {
+      draftContent: bomDocWithOpenQuestions([rawHeader]),
+      criticResults: [{ passed: true, score: 8.9 }]
+    });
+    const hook = vi.fn();
+
+    await CoreRunner.executeTurn({
+      userPrompt: 'Draft the BOM',
+      projectPath: tempDir,
+      stateManager: stateMgr,
+      client: mockClient,
+      model: 'test-model',
+      toolRegistry,
+      specialistRegistry,
+      forceSpecialistId: 'bom',
+      onQuestions: hook,
+      sessionMessages: []
+    });
+
+    const items = hook.mock.calls[0][0];
+    expect(items).toHaveLength(1);
+    expect(items[0].title).toBe('[ELECTRICAL] Main bus voltage?');
+    // The raw header is the portal dedupe key (meta.originalTitle).
+    expect(items[0].originalTitle).toBe(rawHeader);
+    // The dropped explanation stays retrievable as background context.
+    expect(items[0].sections?.background).toContain('cranking spec disagree');
+  });
+
   it('onQuestions truncates to QUESTION_CAP_PER_DOC, preserves order, and warns', async () => {
     approveRequirements(stateMgr, tempDir);
     const titles = Array.from({ length: 12 }, (_, i) => `Blocking question number ${i + 1} about hardware.`);

@@ -29,6 +29,8 @@ export interface AnswerApplierDeps {
       source: 'autopilot';
       /** ICD-system topic parsed from the title tag; undefined when untagged. */
       topic?: string;
+      /** Untrimmed header text when the header contract cut the title; undefined otherwise. */
+      originalTitle?: string;
       /** Format-v2 decision-memo sections parsed tolerantly from the entry; undefined for legacy entries. */
       sections?: QuestionSections;
     }>) => void;
@@ -184,6 +186,7 @@ export async function applyAnswer(
       detail?: string;
       source: 'autopilot';
       topic?: string;
+      originalTitle?: string;
       sections?: QuestionSections;
     }> = [];
     deps.emitStatus?.(`Incorporating pending user answers in ${phase.name}…`);
@@ -277,12 +280,16 @@ export async function applyAnswer(
     // applyAnswer flow after the doc was already rewritten).
     let skippedCounterQuestions = 0;
     for (const q of counterQuestionItems) {
-      const { topic, sections, ...qRest } = q;
+      const { topic, sections, originalTitle, ...qRest } = q;
       const stored = addQuestionItemIfValid(stateManager, {
         ...qRest,
         source: 'autopilot',
-        meta: topic || sections
-          ? { ...(topic ? { topic } : {}), ...(sections ? { sections } : {}) }
+        meta: topic || sections || originalTitle
+          ? {
+              ...(topic ? { topic } : {}),
+              ...(sections ? { sections } : {}),
+              ...(originalTitle ? { originalTitle } : {})
+            }
           : undefined,
         threadId
       });

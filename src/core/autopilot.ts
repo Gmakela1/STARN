@@ -54,6 +54,8 @@ export interface AutopilotDeps {
       source: 'autopilot';
       /** ICD-system topic parsed from the title tag; undefined when untagged. */
       topic?: string;
+      /** Untrimmed header text when the header contract cut the title; undefined otherwise. */
+      originalTitle?: string;
       /** Format-v2 decision-memo sections parsed tolerantly from the entry; undefined for legacy entries. */
       sections?: QuestionSections;
     }>) => void;
@@ -75,7 +77,9 @@ export interface AutopilotDeps {
 
 /**
  * Runner onQuestions payload → portal input; the flat ICD-system topic tag
- * parsed from the question title lands on meta.topic (undefined when untagged).
+ * parsed from the question title lands on meta.topic (undefined when untagged),
+ * and a title cut by the header contract keeps its raw header on
+ * meta.originalTitle (the portal dedupe key).
  */
 function questionPayloadToPortalInput(item: {
   type: 'question';
@@ -85,12 +89,17 @@ function questionPayloadToPortalInput(item: {
   detail?: string;
   source: 'autopilot';
   topic?: string;
+  originalTitle?: string;
   sections?: QuestionSections;
 }): PortalItemInput {
-  const { topic, sections, ...rest } = item;
+  const { topic, sections, originalTitle, ...rest } = item;
   // Format-v2 decision-memo sections land on meta.sections alongside the topic tag.
-  const meta = topic || sections
-    ? { ...(topic ? { topic } : {}), ...(sections ? { sections } : {}) }
+  const meta = topic || sections || originalTitle
+    ? {
+        ...(topic ? { topic } : {}),
+        ...(sections ? { sections } : {}),
+        ...(originalTitle ? { originalTitle } : {})
+      }
     : undefined;
   return { ...rest, meta };
 }

@@ -781,6 +781,52 @@ describe('addPortalItem — intake-path short-title rewrite (sections present)',
     expect(twin.meta?.originalTitle).toBe(longTitle);
   });
 
+  it('keys dedupe on the raw header: entries differing only after the "?" stay separate', () => {
+    const shared = '[ELECTRICAL] Main bus voltage?';
+    const rawA = shared + ' Because the load profile and the cranking spec disagree, we need a decision this week.';
+    const rawB = shared + ' Because the supplier only lists 48 V today, we need a decision before ordering.';
+    const first = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: shared,
+      source: 'autopilot',
+      meta: { originalTitle: rawA, sections: { background: 'load profile' } }
+    });
+    const second = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: shared,
+      source: 'autopilot',
+      meta: { originalTitle: rawB, sections: { background: 'supplier' } }
+    });
+    expect(second.id).not.toBe(first.id);
+    expect(stateMgr.getState().portalItems!.filter(i => i.type === 'question')).toHaveLength(2);
+  });
+
+  it('a legacy item whose originalTitle is the untrimmed header matches the newly trimmed intake', () => {
+    const raw = '[ELECTRICAL] Main bus voltage? Because the load profile and the cranking spec disagree, we need a decision this week.';
+    const legacy = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: raw,
+      source: 'autopilot',
+      meta: { originalTitle: raw }
+    });
+    const fresh = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: '[ELECTRICAL] Main bus voltage?',
+      source: 'autopilot',
+      meta: { originalTitle: raw, sections: { background: 'load profile' } }
+    });
+    expect(fresh.id).toBe(legacy.id);
+    expect(stateMgr.getState().portalItems!.filter(i => i.type === 'question')).toHaveLength(1);
+  });
+
   it('addQuestionItemIfValid skips question items with an empty trimmed title (F3 bare-button guard)', () => {
     const result = addQuestionItemIfValid(stateMgr, {
       type: 'question',
@@ -859,9 +905,11 @@ describe('appendThreadMessage', () => {
     expect(thread).toHaveLength(THREAD_MESSAGE_CAP);
     expect(thread.filter(m => m.kind === 'recorded')).toEqual([recorded]);
     expect(thread.filter(m => m.kind === 'proposal')).toEqual([proposal]);
+    // Permanent rows still OCCUPY rows: only CAP - 2 plain message rows fit.
+    expect(thread.filter(m => m.kind === undefined)).toHaveLength(THREAD_MESSAGE_CAP - 2);
   });
 
-  it('enforces the cap on message rows only: permanent rows never count against it', () => {
+  it('an all-permanent thread is never trimmed, so it may exceed the cap', () => {
     const permanent: PortalThreadMessage[] = [];
     for (let i = 0; i < THREAD_MESSAGE_CAP + 5; i++) {
       permanent.push(row(`r${i}`, { role: 'specialist', kind: 'recorded', ts: i }));
@@ -870,5 +918,32 @@ describe('appendThreadMessage', () => {
     // No message row to trim → nothing is dropped, even past the cap.
     expect(result).toHaveLength(THREAD_MESSAGE_CAP + 6);
     expect(result.every(m => m.kind === 'recorded')).toBe(true);
+  });
+
+  it('treats an undefined thread as empty (documented contract)', () => {
+    const first = row('first', { ts: 1 });
+    expect(appendThreadMessage(undefined, first)).toEqual([first]);
+  });
+
+  it('normalizes an already-over-cap legacy thread (30 rows → cap)', () => {
+    const legacy: PortalThreadMessage[] = [];
+    for (let i = 0; i < 30; i++) legacy.push(row(`m${i}`, { ts: i }));
+    const result = appendThreadMessage(legacy, row('newest', { ts: 99 }));
+    expect(result).toHaveLength(THREAD_MESSAGE_CAP);
+    expect(result[0]).toEqual(legacy[0]);
+    expect(result[result.length - 1].text).toBe('newest');
+    // Newest CAP - 1 legacy rows survive, oldest dropped.
+    expect(result[1].text).toBe('m12');
+  });
+
+  it('tolerates a null row in a hand-edited thread (no throw, row trimmed first)', () => {
+    const thread = [row('first', { ts: 0 }), null as unknown as PortalThreadMessage];
+    for (let i = 0; i < THREAD_MESSAGE_CAP; i++) {
+      thread.push(row(`m${i}`, { ts: 10 + i }));
+    }
+    const result = appendThreadMessage(thread, row('newest', { ts: 99 }));
+    expect(result).toHaveLength(THREAD_MESSAGE_CAP);
+    expect(result[0].text).toBe('first');
+    expect(result.every(m => m !== null)).toBe(true);
   });
 });

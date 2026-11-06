@@ -39,6 +39,14 @@ export interface QuestionSections {
 /** One parsed question entry: the title (the parse/dedupe key) plus optional v2 sections. */
 export interface ParsedQuestionItem {
   title: string;
+  /**
+   * The header text BEFORE the header contract cut it (section labels already
+   * removed). Equals `title` when nothing was cut. Callers persist it as
+   * meta.originalTitle so portal dedupe keeps keying on the untrimmed header
+   * (questionSlug over a trimmed title would merge entries that differ only
+   * after the "?").
+   */
+  rawTitle: string;
   sections?: QuestionSections;
 }
 
@@ -87,6 +95,12 @@ export function extractQuestionSections(entryText: string): QuestionSections | u
  * (`**Qn. [TOPIC] <short question>**`). Headers longer than this are cut at
  * the first sentence boundary so the title never becomes a wall of text.
  * Mirrors the prompt rule in src/specialists/open-questions.ts.
+ *
+ * Deliberately LONGER than the 60-char display cap in research-gate's
+ * shortResearchTitle: this is the authoring budget the model is told to meet,
+ * the 60-char cap is the card-title display budget for legacy/over-long
+ * headers. A legitimate 61–90-char question is authored correctly here and
+ * still ellipsis-cut on the card — intended, not a bug.
  */
 export const QUESTION_HEADER_CHAR_CAP = 90;
 
@@ -97,30 +111,103 @@ export const QUESTION_HEADER_CHAR_CAP = 90;
 const HEADER_TAIL_WORD_LIMIT = 8;
 
 /**
- * Enforces the format-v2 header contract on a captured title: drops a trailing
+ * Index of the first genuine sentence boundary in `text`, searched within the
+ * first `window` chars — abbreviation-safe, so "No. 6 AWG", "e.g. ", "i.e. ",
+ * "vs. " and "approx. " are NOT boundaries.
+ *
+ * A boundary is (i) `?` or `!` followed by whitespace, or (ii) `.` followed by
+ * whitespace and then an UPPERCASE letter, where the token before the `.` is
+ * at least 3 chars and holds no interior `.` (that excludes "No." / "vs." and
+ * every dotted abbreviation such as "e.g." / "i.e.").
+ *
+ * @param text - text to scan
+ * @param window - how many leading chars of `text` to scan
+ * @returns the index OF the punctuation char (inclusive); -1 when none
+ */
+export function firstSentenceEnd(text: string, window: number): number {
+  const limit = Math.min(window, text.length);
+  for (let i = 0; i < limit; i++) {
+    const ch = text[i];
+    if (ch !== '.' && ch !== '?' && ch !== '!') continue;
+    const after = text.slice(i + 1);
+    const gap = after.match(/^\s+/);
+    if (!gap) continue; // no trailing whitespace → end of text, not a boundary
+    if (ch === '.') {
+      const next = after.slice(gap[0].length, gap[0].length + 1);
+      if (!/[A-Z]/.test(next)) continue;
+      const token = text.slice(0, i).match(/(\S*)$/)?.[1] ?? '';
+      if (token.length < 3 || token.includes('.')) continue;
+    }
+    return i;
+  }
+  return -1;
+}
+
+/** Header contract applied to one captured header. */
+interface HeaderContract {
+  /** The contract title (markdown bold markers trimmed). */
+  title: string;
+  /** The header text as captured, before any cut. */
+  rawTitle: string;
+  /** Text the contract cut off (trailing explanation), when any. */
+  droppedTail?: string;
+}
+
+/**
+ * Enforces the format-v2 header contract on a captured header: drops a trailing
  * explanation after the first "?" when it runs longer than
  * HEADER_TAIL_WORD_LIMIT words, and — for a header over
  * QUESTION_HEADER_CHAR_CAP chars — cuts at the first sentence boundary
- * (". " / "? " / "! "). A header that is one long question with no interior
- * sentence boundary is kept whole (never cut mid-question), and a header with
- * no "?" is left intact. Tolerant: legacy titles under the cap are unchanged.
+ * (firstSentenceEnd: abbreviation-safe). A tail that itself contains a "?"
+ * (a quoted value such as "?node=main", or a two-question header) is never
+ * dropped: the first "?" is then not the end of the question. A header that
+ * is one long question with no interior sentence boundary is kept whole, and a
+ * header with no sentence boundary is left intact. The cut text is returned as
+ * droppedTail so callers can keep it retrievable.
  *
- * @param title - the raw captured header text (section labels already cut)
- * @returns the header-contract title, markdown bold markers trimmed
+ * @param rawHeader - the captured header text (section labels already cut)
+ * @returns title + rawTitle + the dropped tail when a cut happened
  */
-export function trimHeaderExplanation(title: string): string {
-  let text = title.trim();
+function applyHeaderContract(rawHeader: string): HeaderContract {
+  let text = rawHeader.trim();
+  const rawTitle = text;
+  let droppedTail: string | undefined;
   const questionMark = text.indexOf('?');
   if (questionMark >= 0) {
     const tail = text.slice(questionMark + 1).trim();
-    const tailWords = tail.split(/\s+/).filter(Boolean).length;
-    if (tailWords > HEADER_TAIL_WORD_LIMIT) text = text.slice(0, questionMark + 1);
+    // Pure markdown-bold tokens are not words (off-by-one on the threshold).
+    const tailWords = tail.split(/\s+/).filter(token => token.replace(/\*+/g, '') !== '').length;
+    if (tailWords > HEADER_TAIL_WORD_LIMIT && !tail.includes('?')) {
+      text = text.slice(0, questionMark + 1);
+      droppedTail = tail;
+    }
   }
   if (text.length > QUESTION_HEADER_CHAR_CAP) {
-    const boundary = text.match(/[.?!]\s/);
-    if (boundary && boundary.index !== undefined) text = text.slice(0, boundary.index + 1);
+    const end = firstSentenceEnd(text, text.length);
+    if (end >= 0) {
+      const cutTail = text.slice(end + 1).trim();
+      text = text.slice(0, end + 1);
+      if (cutTail) droppedTail = droppedTail ? `${droppedTail} ${cutTail}` : cutTail;
+    }
   }
-  return text.trim().replace(/\*+$/, '').trim();
+  return {
+    title: text.trim().replace(/\*+$/, '').trim(),
+    rawTitle,
+    ...(droppedTail ? { droppedTail } : {})
+  };
+}
+
+/**
+ * Keeps header text the contract cut retrievable: merges it into the entry's
+ * background section (never delete user-visible content).
+ */
+function withDroppedTail(
+  sections: QuestionSections | undefined,
+  droppedTail: string | undefined
+): QuestionSections | undefined {
+  if (!droppedTail) return sections;
+  const background = sections?.background ? `${sections.background} ${droppedTail}` : droppedTail;
+  return { ...(sections || {}), background };
 }
 
 /**
@@ -233,7 +320,7 @@ export function inferQuestionTopic(text: string): string | undefined {
 /**
  * Extracts question entries (Q1, Q2, ... format) from a section's text as
  * { title, sections? } pairs: the title is the stable parse key (section
- * labels and any trailing header explanation cut — see trimHeaderExplanation);
+ * labels and any trailing header explanation cut — see applyHeaderContract);
  * sections are the optional format-v2 labeled fields extracted tolerantly from
  * the entry body. Missing sections are omitted (legacy entries parse exactly
  * as before).
@@ -252,9 +339,13 @@ function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
 
   let match;
   while ((match = qRegex.exec(sectionText)) !== null) {
-    const title = trimHeaderExplanation(stripWhyItMatters(match[1]));
-    if (title && title.length > 5) {
-      entries.push({ title, sections: extractQuestionSections(match[1]) });
+    const header = applyHeaderContract(stripWhyItMatters(match[1]));
+    if (header.title && header.title.length > 5) {
+      entries.push({
+        title: header.title,
+        rawTitle: header.rawTitle,
+        sections: withDroppedTail(extractQuestionSections(match[1]), header.droppedTail)
+      });
     }
   }
 
@@ -266,8 +357,14 @@ function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
       const numberedMatch = line.match(/^\s*(?:\*\*)?(Q\d+|Question\s*\d+)\s*[\.:\)]?\s*\**\s*(.*)/i);
       if (numberedMatch) {
         if (currentQ.trim()) {
-          const title = trimHeaderExplanation(stripWhyItMatters(currentQ.trim()));
-          if (title) entries.push({ title, sections: extractQuestionSections(currentQ.trim()) });
+          const header = applyHeaderContract(stripWhyItMatters(currentQ.trim()));
+          if (header.title) {
+            entries.push({
+              title: header.title,
+              rawTitle: header.rawTitle,
+              sections: withDroppedTail(extractQuestionSections(currentQ.trim()), header.droppedTail)
+            });
+          }
         }
         currentQ = numberedMatch[2];
       } else if (currentQ && line.trim() && !line.match(/^\s*$/)) {
@@ -275,8 +372,14 @@ function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
       }
     }
     if (currentQ.trim()) {
-      const title = trimHeaderExplanation(stripWhyItMatters(currentQ.trim()));
-      if (title) entries.push({ title, sections: extractQuestionSections(currentQ.trim()) });
+      const header = applyHeaderContract(stripWhyItMatters(currentQ.trim()));
+      if (header.title) {
+        entries.push({
+          title: header.title,
+          rawTitle: header.rawTitle,
+          sections: withDroppedTail(extractQuestionSections(currentQ.trim()), header.droppedTail)
+        });
+      }
     }
   }
 
