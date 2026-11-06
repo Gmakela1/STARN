@@ -141,13 +141,13 @@ export function questionTopic(title: string): string | undefined {
  * (prefix), so "volt" covers "voltage" and "mount" covers "mounting".
  */
 const TOPIC_KEYWORDS: Record<string, string[]> = {
-  electrical: ['fuse', 'voltage', 'vdc', 'volt', 'amp', 'current', 'battery', 'pack', 'charger', 'charge', 'lifepo4', 'lithium', 'cell', 'bms', 'contactor', 'breaker', 'wiring', 'circuit', 'insulation', 'isolation', 'kw', 'ah'],
+  electrical: ['fuse', 'vdc', 'volt', 'amp', 'current', 'battery', 'pack', 'charge', 'lifepo4', 'lithium', 'cell', 'bms', 'contactor', 'breaker', 'wiring', 'circuit', 'insulation', 'isolation', 'kw', 'ah'],
   mechanical: ['bolt', 'mount', 'bracket', 'chassis', 'torque', 'gearbox', 'drivetrain', 'frame', 'shaft', 'coupling', 'weight', 'dimension', 'clearance', 'hitch', 'fastener', 'housing', 'bore', 'flange'],
   'controls-data': ['can', 'dbc', 'firmware', 'telemetry', 'sensor', 'protocol', 'throttle', 'ecu', 'signal', 'logging', 'interlock', 'controller model', 'calibration', 'parameter'],
-  thermal: ['temperature', 'thermal', 'cooling', 'heat', 'derating', 'coolant', 'ambient', 'heatsink', '°c']
+  thermal: ['temperature', 'thermal', 'cooling', 'heat', 'derating', 'coolant', 'ambient', '°c']
 };
 
-const SHORT_TOPIC_TOKENS = new Set(['can', 'amp', 'ah', 'kw', 'bms', 'ecu', 'cell', 'pack']);
+const SHORT_TOPIC_TOKENS = new Set(['can', 'amp', 'ah', 'kw', 'bms', 'ecu', 'cell', 'pack', 'current', 'frame']);
 
 /** Minimum distinct keyword hits the winning topic needs before it is trusted. */
 const MIN_TOPIC_SCORE = 2;

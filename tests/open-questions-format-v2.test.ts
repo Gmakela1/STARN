@@ -159,6 +159,15 @@ describe('inferQuestionTopic (R5 keyword inference)', () => {
     expect(inferQuestionTopic('Battery fuse bracket bolt')).toBeUndefined();
     expect(inferQuestionTopic('')).toBeUndefined();
   });
+  it('requires distinct evidence: subsumed prefixes do not double count', () => {
+    expect(inferQuestionTopic('Main bus voltage?')).toBeUndefined();
+    expect(inferQuestionTopic('Pack voltage and fuse rating')).toBe('electrical');
+  });
+  it('current/frame are whole-word tokens', () => {
+    expect(inferQuestionTopic('We are currently reviewing the framework')).toBeUndefined();
+    expect(inferQuestionTopic('continuous current rating of the pack')).toBe('electrical');
+    expect(inferQuestionTopic('chassis frame bolt')).toBe('mechanical');
+  });
   it('does not match short tokens inside longer words', () => {
     expect(inferQuestionTopic('Scan candidate scampi canal')).toBeUndefined();
   });

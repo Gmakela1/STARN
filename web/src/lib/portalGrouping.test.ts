@@ -85,6 +85,11 @@ describe('cleanQuestionTitle', () => {
     expect(cleanQuestionTitle(' — ) . Pack voltage')).toBe('Pack voltage');
   });
 
+  it('keeps legit leading brackets and parens', () => {
+    expect(cleanQuestionTitle('[ELECTRICAL] Pilot diameter')).toBe('[ELECTRICAL] Pilot diameter');
+    expect(cleanQuestionTitle('(Optional) x')).toBe('(Optional) x');
+  });
+
   it('leaves a clean title unchanged and returns empty for junk-only input', () => {
     expect(cleanQuestionTitle('Main bus voltage?')).toBe('Main bus voltage?');
     expect(cleanQuestionTitle('**')).toBe('');

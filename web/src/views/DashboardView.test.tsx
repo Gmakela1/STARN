@@ -119,6 +119,14 @@ describe('DashboardView needs-input rows (design §5.E)', () => {
     expect(list.querySelectorAll('button')).toHaveLength(2);
   });
 
+  it('skips legacy items whose cleaned title is empty', async () => {
+    fetchDashboardMock.mockResolvedValue(buildData([buildItem(), buildItem({ id: 'q-2', title: '**' })]));
+    const { container } = renderWithUser(<DashboardView />);
+
+    await screen.findByRole('list');
+    expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(1);
+  });
+
   it('moves focus between rows with J and K', async () => {
     fetchDashboardMock.mockResolvedValue(
       buildData([

@@ -187,7 +187,9 @@ export default function DashboardView({
     const questionItems = topItems.filter((i: PortalItem) => i.type === 'question' && i.status === 'open');
     const flagItems = topItems.filter((i: PortalItem) => i.type === 'flag' && i.status === 'open');
 
-    const renderTier = (items: PortalItem[], icon: React.ReactNode, color: string, label: string, route?: string) => {
+    const renderTier = (rawItems: PortalItem[], icon: React.ReactNode, color: string, label: string, route?: string) => {
+      // Consistent with QuestionPanel: skip legacy items whose cleaned title is empty.
+      const items = rawItems.filter(i => cleanQuestionTitle(i.title).length > 0);
       if (items.length === 0) return null;
       return (
         <div className="space-y-1">

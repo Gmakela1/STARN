@@ -86,16 +86,17 @@ export function groupPortalItemsByTopic(items: PortalItem[]): PortalTopicGroup[]
  * DISPLAY-ONLY title cleanup (never persisted — dedupe keys on the stored
  * title). Legacy model-written titles carry markdown junk such as
  * "Lithium-ion sub-chemistry.**" or a fragment starting "/ BOM Q8 …". Strips
- * every `*` and backtick, collapses whitespace, drops leading non-alphanumeric
- * junk (`/`, `-`, `—`, `.`, `)`, spaces), and trims.
+ * every `*` and backtick, collapses whitespace, drops leading junk
+ * punctuation (`/`, `-`, `–`, `—`, `.`, `)`, `:`, `;`, `,`, spaces) while keeping
+ * legit openers such as `[` and `(`, and trims.
  *
  * @param title - stored portal item title
- * @returns the cleaned title ('' when nothing alphanumeric remains)
+ * @returns the cleaned title ('' when only junk remains)
  */
 export function cleanQuestionTitle(title: string): string {
   return title
     .replace(/[*`]/g, '')
     .replace(/\s+/g, ' ')
-    .replace(/^[^\p{L}\p{N}]+/u, '')
+    .replace(/^[\s/\-–—.):;,]+/, '')
     .trim();
 }
