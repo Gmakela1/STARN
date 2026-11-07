@@ -8,7 +8,9 @@ import {
   runResearchBackfill,
   RESEARCH_GATE_ITEM_TIMEOUT_MS,
   ResearchGateDeps,
-  ResearchBackfillDeps
+  ResearchBackfillDeps,
+  buildQuestionSections,
+  listBackfillEligibleItems
 } from '../src/core/research-gate.js';
 import { applyAnswer, AnswerApplierDeps } from '../src/core/answer-applier.js';
 import { addPortalItem } from '../src/core/question-portal.js';
@@ -28,6 +30,15 @@ const RESEARCH_JSON = JSON.stringify({
   reasoning: 'Stated verbatim in the datasheet.'
 });
 
+// Decision-question variant: the answer ends with the labelled decision block
+// the gate prompt requires (Alternatives: A/B + Recommended: <letter>).
+const DECISION_RESEARCH_JSON = JSON.stringify({
+  answer:
+    'The main contactor is rated for 48V DC.\nAlternatives:\nA) Keep the 48V contactor — no harness rework.\nB) Move to 72V — lighter harness, no supplier yet.\nRecommended: B',
+  sources: [{ title: 'Vendor datasheet' }],
+  reasoning: 'Stated verbatim in the datasheet.'
+});
+
 // Auto-tier variant: a fetchable top source keeps the confidence uncapped.
 const AUTO_RESEARCH_JSON = JSON.stringify({
   answer: 'The main contactor is rated for 48V DC. The coil spec matches the harness baseline.',
@@ -43,6 +54,23 @@ function chat(content: string): ChatCompletionResult {
 beforeEach(() => {
   agentLoopMock.mockImplementation(async () => ({ finalResponse: RESEARCH_JSON }));
 });
+
+/**
+ * A COMPLETE memo: sections WITH structured options. This is the shape the
+ * backfill does NOT re-research. An old-format memo (bluf/findings/suggestion
+ * only, no options) is a re-research candidate.
+ */
+function completeMemo(bluf: string) {
+  return {
+    bluf,
+    alternatives: 'A) Keep 48V.; B) Move to 72V.',
+    options: [
+      { id: 'A', text: 'Keep 48V.', recommended: true },
+      { id: 'B', text: 'Move to 72V.' }
+    ],
+    recommendation: 'A'
+  };
+}
 
 function makeItem(stateMgr: ProjectStateManager, overrides: Partial<PortalItem> = {}): PortalItem {
   return addPortalItem(stateMgr, {
@@ -117,7 +145,7 @@ describe('runResearchBackfill (core)', () => {
     const plain = makeItem(stateMgr);
     const withSections = makeItem(stateMgr, {
       title: 'Already enriched question?',
-      meta: { sections: { bluf: 'Sentinel.' } }
+      meta: { sections: completeMemo('Sentinel.') }
     });
     const withProposal = makeItem(stateMgr, {
       title: 'Proposed question?',
@@ -158,7 +186,7 @@ describe('runResearchBackfill (core)', () => {
     expect(enrichedItem.meta?.sections?.findings).toContain('Sources: Vendor datasheet');
 
     // Ineligible items untouched.
-    expect(stored(withSections.id).meta?.sections).toEqual({ bluf: 'Sentinel.' });
+    expect(stored(withSections.id).meta?.sections).toEqual(completeMemo('Sentinel.'));
     expect(stored(withProposal.id).meta?.sections).toBeUndefined();
     expect(stored(researching.id).meta?.sections).toBeUndefined();
     expect(stored(nonQuestion.id).meta?.sections).toBeUndefined();
@@ -265,13 +293,13 @@ describe('runResearchBackfill (core)', () => {
     const legacy = Array.from({ length: 13 }, (_, n) =>
       makeItem(stateMgr, {
         title: `Legacy question ${n + 1}?`,
-        meta: { sections: { bluf: `Bluf ${n + 1}.` } }
+        meta: { sections: completeMemo(`Bluf ${n + 1}.`) }
       })
     );
     // Already-repaired item: originalTitle present → NOT re-normalized.
     const repaired = makeItem(stateMgr, {
       title: 'Repaired question?',
-      meta: { sections: { bluf: 'Bluf repaired.' }, originalTitle: 'O'.repeat(300) }
+      meta: { sections: completeMemo('Bluf repaired.'), originalTitle: 'O'.repeat(300) }
     });
     // Long title WITHOUT sections but with a proposal: ineligible, untouched.
     const plainLong = makeItem(stateMgr, {
@@ -317,7 +345,7 @@ describe('runResearchBackfill (core)', () => {
     expect(debris.length).toBeLessThan(200);
     const item = makeItem(stateMgr, {
       title: 'Placeholder question?',
-      meta: { sections: { bluf: 'Bluf sentinel.', findings: 'Findings sentinel.' } }
+      meta: { sections: { ...completeMemo('Bluf sentinel.'), findings: 'Findings sentinel.' } }
     });
     const state0 = stateMgr.getState();
     (state0.portalItems || []).find(i => i.id === item.id)!.title = debris;
@@ -339,15 +367,15 @@ describe('runResearchBackfill (core)', () => {
   it('topic pass: legacy enriched items get meta.topic from the title tag WITHOUT re-researching', async () => {
     const tagged = makeItem(stateMgr, {
       title: 'Q3. [MECHANICAL] Chassis rail gauge?',
-      meta: { sections: { bluf: 'Sentinel.' } }
+      meta: { sections: completeMemo('Sentinel.') }
     });
     const alreadyTopiced = makeItem(stateMgr, {
       title: 'Q4. [MECHANICAL] Frame material?',
-      meta: { sections: { bluf: 'Sentinel.' }, topic: 'electrical' }
+      meta: { sections: completeMemo('Sentinel.'), topic: 'electrical' }
     });
     const untagged = makeItem(stateMgr, {
       title: 'Plain enriched question?',
-      meta: { sections: { bluf: 'Sentinel.' } }
+      meta: { sections: completeMemo('Sentinel.') }
     });
 
     const result = await runResearchBackfill(gateDeps);
@@ -362,14 +390,81 @@ describe('runResearchBackfill (core)', () => {
     expect(stored(untagged.id).meta?.topic).toBeUndefined();
   });
 
+  it('old-format memo (no options) is re-researched; options memo and proposed/auto-applied items are not', async () => {
+    agentLoopMock.mockImplementation(async () => ({ finalResponse: DECISION_RESEARCH_JSON }));
+    const oldFormat = makeItem(stateMgr, {
+      title: 'Old format question?',
+      meta: {
+        sections: {
+          bluf: 'Old bluf.',
+          findings: 'Old findings.',
+          suggestion: 'Old suggestion.',
+          defer: 'Deferring costs two weeks.'
+        }
+      }
+    });
+    const complete = makeItem(stateMgr, {
+      title: 'Complete question?',
+      meta: { sections: completeMemo('Sentinel.') }
+    });
+    const proposed = makeItem(stateMgr, {
+      title: 'Proposed question?',
+      meta: { proposedAnswer: { answer: 'x', sources: [], confidence: 0.5, rationale: '' } }
+    });
+    const autoApplied = makeItem(stateMgr, {
+      title: 'Auto-applied question?',
+      meta: { autoApplied: { answer: 'x', appendedText: 'x', confidence: 1, sources: [], rationale: '' } }
+    });
+
+    expect(listBackfillEligibleItems(stateMgr).map(i => i.id)).toEqual([oldFormat.id]);
+
+    const result = await runResearchBackfill(gateDeps);
+    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0, topicTagged: 0 });
+
+    const stored = (id: string) => (stateMgr.getState().portalItems || []).find(i => i.id === id)!;
+    const memo = stored(oldFormat.id).meta?.sections!;
+    // Options + recommendation regenerated from the researched answer.
+    expect(memo.options?.map(o => o.id)).toEqual(['A', 'B']);
+    expect(memo.recommendation).toBe('B');
+    expect(memo.options?.find(o => o.recommended)?.id).toBe('B');
+    expect(memo.alternatives).toContain('Move to 72V');
+    // The regenerated fields land; the rest of the memo is kept.
+    expect(memo.bluf).toBe('The main contactor is rated for 48V DC.');
+    expect(memo.defer).toBe('Deferring costs two weeks.');
+    // Ineligible items untouched.
+    expect(stored(complete.id).meta?.sections).toEqual(completeMemo('Sentinel.'));
+    expect(stored(proposed.id).meta?.sections).toBeUndefined();
+    expect(stored(autoApplied.id).meta?.sections).toBeUndefined();
+  });
+
+  it('buildQuestionSections parses labelled options + Recommended out of the answer', () => {
+    const sections = buildQuestionSections({
+      answer:
+        'The main contactor is rated for 48V DC.\nAlternatives:\nA) Keep the 48V contactor.\nB) Move to 72V.\nRecommended: B',
+      sources: [{ title: 'Vendor datasheet' }],
+      reasoning: ''
+    });
+    expect(sections.options?.map(o => o.id)).toEqual(['A', 'B']);
+    expect(sections.recommendation).toBe('B');
+    expect(sections.options?.find(o => o.recommended)?.id).toBe('B');
+    expect(sections.alternatives).toContain('A) Keep the 48V contactor.');
+    // The decision block is not duplicated into the suggestion.
+    expect(sections.suggestion).toBe('The main contactor is rated for 48V DC.');
+
+    // No labelled options → options stay undefined (never fabricated).
+    const plain = buildQuestionSections({ answer: 'Alternatives: none.', sources: [], reasoning: '' });
+    expect(plain.options).toBeUndefined();
+    expect(plain.recommendation).toBeUndefined();
+  });
+
   it('topic pass: untagged items get a conservative keyword-inferred meta.topic (R5)', async () => {
     const inferred = makeItem(stateMgr, {
       title: 'Fuse selectivity decision: branch fuse current rating and pack voltage',
-      meta: { sections: { bluf: 'Sentinel.' } }
+      meta: { sections: completeMemo('Sentinel.') }
     });
     const vague = makeItem(stateMgr, {
       title: 'Plain enriched question?',
-      meta: { sections: { bluf: 'Sentinel.' } }
+      meta: { sections: completeMemo('Sentinel.') }
     });
 
     const result = await runResearchBackfill(gateDeps);
@@ -479,7 +574,7 @@ describe('POST /api/portal/research-all', () => {
 
   it('iterates eligible legacy items only; writes sections; clears researching', async () => {
     const plain = seedItem();
-    seedItem({ title: 'Already enriched?', meta: { sections: { bluf: 'Sentinel.' } } });
+    seedItem({ title: 'Already enriched?', meta: { sections: completeMemo('Sentinel.') } });
     seedItem({
       title: 'Has proposal?',
       meta: { proposedAnswer: { answer: 'x', sources: [], confidence: 0.5, rationale: '' } }

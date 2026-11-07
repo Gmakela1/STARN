@@ -8,6 +8,7 @@ import { addPortalItem, answerPortalItem } from '../src/core/question-portal.js'
 import { applyAnswer, AnswerApplierDeps } from '../src/core/answer-applier.js';
 import {
   parseResearchReply,
+  runQuestionResearch,
   runResearchGate,
   runGateWithTimeout,
   rewriteShortTitle,
@@ -151,6 +152,16 @@ describe('research gate wiring', () => {
     expect(RESEARCH_GATE_ALLOWED_TOOLS).not.toContain('state_update');
     expect(RESEARCH_GATE_ALLOWED_TOOLS).toContain('fs_read');
     expect(RESEARCH_GATE_ALLOWED_TOOLS).toContain('web_search');
+  });
+
+  it('research turn prompt requires the Alternatives: block and a Recommended: line', async () => {
+    await runQuestionResearch(gateDeps, item);
+    const systemPrompt = (researchClient.chatCompletion.mock.calls[0][0] as any).messages[0].content as string;
+    expect(systemPrompt).toContain('Alternatives:');
+    expect(systemPrompt).toContain('Recommended: <letter>');
+    // The labelled option lines the answer must end with.
+    expect(systemPrompt).toMatch(/A\).*\n.*B\)/);
+    expect(systemPrompt).toContain('Alternatives: none');
   });
 
   it('research loop runs read-only (registry called with the gate allow-list)', async () => {

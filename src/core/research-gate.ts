@@ -48,7 +48,7 @@ import {
 } from './research-preflight.js';
 import { PENDING_INCORPORATION_MARKER } from './incorporation-prompt.js';
 import type { QuestionSections } from './open-questions-parser.js';
-import { questionTopic, inferQuestionTopic, firstSentenceEnd, stripEchoedPrefix } from './open-questions-parser.js';
+import { questionTopic, inferQuestionTopic, firstSentenceEnd, stripEchoedPrefix, parseQuestionOptions } from './open-questions-parser.js';
 
 /** Research-turn allow-list: reads + web research only — no write tools. */
 export const RESEARCH_GATE_ALLOWED_TOOLS = [...PREFLIGHT_ALLOWED_TOOLS] as string[];
@@ -281,6 +281,11 @@ You are read-only: never write or edit files. Use web_search for external facts 
 Exhaust, in priority order: manufacturer/datasheet sources, official documentation, the project's own docs and recorded answers, reputable engineering publications.
 Your final reply must contain ONLY a JSON object (no markdown fence, no commentary) in this exact shape:
 {"answer": "<direct factual answer, one concise paragraph>", "sources": [{"title": "<source name>", "url": "<URL if web, omit if project doc>"}], "reasoning": "<how the sources support the answer; note any assumptions>"}
+The "answer" string must END with a decision block (use \n escapes for the line breaks inside the JSON string):
+- DECISION QUESTION (the user must choose between options): end the answer with
+  Alternatives:\nA) <option and its trade-off>\nB) <option and its trade-off>\nC) <option and its trade-off>\nRecommended: <letter>
+  Use 2 or 3 labelled options (A, B and optionally C) and EXACTLY one final "Recommended: <letter>" line naming the best option. Ground every option in the sources — never invent an option you cannot support.
+- PURE VERIFICATION QUESTION (one factual value with one correct answer): end the answer with "Alternatives: none".
 If the question is a judgment call, opinion, or cannot be verified from a source, reply {"answer": "", "sources": [], "reasoning": "<why it is not verifiable>"}.`;
 
   const parts = [
@@ -752,6 +757,24 @@ export async function runResearchGate(deps: ResearchGateDeps, item: PortalItem):
 const SECTION_BLUF_CAP = 240;
 const SECTION_FINDINGS_CAP = 800;
 const SECTION_SUGGESTION_CAP = 1200;
+const SECTION_ALTERNATIVES_CAP = 900;
+
+/** Line-anchored `Alternatives:` label the research answer ends with. */
+const ALTERNATIVES_LABEL_RE = /^[ \t]*(?:\*\*)?[ \t]*Alternatives[ \t]*:[ \t]*/im;
+
+/**
+ * Extracts the decision block a research answer ends with: everything after
+ * the line-anchored `Alternatives:` label through the end of the answer.
+ *
+ * @param answer - the researched answer text
+ * @returns the alternatives block, or undefined when the answer has no label
+ */
+function extractAlternativesBlock(answer: string): string | undefined {
+  const match = answer.match(ALTERNATIVES_LABEL_RE);
+  if (!match || match.index === undefined) return undefined;
+  const block = answer.slice(match.index + match[0].length).trim();
+  return block || undefined;
+}
 
 /**
  * Builds format-v2 decision-memo sections from a completed gate run — real
@@ -759,8 +782,11 @@ const SECTION_SUGGESTION_CAP = 1200;
  * field is fabricated when its underlying text is missing. BLUF is the first
  * sentence of the researched answer; findings carry the critic rationale (or
  * the researcher's reasoning) plus the cited source names; the main
- * suggestion is the researched answer itself. Alternatives/defer are omitted
- * unless research supplied them.
+ * suggestion is the researched answer in front of its decision block; the
+ * decision block (`Alternatives:` + `A) …` lines + `Recommended: <letter>`)
+ * becomes `alternatives` and is parsed into `options` + `recommendation`.
+ * Options stay undefined when the answer carries no labelled options (never
+ * fabricated). Defer is omitted unless research supplied it.
  */
 export function buildQuestionSections(
   research: QuestionResearch,
@@ -778,7 +804,19 @@ export function buildQuestionSections(
     sourceNames.length > 0 ? `Sources: ${sourceNames.join('; ')}` : ''
   ].filter(Boolean).join('\n\n');
   if (findings) sections.findings = findings.length > SECTION_FINDINGS_CAP ? findings.slice(0, SECTION_FINDINGS_CAP) : findings;
-  sections.suggestion = answer.length > SECTION_SUGGESTION_CAP ? answer.slice(0, SECTION_SUGGESTION_CAP) : answer;
+  const alternatives = extractAlternativesBlock(answer);
+  // The decision block is its own section — the suggestion keeps only the
+  // prose answer in front of it (no A/B/C duplication in the memo).
+  const prose = alternatives ? answer.slice(0, answer.search(ALTERNATIVES_LABEL_RE)).trim() : answer;
+  const suggestion = prose || answer;
+  sections.suggestion = suggestion.length > SECTION_SUGGESTION_CAP ? suggestion.slice(0, SECTION_SUGGESTION_CAP) : suggestion;
+  if (alternatives) {
+    const capped = alternatives.length > SECTION_ALTERNATIVES_CAP ? alternatives.slice(0, SECTION_ALTERNATIVES_CAP) : alternatives;
+    sections.alternatives = capped;
+    const parsed = parseQuestionOptions(capped);
+    if (parsed.options) sections.options = parsed.options;
+    if (parsed.recommendation) sections.recommendation = parsed.recommendation;
+  }
   return sections;
 }
 
@@ -801,10 +839,13 @@ function stripEchoedSections(sections: QuestionSections): QuestionSections {
 
 /**
  * Merges format-v2 sections into meta.sections on a portal item (atomic
- * read-fresh → mutate → save). Open and answered items are written (a
- * dismissed item is left alone); a stale researching flag is cleared on the
- * way; a leaked "echoed: " prefix is stripped from every section text. Returns
- * false when the item vanished or was dismissed.
+ * read-fresh → mutate → save). Written sections override the stored ones and
+ * every other stored field survives — a re-researched old-format item gains
+ * its options while the rest of its memo (defer, background) is kept. Open and
+ * answered items are written (a dismissed item is left alone); a stale
+ * researching flag is cleared on the way; a leaked "echoed: " prefix is
+ * stripped from every section text. Returns false when the item vanished or
+ * was dismissed.
  */
 export function writeItemSections(
   stateManager: ProjectStateManager,
@@ -814,7 +855,8 @@ export function writeItemSections(
   const state = stateManager.getState();
   const item = (state.portalItems || []).find(i => i.id === itemId);
   if (!item || item.status === 'dismissed') return false;
-  item.meta = { ...(item.meta || {}), researching: false, sections: stripEchoedSections(sections) };
+  const merged: QuestionSections = { ...(item.meta?.sections || {}), ...stripEchoedSections(sections) };
+  item.meta = { ...(item.meta || {}), researching: false, sections: merged };
   stateManager.saveState(state);
   return true;
 }
@@ -904,10 +946,24 @@ export function rewriteShortTitle(stateManager: ProjectStateManager, itemId: str
 }
 
 /**
+ * True when an item's stored memo carries no structured A/B/C options yet:
+ * no meta.sections at all, or an OLD-FORMAT memo (bluf/findings/suggestion
+ * only, written before options existed). Both are re-research candidates, so
+ * an old-format memo can never be permanently stuck without options.
+ *
+ * @param item - the portal item to inspect
+ * @returns true when the item still needs an options-bearing memo
+ */
+function lacksQuestionOptions(item: PortalItem): boolean {
+  return !item.meta?.sections?.options?.length;
+}
+
+/**
  * Open question items eligible for the research-all backfill: still open, not
- * already gated (researching/proposedAnswer/autoApplied), not already
- * enriched (meta.sections), and not in the optional in-flight set. Snapshot
- * only — each backfill iteration re-validates against fresh state.
+ * already gated (researching/proposedAnswer/autoApplied), no options-bearing
+ * memo yet (lacksQuestionOptions — a memo without options is re-researched),
+ * and not in the optional in-flight set. Snapshot only — each backfill
+ * iteration re-validates against fresh state.
  */
 export function listBackfillEligibleItems(
   stateManager: ProjectStateManager,
@@ -920,7 +976,7 @@ export function listBackfillEligibleItems(
     item.meta?.researching !== true &&
     !item.meta?.proposedAnswer &&
     !item.meta?.autoApplied &&
-    !item.meta?.sections &&
+    lacksQuestionOptions(item) &&
     !(inFlight?.has(item.id))
   );
 }
@@ -964,6 +1020,9 @@ export async function runResearchBackfill(deps: ResearchBackfillDeps): Promise<R
   // display form) with NO research and NO section change, so the damaged titles
   // vanish on the next Research-all click. meta.originalTitle is kept (it is the
   // portal dedupe key) and only filled in when absent.
+  // Title repair and research eligibility are separate concerns: this pass
+  // writes NO sections, so an old-format memo (no options) stays eligible for
+  // re-research below no matter how its title is repaired here.
   let normalized = 0;
   for (const item of deps.stateManager.getState().portalItems || []) {
     if (item.type !== 'question' || item.status === 'dismissed' || !item.meta?.sections) continue;
@@ -992,7 +1051,7 @@ export async function runResearchBackfill(deps: ResearchBackfillDeps): Promise<R
     // Re-validate against FRESH state each iteration: earlier iterations
     // mutate state (answers applied, proposals stored, dismissals).
     const item = deps.stateManager.getState().portalItems?.find(i => i.id === itemId);
-    if (!item || item.status !== 'open' || item.meta?.researching === true || item.meta?.proposedAnswer || item.meta?.autoApplied || item.meta?.sections) {
+    if (!item || item.status !== 'open' || item.meta?.researching === true || item.meta?.proposedAnswer || item.meta?.autoApplied || !lacksQuestionOptions(item)) {
       continue;
     }
     const { outcome, timedOut } = await runGateWithTimeout(deps, item);
