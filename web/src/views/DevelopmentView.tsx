@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import {
   FileText,
   Pencil,
@@ -28,6 +28,8 @@ import {
   CheckCircle2,
   Maximize2,
   Minimize2,
+  Ellipsis,
+  GitCompare,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -75,6 +77,155 @@ import {
 /** §11 — artifact basename (docPath / artifactPath are both `dir/NAME.ext`). */
 function basename(path: string): string {
   return path.split('/').pop() ?? '';
+}
+
+/** One row of the doc-pane `⋯` menu (§3c.5). */
+interface DocMenuAction {
+  /** Stable key, in inline order. */
+  key: string;
+  /** Visible row label — identical to the inline button it replaces. */
+  label: string;
+  Icon: LucideIcon;
+  /** The inline button's own handler, called verbatim. */
+  onSelect: () => void;
+  /** A disabled inline button becomes a disabled row, never an omitted one. */
+  disabled?: boolean;
+}
+
+interface DocActionsMenuProps {
+  /** Folded document actions in inline order (Attach, Refresh, Diff, Approve). */
+  actions: DocMenuAction[];
+  /** Folded pane-rail actions; rendered last, after a separator. */
+  railActions: DocMenuAction[];
+  /** Non-interactive status line (`role="presentation"`), null when inline. */
+  statusLine?: string | null;
+}
+
+const DOC_MENU_ITEM =
+  'flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs font-medium text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:bg-[#11151d] focus:text-[#e8edf5] focus:outline-none disabled:cursor-not-allowed disabled:opacity-40';
+
+/**
+ * `⋯` overflow menu for the doc-pane header (§3c.5 fold ladder).
+ * Inputs: `actions` / `railActions` (rows in render order), `statusLine`.
+ * Outputs: runs the folded control's own `onSelect`; closes on select, on
+ * `Escape` (focus returns to the trigger) or on an outside pointerdown. Owns
+ * only `open`. Throws: never.
+ */
+function DocActionsMenu({ actions, railActions, statusLine }: DocActionsMenuProps) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Focus the first enabled row on open, so Escape/arrows always land in-menu.
+  useEffect(() => {
+    if (!open) return;
+    menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not([disabled])')?.focus();
+  }, [open]);
+
+  // Outside click closes (pointerdown, so it beats a row's click).
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [open]);
+
+  const closeAndReturnFocus = () => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  /** Escape closes, arrows/Home/End rove over the enabled rows, Tab leaves. */
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      event.stopPropagation(); // the pane's window Escape must not also fire
+      closeAndReturnFocus();
+      return;
+    }
+    if (event.key === 'Tab') {
+      setOpen(false);
+      return;
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return;
+    const rows = Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])') ?? []
+    );
+    if (rows.length === 0) return;
+    event.preventDefault();
+    const current = rows.indexOf(document.activeElement as HTMLButtonElement);
+    let next: number;
+    if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = rows.length - 1;
+    else if (event.key === 'ArrowDown') next = current < 0 ? 0 : (current + 1) % rows.length;
+    else next = current <= 0 ? rows.length - 1 : current - 1;
+    rows[next].focus();
+  }
+
+  const renderRow = (action: DocMenuAction) => (
+    <button
+      key={action.key}
+      type="button"
+      role="menuitem"
+      disabled={action.disabled}
+      onClick={() => {
+        closeAndReturnFocus();
+        action.onSelect();
+      }}
+      className={DOC_MENU_ITEM}
+    >
+      <action.Icon className="h-4 w-4 shrink-0" aria-hidden />
+      <span className="truncate">{action.label}</span>
+    </button>
+  );
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls="doc-actions-menu"
+        aria-label="More document actions"
+        title="More document actions"
+        /* 36 px visual box + a 4/3 px ::after halo = 44 px target (§3c.5). */
+        className="relative flex h-9 w-9 items-center justify-center rounded-lg text-[#a8b3c4] transition after:absolute after:inset-[-4px_-3px] after:content-[''] hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
+      >
+        <Ellipsis className="h-4 w-4" aria-hidden />
+      </button>
+
+      {open && (
+        <div
+          ref={menuRef}
+          id="doc-actions-menu"
+          role="menu"
+          aria-label="More document actions"
+          onKeyDown={handleKeyDown}
+          className="absolute right-0 top-full z-50 mt-1 min-w-[13rem] rounded-xl border border-[#3b4658] bg-[#05070c] p-1.5 shadow-2xl"
+        >
+          {actions.map(renderRow)}
+          {actions.length > 0 && railActions.length > 0 && (
+            <div role="separator" className="my-1 h-px bg-[#2a3342]" />
+          )}
+          {railActions.map(renderRow)}
+          {statusLine && (
+            <>
+              <div role="separator" className="my-1 h-px bg-[#2a3342]" />
+              {/* Words only: never a disabled menuitem (§3c.5). */}
+              <div role="presentation" className="px-2.5 py-2 text-[10px] font-semibold text-[#a8b3c4]">
+                {statusLine}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** Render a tool call as a short human-readable action instead of raw JSON. */
@@ -743,19 +894,27 @@ export default function DevelopmentView({
     setDocDiff(null);
     setDiffUnavailable(false);
   }, [selectedPhase]);
-  // Header compact mode: below 500px the selector shows status pill + chevron
-  // only (doc name hidden) so the h-12 header line never wraps.
-  const headerRef = useRef<HTMLDivElement>(null);
-  const [headerCompact, setHeaderCompact] = useState(false);
+  // §3c.5 fold ladder — the doc header folds against ITS OWN width (a
+  // ResizeObserver on the pane section), never the viewport. The full action
+  // cluster needs ~1090 px, so folding is the normal state, not an edge case.
+  // `POSITIVE_INFINITY` = "not measured yet": nothing folds on first paint.
+  const docPaneRef = useRef<HTMLElement>(null);
+  const [docPaneWidth, setDocPaneWidth] = useState(Number.POSITIVE_INFINITY);
   useEffect(() => {
-    const el = headerRef.current;
+    const el = docPaneRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      setHeaderCompact(entry.contentRect.width < 500);
-    });
+    const ro = new ResizeObserver(([entry]) => setDocPaneWidth(entry.contentRect.width));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+  // Fold order (§3c.5 table): actions leave at <=759, the pane-rail buttons at
+  // <=629, the selector's status words at <=519, the switch labels at <=429.
+  const foldDocActions = docPaneWidth <= 759;
+  // Details mode keeps the rail inline, so its `⋯` never exists (§3c.5 last
+  // bullet): nothing is folded into it there.
+  const foldDocRail = docPaneWidth <= 629 && !detailsOpen;
+  const foldDocStatus = docPaneWidth <= 519;
+  const iconOnlySwitch = docPaneWidth <= 429;
 
   // §5.A cover semantics (Workstream C) — the DOC is not inert while the user
   // answers questions: it is what they read. It IS inert (never display:none)
@@ -1155,45 +1314,112 @@ export default function DevelopmentView({
     } catch {}
   };
 
-  const renderStatusPill = (phase?: RoadmapPhase) => {
+  /** The selector pill's words (null when no phase). §3c.5: the same words
+      feed the selector's title/aria-label and the `⋯` menu's status row once
+      the pill folds at <=519 px. */
+  const docStatusWords = (phase?: RoadmapPhase): string | null => {
     if (!phase) return null;
     // Design §6 — autopilot completed the doc and open questions are flagged:
-    // show the review state so the user can jump in and approve (option click
+    // show the review state so the user can jump in to approve (option click
     // selects the doc; the existing onSelect flow is the review entry point).
     if (docNeedsApproval({
       docStatus: autopilotStatus?.docStatus[phase.id],
       openQuestions: phase.openQuestions
     })) {
+      return 'Completed — needs approval';
+    }
+    if (phase.status === 'COMPLETED') return 'Completed';
+    if (phase.status === 'IN_PROGRESS' || phase.status === 'PENDING_REVIEW') return 'In Work';
+    return 'Not Drafted';
+  };
+
+  const renderStatusPill = (phase?: RoadmapPhase) => {
+    const words = docStatusWords(phase);
+    if (!words) return null;
+    if (words === 'Completed — needs approval') {
       return (
         <span className="rounded bg-violet-950/80 px-2 py-0.5 font-mono text-[10px] font-semibold text-violet-300 border border-violet-800 shrink-0 inline-flex items-center gap-1">
           <Eye className="h-3 w-3" aria-hidden />
-          Completed — needs approval
+          {words}
         </span>
       );
     }
-    if (phase.status === 'COMPLETED') {
+    if (words === 'Completed') {
       return (
         <span className="rounded bg-[#2e1065] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#e8edf5] border border-[#8b5cf6] shrink-0">
-          Completed
+          {words}
         </span>
       );
     }
-    if (phase.status === 'IN_PROGRESS' || phase.status === 'PENDING_REVIEW') {
+    if (words === 'In Work') {
       return (
         <span className="rounded bg-violet-950/80 px-2 py-0.5 font-mono text-[10px] font-semibold text-violet-300 border border-violet-800 shrink-0">
-          In Work
+          {words}
         </span>
       );
     }
     return (
       <span className="rounded bg-[#11151d] px-2 py-0.5 font-mono text-[10px] font-medium text-[#a8b3c4] border border-[#3b4658] shrink-0">
-        Not Drafted
+        {words}
       </span>
     );
   };
 
   const lastActivityIdx = entries.reduce((last, e, i) => (e.activity ? i : last), -1);
   const latestActivityText = lastActivityIdx >= 0 ? entries[lastActivityIdx].text : '';
+
+  // §3c.5 — the folded rows keep the inline buttons' labels, icons, disabled
+  // states and handlers. Nothing is omitted, only relocated; a disabled action
+  // renders as a disabled row.
+  const docStatusLine = docStatusWords(selectedPhaseInfo);
+  const foldedDocActions: DocMenuAction[] = [];
+  if (!detailsOpen && foldDocActions) {
+    foldedDocActions.push({
+      key: 'attach',
+      label: 'Attach a quality example',
+      Icon: Paperclip,
+      onSelect: () => fileInputRef.current?.click(),
+      disabled: uploadingExample || busy
+    });
+    foldedDocActions.push({
+      key: 'refresh',
+      label: 'Refresh document',
+      Icon: RefreshCw,
+      onSelect: () => void refreshDoc()
+    });
+    if (doc && !editing && selectedDocStatus === 'revised') {
+      foldedDocActions.push({ key: 'diff', label: 'Diff', Icon: GitCompare, onSelect: () => void toggleDiff() });
+    }
+    if (doc && !editing && doc.status !== 'approved' && selectedPhaseInfo?.docExists) {
+      foldedDocActions.push({
+        key: 'approve',
+        label: 'Approve phase',
+        Icon: BadgeCheck,
+        onSelect: () => void approvePhase(),
+        disabled: approving
+      });
+    }
+  }
+  const foldedRailActions: DocMenuAction[] = [];
+  if (foldDocRail) {
+    foldedRailActions.push({
+      key: 'collapse',
+      label: 'Collapse document pane',
+      Icon: PanelRightClose,
+      onSelect: () => setDocCollapsed(true)
+    });
+    if (zenPane === 'right') {
+      foldedRailActions.push({ key: 'zen', label: 'Exit focus', Icon: Minimize2, onSelect: () => setZenPane(null) });
+    } else {
+      foldedRailActions.push({ key: 'zen', label: 'Focus document pane', Icon: Maximize2, onSelect: () => setZenPane('right') });
+    }
+  }
+  // §3c.5 — at <=519 px the pill's words move to the selector's title/aria-label.
+  const docSelectorName = selectedPhaseInfo ? selectedPhaseInfo.name : 'Select Document';
+  const docSelectorLabel = docStatusLine ? `${docSelectorName} — ${docStatusLine}` : docSelectorName;
+  let docSelNameWidth = 'max-w-[180px] sm:max-w-[240px]';
+  if (foldDocRail) docSelNameWidth = 'max-w-[4.5rem]';
+  if (foldDocStatus) docSelNameWidth = 'max-w-[9rem]';
 
   return (
     <div ref={rootRef} className="flex h-full min-h-0">
@@ -1562,6 +1788,7 @@ export default function DevelopmentView({
 
       {/* --------------------------- Document pane ---------------------------- */}
       <section
+        ref={docPaneRef}
         aria-label="Document workspace"
         style={rightStyle}
         className={`relative hidden min-h-0 min-w-0 flex-col md:flex ${rightIsRail ? 'overflow-hidden' : ''}`}
@@ -1583,7 +1810,11 @@ export default function DevelopmentView({
           </div>
         )}
 
-        <header ref={headerRef} className="flex h-12 items-center gap-2 border-b border-[#2a3342] bg-[#0d1017]/70 px-3">
+        {/* §3c.5 — `min-w-0` on the header and its flex children: the fold
+            ladder keeps the row narrower than the pane, so nothing paints past
+            the edge. No `overflow-hidden` here — the selector listbox and the
+            `⋯` panel hang below the row and must not be clipped. */}
+        <header className="flex h-12 min-w-0 items-center gap-2 border-b border-[#2a3342] bg-[#0d1017]/70 px-3">
           {detailsOpen && detailsItem ? (
             /* §3b.6(ii) — read-only identity line. The document actions below
                describe a body that is not on screen, so they are not rendered. */
@@ -1598,22 +1829,22 @@ export default function DevelopmentView({
             <>
               <FileText className="h-4 w-4 shrink-0 text-[#6e7d92]" aria-hidden />
 
-              {/* Custom Document Selector Popover */}
-              <div ref={dropdownRef} className="relative">
+              {/* Custom Document Selector Popover. §3c.5: the name narrows at
+                  <=629 px; at <=519 px the status pill folds and its words move
+                  into `title`/`aria-label` (never lost, just not inline). */}
+              <div ref={dropdownRef} className="relative min-w-0">
                 <button
                   type="button"
                   onClick={() => setDocDropdownOpen(v => !v)}
                   aria-haspopup="listbox"
                   aria-expanded={docDropdownOpen}
-                  className={`flex min-h-[40px] items-center gap-2.5 rounded-lg border border-[#3b4658] bg-[#05070c] px-3 text-sm font-medium text-[#e8edf5] hover:bg-[#0d1017] transition-colors cursor-pointer ${headerCompact ? 'w-10 justify-center' : ''}`}
+                  aria-label={foldDocStatus ? `Select document — ${docSelectorLabel}` : undefined}
+                  title={foldDocStatus ? docSelectorLabel : undefined}
+                  className="flex min-h-[40px] max-w-full items-center gap-2.5 rounded-lg border border-[#3b4658] bg-[#05070c] px-3 text-sm font-medium text-[#e8edf5] hover:bg-[#0d1017] transition-colors cursor-pointer"
                 >
-                  {!headerCompact && (
-                    <span className="truncate max-w-[180px] sm:max-w-[240px]">
-                      {selectedPhaseInfo ? selectedPhaseInfo.name : 'Select Document'}
-                    </span>
-                  )}
-                  {renderStatusPill(selectedPhaseInfo)}
-                  <ChevronDown className={`h-4 w-4 text-[#a8b3c4] transition-transform ${docDropdownOpen ? 'rotate-180' : ''}`} />
+                  <span className={`truncate ${docSelNameWidth}`}>{docSelectorName}</span>
+                  {!foldDocStatus && renderStatusPill(selectedPhaseInfo)}
+                  <ChevronDown className={`h-4 w-4 shrink-0 text-[#a8b3c4] transition-transform ${docDropdownOpen ? 'rotate-180' : ''}`} />
                 </button>
 
                 {docDropdownOpen && (
@@ -1664,9 +1895,14 @@ export default function DevelopmentView({
 
           {/* §3b.3.4 / §3b.6(vi) — Document | Details tablist, after the
               selector and before the action cluster. */}
-          <RightPaneViewSwitch value={shownView} onChange={changeRightView} disabled={!detailsItem} />
+          <RightPaneViewSwitch
+            value={shownView}
+            onChange={changeRightView}
+            disabled={!detailsItem}
+            iconOnly={iconOnlySwitch}
+          />
 
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex min-w-0 shrink-0 items-center gap-1.5">
             {/* §3b.6(ii) — the document controls are hidden (not disabled) in
                 Details mode; collapse/zen stay. */}
             {!detailsOpen && (
@@ -1683,26 +1919,32 @@ export default function DevelopmentView({
                     e.target.value = '';
                   }}
                 />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingExample || busy}
-                  aria-label="Attach a quality example"
-                  title="Attach a quality example"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
-                >
-                  {uploadingExample ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Paperclip className="h-4 w-4" aria-hidden />}
-                </button>
-                {/* Autopilot start/stop live solely in the chat composer's rocket
-                    button; the doc header keeps no autopilot control. */}
-                <button
-                  onClick={() => void refreshDoc()}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
-                  aria-label="Refresh document"
-                  title="Refresh document"
-                >
-                  <RefreshCw className="h-4 w-4" aria-hidden />
-                </button>
+                {/* §3c.5 rows 1-2 — Attach and Refresh leave the inline row at
+                    <=759 px and reappear as `⋯` rows (same labels, handlers). */}
+                {!foldDocActions && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingExample || busy}
+                      aria-label="Attach a quality example"
+                      title="Attach a quality example"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
+                    >
+                      {uploadingExample ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Paperclip className="h-4 w-4" aria-hidden />}
+                    </button>
+                    {/* Autopilot start/stop live solely in the chat composer's rocket
+                        button; the doc header keeps no autopilot control. */}
+                    <button
+                      onClick={() => void refreshDoc()}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
+                      aria-label="Refresh document"
+                      title="Refresh document"
+                    >
+                      <RefreshCw className="h-4 w-4" aria-hidden />
+                    </button>
+                  </>
+                )}
                 {doc && !editing && (
                   <button
                     onClick={() => { setDraft(doc.content); setEditing(true); }}
@@ -1729,7 +1971,7 @@ export default function DevelopmentView({
                     </button>
                   </>
                 )}
-                {doc && !editing && doc.status !== 'approved' && selectedPhaseInfo?.docExists && (
+                {!foldDocActions && doc && !editing && doc.status !== 'approved' && selectedPhaseInfo?.docExists && (
                   <button
                     onClick={() => void approvePhase()}
                     disabled={approving}
@@ -1739,7 +1981,7 @@ export default function DevelopmentView({
                     Approve phase
                   </button>
                 )}
-                {doc && !editing && selectedDocStatus === 'revised' && (
+                {!foldDocActions && doc && !editing && selectedDocStatus === 'revised' && (
                   <button
                     onClick={() => void toggleDiff()}
                     aria-label="Toggle diff view"
@@ -1751,35 +1993,50 @@ export default function DevelopmentView({
                 )}
               </>
             )}
-            <button
-              type="button"
-              onClick={() => setDocCollapsed(true)}
-              aria-label="Collapse document pane"
-              title="Collapse document pane"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
-            >
-              <PanelRightClose className="h-4 w-4" aria-hidden />
-            </button>
-            {zenPane === 'right' ? (
-              <button
-                type="button"
-                onClick={() => setZenPane(null)}
-                aria-label="Exit focus"
-                title="Exit focus"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
-              >
-                <Minimize2 className="h-4 w-4" aria-hidden />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setZenPane('right')}
-                aria-label="Focus document pane"
-                title="Focus document pane"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
-              >
-                <Maximize2 className="h-4 w-4" aria-hidden />
-              </button>
+            {/* §3c.5 — `⋯` is never folded; it exists only while something is
+                folded into it (so Details mode, which hides the doc actions and
+                keeps the rail inline, has no `⋯`). */}
+            {(foldedDocActions.length > 0 || foldedRailActions.length > 0) && (
+              <DocActionsMenu
+                actions={foldedDocActions}
+                railActions={foldedRailActions}
+                statusLine={foldDocStatus ? docStatusLine : null}
+              />
+            )}
+            {/* §3c.5 rows 5 — the pane-rail buttons fold last, at <=629 px. */}
+            {!foldDocRail && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setDocCollapsed(true)}
+                  aria-label="Collapse document pane"
+                  title="Collapse document pane"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
+                >
+                  <PanelRightClose className="h-4 w-4" aria-hidden />
+                </button>
+                {zenPane === 'right' ? (
+                  <button
+                    type="button"
+                    onClick={() => setZenPane(null)}
+                    aria-label="Exit focus"
+                    title="Exit focus"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
+                  >
+                    <Minimize2 className="h-4 w-4" aria-hidden />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setZenPane('right')}
+                    aria-label="Focus document pane"
+                    title="Focus document pane"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
+                  >
+                    <Maximize2 className="h-4 w-4" aria-hidden />
+                  </button>
+                )}
+              </>
             )}
           </div>
         </header>

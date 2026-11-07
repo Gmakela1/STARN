@@ -16,6 +16,9 @@ export interface RightPaneViewSwitchProps {
   onChange: (view: RightPaneView) => void;
   /** No `type === 'question'` item → Details has nothing to show (§3b.6(v)). */
   disabled?: boolean;
+  /** §3c.5 row 7 — at <=429 px the visible labels fold; `aria-label` (and the
+      tab's own text, kept for screen readers) carries the words. */
+  iconOnly?: boolean;
 }
 
 const TABS = [
@@ -24,7 +27,7 @@ const TABS = [
 ] as const;
 
 const BTN =
-  'inline-flex min-h-[44px] items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-semibold transition focus:ring-2 focus:ring-[#ff2a3c]/60';
+  'inline-flex min-h-[44px] items-center gap-1.5 rounded-md border text-[11px] font-semibold transition focus:ring-2 focus:ring-[#ff2a3c]/60';
 const BTN_ON = `${BTN} border-[var(--sf-review)]/75 bg-[var(--sf-review-fill)]/90 text-violet-200`;
 const BTN_OFF = `${BTN} border-transparent text-[var(--sf-text-2)] hover:text-[var(--sf-text)]`;
 const BTN_DISABLED = `${BTN_OFF} cursor-not-allowed opacity-40`;
@@ -37,7 +40,8 @@ const BTN_DISABLED = `${BTN_OFF} cursor-not-allowed opacity-40`;
 export default function RightPaneViewSwitch({
   value,
   onChange,
-  disabled = false
+  disabled = false,
+  iconOnly = false
 }: RightPaneViewSwitchProps) {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const isTabDisabled = (view: RightPaneView) => view === 'details' && disabled;
@@ -89,14 +93,15 @@ export default function RightPaneViewSwitch({
             aria-selected={selected}
             aria-controls={tab.panel}
             aria-disabled={tabDisabled || undefined}
+            aria-label={iconOnly ? tab.label : undefined}
             tabIndex={selected ? 0 : -1}
             onClick={() => {
               if (!tabDisabled) onChange(tab.value);
             }}
-            className={tabDisabled ? BTN_DISABLED : selected ? BTN_ON : BTN_OFF}
+            className={`${tabDisabled ? BTN_DISABLED : selected ? BTN_ON : BTN_OFF} ${iconOnly ? 'px-1.5' : 'px-2.5'}`}
           >
-            <tab.Icon className="h-3.5 w-3.5" aria-hidden />
-            {tab.label}
+            <tab.Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className={iconOnly ? 'hidden' : undefined}>{tab.label}</span>
           </button>
         );
       })}

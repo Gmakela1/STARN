@@ -474,3 +474,236 @@ describe('DevelopmentView right pane Document / Details switch', () => {
     await waitFor(() => expect(mockedApi.setActivePhase).toHaveBeenCalledWith('P2'));
   });
 });
+
+// ————— Doc-pane header fold ladder (design 2026-11-03 §3c.5) —————
+describe('DevelopmentView doc pane header fold ladder', () => {
+  type RORecord = { cb: ResizeObserverCallback; targets: Element[] };
+  const roRecords: RORecord[] = [];
+
+  /** Records every observer so a test can drive the DOC PANE's width alone. */
+  class FakeResizeObserver {
+    private record: RORecord;
+    constructor(cb: ResizeObserverCallback) {
+      this.record = { cb, targets: [] };
+      roRecords.push(this.record);
+    }
+    observe(el: Element): void {
+      this.record.targets.push(el);
+    }
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+
+  /** Sets the doc pane container width and lets React settle (§3c.5 ladder). */
+  function setDocPaneWidth(width: number): void {
+    act(() => {
+      for (const record of roRecords) {
+        const isDocPane = record.targets.some(el => el.getAttribute('aria-label') === 'Document workspace');
+        if (!isDocPane) continue;
+        record.cb([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver);
+      }
+    });
+  }
+
+  /** One COMPLETED doc (status pill = "Completed") with an editable draft body. */
+  function docSetup(): void {
+    mockedApi.fetchRoadmap.mockResolvedValue([
+      { id: 'P1', name: 'RTM', artifactPath: 'docs/RTM.md', docExists: true, status: 'COMPLETED' }
+    ] as never);
+    mockedApi.fetchDoc.mockResolvedValue({
+      phaseId: 'P1',
+      path: 'docs/RTM.md',
+      content: '# RTM\n\nSS-04.e fuse selectivity row',
+      status: 'draft'
+    } as never);
+  }
+
+  const questionA: PortalItem = {
+    id: 'q-a',
+    type: 'question',
+    severity: 'normal',
+    docPath: 'docs/RTM.md',
+    title: 'Fuse selectivity',
+    detail: 'SS-04.e fuse selectivity needs a formal check.',
+    status: 'open',
+    source: 'autopilot',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    meta: { sections: { bluf: 'No formal selectivity check on record.' } }
+  };
+
+  beforeEach(() => {
+    roRecords.length = 0;
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+  });
+
+  it('keeps every control inline at a wide pane and renders no ⋯ trigger', async () => {
+    docSetup();
+    renderView();
+    expect(await screen.findByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+    setDocPaneWidth(900);
+
+    expect(screen.getByRole('button', { name: 'Attach a quality example' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve phase' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Collapse document pane' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'More document actions' })).toBeNull();
+  });
+
+  it('folds Attach / Refresh / Approve into ⋯ at <=759 and keeps Edit, the switch and ⋯ inline', async () => {
+    docSetup();
+    renderView();
+    expect(await screen.findByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+    setDocPaneWidth(636);
+
+    // Folded: gone from the inline row, present as rows of the menu.
+    expect(screen.queryByRole('button', { name: 'Attach a quality example' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Refresh document' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Approve phase' })).toBeNull();
+    // Never folded: Edit, the Document | Details switch, the rail and ⋯.
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Document' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Collapse document pane' })).toBeInTheDocument();
+    const trigger = screen.getByRole('button', { name: 'More document actions' });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('dispatches the folded action from the ⋯ menu and closes it', async () => {
+    docSetup();
+    const { user } = renderView();
+    expect(await screen.findByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+    setDocPaneWidth(636);
+
+    const callsBefore = mockedApi.fetchDoc.mock.calls.length;
+    await user.click(screen.getByRole('button', { name: 'More document actions' }));
+    const menu = screen.getByRole('menu', { name: 'More document actions' });
+    // Never both at once: the folded action exists only as a menu row.
+    expect(within(menu).getByRole('menuitem', { name: 'Refresh document' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refresh document' })).toBeNull();
+    await user.click(within(menu).getByRole('menuitem', { name: 'Refresh document' }));
+
+    expect(screen.queryByRole('menu')).toBeNull();
+    await waitFor(() => expect(mockedApi.fetchDoc.mock.calls.length).toBeGreaterThan(callsBefore));
+  });
+
+  it('renders a disabled action as a disabled menu row, never omits it', async () => {
+    docSetup();
+    // A busy turn disables the inline Attach button, so the row must be disabled.
+    const { user } = renderView({ busy: true });
+    expect(await screen.findByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+    setDocPaneWidth(636);
+
+    await user.click(screen.getByRole('button', { name: 'More document actions' }));
+    const attachRow = within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Attach a quality example' });
+    expect(attachRow).toBeDisabled();
+  });
+
+  it('folds the pane-rail buttons last, at <=629, and they still act', async () => {
+    docSetup();
+    const { user } = renderView();
+    expect(await screen.findByRole('button', { name: 'Collapse document pane' })).toBeInTheDocument();
+    setDocPaneWidth(600);
+
+    expect(screen.queryByRole('button', { name: 'Collapse document pane' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Focus document pane' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'More document actions' }));
+    await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Collapse document pane' }));
+
+    expect(await screen.findByRole('button', { name: 'Expand document pane' })).toBeInTheDocument();
+  });
+
+  it('hides the selector status pill at <=519 and carries its words in title/aria-label', async () => {
+    docSetup();
+    renderView();
+    expect(await screen.findByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+
+    setDocPaneWidth(600);
+    expect(screen.getByText('Completed')).toBeInTheDocument();
+
+    setDocPaneWidth(500);
+    expect(screen.queryByText('Completed')).toBeNull();
+    const selector = screen.getByRole('button', { name: 'Select document — RTM — Completed' });
+    expect(selector).toHaveAttribute('title', 'RTM — Completed');
+  });
+
+  it('collapses the Document / Details labels to icons at <=429, keeping the words', async () => {
+    docSetup();
+    renderView();
+    expect(await screen.findByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+    setDocPaneWidth(360);
+
+    for (const label of ['Document', 'Details']) {
+      const tab = screen.getByRole('tab', { name: label });
+      expect(tab).toHaveAttribute('aria-label', label);
+      expect(tab.querySelector('span')?.className).toContain('hidden');
+      expect(tab.className).toContain('min-h-[44px]');
+    }
+    // Edit, the switch and ⋯ all survive at the splitter's 360 px floor.
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'More document actions' })).toBeInTheDocument();
+  });
+
+  it('closes the menu on Escape and returns focus to the ⋯ trigger', async () => {
+    docSetup();
+    const { user } = renderView();
+    expect(await screen.findByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+    setDocPaneWidth(636);
+
+    const trigger = screen.getByRole('button', { name: 'More document actions' });
+    await user.click(trigger);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('folds Diff into ⋯ and dispatches the toggle', async () => {
+    docSetup();
+    autopilotState.status = {
+      enabled: false,
+      running: false,
+      docStatus: { P1: 'revised' },
+      blocks: 0,
+      passedCount: 0,
+      totalPhases: 13
+    };
+    mockedApi.fetchDocDiff.mockResolvedValue({
+      phaseId: 'P1',
+      approved: 'a',
+      current: 'b',
+      approvedAvailable: true
+    });
+    const { user } = renderView();
+    expect(await screen.findByRole('button', { name: 'Toggle diff view' })).toBeInTheDocument();
+    setDocPaneWidth(636);
+
+    expect(screen.queryByRole('button', { name: 'Toggle diff view' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'More document actions' }));
+    await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Diff' }));
+
+    await waitFor(() => expect(mockedApi.fetchDocDiff).toHaveBeenCalledWith('P1'));
+  });
+
+  it('Details mode renders no ⋯ and no doc actions; the rail stays inline', async () => {
+    docSetup();
+    autopilotState.portalItems = [questionA];
+    const { user } = renderView();
+    expect(await screen.findByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+    setDocPaneWidth(636);
+    expect(screen.getByRole('button', { name: 'More document actions' })).toBeInTheDocument();
+
+    await user.click(await screen.findByRole('button', { name: /Open questions from AI/ }));
+    const detailsTab = await screen.findByRole('tab', { name: 'Details' });
+    await waitFor(() => expect(detailsTab.getAttribute('aria-disabled')).toBeNull());
+    await user.click(detailsTab);
+
+    expect(screen.getByRole('tabpanel', { name: 'Details' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'More document actions' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Refresh document' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Attach a quality example' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Collapse document pane' })).toBeInTheDocument();
+  });
+});
