@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { renderWithUser, cleanup } from '../test/render';
 import DevelopmentView from './DevelopmentView';
 import { useAutopilotEvents } from '../hooks/useAutopilotEvents';
@@ -331,5 +331,146 @@ describe('DevelopmentView revised-doc diff view', () => {
     await user.click(screen.getByRole('button', { name: 'Toggle diff view' }));
     expect(await screen.findByText('Revised (original version not archived)')).toBeInTheDocument();
     expect(screen.queryByLabelText('Document diff')).toBeNull();
+  });
+});
+
+// ————— Right pane: Document / Details (design 2026-11-03 §3b) —————
+describe('DevelopmentView right pane Document / Details switch', () => {
+  const questionA: PortalItem = {
+    id: 'q-a',
+    type: 'question',
+    severity: 'normal',
+    docPath: 'docs/RTM.md',
+    title: 'Fuse selectivity',
+    detail: 'SS-04.e fuse selectivity needs a formal check.',
+    status: 'open',
+    source: 'autopilot',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    meta: { sections: { bluf: 'No formal selectivity check on record.' } }
+  };
+  const questionB: PortalItem = {
+    ...questionA,
+    id: 'q-b',
+    docPath: 'docs/BOM.md',
+    title: 'Relay coil creepage',
+    detail: 'SS-05.a relay coil creepage is unverified.'
+  };
+  const parkedItem: PortalItem = {
+    ...questionA,
+    id: 'p-1',
+    type: 'parked',
+    title: 'Parked item',
+    meta: undefined
+  };
+
+  /** Two-doc roadmap + a loaded RTM doc + the portal items the panel lists. */
+  function rightPaneSetup(items: PortalItem[]): void {
+    mockedApi.fetchRoadmap.mockResolvedValue([
+      { id: 'P1', name: 'RTM', artifactPath: 'docs/RTM.md', docExists: true, status: 'COMPLETED' },
+      { id: 'P2', name: 'BOM', artifactPath: 'docs/BOM.md', docExists: true, status: 'COMPLETED' }
+    ] as never);
+    mockedApi.fetchDoc.mockResolvedValue({
+      phaseId: 'P1',
+      path: 'docs/RTM.md',
+      content: '# RTM\n\nSS-04.e fuse selectivity row',
+      status: 'draft'
+    } as never);
+    autopilotState.portalItems = items;
+  }
+
+  /** Opens the question panel from the left-pane badge and waits for the
+      active-item emission that enables the Details tab. */
+  async function openPanel(user: ReturnType<typeof renderView>['user']): Promise<HTMLElement> {
+    await user.click(await screen.findByRole('button', { name: /Open questions from AI/ }));
+    const detailsTab = await screen.findByRole('tab', { name: 'Details' });
+    await waitFor(() => expect(detailsTab.getAttribute('aria-disabled')).toBeNull());
+    return detailsTab;
+  }
+
+  it('Details renders the record, hides the doc actions, and keeps the doc mounted but inert', async () => {
+    rightPaneSetup([questionA]);
+    const { user, container } = renderView();
+    const detailsTab = await openPanel(user);
+    expect(await screen.findByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+
+    await user.click(detailsTab);
+
+    // The record renders in the right pane.
+    expect(screen.getByRole('tabpanel', { name: 'Details' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Fuse selectivity' })).toBeInTheDocument();
+    // §3b.6(ii) — the doc action cluster is hidden, not disabled.
+    expect(screen.queryByRole('button', { name: 'Refresh document' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Attach a quality example' })).toBeNull();
+    // §3b.3.5 / §3b.6(i) — the doc tree is still mounted; only inert.
+    expect(screen.getByRole('tabpanel', { name: 'Document' })).toBeInTheDocument();
+    expect(container.querySelector('#pane-doc [inert]')).not.toBeNull();
+    // Collapse / zen rail buttons stay rendered.
+    expect(screen.getByRole('button', { name: 'Collapse document pane' })).toBeInTheDocument();
+  });
+
+  it('switching back to Document restores the doc actions without remounting the tree', async () => {
+    rightPaneSetup([questionA]);
+    const { user } = renderView();
+    const detailsTab = await openPanel(user);
+    const docPanel = screen.getByRole('tabpanel', { name: 'Document' });
+
+    await user.click(detailsTab);
+    // Same DOM node while Details is up — the doc was never unmounted.
+    expect(screen.getByRole('tabpanel', { name: 'Document' })).toBe(docPanel);
+
+    await user.click(screen.getByRole('tab', { name: 'Document' }));
+    expect(screen.queryByRole('tabpanel', { name: 'Details' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+    expect(screen.getByRole('tabpanel', { name: 'Document' })).toBe(docPanel);
+  });
+
+  it('the Details tab is disabled when the active item is not a question', async () => {
+    rightPaneSetup([parkedItem]);
+    const { user } = renderView();
+    await user.click(await screen.findByRole('button', { name: /Open questions from AI/ }));
+
+    const detailsTab = await screen.findByRole('tab', { name: 'Details' });
+    expect(detailsTab).toHaveAttribute('aria-disabled', 'true');
+    await user.click(detailsTab);
+    expect(screen.queryByRole('tabpanel', { name: 'Details' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+  });
+
+  it('closing the panel resets the right pane to Document for the next open', async () => {
+    rightPaneSetup([questionA]);
+    const { user } = renderView();
+    const detailsTab = await openPanel(user);
+    await user.click(detailsTab);
+    expect(screen.getByRole('tabpanel', { name: 'Details' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Close questions' }));
+    expect(screen.queryByRole('tabpanel', { name: 'Details' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+
+    // Session-only: reopening starts on Document again (never persisted).
+    await openPanel(user);
+    expect(screen.getByRole('tab', { name: 'Document' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('tabpanel', { name: 'Details' })).toBeNull();
+  });
+
+  it('Open document from Details returns to Document and navigates to the item doc', async () => {
+    rightPaneSetup([questionA, questionB]);
+    const { user } = renderView();
+    const detailsTab = await openPanel(user);
+    await user.click(detailsTab);
+
+    // A chip from a different doc does not navigate while Details is up
+    // (§3b.6(iv)); the record switches instantly and offers the jump.
+    await user.click(screen.getByRole('button', { name: /Relay coil creepage/ }));
+    expect(screen.getByRole('heading', { level: 1, name: 'Relay coil creepage' })).toBeInTheDocument();
+    expect(mockedApi.setActivePhase).not.toHaveBeenCalledWith('P2');
+
+    await user.click(within(screen.getByRole('tabpanel', { name: 'Details' })).getByRole('button', { name: 'Open document' }));
+
+    expect(screen.queryByRole('tabpanel', { name: 'Details' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Document' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+    await waitFor(() => expect(mockedApi.setActivePhase).toHaveBeenCalledWith('P2'));
   });
 });

@@ -31,7 +31,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
-  PanelRightOpen
+  PanelRightOpen,
+  List
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
@@ -55,6 +56,8 @@ import CriticScorecard from '../components/CriticScorecard';
 import CheckpointPanel from '../components/CheckpointPanel';
 import QuestionBadge from '../components/QuestionBadge';
 import QuestionPanel from '../components/QuestionPanel';
+import QuestionDetails from '../components/question-chat/QuestionDetails';
+import RightPaneViewSwitch, { type RightPaneView } from '../components/question-chat/RightPaneViewSwitch';
 import PaneSplitter from '../components/PaneSplitter';
 import StartAutopilotButton from '../components/StartAutopilotButton';
 // React Bits (reactbits.dev) decorative effect — see web/src/components/reactbits.
@@ -502,6 +505,33 @@ export default function DevelopmentView({
     }
   }, [pendingCount]);
 
+  // §3b — right-pane view switch (session-only, never persisted; not
+  // localStorage, unlike the split preference). Document stays mounted at all
+  // times; Details is an overlay for the active question (§3b.6(i)).
+  const [rightView, setRightView] = useState<RightPaneView>('doc');
+  const [detailsItem, setDetailsItem] = useState<PortalItem | null>(null);
+  // The exact list QuestionPanel pages through, so "N of M" in Details and in
+  // the left-pane context header can never disagree.
+  const panelItems = useMemo(
+    () => visibleItems.filter(i => i.status === 'open' || (i.status === 'answered' && i.meta?.autoApplied)),
+    [visibleItems]
+  );
+  const detailsPagerIndex = detailsItem ? panelItems.findIndex(i => i.id === detailsItem.id) + 1 : 0;
+  // §3b.6(v): Details is displayed only while the panel is open. Minimized
+  // keeps the remembered value (Expand returns to it); closed resets it.
+  const shownView: RightPaneView = surface === 'open' ? rightView : 'doc';
+  const detailsOpen = shownView === 'details' && detailsItem !== null;
+  // Closed → forget the item and the view (§3b.6(v)). Losing the item while
+  // open → fall back to Document; the view can never point at nothing.
+  useEffect(() => {
+    if (surface !== 'closed') return;
+    setRightView('doc');
+    setDetailsItem(null);
+  }, [surface]);
+  useEffect(() => {
+    if (!detailsItem) setRightView('doc');
+  }, [detailsItem]);
+
   useEffect(() => {
     const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     chatEndRef.current?.scrollIntoView({ behavior: prefersReduced ? 'auto' : 'smooth' });
@@ -727,10 +757,13 @@ export default function DevelopmentView({
     return () => ro.disconnect();
   }, []);
 
-  // §5.A cover semantics (Workstream C) — the DOC is never inert: it is what
-  // the user reads while answering. The FEED gets inert + aria-hidden in its
-  // place so tab order cannot wander underneath the panel overlay. The doc
-  // element keeps docContentRef for the scroll/highlight logic only.
+  // §5.A cover semantics (Workstream C) — the DOC is not inert while the user
+  // answers questions: it is what they read. It IS inert (never display:none)
+  // while the Details overlay covers it (§3b.6(i)): its controls leave the tab
+  // order, its scrollTop and anchor ring survive. The FEED gets inert +
+  // aria-hidden in the panel's place so tab order cannot wander underneath the
+  // panel overlay. The doc element keeps docContentRef for the
+  // scroll/highlight logic only.
   const docContentRef = useRef<HTMLDivElement>(null);
   const feedScrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -744,6 +777,20 @@ export default function DevelopmentView({
       el.removeAttribute('aria-hidden');
     }
   }, [surface]);
+
+  // §3b.3.5 — the Details overlay covers the doc tree; inert keeps its controls
+  // out of the tab order without touching the DOM subtree.
+  useEffect(() => {
+    const el = docContentRef.current;
+    if (!el) return;
+    if (detailsOpen) {
+      el.setAttribute('inert', '');
+      el.setAttribute('aria-hidden', 'true');
+    } else {
+      el.removeAttribute('inert');
+      el.removeAttribute('aria-hidden');
+    }
+  }, [detailsOpen]);
 
   // --- Workstream C: pane sizing + collapse/Zen (design §5.I) ---
   const [leftPct, setLeftPct] = useState<number>(() => {
@@ -915,7 +962,11 @@ export default function DevelopmentView({
    * (selectPhaseByDocPath) + highlight state; applyAnchorHighlight in the
    * effect above is the real doc-presence check once the target doc renders.
    */
-  const handleFocusDocument = async (item: PortalItem): Promise<void> => {
+  const handleFocusDocument = async (item: PortalItem, force = false): Promise<void> => {
+    // §3b.6(iv) — with the Details overlay up the document is inert: navigating
+    // it would be invisible work and a wasted fetch. `Open document` in the
+    // record flips the view first and then runs this same path (force).
+    if (detailsOpen && !force) return;
     const docName = item.docPath ? basename(item.docPath) : '';
     if (!item.docPath || !docName) {
       setHighlight(null);
@@ -938,6 +989,30 @@ export default function DevelopmentView({
       setAnnouncement(`Opened ${docName} — couldn't locate a requirement anchor in this document.`);
     }
   };
+
+  /**
+   * §3b.6(vi) — flip the right pane and announce once through the existing live
+   * region; focus does not move (cross-pane stealing would break the composer
+   * order). No new shortcut, no localStorage.
+   */
+  function changeRightView(next: RightPaneView): void {
+    setRightView(next);
+    if (next === 'details' && detailsItem) {
+      const reqId = extractRequirementIds(`${detailsItem.title}\n${detailsItem.detail ?? ''}`)[0];
+      setAnnouncement(`Right pane: details${reqId ? ` for ${reqId}` : ''}.`);
+    }
+  }
+
+  /**
+   * Details' `Open document` (§3b.6(iv)): navigate via the existing
+   * handleFocusDocument path AND flip back to Document in the same action, so
+   * the anchor flash happens on a visible, non-inert doc.
+   */
+  function openDetailsDocument(): void {
+    const target = detailsItem;
+    setRightView('doc');
+    if (target) void handleFocusDocument(target, true);
+  }
 
   // Quality example upload state
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
@@ -1390,7 +1465,7 @@ export default function DevelopmentView({
         {surface !== 'closed' && (
           <QuestionPanel
             surface={surface}
-            items={visibleItems.filter(i => i.status === 'open' || (i.status === 'answered' && i.meta?.autoApplied))}
+            items={panelItems}
             answerStates={answerStates}
             onSubmit={handleQueueAnswer}
             onConfirmProposal={async (id, editedText) => {
@@ -1466,15 +1541,18 @@ export default function DevelopmentView({
             onClose={() => setSurface('closed')}
             onFocusDocument={handleFocusDocument}
             focusRequest={focusRequest}
+            onActiveItemChange={(item) => setDetailsItem(item && item.type === 'question' ? item : null)}
+            onOpenDetails={() => changeRightView('details')}
           />
         )}
       </section>
 
-      {/* §5.I — pane divider (lg+ only; below lg the single chat pane stays full-width).
+      {/* §5.I — pane divider (md+ since §3b.3.8: Details needs a right-pane home
+          at 900 px; below md the single chat pane stays full-width).
           Rendered directly in the pane row: drag math measures parentElement,
           so a wrapper div (8px wide) would desync it from the real row. */}
       <PaneSplitter
-        className="hidden lg:flex"
+        className="hidden md:flex"
         leftPct={leftPct}
         onChange={setLeftPct}
         onCommit={persistSplit}
@@ -1486,7 +1564,7 @@ export default function DevelopmentView({
       <section
         aria-label="Document workspace"
         style={rightStyle}
-        className={`relative hidden min-h-0 min-w-0 flex-col lg:flex ${rightIsRail ? 'overflow-hidden' : ''}`}
+        className={`relative hidden min-h-0 min-w-0 flex-col md:flex ${rightIsRail ? 'overflow-hidden' : ''}`}
       >
         {rightIsRail && (
           <div className="absolute inset-0 z-30 hidden w-11 flex-col items-center justify-center gap-2 bg-[#0d1017]/95 lg:flex">
@@ -1506,148 +1584,172 @@ export default function DevelopmentView({
         )}
 
         <header ref={headerRef} className="flex h-12 items-center gap-2 border-b border-[#2a3342] bg-[#0d1017]/70 px-3">
-          <FileText className="h-4 w-4 shrink-0 text-[#6e7d92]" aria-hidden />
+          {detailsOpen && detailsItem ? (
+            /* §3b.6(ii) — read-only identity line. The document actions below
+               describe a body that is not on screen, so they are not rendered. */
+            <div className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-[var(--sf-text-2)]">
+              <List className="h-4 w-4 shrink-0 text-[#6e7d92]" aria-hidden />
+              <span className="truncate">
+                Details · {detailsPagerIndex} of {panelItems.length}
+                {detailsItem.docPath ? ` · ${basename(detailsItem.docPath)}` : ''}
+              </span>
+            </div>
+          ) : (
+            <>
+              <FileText className="h-4 w-4 shrink-0 text-[#6e7d92]" aria-hidden />
 
-          {/* Custom Document Selector Popover */}
-          <div ref={dropdownRef} className="relative">
-            <button
-              type="button"
-              onClick={() => setDocDropdownOpen(v => !v)}
-              aria-haspopup="listbox"
-              aria-expanded={docDropdownOpen}
-              className={`flex min-h-[40px] items-center gap-2.5 rounded-lg border border-[#3b4658] bg-[#05070c] px-3 text-sm font-medium text-[#e8edf5] hover:bg-[#0d1017] transition-colors cursor-pointer ${headerCompact ? 'w-10 justify-center' : ''}`}
-            >
-              {!headerCompact && (
-                <span className="truncate max-w-[180px] sm:max-w-[240px]">
-                  {selectedPhaseInfo ? selectedPhaseInfo.name : 'Select Document'}
-                </span>
-              )}
-              {renderStatusPill(selectedPhaseInfo)}
-              <ChevronDown className={`h-4 w-4 text-[#a8b3c4] transition-transform ${docDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
+              {/* Custom Document Selector Popover */}
+              <div ref={dropdownRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setDocDropdownOpen(v => !v)}
+                  aria-haspopup="listbox"
+                  aria-expanded={docDropdownOpen}
+                  className={`flex min-h-[40px] items-center gap-2.5 rounded-lg border border-[#3b4658] bg-[#05070c] px-3 text-sm font-medium text-[#e8edf5] hover:bg-[#0d1017] transition-colors cursor-pointer ${headerCompact ? 'w-10 justify-center' : ''}`}
+                >
+                  {!headerCompact && (
+                    <span className="truncate max-w-[180px] sm:max-w-[240px]">
+                      {selectedPhaseInfo ? selectedPhaseInfo.name : 'Select Document'}
+                    </span>
+                  )}
+                  {renderStatusPill(selectedPhaseInfo)}
+                  <ChevronDown className={`h-4 w-4 text-[#a8b3c4] transition-transform ${docDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
 
-            {docDropdownOpen && (
-              <div
-                role="listbox"
-                className="absolute left-0 top-full z-50 mt-1 max-h-80 w-80 sm:w-96 overflow-y-auto rounded-xl border border-[#3b4658] bg-[#05070c] p-1.5 shadow-2xl space-y-1"
-              >
-                {roadmap.map((p, idx) => {
-                  const isSelected = p.id === selectedPhase;
-                  return (
-                    <div
-                      key={p.id}
-                      role="option"
-                      aria-selected={isSelected}
-                      onClick={async () => {
-                        setEditing(false);
-                        setSelectedPhase(p.id);
-                        setDocDropdownOpen(false);
-                        try {
-                          await api.setActivePhase(p.id);
-                          await onProjectChanged();
-                        } catch {}
-                      }}
-                      className={`flex min-h-[44px] cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 text-xs transition-colors ${
-                        isSelected
-                          ? 'bg-violet-950/70 text-violet-200 border border-violet-800/60 font-semibold'
-                          : 'text-[#a8b3c4] hover:bg-[#0d1017] hover:text-white'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 truncate">
-                        <span className="font-mono text-[#6e7d92] text-[10px] w-4">{idx + 1}.</span>
-                        <span className="truncate">{p.name}</span>
-                      </div>
-                      <div className="shrink-0 flex items-center gap-1.5">
-                        {renderStatusPill(p)}
-                        {isSelected && <Check className="h-3.5 w-3.5 text-violet-400" />}
-                      </div>
-                    </div>
-                  );
-                })}
+                {docDropdownOpen && (
+                  <div
+                    role="listbox"
+                    className="absolute left-0 top-full z-50 mt-1 max-h-80 w-80 sm:w-96 overflow-y-auto rounded-xl border border-[#3b4658] bg-[#05070c] p-1.5 shadow-2xl space-y-1"
+                  >
+                    {roadmap.map((p, idx) => {
+                      const isSelected = p.id === selectedPhase;
+                      return (
+                        <div
+                          key={p.id}
+                          role="option"
+                          aria-selected={isSelected}
+                          onClick={async () => {
+                            setEditing(false);
+                            setSelectedPhase(p.id);
+                            setDocDropdownOpen(false);
+                            try {
+                              await api.setActivePhase(p.id);
+                              await onProjectChanged();
+                            } catch {}
+                          }}
+                          className={`flex min-h-[44px] cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 text-xs transition-colors ${
+                            isSelected
+                              ? 'bg-violet-950/70 text-violet-200 border border-violet-800/60 font-semibold'
+                              : 'text-[#a8b3c4] hover:bg-[#0d1017] hover:text-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            <span className="font-mono text-[#6e7d92] text-[10px] w-4">{idx + 1}.</span>
+                            <span className="truncate">{p.name}</span>
+                          </div>
+                          <div className="shrink-0 flex items-center gap-1.5">
+                            {renderStatusPill(p)}
+                            {isSelected && <Check className="h-3.5 w-3.5 text-violet-400" />}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <div className="flex-1 min-w-0" />
+              <div className="flex-1 min-w-0" />
+            </>
+          )}
+
+          {/* §3b.3.4 / §3b.6(vi) — Document | Details tablist, after the
+              selector and before the action cluster. */}
+          <RightPaneViewSwitch value={shownView} onChange={changeRightView} disabled={!detailsItem} />
 
           <div className="flex shrink-0 items-center gap-1.5">
-            {/* §5.B — folded quality-example drop zone: one Paperclip button, same file input */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept=".md,.txt,.pdf"
-              className="hidden"
-              onChange={e => {
-                const file = e.target.files?.[0];
-                if (file) void handleFileUpload(file);
-                e.target.value = '';
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingExample || busy}
-              aria-label="Attach a quality example"
-              title="Attach a quality example"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
-            >
-              {uploadingExample ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Paperclip className="h-4 w-4" aria-hidden />}
-            </button>
-            {/* Autopilot start/stop live solely in the chat composer's rocket
-                button; the doc header keeps no autopilot control. */}
-            <button
-              onClick={() => void refreshDoc()}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
-              aria-label="Refresh document"
-              title="Refresh document"
-            >
-              <RefreshCw className="h-4 w-4" aria-hidden />
-            </button>
-            {doc && !editing && (
-              <button
-                onClick={() => { setDraft(doc.content); setEditing(true); }}
-                className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#3b4658] px-3 text-xs font-medium text-[#a8b3c4] transition hover:bg-[#11151d]"
-              >
-                <Pencil className="h-3.5 w-3.5" aria-hidden /> Edit
-              </button>
-            )}
-            {editing && (
+            {/* §3b.6(ii) — the document controls are hidden (not disabled) in
+                Details mode; collapse/zen stay. */}
+            {!detailsOpen && (
               <>
+                {/* §5.B — folded quality-example drop zone: one Paperclip button, same file input */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept=".md,.txt,.pdf"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleFileUpload(file);
+                    e.target.value = '';
+                  }}
+                />
                 <button
-                  onClick={() => void saveDraft()}
-                  disabled={saving}
-                  className="flex min-h-[40px] items-center gap-1.5 rounded-lg bg-[#7c3aed] px-3 text-xs font-semibold text-white transition hover:bg-[#8b5cf6] disabled:opacity-40"
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingExample || busy}
+                  aria-label="Attach a quality example"
+                  title="Attach a quality example"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
                 >
-                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Save className="h-3.5 w-3.5" aria-hidden />}
-                  Save
+                  {uploadingExample ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Paperclip className="h-4 w-4" aria-hidden />}
                 </button>
+                {/* Autopilot start/stop live solely in the chat composer's rocket
+                    button; the doc header keeps no autopilot control. */}
                 <button
-                  onClick={() => { setEditing(false); setDraft(doc?.content ?? ''); }}
-                  className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#3b4658] px-3 text-xs text-[#a8b3c4] transition hover:bg-[#11151d]"
+                  onClick={() => void refreshDoc()}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60"
+                  aria-label="Refresh document"
+                  title="Refresh document"
                 >
-                  <Eye className="h-3.5 w-3.5" aria-hidden /> Cancel
+                  <RefreshCw className="h-4 w-4" aria-hidden />
                 </button>
+                {doc && !editing && (
+                  <button
+                    onClick={() => { setDraft(doc.content); setEditing(true); }}
+                    className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#3b4658] px-3 text-xs font-medium text-[#a8b3c4] transition hover:bg-[#11151d]"
+                  >
+                    <Pencil className="h-3.5 w-3.5" aria-hidden /> Edit
+                  </button>
+                )}
+                {editing && (
+                  <>
+                    <button
+                      onClick={() => void saveDraft()}
+                      disabled={saving}
+                      className="flex min-h-[40px] items-center gap-1.5 rounded-lg bg-[#7c3aed] px-3 text-xs font-semibold text-white transition hover:bg-[#8b5cf6] disabled:opacity-40"
+                    >
+                      {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Save className="h-3.5 w-3.5" aria-hidden />}
+                      Save
+                    </button>
+                    <button
+                      onClick={() => { setEditing(false); setDraft(doc?.content ?? ''); }}
+                      className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#3b4658] px-3 text-xs text-[#a8b3c4] transition hover:bg-[#11151d]"
+                    >
+                      <Eye className="h-3.5 w-3.5" aria-hidden /> Cancel
+                    </button>
+                  </>
+                )}
+                {doc && !editing && doc.status !== 'approved' && selectedPhaseInfo?.docExists && (
+                  <button
+                    onClick={() => void approvePhase()}
+                    disabled={approving}
+                    className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#8b5cf6] px-3 text-xs font-semibold text-[#c4b5fd] transition hover:bg-[#2e1065] disabled:opacity-40"
+                  >
+                    {approving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <BadgeCheck className="h-3.5 w-3.5" aria-hidden />}
+                    Approve phase
+                  </button>
+                )}
+                {doc && !editing && selectedDocStatus === 'revised' && (
+                  <button
+                    onClick={() => void toggleDiff()}
+                    aria-label="Toggle diff view"
+                    title="Toggle diff view"
+                    className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#3b4658] px-3 text-xs font-medium text-[#a8b3c4] transition hover:bg-[#11151d]"
+                  >
+                    Diff
+                  </button>
+                )}
               </>
-            )}
-            {doc && !editing && doc.status !== 'approved' && selectedPhaseInfo?.docExists && (
-              <button
-                onClick={() => void approvePhase()}
-                disabled={approving}
-                className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#8b5cf6] px-3 text-xs font-semibold text-[#c4b5fd] transition hover:bg-[#2e1065] disabled:opacity-40"
-              >
-                {approving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <BadgeCheck className="h-3.5 w-3.5" aria-hidden />}
-                Approve phase
-              </button>
-            )}
-            {doc && !editing && selectedDocStatus === 'revised' && (
-              <button
-                onClick={() => void toggleDiff()}
-                aria-label="Toggle diff view"
-                title="Toggle diff view"
-                className="flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#3b4658] px-3 text-xs font-medium text-[#a8b3c4] transition hover:bg-[#11151d]"
-              >
-                Diff
-              </button>
             )}
             <button
               type="button"
@@ -1707,8 +1809,14 @@ export default function DevelopmentView({
           </p>
         )}
 
-        {/* §5.B — drag/drop now lives on the doc body wrapper (the strip is folded) */}
+        {/* §5.B — drag/drop now lives on the doc body wrapper (the strip is folded).
+            §3b.3.5 — this is the Document tabpanel: the tree stays MOUNTED at all
+            times (overlay + inert, never display:none) so scrollTop, the anchor
+            ring, diff state and the unsaved draft survive a view switch. */}
         <div
+          role="tabpanel"
+          id="pane-doc"
+          aria-labelledby="tab-doc"
           className="relative min-h-0 min-w-0 flex-1"
           onDragOver={e => e.preventDefault()}
           onDrop={e => {
@@ -1776,6 +1884,26 @@ export default function DevelopmentView({
             </div>
           )}
           </div>
+
+          {/* §3b.3.5 — the Details overlay. Keyed by item so its two local
+              disclosures never leak across questions. */}
+          {detailsOpen && detailsItem && (
+            <div
+              role="tabpanel"
+              id="pane-details"
+              aria-labelledby="tab-details"
+              className="absolute inset-0 z-10 overflow-y-auto bg-[var(--sf-void)]"
+            >
+              <QuestionDetails
+                key={detailsItem.id}
+                item={detailsItem}
+                pagerIndex={detailsPagerIndex}
+                total={panelItems.length}
+                selectedDocName={selectedDocName}
+                onOpenDocument={openDetailsDocument}
+              />
+            </div>
+          )}
         </div>
       </section>
     </div>

@@ -1126,8 +1126,10 @@ export default function QuestionPanel({
       aria-label="Questions from AI"
       className="absolute inset-0 z-20 flex flex-col bg-[#05070c] animate-panel-in"
     >
-      <header className="shrink-0 border-b border-[#2a3342] bg-[#0d1017]/90 px-3 py-2">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <header className="@container shrink-0 border-b border-[#2a3342] bg-[#0d1017]/90 px-3 py-2">
+        {/* §3b.6(iii) — one 60 px row at 900 px: no wrap; the Research button
+            drops to its icon under a 560 px container. */}
+        <div className="flex flex-nowrap items-center gap-x-2">
           <MessageSquare className="h-4 w-4 shrink-0 text-amber-400" aria-hidden />
           <span className="text-sm font-bold text-[#e8edf5]">Questions from AI</span>
           <span className="rounded-full bg-[#11151d] px-2 py-0.5 text-[11px] font-bold tabular-nums text-[#ffb3bd]">
@@ -1136,7 +1138,7 @@ export default function QuestionPanel({
           {/* The doc chip and the "N of M" pager moved into the context header
               (§3b.4) so this row stays a single 60 px line at 900 px. */}
           {item?.section && (
-            <span className="rounded bg-[#11151d] px-1.5 py-0.5 text-[10px] font-medium text-[#a8b3c4]">
+            <span className="max-w-[140px] shrink-0 truncate rounded bg-[#11151d] px-1.5 py-0.5 text-[10px] font-medium text-[#a8b3c4]">
               asked while {item.section}
             </span>
           )}
@@ -1162,7 +1164,7 @@ export default function QuestionPanel({
                   className="flex min-h-[32px] items-center gap-1.5 rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-2.5 text-[11px] font-semibold text-violet-200 transition hover:bg-[#3b1d7a]/50 focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Loader2 className={`h-3.5 w-3.5 ${researchAllBusy ? 'motion-safe:animate-spin' : ''}`} aria-hidden />
-                  Research open questions
+                  <span className="@max-[560px]:hidden">Research open questions</span>
                 </button>
               </>
             )}
