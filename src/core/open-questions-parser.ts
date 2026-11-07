@@ -41,22 +41,14 @@ export interface ParsedQuestionItem {
   title: string;
   /**
    * The header text BEFORE the header contract cut it (section labels already
-   * removed). Equals `title` when nothing was cut. Callers persist it as
-   * meta.originalTitle so portal dedupe keeps keying on the untrimmed header
-   * (questionSlug over a trimmed title would merge entries that differ only
-   * after the "?").
+   * removed). Equals `title` when nothing was cut. Two consumers: callers
+   * persist it as meta.originalTitle so portal dedupe keeps keying on the
+   * untrimmed header (questionSlug over a trimmed title would merge entries
+   * that differ only after the "?"), and the string API
+   * (parseOpenQuestionsFromContent / parseSection6Questions) returns it so the
+   * CLI Section 6 resolver shows the user the whole question.
    */
   rawTitle: string;
-  /**
-   * Full human-facing question text: the same untrimmed header `rawTitle`
-   * holds, returned by the string API (parseOpenQuestionsFromContent /
-   * parseSection6Questions) that the CLI's Section 6 resolver walks the user
-   * through. The user needs the whole explanation to answer, so this never
-   * applies the header contract cut. Separate from `rawTitle` because that
-   * field is the dedupe key and may be normalized without changing what the
-   * user is shown.
-   */
-  fullText: string;
   sections?: QuestionSections;
 }
 
@@ -329,9 +321,9 @@ export function inferQuestionTopic(text: string): string | undefined {
 
 /**
  * Extracts question entries (Q1, Q2, ... format) from a section's text as
- * { title, rawTitle, fullText, sections? } entries: the title is the stable
- * parse key (section labels and any trailing header explanation cut — see
- * applyHeaderContract); fullText keeps that explanation so the string API can
+ * { title, rawTitle, sections? } entries: the title is the stable parse key
+ * (section labels and any trailing header explanation cut — see
+ * applyHeaderContract); rawTitle keeps that explanation so the string API can
  * hand the user the whole question; sections are the optional format-v2
  * labeled fields extracted tolerantly from the entry body. Missing sections
  * are omitted (legacy entries parse exactly as before).
@@ -355,7 +347,6 @@ function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
       entries.push({
         title: header.title,
         rawTitle: header.rawTitle,
-        fullText: header.rawTitle,
         sections: withDroppedTail(extractQuestionSections(match[1]), header.droppedTail)
       });
     }
@@ -374,7 +365,6 @@ function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
             entries.push({
               title: header.title,
               rawTitle: header.rawTitle,
-              fullText: header.rawTitle,
               sections: withDroppedTail(extractQuestionSections(currentQ.trim()), header.droppedTail)
             });
           }
@@ -390,7 +380,6 @@ function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
         entries.push({
           title: header.title,
           rawTitle: header.rawTitle,
-          fullText: header.rawTitle,
           sections: withDroppedTail(extractQuestionSections(currentQ.trim()), header.droppedTail)
         });
       }
@@ -398,11 +387,6 @@ function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
   }
 
   return entries.filter(e => e.title.length > 3);
-}
-
-/** Backward-compatible title-only view of extractQuestionEntries. */
-function extractQuestionItems(sectionText: string): string[] {
-  return extractQuestionEntries(sectionText).map(entry => entry.title);
 }
 
 /**
@@ -429,12 +413,12 @@ export function parseOpenQuestionEntries(docContent: string): ParsedQuestionItem
  * Parses open questions from any document containing a "## Open Questions"
  * section (with optional numeric prefix). Works across all specialist documents.
  *
- * Returns the FULL question text (entry.fullText), not the header-contract
+ * Returns the FULL question text (entry.rawTitle), not the header-contract
  * title: the CLI Section 6 resolver reads this to prompt the user, and the
  * user needs the explanation the contract cut from the portal title.
  */
 export function parseOpenQuestionsFromContent(docContent: string): string[] {
-  return parseOpenQuestionEntries(docContent).map(entry => entry.fullText);
+  return parseOpenQuestionEntries(docContent).map(entry => entry.rawTitle);
 }
 
 /**
@@ -515,7 +499,9 @@ export function buildUpstreamQuestionContext(projectPath: string, currentDocPath
       continue;
     }
 
-    const questions = capQuestionsPerDoc(parseOpenQuestionsFromContent(content));
+    // Short (header-contract) titles, not the untrimmed raw headers: this
+    // block is a prompt-size-bounded re-ask guard, so it carries slugs only.
+    const questions = capQuestionsPerDoc(parseOpenQuestionEntries(content)).map(entry => entry.title);
     if (questions.length > 0) {
       const items = questions.map((q, i) => {
         const topic = questionTopic(q);

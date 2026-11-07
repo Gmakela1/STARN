@@ -810,15 +810,14 @@ export function ensureItemTopic(
  * Rewrites a portal item's wall-of-text title to the short display form
  * (shortResearchTitle: cut at the first sentence boundary inside the first 120
  * chars, else word-truncated) once the format-v2 sections are written,
- * persisting the original in meta.originalTitle and — when the item has no
+ * persisting the dedupe key in meta.originalTitle and — when the item has no
  * detail — mirroring the full original text into item.detail so the panel body
  * keeps the complete question (no information lost by shortening). Only
- * rewrites when the short form differs. The title stays the dedupe/slug key
- * going forward: dedupe keys already computed on the old titles remain; future
- * dedupe uses the new short titles (fine — canonical items are already tagged
- * via meta.upstreamOf; dedupeKey prefers meta.originalTitle anyway). Atomic
- * read-fresh → mutate → save. Returns false when the item vanished, was
- * dismissed, or the title is already short.
+ * rewrites when the short form differs. A caller-supplied meta.originalTitle
+ * (the parser's raw header) is kept: it, not the already-trimmed title, is
+ * the portal dedupe key, so overwriting it would let a re-intake of the same
+ * doc question create a twin. Atomic read-fresh → mutate → save. Returns false
+ * when the item vanished, was dismissed, or the title is already short.
  */
 export function rewriteShortTitle(stateManager: ProjectStateManager, itemId: string): boolean {
   const state = stateManager.getState();
@@ -827,7 +826,9 @@ export function rewriteShortTitle(stateManager: ProjectStateManager, itemId: str
   const short = shortResearchTitle(item.title);
   if (short === item.title) return false;
   const original = item.title;
-  item.meta = { ...(item.meta || {}), originalTitle: original };
+  // Keep a caller-supplied originalTitle (the parser's raw header): the
+  // pre-rewrite title is already a trimmed form, so it must not clobber it.
+  item.meta = { ...(item.meta || {}), originalTitle: item.meta?.originalTitle ?? original };
   item.title = short;
   if (!item.detail) item.detail = original;
   item.updatedAt = new Date().toISOString();

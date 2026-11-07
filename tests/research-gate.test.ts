@@ -520,6 +520,24 @@ describe('research gate wiring', () => {
       expect(stored.detail).toBe(original);
     });
 
+    it('keeps a caller-supplied meta.originalTitle (the parser raw header) instead of the trimmed title', () => {
+      // The parser already cut the header contract, so `title` is the trimmed
+      // form and meta.originalTitle is the raw header the portal dedupes on.
+      // Overwriting it with the trimmed title lets a re-intake of the same doc
+      // question create a twin.
+      const rawHeader =
+        '[ELECTRICAL] Main bus voltage decision. Which pack nominal do we lock? Because the load profile and the cranking spec disagree.';
+      const trimmed = '[ELECTRICAL] Main bus voltage decision. Which pack nominal do we lock?';
+      const item = makeItem(stateMgr, { title: trimmed, meta: { originalTitle: rawHeader } });
+
+      expect(enrichItem(stateMgr, item.id, { bluf: '48 V.', suggestion: 'Lock 48 V.' })).toBe(true);
+
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
+      expect(stored.title).toBe('[ELECTRICAL] Main bus voltage decision.');
+      expect(stored.meta?.originalTitle).toBe(rawHeader);
+      expect(stored.detail).toBe(trimmed);
+    });
+
     it('cuts at a word boundary, never mid-word, when the first sentence runs past 120 chars', () => {
       const stripped = Array.from({ length: 45 }, (_, i) => `segment${i}`).join(' ');
       const original = `Q1. ${stripped}`;

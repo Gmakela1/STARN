@@ -9,6 +9,7 @@ import {
   extractQuestionSections,
   questionSlug,
   inferQuestionTopic,
+  firstSentenceEnd,
   QUESTION_HEADER_CHAR_CAP
 } from '../src/core/open-questions-parser.js';
 import { OPEN_QUESTIONS_SECTION_RULES } from '../src/specialists/open-questions.js';
@@ -202,6 +203,18 @@ describe('abbreviation-safe header cut + raw-title preservation', () => {
     }
   });
 
+  it('never cuts on a "." that starts a digit or follows a short token (safe false-negatives)', () => {
+    // "…rated 48 V. The pack…": the token before the "." is "V" (1 char), so the
+    // ≥3-char token guard skips it. "run. 2 m length…": the next char is a
+    // digit, not an uppercase letter, so it is not a boundary. Both degrade to
+    // word-truncation / keep-whole (no data loss) — this pins that a future
+    // "fix" cannot flip them into destructive cutters.
+    const rated = 'The contactor is rated 48 V. The pack choice blocks the harness BOM line this week.';
+    const length = 'Main bus run. 2 m length for the 100 A continuous rating, pending the harness survey.';
+    expect(firstSentenceEnd(rated, rated.length)).toBe(-1);
+    expect(firstSentenceEnd(length, length.length)).toBe(-1);
+  });
+
   it('still cuts at a genuine sentence boundary inside an over-cap header', () => {
     const header =
       '[ELECTRICAL] Main bus voltage for the traction inverter is unresolved. The pack choice blocks the harness BOM line this week.';
@@ -242,7 +255,8 @@ describe('full question text on the string API (CLI resolver context)', () => {
     );
     const entry = parseOpenQuestionEntries(doc)[0];
     expect(entry.title).toBe('[ELECTRICAL] Main bus voltage?');
-    expect(entry.fullText).toContain('cranking spec disagree');
+    // rawTitle is the untrimmed header the string API hands the CLI resolver.
+    expect(entry.rawTitle).toContain('cranking spec disagree');
     expect(entry.sections?.background).toContain('cranking spec disagree');
     const [question] = parseOpenQuestionsFromContent(doc);
     expect(question).toContain('Main bus voltage');

@@ -9,7 +9,7 @@ import { SHARED_EDIT_INSTRUCTIONS } from '../specialists/shared.js';
 import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { runDiscovery } from './discovery.js';
 import { classifyRequest } from './classifier.js';
-import { parseOpenQuestionsFromContent, parseOpenQuestionEntries, questionSlug, questionTopic, buildUpstreamQuestionContext, QuestionSections } from './open-questions-parser.js';
+import { parseOpenQuestionEntries, questionSlug, questionTopic, buildUpstreamQuestionContext, QuestionSections } from './open-questions-parser.js';
 import { capQuestionsPerDoc } from '../specialists/open-questions.js';
 import { runAgentToolLoop } from './agent-loop.js';
 import {
@@ -389,7 +389,10 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     let existingBaselineText = '';
     // Snapshot of open questions already in the doc BEFORE this turn: the
     // post-turn onQuestions hook only reports genuinely NEW questions, so
-    // pre-existing items are never re-posted to the portal.
+    // pre-existing items are never re-posted to the portal. Slugged on the RAW
+    // header (rawTitle) on BOTH sides — that is the portal dedupe key
+    // (meta.originalTitle), and a trimmed title slugs differently once the
+    // header contract cut a tail, which would re-post the item every turn.
     const preTurnQuestionSlugs = new Set<string>();
     const targetDocPath = path.join(projectPath, 'docs', `${specialist.id.toUpperCase()}.md`);
     if (fs.existsSync(targetDocPath)) {
@@ -397,8 +400,8 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
         const existingContent = fs.readFileSync(targetDocPath, 'utf-8');
         if (existingContent.trim()) {
           existingBaselineText = `\nEXISTING BASELINE DOCUMENT (TO EVOLVE / UPDATE):\nAn approved baseline for this deliverable already exists at docs/${specialist.id.toUpperCase()}.md:\n\`\`\`markdown\n${existingContent}\n\`\`\`\nINSTRUCTION: You must EVOLVE and UPDATE this existing baseline document to incorporate the user's requested additions or changes, rather than starting from scratch.\n\nSECTION 6 ANSWER HANDLING (if applicable):\nIf the existing document has a Section 6 (Open Questions) and the user is now answering those questions, EDIT the relevant sections IN PLACE to reflect the answer. Remove the answered question from Section 6. Do NOT regenerate or rewrite the entire document from scratch. Do NOT include your reasoning, thought process, or meta-commentary in the document output.\n`;
-          for (const preQ of parseOpenQuestionsFromContent(existingContent)) {
-            preTurnQuestionSlugs.add(questionSlug(preQ));
+          for (const preEntry of parseOpenQuestionEntries(existingContent)) {
+            preTurnQuestionSlugs.add(questionSlug(preEntry.rawTitle));
           }
         }
       } catch (_e) {
@@ -735,7 +738,8 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
           questionItems = parseOpenQuestionEntries(artifactContent)
             // Diff-based posting: only questions that did not exist in the doc
             // before this turn are new; pre-existing ones are already on the board.
-            .filter(entry => !preTurnQuestionSlugs.has(questionSlug(entry.title)))
+            // Same basis as the pre-turn set: the raw header.
+            .filter(entry => !preTurnQuestionSlugs.has(questionSlug(entry.rawTitle)))
             .map(entry => ({
             type: 'question' as const,
             severity: 'normal' as const,

@@ -84,6 +84,23 @@ describe('buildUpstreamQuestionContext', () => {
     expect(block).toContain('Q1 [electrical]: confirm connector pin diameter');
   });
 
+  it('carries the SHORT header-contract title, not the untrimmed raw header', () => {
+    // The "?"-tail is dropped by the header contract: the injected list must
+    // stay a compact re-ask guard, so it slugs the short title.
+    fs.writeFileSync(
+      path.join(tempDir, 'docs', 'REQUIREMENTS.md'),
+      docWithOpenQuestions('Requirements', [
+        '[ELECTRICAL] Main bus voltage? Because the load profile and the thermal derating both drive this choice'
+      ]),
+      'utf-8'
+    );
+
+    const block = buildUpstreamQuestionContext(tempDir, path.join(tempDir, 'docs', 'BOM.md'));
+
+    expect(block).toContain('Q1 [electrical]: main bus voltage');
+    expect(block).not.toContain('because the load profile');
+  });
+
   it('returns empty string when no upstream doc has open questions or docs dir is missing', () => {
     fs.writeFileSync(path.join(tempDir, 'docs', 'REQUIREMENTS.md'), '# Requirements\n\nApproved baseline.\n', 'utf-8');
     expect(buildUpstreamQuestionContext(tempDir, path.join(tempDir, 'docs', 'BOM.md'))).toBe('');

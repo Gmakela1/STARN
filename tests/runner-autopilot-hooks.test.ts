@@ -406,6 +406,44 @@ describe('Core Runner autopilot hooks', () => {
     ]);
   });
 
+  it('a tail-cut question header is posted ONCE across two consecutive turns', async () => {
+    approveRequirements(stateMgr, tempDir);
+    // The header contract drops the "?"-tail, so the portal title is short
+    // while the raw header keeps the explanation. Both sides of the diff must
+    // slug the RAW header, else turn 2 re-posts the same question.
+    const tailCutHeader =
+      '[ELECTRICAL] Main bus voltage and breaker margin? Because the load profile and the thermal derating both drive this choice.';
+    installBomMock(tempDir, mockClient, {
+      draftContent: bomDocWithOpenQuestions([tailCutHeader]),
+      criticResults: [
+        { passed: true, score: 9.0 },
+        { passed: true, score: 9.0 }
+      ]
+    });
+    const hook = vi.fn();
+
+    for (let turn = 0; turn < 2; turn++) {
+      await CoreRunner.executeTurn({
+        userPrompt: 'Draft the BOM',
+        projectPath: tempDir,
+        stateManager: stateMgr,
+        client: mockClient,
+        model: 'test-model',
+        toolRegistry,
+        specialistRegistry,
+        forceSpecialistId: 'bom',
+        onQuestions: hook,
+        sessionMessages: []
+      });
+    }
+
+    // Turn 1 posts the question; turn 2 fires the hook with nothing new.
+    expect(hook).toHaveBeenCalledTimes(2);
+    const posted = hook.mock.calls.flatMap((call: any[]) => call[0]);
+    expect(posted).toHaveLength(1);
+    expect(posted[0].title).toBe('[ELECTRICAL] Main bus voltage and breaker margin?');
+  });
+
   it('criticFailed is true only when the critic loop exhausts both revisions without passing', async () => {
     approveRequirements(stateMgr, tempDir);
     installBomMock(tempDir, mockClient, {
