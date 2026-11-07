@@ -9,7 +9,12 @@ import { ProjectStateManager } from '../src/workspace/state.js';
 import { PortalItem, PortalThreadMessage } from '../src/workspace/types.js';
 import { ToolRegistry } from '../src/tools/registry.js';
 import { createHttpServer } from '../src/server/server.js';
-import { ServerSessionManager, ADVISORY_SYSTEM_DIRECTIVE, THREAD_MESSAGE_CAP } from '../src/server/session.js';
+import {
+  ServerSessionManager,
+  ADVISORY_SYSTEM_DIRECTIVE,
+  CONCLUDE_SYSTEM_DIRECTIVE,
+  THREAD_MESSAGE_CAP
+} from '../src/server/session.js';
 import { SpecialistRegistry } from '../src/specialists/registry.js';
 import { DEFAULT_TRANSCRIBER_MODEL } from '../src/config.js';
 
@@ -248,12 +253,12 @@ describe('POST /api/portal/:id/thread', () => {
     expect(ADVISORY_SYSTEM_DIRECTIVE).toContain('NEVER write "Decision confirmed"');
   });
 
-  it('postThreadMessage answer intent marks the persisted user row', async () => {
+  it('postThreadMessage answer intent marks the persisted user row as recorded', async () => {
     const item = seedItem();
     await session.postThreadMessage(item.id, '48V nominal', 'answer');
     const thread = storedThread(item.id);
-    expect(thread[0]).toMatchObject({ role: 'user', text: '48V nominal', intent: 'answer' });
-    expect(thread[0].kind).toBeUndefined();
+    // `kind:'recorded'` is what keeps a committed answer out of the 20-row trim.
+    expect(thread[0]).toMatchObject({ role: 'user', text: '48V nominal', intent: 'answer', kind: 'recorded' });
   });
 
   it('conclude appends a pending proposal row with basedOn and never writes a doc', async () => {
@@ -280,7 +285,10 @@ describe('POST /api/portal/:id/thread', () => {
     const opts = agentLoopMock.mock.calls[1][0];
     expect(opts.allowedTools).toEqual(['fs_read', 'fs_list', 'state_read']);
     expect(opts.maxTurns).toBe(3);
-    expect(opts.systemPrompt).toContain(ADVISORY_SYSTEM_DIRECTIVE);
+    // Conclude uses its own directive: the advisory closing-sentence order
+    // contradicts "two labelled blocks and nothing else".
+    expect(opts.systemPrompt).toContain(CONCLUDE_SYSTEM_DIRECTIVE);
+    expect(opts.systemPrompt).not.toContain('End EVERY reply');
     expect(opts.userMessage).toContain('Is 48V enough for the coil?');
     expect(opts.userMessage).toContain('The main contactor is rated for 48V DC.');
     expect(opts.userMessage).toContain('PROPOSED ANSWER:');
@@ -337,6 +345,93 @@ describe('POST /api/portal/:id/thread', () => {
     expect(rows[0].ts).toBe(first.ts);
     expect(rows[0].proposal).toMatchObject({ status: 'superseded', text: '48V DC.' });
     expect(rows[1].proposal).toMatchObject({ status: 'pending', text: '50V DC with margin.' });
+  });
+
+  it('parses a markdown-wrapped marker and drops a leaked non-commit sentence', async () => {
+    const item = seedItem();
+    const row = await askThenConclude(
+      item.id,
+      '**PROPOSED ANSWER:** **48V DC is enough for the coil.** Nothing is recorded yet — send it as your answer, or use Conclude from chat.\nRATIONALE: **CONOPS baseline states 48V.**'
+    );
+    expect(row.proposal).toMatchObject({ status: 'pending', text: '48V DC is enough for the coil.' });
+    expect(row.text).toBe('CONOPS baseline states 48V.');
+  });
+
+  it('records nothing when the conclude reply has no PROPOSED ANSWER marker', async () => {
+    const item = seedItem();
+    const before = docText();
+    await request('POST', `/api/portal/${item.id}/thread`, { text: 'Is 48V enough for the coil?' });
+    agentLoopMock.mockImplementation(async () => ({ finalResponse: '48V DC is fine. Nothing is recorded yet.' }));
+
+    const res = await request('POST', `/api/portal/${item.id}/conclude-thread`);
+    expect(res.status).toBe(500);
+    expect(res.json?.error).toContain('PROPOSED ANSWER');
+    // The raw reply is never recorded as a proposal.
+    expect(proposalRows(item.id)).toHaveLength(0);
+    expect(storedThread(item.id).some(m => m.text.includes('48V DC is fine'))).toBe(false);
+    expect(docText()).toBe(before);
+  });
+
+  it('confirm while a turn or a drain is in flight 409s and records nothing', async () => {
+    const item = seedItem();
+    keepDocOpen();
+    const row = await askThenConclude(item.id, 'PROPOSED ANSWER: 48V DC.\nRATIONALE: Baseline.');
+    const before = docText();
+
+    const abort = (session as any).beginTurn(); // a chain turn holds the busy guard
+    try {
+      const inFlight = await request('POST', `/api/portal/${item.id}/confirm-thread-proposal`, { ts: row.ts });
+      expect(inFlight.status).toBe(409);
+      expect(inFlight.json?.error).toContain('retry in a moment');
+
+      // A drain in flight holds the guard with drainHoldsGuard set — a second
+      // concurrent apply (and its incorporation turn) must still be refused.
+      (session as any).drainHoldsGuard = true;
+      const duringDrain = await request('POST', `/api/portal/${item.id}/confirm-thread-proposal`, { ts: row.ts });
+      expect(duringDrain.status).toBe(409);
+    } finally {
+      (session as any).drainHoldsGuard = false;
+      (session as any).endTurn(abort);
+    }
+
+    const thread = storedThread(item.id);
+    expect(thread.find(m => m.kind === 'proposal' && m.ts === row.ts)!.proposal).toMatchObject({ status: 'pending' });
+    expect(thread.some(m => m.kind === 'recorded')).toBe(false);
+    const stored = (stateManager.getState().portalItems || []).find(i => i.id === item.id)!;
+    expect(stored.status).toBe('open');
+    expect(docText()).toBe(before);
+  });
+
+  it('confirm and reject reject a non-numeric ts: missing, null and string are 400', async () => {
+    const item = seedItem();
+    keepDocOpen();
+    const row = await askThenConclude(item.id, 'PROPOSED ANSWER: 48V DC.\nRATIONALE: Baseline.');
+    for (const route of ['confirm-thread-proposal', 'reject-thread-proposal']) {
+      expect((await request('POST', `/api/portal/${item.id}/${route}`, {})).status).toBe(400);
+      expect((await request('POST', `/api/portal/${item.id}/${route}`, { ts: null })).status).toBe(400);
+      expect((await request('POST', `/api/portal/${item.id}/${route}`, { ts: String(row.ts) })).status).toBe(400);
+    }
+    // Nothing was settled by the rejected requests.
+    expect(proposalRows(item.id)[0].proposal).toMatchObject({ status: 'pending' });
+    expect(docText()).not.toContain('48V DC.');
+    expect((await request('POST', `/api/portal/${item.id}/reject-thread-proposal`, { ts: row.ts })).status).toBe(200);
+  });
+
+  it('the real answer path appends exactly one kind:recorded row for an item with a thread', async () => {
+    const item = seedItem();
+    keepDocOpen();
+    await request('POST', `/api/portal/${item.id}/thread`, { text: 'Is 48V enough for the coil?' });
+
+    const res = await request('POST', `/api/portal/${item.id}/answer`, { answer: '48V nominal' });
+    expect(res.status).toBe(200);
+    // The idle apply runs in a drain, so wait for the row instead of the reply.
+    await vi.waitFor(() => {
+      const recorded = storedThread(item.id).filter(m => m.kind === 'recorded');
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]).toMatchObject({ role: 'user', intent: 'answer', text: '48V nominal' });
+    });
+    const stored = (stateManager.getState().portalItems || []).find(i => i.id === item.id)!;
+    expect(stored.status).toBe('answered');
   });
 
   it('confirm records the answer, appends a kind:recorded row, and flips accepted', async () => {

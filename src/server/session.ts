@@ -70,6 +70,34 @@ You are answering a user's clarifying question about an open question. ADVISE ON
 NOTHING IS RECORDED YET: an advisory reply records no decision. End EVERY reply with this exact sentence: "Nothing is recorded yet — send it as your answer, or use Conclude from chat."
 NEVER write "Decision confirmed" and NEVER claim or imply that a decision was recorded, accepted or saved — only the user's answer (or Conclude from chat) records anything.`;
 
+/** Markdown-tolerant answer marker: `**PROPOSED ANSWER:**` parses like the plain form. */
+const CONCLUDE_ANSWER_MARKER_RE = /[*_]{0,2}\s*PROPOSED\s+ANSWER\s*:?\s*[*_]{0,2}/i;
+
+/**
+ * Removes a trailing non-commit sentence ("Nothing is recorded yet …") that a
+ * model may append despite CONCLUDE_SYSTEM_DIRECTIVE, so it can never become
+ * the recorded answer text.
+ *
+ * @param text One parsed answer block.
+ * @returns The text without a trailing non-commit sentence, trimmed.
+ */
+function stripNonCommitSentence(text: string): string {
+  return text.replace(/\s*nothing is recorded yet\b[^.!?]*[.!?]?\s*$/i, '').trim();
+}
+
+/**
+ * Conclude-turn override: the same read-only/no-write gate as the advisory
+ * directive, but WITHOUT its "End EVERY reply with …" closing sentence and its
+ * "never draft" order — both contradict CONCLUDE_INSTRUCTION's "exactly two
+ * labelled blocks and nothing else", and a compliant model would leak the
+ * non-commit sentence into the answer the user is about to record.
+ */
+export const CONCLUDE_SYSTEM_DIRECTIVE = `CONCLUDE TURN OVERRIDE (DRAFT ONE PROPOSED ANSWER — NOTHING IS RECORDED):
+The drafting instructions in your system prompt (write files, produce a document, Open Questions section) DO NOT apply to this turn. Do NOT call fs_write, fs_edit or state_update.
+You are drafting the answer the user should record for the open question below, from the conversation, the project docs and the recorded decisions. Be concise (<=150 words). If unsure, say what would resolve it.
+NOTHING IS RECORDED YET: only the user confirming the proposal records an answer. NEVER write "Decision confirmed" and NEVER claim or imply that a decision was recorded, accepted or saved.
+Reply with EXACTLY the two labelled blocks the user message specifies and nothing else — no closing sentence, no sign-off, no markdown fences.`;
+
 export interface SessionDeps {
   projectPath: string;
   stateManager: ProjectStateManager;
@@ -615,10 +643,36 @@ export class ServerSessionManager {
   private async applyAnswerNow(itemId: string, answer: string): Promise<AnswerApplyResult> {
     try {
       const result = await applyAnswer(this.answerApplierDeps(), itemId, answer);
+      this.recordAnswerThreadRow(result.updatedItem, answer);
       return { ok: true, item: result.updatedItem, affectedDocs: result.affectedDocs };
     } catch (err: any) {
       return { ok: false, error: err?.message ?? String(err) };
     }
+  }
+
+  /**
+   * Appends the `kind:'recorded'` thread row for an answer applied through the
+   * answer queue — the production answer path (POST /api/portal/:id/answer →
+   * queueAnswer → applyAnswerNow). Items with no thread get no row: there is no
+   * conversation to attach the committed answer to.
+   *
+   * `confirmThreadProposal` calls applyAnswer directly and appends its own
+   * recorded row, so it never passes through here — the two paths cannot
+   * double-append.
+   *
+   * @param item Item as returned by applyAnswer (post-apply state).
+   * @param answer The committed answer text.
+   */
+  private recordAnswerThreadRow(item: PortalItem, answer: string): void {
+    const rows = Array.isArray(item?.meta?.thread) ? item.meta!.thread : [];
+    if (rows.length === 0) return;
+    this.appendThreadMessage(item.id, {
+      role: 'user',
+      intent: 'answer',
+      kind: 'recorded',
+      text: answer,
+      ts: Date.now()
+    });
   }
 
   // ── Portal research gate ────────────────────────────────────────────
@@ -791,6 +845,24 @@ export class ServerSessionManager {
     return this.mutateThread(itemId, rows => appendThreadRow(rows, message));
   }
 
+  /**
+   * One transcript rendering shared by the advisory and conclude turns.
+   * Proposal rows are drafts, not conversation, so they are dropped; a recorded
+   * row is labelled as the user's committed answer.
+   *
+   * @param history Thread rows, oldest first.
+   * @returns One labelled line per non-proposal row.
+   */
+  private threadTranscript(history: PortalThreadMessage[]): string {
+    return history
+      .filter(m => m.kind !== 'proposal')
+      .map(m => {
+        if (m.role !== 'user') return `Specialist: ${m.text}`;
+        return m.kind === 'recorded' ? `User (recorded answer): ${m.text}` : `User: ${m.text}`;
+      })
+      .join('\n');
+  }
+
   /** Specialist package for the item's doc (docs/CONOPS.md → 'conops'); general fallback. */
   private specialistForDoc(docPath?: string): import('../specialists/types.js').SpecialistPackage {
     const base = docPath ? path.basename(docPath).replace(/\.md$/i, '').toLowerCase() : '';
@@ -819,9 +891,7 @@ export class ServerSessionManager {
           ].filter(Boolean).join('\n')}`
         : '',
       item.meta?.proposedAnswer ? `RESEARCH PROPOSAL: ${item.meta.proposedAnswer.answer}` : '',
-      history.length > 0
-        ? `THREAD HISTORY (oldest first):\n${history.map(m => `${m.role === 'user' ? 'User' : 'Specialist'}: ${m.text}`).join('\n')}`
-        : '',
+      history.length > 0 ? `THREAD HISTORY (oldest first):\n${this.threadTranscript(history)}` : '',
       `The user's new question follows. Reply with plain text only (no headings, no markdown fences), per your instructions.`
     ];
     const userMessage = parts.filter(Boolean).join('\n\n');
@@ -881,7 +951,9 @@ export class ServerSessionManager {
         role: 'user',
         text,
         ts: Date.now(),
-        ...(intent === 'answer' ? { intent } : {})
+        // An answer-intent row is a committed answer: `kind:'recorded'` keeps it
+        // out of the 20-row trim (recorded rows are never dropped).
+        ...(intent === 'answer' ? { intent, kind: 'recorded' as const } : {})
       });
       const fresh = (this.deps.stateManager.getState().portalItems || []).find(i => i.id === itemId)!;
       const reply = await this.runAdvisoryTurn(fresh);
@@ -902,21 +974,16 @@ export class ServerSessionManager {
    * One read-only conclude turn over the whole thread: asks the specialist for
    * a short proposed answer + a one-line rationale (same allow-list and turn
    * budget as the advisory turn) and parses them back out of the reply.
-   * Returns null when nothing usable came back; throws only on abort.
+   * Returns null when nothing usable came back — including a reply WITHOUT the
+   * `PROPOSED ANSWER:` marker, so raw reply text is never recorded; throws only
+   * on abort.
    */
   private async runConcludeTurn(
     item: PortalItem,
     history: PortalThreadMessage[]
   ): Promise<{ answer: string; rationale: string } | null> {
     const specialist = this.specialistForDoc(item.docPath);
-    // Proposal rows are drafts, not conversation — excluded from the transcript.
-    const transcript = history
-      .filter(m => m.kind !== 'proposal')
-      .map(m => {
-        if (m.role !== 'user') return `Specialist: ${m.text}`;
-        return m.kind === 'recorded' ? `User (recorded answer): ${m.text}` : `User: ${m.text}`;
-      })
-      .join('\n');
+    const transcript = this.threadTranscript(history);
     const userMessage = [
       `OPEN QUESTION: ${item.title}`,
       item.meta?.proposedAnswer ? `RESEARCH PROPOSAL: ${item.meta.proposedAnswer.answer}` : '',
@@ -930,7 +997,7 @@ export class ServerSessionManager {
       const result = await runAgentToolLoop({
         client: this.roleClients.drafting.client,
         model: this.roleClients.drafting.model,
-        systemPrompt: `${specialist.systemPrompt}\n\n${ADVISORY_SYSTEM_DIRECTIVE}`,
+        systemPrompt: `${specialist.systemPrompt}\n\n${CONCLUDE_SYSTEM_DIRECTIVE}`,
         userMessage,
         toolRegistry: this.deps.toolRegistry,
         allowedTools: [...THREAD_ALLOWED_TOOLS],
@@ -947,18 +1014,25 @@ export class ServerSessionManager {
         .trim();
       if (!reply) return null;
       const rationaleIdx = reply.search(/RATIONALE:/i);
-      const answerRaw = rationaleIdx >= 0 ? reply.slice(0, rationaleIdx) : reply;
+      const answerBlock = rationaleIdx >= 0 ? reply.slice(0, rationaleIdx) : reply;
       const rationaleRaw = rationaleIdx >= 0 ? reply.slice(rationaleIdx) : '';
-      const answer = answerRaw
-        .replace(/PROPOSED ANSWER:/i, '')
-        .replace(/\s+/g, ' ')
-        .trim()
+      const marker = CONCLUDE_ANSWER_MARKER_RE.exec(answerBlock);
+      // No marker → the reply is prompt text, not an answer. Record nothing: the
+      // caller throws so the user retries instead of recording the wrong text.
+      if (!marker) return null;
+      // Order matters: drop the leaked sentence first, then the residual
+      // markdown wrappers it may have been wrapped in (`**… .** Nothing …`).
+      const answer = stripNonCommitSentence(answerBlock.slice(marker.index + marker[0].length).replace(/\s+/g, ' '))
+        .replace(/^[\s*_`#]+/, '')
+        .replace(/[\s*_`]+$/, '')
         .slice(0, CONCLUDE_ANSWER_CHAR_CAP);
       if (!answer) return null;
       const rationale = rationaleRaw
-        .replace(/^RATIONALE:\s*/i, '')
+        .replace(/^[*_]{0,2}\s*RATIONALE\s*:?\s*[*_]{0,2}\s*/i, '')
         .split('\n')[0]
         .replace(/\s+/g, ' ')
+        .replace(/^[\s*_`#]+/, '')
+        .replace(/[\s*_`]+$/, '')
         .trim();
       return { answer, rationale };
     } catch (err: any) {
@@ -994,8 +1068,18 @@ export class ServerSessionManager {
     this.threadInFlight.add(itemId);
     try {
       const turn = await this.runConcludeTurn(item, history);
-      if (!turn) throw new Error('The specialist produced no usable proposal — try again');
-      const basedOn = history.filter(m => (m.kind ?? 'message') === 'message').length;
+      if (!turn) throw new Error('The specialist returned no PROPOSED ANSWER block — try again');
+      // Re-read after the turn: an answer/confirm that landed while the turn ran
+      // closes the item, and a proposal on a closed item can never be confirmed
+      // (409) and must not render — abort without writing a row.
+      const freshItem = (this.deps.stateManager.getState().portalItems || []).find(i => i.id === itemId);
+      if (!freshItem || freshItem.status !== 'open') {
+        throw new Error(`Portal item no longer open (${freshItem?.status ?? 'missing'})`);
+      }
+      // Recorded rows are part of the conversation the draft is based on (the
+      // conclude transcript renders them); proposal rows are drafts, not messages.
+      const freshHistory = (Array.isArray(freshItem.meta?.thread) ? freshItem.meta!.thread : []) as PortalThreadMessage[];
+      const basedOn = freshHistory.filter(m => m.kind !== 'proposal').length;
       const updated = this.mutateThread(itemId, rows =>
         appendThreadRow(
           rows.map(r =>
@@ -1024,7 +1108,7 @@ export class ServerSessionManager {
    * core applier the answer queue drains (applyAnswer), then flips the row to
    * 'accepted' and appends the `kind:'recorded'` row. `editedText` wins over
    * the drafted text. Throws on item-not-found / unknown ts / not-pending /
-   * item-no-longer-open (route maps the codes).
+   * item-no-longer-open / turn-in-flight (route maps the codes).
    */
   async confirmThreadProposal(itemId: string, proposalTs: number, editedText?: string): Promise<PortalItem> {
     const state = this.deps.stateManager.getState();
@@ -1040,26 +1124,42 @@ export class ServerSessionManager {
     const edited = (editedText ?? '').trim();
     const finalText = edited || row.proposal.text;
     if (!finalText) throw new Error('No answer text to record');
-    // Same pipeline as POST /api/portal/:id/answer (queue → applyAnswer); no
-    // duplicated doc/portal/incorporation logic here.
-    await applyAnswer(this.answerApplierDeps(), itemId, finalText);
-    const updated = this.mutateThread(itemId, rows => {
-      const next = rows.map(r =>
-        r.kind === 'proposal' && r.ts === proposalTs
-          ? {
-              ...r,
-              proposal: { ...r.proposal!, status: 'accepted' as const, ...(edited ? { editedText: edited } : {}) }
-            }
-          : r
-      );
-      return appendThreadRow(next, {
-        role: 'user',
-        intent: 'answer',
-        kind: 'recorded',
-        text: finalText,
-        ts: Date.now()
+    // Same pipeline as POST /api/portal/:id/answer (applyAnswer); no duplicated
+    // doc/portal/incorporation logic here. applyAnswer is an unguarded doc
+    // read-modify-write, so this path MUST hold the busy guard (the same pair
+    // drainWithGuard uses): a chain/agent turn in flight would otherwise lose
+    // the pending block, and a drain in flight would let a SECOND incorporation
+    // turn start (`isBusy` is false while the drain owns the guard). The guard
+    // covers the doc write AND the row flip below. drainHoldsGuard marks the
+    // guard as ours so applyAnswer's own incorporation turn may run.
+    if (this.busy) throw new Error('A turn is running — retry in a moment');
+    const abort = this.beginTurn();
+    this.drainHoldsGuard = true;
+    let updated: PortalItem | null;
+    try {
+      await applyAnswer(this.answerApplierDeps(), itemId, finalText);
+      // Inside the guard too: the row flip is part of the same commit.
+      updated = this.mutateThread(itemId, rows => {
+        const next = rows.map(r =>
+          r.kind === 'proposal' && r.ts === proposalTs
+            ? {
+                ...r,
+                proposal: { ...r.proposal!, status: 'accepted' as const, ...(edited ? { editedText: edited } : {}) }
+              }
+            : r
+        );
+        return appendThreadRow(next, {
+          role: 'user',
+          intent: 'answer',
+          kind: 'recorded',
+          text: finalText,
+          ts: Date.now()
+        });
       });
-    });
+    } finally {
+      this.drainHoldsGuard = false;
+      this.endTurn(abort);
+    }
     this.publish({ kind: 'status', message: 'Proposed answer recorded' });
     return updated ?? item;
   }

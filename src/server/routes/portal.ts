@@ -89,7 +89,8 @@ export const portalModule: RouteModule = {
         if (
           message.includes('in progress') ||
           message.includes('open question items') ||
-          message.includes('No specialist reply')
+          message.includes('No specialist reply') ||
+          message.includes('no longer open')
         ) {
           return fail(res, 409, message);
         }
@@ -105,8 +106,10 @@ export const portalModule: RouteModule = {
     ) {
       const itemId = decodeURIComponent(segments[2]);
       const body = await readJsonBody(req);
-      const proposalTs = Number(body?.ts);
-      if (!Number.isFinite(proposalTs)) return fail(res, 400, 'Missing "ts"');
+      // Strict: `Number(null | '' | [] | true)` coerces to 0/1, so only a real
+      // finite number is accepted.
+      if (typeof body?.ts !== 'number' || !Number.isFinite(body.ts)) return fail(res, 400, 'Missing "ts"');
+      const proposalTs = body.ts;
       const edited = typeof body?.answer === 'string' ? body.answer.trim() : '';
       if (edited.length > 4096) return fail(res, 400, 'Answer too long (max 4096 chars)');
       const session = deps.session;
@@ -117,7 +120,12 @@ export const portalModule: RouteModule = {
       } catch (err: any) {
         const message = err?.message ?? String(err);
         if (message.includes('not found') || message.includes('No thread proposal')) return fail(res, 404, message);
-        if (message.includes('no longer pending') || message.includes('no longer open') || message.includes('No answer text')) {
+        if (
+          message.includes('no longer pending') ||
+          message.includes('no longer open') ||
+          message.includes('No answer text') ||
+          message.includes('A turn is running')
+        ) {
           return fail(res, 409, message);
         }
         return fail(res, 500, message);
@@ -132,8 +140,10 @@ export const portalModule: RouteModule = {
     ) {
       const itemId = decodeURIComponent(segments[2]);
       const body = await readJsonBody(req);
-      const proposalTs = Number(body?.ts);
-      if (!Number.isFinite(proposalTs)) return fail(res, 400, 'Missing "ts"');
+      // Strict: `Number(null | '' | [] | true)` coerces to 0/1, so only a real
+      // finite number is accepted.
+      if (typeof body?.ts !== 'number' || !Number.isFinite(body.ts)) return fail(res, 400, 'Missing "ts"');
+      const proposalTs = body.ts;
       const session = deps.session;
       if (!session) return fail(res, 503, 'No active session');
       try {
