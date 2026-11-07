@@ -270,3 +270,94 @@ describe('QuestionDetails — degraded record', () => {
     expect(screen.getByText('Original wording of the question, as the model wrote it.')).toBeInTheDocument();
   });
 });
+
+describe('QuestionDetails — decision options A/B/C', () => {
+  /** One memo whose Alternatives parsed into three rows, B recommended. */
+  function optionsItem(overrides: Partial<PortalItem> = {}): PortalItem {
+    const item = fullItem();
+    item.meta = {
+      topic: 'electrical',
+      sections: {
+        bluf: 'Use the 2 A slow-blow fuse.',
+        suggestion: 'Fit the 2 A slow-blow fuse.',
+        alternatives: '',
+        options: [
+          { id: 'A', text: 'Use a 1.5 A fuse.' },
+          { id: 'B', text: 'Use the 2 A slow-blow fuse.', recommended: true },
+          { id: 'C', text: 'Use a 3 A fuse with a derated load.' }
+        ],
+        recommendation: 'B'
+      }
+    };
+    return { ...item, ...overrides };
+  }
+
+  /** The option rows only (the pane's other lists are not options). */
+  function optionRows(): HTMLElement[] {
+    return screen.getAllByRole('listitem', { name: /^Option / });
+  }
+
+  it('renders one row per option, in order, with its monospace id chip', () => {
+    const { container } = renderWithUser(<QuestionDetails {...props({ item: optionsItem() })} />);
+    const rows = optionRows();
+    expect(rows).toHaveLength(3);
+    expect(rows.map(row => row.getAttribute('aria-label'))).toEqual([
+      'Option A',
+      'Option B, recommended',
+      'Option C'
+    ]);
+    expect(rows[0]).toHaveTextContent('A');
+    expect(rows[0]).toHaveTextContent('Use a 1.5 A fuse.');
+    expect(rows[2]).toHaveTextContent('Use a 3 A fuse with a derated load.');
+    const chips = container.querySelectorAll('.font-mono');
+    expect(Array.from(chips).map(chip => chip.textContent)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('marks exactly one row recommended with words and a brass left rule', () => {
+    renderWithUser(<QuestionDetails {...props({ item: optionsItem() })} />);
+    const rows = optionRows();
+    const recommendedRows = rows.filter(row => (row.className ?? '').includes('var(--sf-brass)'));
+    expect(recommendedRows).toHaveLength(1);
+    expect(recommendedRows[0]).toHaveAttribute('aria-label', 'Option B, recommended');
+    expect(recommendedRows[0].className).toContain('border-l-[3px]');
+
+    const chips = screen.getAllByText('Recommended');
+    expect(chips).toHaveLength(1);
+    expect(chips[0].className).toContain('text-[var(--sf-brass)]');
+    expect(recommendedRows[0]).toHaveTextContent('Recommended');
+  });
+
+  it('keeps the prose fallback when only alternatives text exists', () => {
+    const { container } = renderWithUser(<QuestionDetails {...props()} />);
+    expect(screen.getByText('Alternatives')).toBeInTheDocument();
+    expect(container.textContent).toContain('Use a 3 A fuse with a derated load.');
+    expect(screen.queryByText('Recommended')).toBeNull();
+    expect(screen.queryAllByRole('listitem', { name: /^Option / })).toHaveLength(0);
+  });
+
+  it('omits the section when neither options nor alternatives text exists', () => {
+    const item = fullItem();
+    item.meta = { topic: 'electrical', sections: { bluf: 'Use the 2 A slow-blow fuse.' } };
+    const { container } = renderWithUser(<QuestionDetails {...props({ item })} />);
+    expect(container.textContent).not.toContain('Alternatives');
+    expect(screen.queryAllByRole('listitem', { name: /^Option / })).toHaveLength(0);
+  });
+
+  it('ignores a recommendation id that names no option', () => {
+    const item = optionsItem();
+    item.meta = {
+      topic: 'electrical',
+      sections: {
+        ...item.meta?.sections,
+        options: [
+          { id: 'A', text: 'Use a 1.5 A fuse.' },
+          { id: 'B', text: 'Use the 2 A slow-blow fuse.' }
+        ],
+        recommendation: 'Z'
+      }
+    };
+    renderWithUser(<QuestionDetails {...props({ item })} />);
+    expect(optionRows()).toHaveLength(2);
+    expect(screen.queryByText('Recommended')).toBeNull();
+  });
+});

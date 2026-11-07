@@ -5,7 +5,7 @@
 // recorded-answer card — those stay in the conversation (§3b.7.2) — and at most
 // three interactive elements: Open document, Follow-up, Original detail.
 import { useState } from 'react';
-import { FileText, RotateCcw } from 'lucide-react';
+import { Check, FileText, RotateCcw } from 'lucide-react';
 import { cleanQuestionTitle, itemTopic } from '../../lib/portalGrouping';
 import { extractRequirementIds } from '../../lib/requirementAnchor';
 import type { PortalItem, ResearchSource } from '../../types/api';
@@ -72,6 +72,7 @@ export default function QuestionDetails({
   const [originalOpen, setOriginalOpen] = useState(false);
 
   const sections = item.meta?.sections;
+  const options = sections?.options ?? [];
   const hasSections =
     !!sections &&
     !!(
@@ -79,6 +80,7 @@ export default function QuestionDetails({
       sections.findings ||
       sections.suggestion ||
       sections.alternatives ||
+      options.length > 0 ||
       sections.defer ||
       sections.background
     );
@@ -209,13 +211,42 @@ export default function QuestionDetails({
             </div>
           )}
 
-          {/* 9. Alternatives */}
-          {sections?.alternatives && (
+          {/* 9. Alternatives — parsed A/B/C rows, prose fallback for legacy text */}
+          {(options.length > 0 || sections?.alternatives) && (
             <div className={CARD}>
               <p className={LABEL}>Alternatives</p>
-              <p className="mt-0.5 whitespace-pre-line text-[12.5px]/[1.45] text-[var(--sf-text-2)]">
-                {sections.alternatives}
-              </p>
+              {options.length > 0 ? (
+                <ul className="mt-1 space-y-1">
+                  {options.map(option => {
+                    const recommended = option.recommended === true;
+                    return (
+                      <li
+                        key={option.id}
+                        aria-label={`Option ${option.id}${recommended ? ', recommended' : ''}`}
+                        className={`flex min-h-[44px] items-start gap-2 py-1 ${recommended ? 'border-l-[3px] border-[var(--sf-brass)] pl-2' : ''}`}
+                      >
+                        <span className="shrink-0 rounded border border-[var(--sf-border-strong)] bg-[var(--sf-raised)] px-1.5 font-mono text-[11px] font-bold text-[var(--sf-text)]">
+                          {option.id}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="text-[13px]/[1.45] text-[var(--sf-text-2)]">
+                            {option.text}
+                          </span>
+                          {recommended && (
+                            <span className={`mt-1 flex items-center gap-1 ${BRASS_LABEL}`}>
+                              <Check className="h-[10px] w-[10px]" aria-hidden /> Recommended
+                            </span>
+                          )}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="mt-0.5 whitespace-pre-line text-[12.5px]/[1.45] text-[var(--sf-text-2)]">
+                  {sections?.alternatives}
+                </p>
+              )}
             </div>
           )}
 

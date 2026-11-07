@@ -195,6 +195,10 @@ export interface QuestionSections {
   suggestion?: string;
   /** Alternatives, each with its trade-off. */
   alternatives?: string;
+  /** Alternatives parsed into A/B/C rows (core QuestionOption, keep in sync). */
+  options?: Array<{ id: string; text: string; recommended?: boolean }>;
+  /** Id of the recommended option (e.g. "B"); may name an option that is absent. */
+  recommendation?: string;
   /** Cost/impact of deferring this decision. */
   defer?: string;
   /** Legacy alias: "Why it matters:" maps here. */
