@@ -47,6 +47,16 @@ export interface ParsedQuestionItem {
    * after the "?").
    */
   rawTitle: string;
+  /**
+   * Full human-facing question text: the same untrimmed header `rawTitle`
+   * holds, returned by the string API (parseOpenQuestionsFromContent /
+   * parseSection6Questions) that the CLI's Section 6 resolver walks the user
+   * through. The user needs the whole explanation to answer, so this never
+   * applies the header contract cut. Separate from `rawTitle` because that
+   * field is the dedupe key and may be normalized without changing what the
+   * user is shown.
+   */
+  fullText: string;
   sections?: QuestionSections;
 }
 
@@ -319,11 +329,12 @@ export function inferQuestionTopic(text: string): string | undefined {
 
 /**
  * Extracts question entries (Q1, Q2, ... format) from a section's text as
- * { title, sections? } pairs: the title is the stable parse key (section
- * labels and any trailing header explanation cut — see applyHeaderContract);
- * sections are the optional format-v2 labeled fields extracted tolerantly from
- * the entry body. Missing sections are omitted (legacy entries parse exactly
- * as before).
+ * { title, rawTitle, fullText, sections? } entries: the title is the stable
+ * parse key (section labels and any trailing header explanation cut — see
+ * applyHeaderContract); fullText keeps that explanation so the string API can
+ * hand the user the whole question; sections are the optional format-v2
+ * labeled fields extracted tolerantly from the entry body. Missing sections
+ * are omitted (legacy entries parse exactly as before).
  */
 function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
   const entries: ParsedQuestionItem[] = [];
@@ -344,6 +355,7 @@ function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
       entries.push({
         title: header.title,
         rawTitle: header.rawTitle,
+        fullText: header.rawTitle,
         sections: withDroppedTail(extractQuestionSections(match[1]), header.droppedTail)
       });
     }
@@ -362,6 +374,7 @@ function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
             entries.push({
               title: header.title,
               rawTitle: header.rawTitle,
+              fullText: header.rawTitle,
               sections: withDroppedTail(extractQuestionSections(currentQ.trim()), header.droppedTail)
             });
           }
@@ -377,6 +390,7 @@ function extractQuestionEntries(sectionText: string): ParsedQuestionItem[] {
         entries.push({
           title: header.title,
           rawTitle: header.rawTitle,
+          fullText: header.rawTitle,
           sections: withDroppedTail(extractQuestionSections(currentQ.trim()), header.droppedTail)
         });
       }
@@ -414,9 +428,13 @@ export function parseOpenQuestionEntries(docContent: string): ParsedQuestionItem
 /**
  * Parses open questions from any document containing a "## Open Questions"
  * section (with optional numeric prefix). Works across all specialist documents.
+ *
+ * Returns the FULL question text (entry.fullText), not the header-contract
+ * title: the CLI Section 6 resolver reads this to prompt the user, and the
+ * user needs the explanation the contract cut from the portal title.
  */
 export function parseOpenQuestionsFromContent(docContent: string): string[] {
-  return parseOpenQuestionEntries(docContent).map(entry => entry.title);
+  return parseOpenQuestionEntries(docContent).map(entry => entry.fullText);
 }
 
 /**

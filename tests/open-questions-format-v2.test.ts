@@ -5,6 +5,7 @@ import os from 'node:os';
 import {
   parseOpenQuestionEntries,
   parseOpenQuestionsFromContent,
+  parseSection6Questions,
   extractQuestionSections,
   questionSlug,
   inferQuestionTopic,
@@ -77,7 +78,7 @@ describe('format-v2 question parsing (decision memo)', () => {
     expect(entries[1].sections).toBeUndefined();
   });
 
-  it('parseOpenQuestionsFromContent keeps returning titles only (v2 sections stripped)', () => {
+  it('parseOpenQuestionsFromContent returns the full question text, section labels stripped', () => {
     const titles = parseOpenQuestionsFromContent(V2_DOC);
     expect(titles).toHaveLength(2);
     expect(titles[0]).toBe('[THERMAL] Which motor coolant is approved?');
@@ -227,6 +228,46 @@ describe('abbreviation-safe header cut + raw-title preservation', () => {
       '[CONTROLS-DATA] Should the telemetry doc keep the query "?node=main" in the gateway link and expose it to operators?';
     const entry = parseTitle(header);
     expect(entry.title).toBe(header);
+  });
+});
+
+describe('full question text on the string API (CLI resolver context)', () => {
+  /** Wraps one header in a minimal doc for the doc-level parsers. */
+  const docOf = (header: string) =>
+    `# Doc\n\n## Open Questions\n\n**Q1. ${header}**\n\n## Next Section\n`;
+
+  it('keeps a dropped "?"-tail in the string API while the title stays short', () => {
+    const doc = docOf(
+      '[ELECTRICAL] Main bus voltage? Because the load profile and the cranking spec disagree, we need to decide the nominal pack voltage this week.'
+    );
+    const entry = parseOpenQuestionEntries(doc)[0];
+    expect(entry.title).toBe('[ELECTRICAL] Main bus voltage?');
+    expect(entry.fullText).toContain('cranking spec disagree');
+    expect(entry.sections?.background).toContain('cranking spec disagree');
+    const [question] = parseOpenQuestionsFromContent(doc);
+    expect(question).toContain('Main bus voltage');
+    expect(question).toContain('cranking spec disagree');
+  });
+
+  it('keeps a sentence cut from an over-cap header in the string API', () => {
+    const doc = docOf(
+      '[ELECTRICAL] Main bus voltage for the traction inverter is unresolved. The pack choice blocks the harness BOM line this week.'
+    );
+    const entry = parseOpenQuestionEntries(doc)[0];
+    expect(entry.title).toBe('[ELECTRICAL] Main bus voltage for the traction inverter is unresolved.');
+    expect(entry.sections?.background).toContain('blocks the harness BOM line');
+    expect(parseOpenQuestionsFromContent(doc)[0]).toContain('blocks the harness BOM line');
+  });
+
+  it('legacy Section 6 entry: the CLI prompt string keeps the whole explanation', () => {
+    const header =
+      'Mid-mount mower deck drive path.** The user confirmed the mower deck is retained. This determines whether the electric motor must supply deck drive output.';
+    const doc = docOf(header);
+    const entry = parseOpenQuestionEntries(doc)[0];
+    expect(entry.title).not.toContain('determines whether');
+    expect(entry.sections?.background).toContain('determines whether');
+    expect(parseOpenQuestionsFromContent(doc)[0]).toContain('determines whether');
+    expect(parseSection6Questions(doc)[0]).toContain('determines whether');
   });
 });
 
