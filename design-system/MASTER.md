@@ -33,15 +33,17 @@ documents) and the Question Panel question-card surface.
 
 - UI font: system sans (app default). Mono recipe: `.font-telemetry` (tabular-nums, 0.03em)
   for paths, requirement IDs, table cells carrying IDs, diff text.
-- Document scale (doc pane): body 15–16px / line-height 1.65 · measure `max-w-[75ch]`
-  (tables may break out to full pane width) · H1 1.5rem/700 · H2 1.125rem/700 ·
+- Document scale (doc pane): body 15–16px / line-height 1.65 · measure `min(100%, 88ch)` on
+  `.doc-flow` = 796 px cap at the 16.8 px doc body, binds only above ~844 px of pane (§3d.2) ·
+  tables/code keep the section card's full width · H1 1.5rem/700 · H2 1.125rem/700 ·
   H3 1rem/600 · small print 0.75rem mono muted. Headings 1em top / 0.4em bottom margin.
 
 ## Effects (canonical recipes, see index.css)
 
 - `doc-prose` base; new doc-view recipes: `doc-view`, `doc-hero`, `doc-section-card`,
   `callout` (+ `--amber`, `--violet`, `--brass`), `req-chip`, `doc-table`,
-  `mini-toc` (+ chips), `qcard` family.
+  `doc-tocbar` (36 px one-row section strip) + `doc-tocmenu` (44 px rows), `qcard` family.
+  The old wrapping `mini-toc` recipe is deleted (§3d.1).
 - Motion: entrance animations ≤300ms, one-shot, `prefers-reduced-motion: reduce` kills all
   animation (`motion-safe:` guards). No layout shift from any animation (reserve space).
 
@@ -183,6 +185,45 @@ history; no `ch`-capped row inside a percentage container; no `overflow-x` surfa
 44 px control; no doc-header control reaching past its pane; no concluding action outside the
 composer's Answer skin.
 
+## Document pane section nav + measure decision (record, 2026-11-03 §3d)
+
+Full record: `docs/superpowers/designs/2026-11-03-unified-question-chat-design.md` §3d;
+mockup `web/briefs/doc-pane-toc-mockup.html`, pixels `web/briefs/doc-pane-toc-1280x900.png`
+(measured in that page at 1280×900, 636 px doc pane, 12 sections).
+
+After real use the user reported two right-pane defects, both measured: the sticky mini-TOC wrapped to
+**89 px at a 636 px pane and 165 px at the 360 px floor** (4 and 8 rows of every H2 title, permanently
+stuck under the header), and the doc body was capped twice (`max-w-[72ch]` plus
+`.doc-prose-document{max-width:75ch}`), so dragging the splitter widened the *pane* but not the
+*document* — the extra width was dead, and the `docHasTable` "let tables use the width" branch was dead
+code because the prose cap never lifted.
+
+Decision 1: **the section nav is ONE 36 px row** — a horizontal strip with an edge fade, the active
+pill auto-centred by `scrollLeft` (never `scrollIntoView`), and a 44 px `Sections` control at the
+trailing edge that opens the full list as an `absolute` panel with 44 px rows (the overflow control
+§3c.10 rule 4 requires). Rejected: `Sections ▾` as the only surface (no map, two steps for the common
+jump) and a collapsed "On this page" disclosure (same 36 px at rest, zero information, and it
+re-creates the wrap as a state to manage). Height is constant for 3 or 30 sections; 165 px → 36 px at
+a 360 px pane. Gated by `@container docpane`, not a viewport breakpoint — `hidden lg:block` had removed
+the nav entirely at a 900 px window.
+
+Decision 2: **one measure owner**, `.doc-flow { max-width: min(100%, 88ch); font-size: <doc body
+size> }` with a container-driven padding ladder (24 / 16 / 12 px), so prose is capped at 88ch = 796 px
+≈ 99 characters (inside the 55–100 band at 27 px leading) instead of today's hard 679 px. Measured
+ladder: 360 → prose 336 (42 chars) · 450 → 418 · 640 → 592 · 900 → 796 with 28 px gutters · 1272 →
+796 with 214 px gutters. `ch` is font-relative: the doc body size must be declared on `.doc-flow` or
+the cap silently resolves against the 14 px UI font (88ch = 677 px). Tables/code keep the section
+card's full width (762 px) — a negative-margin breakout was measured and rejected (the card already
+insets a table by 34 px, so breaking out would push it through its own border). The cap never binds at
+the default 636 px pane, so the default reading column is unchanged. Splitter: 8 px gutter, 16 px pointer band via
+`::before`, 3 px brass grip on hover/focus only, `aria-valuetext` naming both panes, double-click =
+50/50 — and **no second maximize**, because `Focus document pane` (`zenPane='right'`) already exists
+and now pays out.
+
+Anti-patterns added: no wrapping / collapsible / multi-row section nav; no `scrollIntoView()` on a TOC
+item; no fixed `ch` or px cap on the document body and no second measure owner; no viewport breakpoint
+for doc-pane furniture; no second doc maximize and no splitter wider than a 16 px pointer band.
+
 ## Anti-patterns (do not)
 
 - No new npm dependencies for this surface without written justification (existing: `motion`,
@@ -207,3 +248,8 @@ composer's Answer skin.
   past its pane — see Chat-window geometry decision (rev 3) above.
 - No silent mode changes: no idle auto-disarm, no cross-question/session persistence. The mode
   belongs to the unsent draft.
+- No wrapping, collapsible or multi-row document section nav (the row is 36 px at every width and
+  every section count); no `scrollIntoView()` on a TOC item; no fixed `ch`/px cap on the document body
+  and no second measure owner (and `ch` always with its font context); no viewport breakpoint for
+  doc-pane furniture; no second doc maximize and no splitter wider than a 16 px pointer band — see
+  Document pane section nav + measure decision.

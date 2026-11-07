@@ -1180,3 +1180,394 @@ sentence *"Sending records your answer — no undo"* still sits in the same row 
    (`min(100%, 72ch)`); bubbles use `min(88%, 60ch)`.
 8. **No `scrollIntoView()` without `block:'nearest'`** anywhere in this pane.
 9. **No new dependency** for any of this: no virtualization, no scroll library, no menu library.
+
+## 3d. Document pane: compact section nav + adaptive measure
+
+Two defects reported from real use of the right (document) pane. Both were measured in the shipped
+code and re-measured in the mockup `web/briefs/doc-pane-toc-mockup.html` →
+`web/briefs/doc-pane-toc-1280x900.png` (1280×900, default 50/50 split, 636 px doc pane, a 12-section
+phase document; the numbers below are read out of that page, not estimated).
+
+**Report 1, verbatim:** *"on the right panel, when the user previews the document, the table of contents
+takes up the majority of the document preview if it's a big document, which some of them are."*
+
+**Report 2, verbatim:** *"just like the left panel will expand and collapse when the user slides, the
+right panel with the document preview needs to have the same adjustment as well (so the document can
+expand or contract based on the size of it)."*
+
+### 3d.1 The section nav is ONE 36 px row — measured
+
+**Measured defect.** `DevelopmentView.tsx` (~2097) renders
+`<nav class="doc-toc sticky top-0 mb-2 hidden lg:block"><ul class="flex flex-wrap gap-x-4 gap-y-1">`
+with one `<li>` per H2 (`index.css:346` gives it the sticky panel). Replicating those exact classes,
+fonts and 12 real titles at the same inner widths the app produces:
+
+| surface | inner width | today's TOC | after §3d.1 |
+|---|---|---|---|
+| doc pane 636 (1280 split) | 588 px | **89 px** — 4 wrapped rows | **36 px** |
+| doc pane 360 (splitter floor) | 312 px | **165 px** — 8 wrapped rows | **36 px** |
+
+165 px is 21 % of the 796 px doc viewport, permanently stuck under the header; on a 14–18 section
+document (the case the user describes) it is worse, and it grows linearly with section count. Two
+secondary defects in the same element: `hidden lg:block` is a **viewport** breakpoint, so at a 900 px
+window (446 px doc pane) there is *no* section nav at all; and `flex-wrap` makes the nav's height a
+function of title lengths — unbounded by design.
+
+**Options considered.**
+
+```
+(b) REJECTED — `Sections ▾` popover as the primary surface
+┌──────────────────────────────────────────────────────────────┐
+│  Sections ▾   Risk Register                    36 px         │  ← no map, no neighbours
+└──────────────────────────────────────────────────────────────┘
+        └── click ──▶ full list drops over the document (2 steps for "jump 2 sections down")
+
+(c) REJECTED — collapsed "On this page" disclosure
+┌──────────────────────────────────────────────────────────────┐
+│  ▸ On this page (12)                           36 px         │  ← zero information at rest
+└──────────────────────────────────────────────────────────────┘
+        └── open ──▶ the SAME 89 px / 165 px wrap, now as a state the user must manage
+                      (the defect returns, and now it also shifts the document)
+
+(a) PICKED — one-row horizontal strip, active auto-centred, 44 px `Sections` escape hatch
+┌───────────────────────────────────────────────────────────────────────┐
+│ ←Req…  Thermal & Power  ▓ Risk Register ▓  Verific…   [Sections ▾]    │  36 px, constant
+└───────────────────────────────────────────────────────────────────────┘
+    edge fade = "there is more";  active pill auto-centred;  popover = full list on demand
+```
+
+- **(b) rejected as the primary surface:** it removes the map, which is the *point* of a TOC — the
+  user's complaint is the *space*, not the existence. It also makes the common action (jump to a
+  neighbouring section) a two-step menu and hides the active section's neighbours, i.e. exactly the
+  orientation cue a long document needs. Kept, however, as the **overflow escape hatch** at the
+  strip's trailing edge: §3c.10 rule 4 already binds every `overflow-x` surface to carry "an edge fade
+  **and** a 44 px control", so the popover is not optional — it is demoted from *the* surface to
+  *the* fallback.
+- **(c) rejected:** at rest it costs the same 36 px as (a) and returns nothing — a closed disclosure
+  says nothing about where you are or what the document contains. Opened, it re-creates the wrap
+  (89/165 px) *and* pushes the document down (layout shift on a reading surface), and it adds a second
+  active-indicator surface to keep in sync.
+- **(a) picked:** constant height, keeps the section map scannable, one click to any visible section,
+  and the 44 px `Sections` control covers the rest — the only option that is simultaneously *smaller at
+  rest than today* and *strictly more capable*.
+
+**Exact recipe — JSX** (replace the current `nav.doc-toc` block; keep `docToc`, `activeTocId`, the
+IntersectionObserver effect and `handleTocClick` exactly as they are):
+
+```tsx
+{/* §3d.1 — one 36 px row; container-query gated (never a viewport breakpoint). */}
+{docToc.length >= 3 && !diffOpen && !editing && (
+  <nav aria-label="Document sections" className="doc-tocbar">
+    <ul ref={tocTrackRef} className="doc-tocbar__track">
+      {docToc.map((title, i) => {
+        const slug = slugifyHeading(title);
+        const active = activeTocId === slug;
+        return (
+          <li key={`${i}-${title}`}>
+            <a href={`#${slug}`} aria-current={active ? 'true' : undefined}
+               onClick={e => handleTocClick(e, slug)}>{title}</a>
+          </li>
+        );
+      })}
+    </ul>
+    <button type="button" className="doc-tocbar__all" aria-expanded={tocMenuOpen}
+            aria-controls="doc-toc-menu" aria-haspopup="true"
+            onClick={() => setTocMenuOpen(v => !v)}>
+      Sections <ChevronDown className="h-3 w-3" aria-hidden />
+    </button>
+  </nav>
+)}
+{/* Rendered OUTSIDE the scroller (§3d.1 note) so it cannot be clipped and does
+    not add scroll height; anchored to the pane, which is already `relative`. */}
+{tocMenuOpen && (
+  <div id="doc-toc-menu" ref={tocMenuRef} role="group" aria-label="All document sections"
+       className="doc-tocmenu" style={{ top: tocMenuTop }}>
+    {/* same anchors, min-h-[44px] rows, same aria-current styling */}
+  </div>
+)}
+```
+
+`tocMenuTop` is measured once on open — `triggerRect.bottom - paneRect.top + 6` — so the panel sits
+under the `Sections` button at any pane width. Esc closes and returns focus to the trigger; outside
+`pointerdown` closes; no focus trap (a list of links, not a modal menu).
+
+**Exact recipe — `index.css`** (replaces `.doc-toc` / `.doc-toc a` / `.doc-toc a.doc-toc__active`;
+`--doc-pad` is defined in §3d.2):
+
+```css
+/* §3d.1 — document section nav: ONE 36 px row. Never wraps, never grows. */
+.doc-tocbar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 8px;
+  height: 36px;                                  /* 26 px pill + 5 px + 5 px */
+  margin: 0 calc(-1 * var(--doc-pad)) 12px;      /* full-bleed inside the padded body */
+  padding: 0 8px 0 var(--doc-pad);
+  background: var(--sf-panel);
+  border-bottom: 1px solid var(--sf-border-weak);
+}
+.doc-tocbar__track {
+  flex: 1 1 auto; min-width: 0; height: 100%;
+  display: flex; align-items: center; gap: 12px;
+  margin: 0; padding: 0; list-style: none;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 24px,
+                                      #000 calc(100% - 24px), transparent 100%);
+          mask-image: linear-gradient(to right, transparent 0, #000 24px,
+                                      #000 calc(100% - 24px), transparent 100%);
+}
+.doc-tocbar__track::-webkit-scrollbar { display: none; }
+.doc-tocbar__track a {
+  position: relative; flex: none; display: inline-flex; align-items: center;
+  height: 26px; padding: 0 10px; border-radius: 999px;
+  border: 1px solid transparent;                 /* reserved: active adds colour, not size */
+  font: 11.5px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--sf-text-2); text-decoration: none; white-space: nowrap;
+}
+.doc-tocbar__track a::after { content: ""; position: absolute; inset: -9px -6px; } /* 44x44 target */
+.doc-tocbar__track a:hover { color: var(--sf-brass); background: var(--sf-hover); }
+.doc-tocbar__track a[aria-current="true"] {      /* 4 channels: hue + fill + border + weight */
+  color: #c4b5fd;                                /* 9.6:1 on the effective fill */
+  background: color-mix(in srgb, var(--sf-review-fill) 55%, transparent);
+  border-color: color-mix(in srgb, var(--sf-review) 60%, transparent);
+  font-weight: 600;
+}
+.doc-tocbar__all {
+  position: relative; flex: none; display: inline-flex; align-items: center; gap: 4px;
+  height: 28px; padding: 0 8px; border-radius: 8px;
+  border: 1px solid var(--sf-border-weak); background: var(--sf-raised);
+  color: var(--sf-text-2); font-size: 11px; font-weight: 600;
+}
+.doc-tocbar__all::after { content: ""; position: absolute; inset: -8px -8px; }   /* 44 px target */
+.doc-tocbar__all[aria-expanded="true"] { color: var(--sf-brass); border-color: var(--sf-border-strong); }
+.doc-tocmenu {
+  position: absolute; right: 8px; z-index: 30;
+  width: min(320px, calc(100% - 16px)); max-height: min(60vh, 420px); overflow-y: auto;
+  padding: 6px; border-radius: 10px;
+  border: 1px solid var(--sf-border-strong); background: var(--sf-panel);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .55);
+}
+.doc-tocmenu a { display: flex; align-items: center; min-height: 44px; padding: 0 10px;
+                 border-radius: 6px; font-size: 12.5px; color: var(--sf-text-2); }
+.doc-tocmenu a[aria-current="true"] { color: #c4b5fd; font-weight: 600;
+                 background: color-mix(in srgb, var(--sf-review-fill) 45%, transparent); }
+```
+
+**Active-section auto-centre** (new effect beside the existing observer — the observer itself is
+untouched, so tracking survives every resize and every doc swap):
+
+```tsx
+useEffect(() => {
+  const track = tocTrackRef.current;
+  if (!track || !activeTocId) return;
+  if (track.contains(document.activeElement)) return;      // never yank a focused link
+  const el = track.querySelector<HTMLElement>('[aria-current="true"]');
+  if (!el) return;
+  const target = el.offsetLeft - track.clientWidth / 2 + el.offsetWidth / 2;
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  track.scrollTo({ left: Math.max(0, Math.min(target, track.scrollWidth - track.clientWidth)),
+                   behavior: reduced ? 'auto' : 'smooth' });
+}, [activeTocId]);
+```
+
+**Verdicts.**
+
+- **Keyboard — pass.** DOM order is document order, so Tab walks section 1 → N, then `Sections`. A
+  focused link that is scrolled out of the strip is brought in **by the browser** (native focus
+  scrolling), so all 30 sections are reachable with the strip alone; the popover is a second path, not
+  the only one. `Enter` activates the anchor → `handleTocClick` (smooth scroll + focus the section
+  card, unchanged). Esc closes the popover and returns focus to the trigger. No focus trap, no roving
+  tabindex, no new shortcut. The global `*:focus-visible` double ring (2 px void + 2 px crimson = 4 px)
+  paints fully because the 26 px pill sits in a 36 px track with 5 px of inner clearance — **do not
+  shrink the row below 36 px** or the ring is clipped by the track's `overflow`.
+- **Active state — pass.** Same `aria-current="true"`, same IntersectionObserver (`root:
+  docContentRef`, `rootMargin: '0px 0px -65% 0px'`), same `slugifyHeading` ids. Visual change only:
+  the active item now reads through four channels (violet text `#c4b5fd` at 9.6:1 on the effective
+  fill, violet-deep fill, violet border, 600 weight) instead of colour alone — and it is *always on
+  screen* because it is auto-centred (the old wrap could scroll it out from under the sticky bar).
+  Inactive links `#a8b3c4` on `--sf-panel` = 9.2:1.
+- **360 px pane — pass.** Inner width 336 px (`--doc-pad: 12px`); the strip measures **256 px**
+  (full-bleed bar: 80 px go to padding + the 44 px `Sections` control + the 8 px gap), i.e. ~2.5 pills
+  visible with both edge fades lit and the active pill centred. Row height stays 36 px (**165 px → 36 px**, 129 px returned to the document). Every
+  pill keeps a 44×44 effective target via `::after`; horizontal targets never overlap because the gap
+  is 12 px and the inset is 6 px per side.
+- **Motion:** the only animation is the strip's own `scrollTo`, which is `auto` under
+  `prefers-reduced-motion` and never moves the document. No height/width transitions, no layout shift.
+
+### 3d.2 The measure follows the pane — `min(100%, 88ch)`
+
+**Measured defect.** The doc body is `px-6 py-4` plus `max-w-[72ch]` when the document has no table
+(~2095), and the prose inside it is `.doc-prose-document { max-width: 75ch }` (`index.css:207`).
+`ch` in the document's own body font (`clamp(1rem, 0.97rem + 0.15vw, 1.05rem)` = 16.8 px at ≥1280,
+system sans) measures **9.05 px**, so:
+
+- `72ch` = 652 px and `75ch` = 679 px — the prose stops at **679 px** no matter how far the splitter is
+  dragged; at a 1272 px focused pane that is **545 px of dead gutter** (1224 px of inner width, 679 px
+  of document).
+- The `docHasTable` branch is **dead code**: with a table the wrapper loses its cap, but the prose child
+  still caps at 75ch, so a wide table cannot use the extra width either. Pane width and document width
+  are simply not connected.
+- Same class of bug as §3c.6, same cause: a `ch` cap on the wrong box — here with no width-relative
+  owner at all.
+
+**Rule.** One measure owner, width-relative, container-driven:
+
+| pane | `--doc-pad` | inner | prose `min(100%, 88ch)` | gutter | ≈ chars/line | today (pad 24, 75ch) |
+|---|---|---|---|---|---|---|
+| 360 | 12 | 336 | 336 | 0 | 42 | 312 |
+| 450 | 16 | 418 | 418 | 0 | 52 | 402 |
+| 640 | 24 | 592 | 592 | 0 | 73 | 592 |
+| 900 | 24 | 852 | 796 | 28 | 99 | 679 |
+| 1272 | 24 | 1224 | 796 | 214 | 99 | 679 |
+
+- **Max line length allowed: 88ch = 796 px ≈ 99 characters.** Rationale: the document body is
+  15.3–16.8 px at `line-height 1.7` = 27 px leading, and the research band for that leading is
+  55–100 characters (Dyson & Haselgrove) — 99 sits inside that band, whereas 100ch+ (which is what
+  "use the whole pane" would give at a 1272 px pane: 1224 px ≈ 152 characters) does not. The cap
+  **never binds at the default 636 px pane**, so today's reading column is unchanged; it pays out
+  **+117 px of document width at a 900 px pane and +117 px at 1272 px**, and above that the column is
+  centred rather than stretched. Rejected: no cap (unreadable at 152 characters), 75ch (that *is* the
+  complaint), 100ch+ (outside the band).
+- **Min line length allowed: 336 px ≈ 42 characters** at the 360 px pane floor. Below that the measure
+  never binds (`max-width: 100%`); the padding ladder is what buys characters back — `px-6` = 24 px per
+  side costs 13 % of a 360 px pane, 12 px costs 7 %.
+- **Tables, code and diagrams are artefacts, not prose** (§3c.6 precedent): they take the **full width
+  of the measure** (the section card's inner width) and keep their existing `overflow-x` scroll region
+  with region semantics. A `--doc-gutter` negative-margin breakout to the pane edge was designed and
+  then **rejected on measurement**: every H2 section is an `.sf-h2-section` card with
+  `padding: 0.1rem 1rem 0.75rem` + 1 px border, so a table already sits 34 px inside the measure
+  (measured: 762 px table inside a 796 px flow); cancelling the gutter would push the table through its
+  own card border for 34 px of gain. The table gets the card's full width — which itself grew from
+  645 px to 762 px — and no card border is broken.
+
+**Exact recipe.** Delete `max-w-[72ch]` and `docHasTable` from the JSX (the wrapper becomes
+`className="doc-body"`), delete `.doc-prose.doc-prose-document { max-width: 75ch }`, and add:
+
+```css
+/* §3d.2 — the doc pane is the query container for everything width-dependent. */
+.docPane { container: docpane / inline-size; }
+
+.doc-body { --doc-pad: 24px; padding: 16px var(--doc-pad); }
+@container docpane (max-width: 559px) { .doc-body { --doc-pad: 16px; } }
+@container docpane (max-width: 419px) { .doc-body { --doc-pad: 12px; } }
+
+/* ONE measure owner. `ch` is legal here (§3c.10 rule 7 bans it on a row inside
+   a percentage container, not on the document column) — but `ch` is
+   font-relative, so the document body size must be declared HERE or the cap
+   silently resolves against the 14 px UI font (88ch = 677 px instead of 796). */
+.doc-flow {
+  width: 100%;
+  max-width: min(100%, 88ch);
+  margin-inline: auto;
+  font-size: clamp(1rem, 0.97rem + 0.15vw, 1.05rem);   /* = the doc body size */
+}
+.doc-prose.doc-prose-document { max-width: none; }     /* the column owns the measure now */
+```
+
+JSX shape after the change (same structure, one new wrapper):
+
+```tsx
+<div className="doc-body">
+  <p className="doc-path">…</p>
+  {docToc.length >= 3 && !diffOpen && !editing && <nav className="doc-tocbar">…</nav>}
+  <div className="doc-flow">
+    {diffOpen && docDiff && doc.content === docDiff.current
+      ? <DocDiff … /> : <Markdown content={doc.content} variant="document" />}
+  </div>
+</div>
+```
+
+The `doc-tocbar` stays **outside** `.doc-flow` on purpose: the nav is furniture, so it spans the pane
+(its negative margins cancel `--doc-pad`), while the prose is a column. `container: docpane /
+inline-size` on the pane section is also what §3c.5's fold ladder needs — that ladder must move off the
+`foldDocActions` ResizeObserver onto the same named container in the same change, or the pane ends up
+with two width observers that can disagree.
+
+**Note on `position: fixed` inside the pane:** `container-type: inline-size` makes the pane a
+containing block for fixed descendants. That is why the `Sections` popover is `position: absolute`
+inside the pane (§3d.1) rather than a fixed-position layer.
+
+**Verified in the mockup** (`getBoundingClientRect`, pane driven to each width): TOC row **36 px** and
+`docFlow` **336 / 418 / 592 / 796 / 796** px at pane **360 / 450 / 640 / 900 / 1272**, with the active
+pill inside the track at every width (a `ResizeObserver` on the track re-centres it — see §3d.1, an
+effect on `activeTocId` alone leaves it off-screen after a drag because the active id does not change).
+
+### 3d.3 The splitter: an honest affordance, no second maximize
+
+**Measured defect.** `PaneSplitter` renders an 8 px strip with a 2 px `--sf-border-strong` grip that
+is on screen but nearly invisible against `--sf-panel`, and it is `hidden md:flex` — below 768 px there
+is no splitter at all (correct: one pane owns the width), so 360–767 px panes are reached only through
+the rail/collapse controls.
+
+**Rules.**
+
+- **Visual gutter stays 8 px** (a pane divider, not a scrollbar); the grip becomes 3 px and brass
+  (`rgba(217,164,65,.75)`) **on hover / focus-visible only** — no extra chrome at rest, discoverable on
+  approach.
+- **Pointer band: 16 px**, via `.gutter::before { position: absolute; inset: 0 -4px; }` on a
+  `position: relative` 8 px strip. The element's layout width does not change — drag math measures
+  `parentElement`, so a real width change would desync `leftPct` (the reason `PaneSplitter`'s
+  "no wrapper div" warning exists).
+- **Keyboard:** unchanged (arrows ±2 %, Home/End = clamp) plus
+  `aria-valuetext={`${Math.round(leftPct)}% conversation, ${Math.round(100 - leftPct)}% document`}`
+  so the value is audible in the user's terms, and **double-click = reset to 50/50** (persisted
+  through the existing `onCommit`).
+- **No new maximize control.** The doc pane already has one: `Focus document pane`
+  (`zenPane === 'right'`, rail at ≥630 px, `⋯` row at ≤629 px per §3c.5 row 5). What was broken was not
+  the absence of a maximize — it was that maximizing bought nothing, because the measure ignored the
+  width. §3d.2 is what makes the existing control pay out. A second maximize would be two controls for
+  one state and a new way to disagree with the collapse/zen state machine.
+- Dragging reflows **live** (pure CSS; no debounce, no transition on the measure) and the
+  IntersectionObserver re-fires on layout change, so the active pill keeps tracking mid-drag.
+
+### 3d.4 What §3d overrides
+
+1. **§3b.1 / §3c.1** — no geometry change; pane row, splitter width and rail widths are untouched.
+2. **`index.css` `.doc-toc*`** — deleted, replaced by `.doc-tocbar*` / `.doc-tocmenu` (§3d.1).
+3. **`index.css` `.doc-prose.doc-prose-document { max-width: 75ch }`** — deleted; `.doc-flow` owns the
+   measure (§3d.2).
+4. **`DevelopmentView.tsx`** — `docHasTable` and the `max-w-[72ch]` conditional are deleted (dead
+   branch), the `nav.doc-toc` block is replaced, and one `tocTrackRef` + one effect + `tocMenuOpen`
+   state are added. The IntersectionObserver effect, the `docToc` memo and `handleTocClick` are
+   unchanged.
+5. **§3c.5** — the fold ladder's breakpoints stay, but they must be expressed against the same
+   `@container docpane` name introduced here.
+6. **MASTER.md** — document typography row: measure is `min(100%, 88ch)` on `.doc-flow`, not
+   `max-w-[75ch]`; the mini-TOC recipe becomes a 36 px strip.
+
+### 3d.5 QA (Playwright, mockup + app, 1280×900 and a dragged 360 px pane)
+
+1. 12-section doc: `tocbar.getBoundingClientRect().height === 36`; `track.scrollWidth >
+   track.clientWidth`; the active pill's rect is fully inside the track's rect.
+2. A 30-section doc renders at the **same** 36 px (assert equality, not a range).
+3. Scroll the document to section 9: `aria-current` moves to it and `track.scrollLeft` changed so the
+   pill's centre is within ±40 px of the track centre; the document's own `scrollTop` is unaffected by
+   the strip's scroll.
+4. Drag the splitter to its floor (~360) and to ~900: the row is 36 px at both,
+   `pane.scrollWidth === pane.clientWidth`, and the `Sections` button stays fully inside the pane.
+5. `docFlow` width equals `min(inner, 796 ± 1)` → **312 / 402 / 592 / 796 / 796** at pane
+   360 / 450 / 640 / 900 / 1272 (measured in the mockup); a table inside a section card is
+   `flow − 34` px and never overflows its card border.
+6. Tab from the path line: lands on section 1 … N, then `Sections`; the panel lists N rows each ≥44 px;
+   Esc closes it and focus is back on the trigger; no focus lands on a hidden element.
+7. Splitter: two `ArrowRight` presses move `leftPct` by 4; `aria-valuetext` reads
+   `"54% conversation, 46% document"`; double-click restores 50/50.
+8. No horizontal scrollbar anywhere in the pane at any of the five widths.
+
+### 3d.6 Binding DO-NOT list (this section)
+
+1. **No wrapping, no multi-row, no collapsible section nav.** The row is exactly **36 px** at every
+   pane width and every section count — no `flex-wrap`, no `max-height`, no "show more", no disclosure
+   toggle. Section count must never change the height of the top of the document.
+2. **Never `scrollIntoView()` on a TOC item.** It scrolls the doc pane (and the page) to the strip;
+   only `track.scrollLeft` / `scrollTo` may move the strip, and never while focus is inside it.
+3. **No fixed `ch` or px cap on the document body, and no second measure owner.** One `.doc-flow` =
+   `min(100%, 88ch)` **with the document body size declared on it** (`ch` is font-relative — forget
+   that and the cap silently becomes 677 px); the padding ladder is container-driven; no
+   negative-margin breakout out of a section card. Deleting `max-w-[72ch]` is part of the fix, not
+   optional cleanup.
+4. **No viewport breakpoint for doc-pane furniture.** `hidden lg:block` on the section nav is the bug
+   that removed the TOC at a 900 px window; everything width-dependent in this pane uses
+   `@container docpane`.
+5. **No second maximize/full-screen control and no wider splitter.** `Focus document pane` stays the
+   only doc maximize; the splitter's layout width stays 8 px (16 px pointer band via `::before` only),
+   never traps focus, and never changes the pane row's own width.
