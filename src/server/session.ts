@@ -156,10 +156,11 @@ export class ServerSessionManager {
   }
   private pending: PendingCheckpoint | null = null;
   private activeAbort: AbortController | null = null;
-  /** True while the busy guard is held by an answer-queue drain (not by a
-   *  chain/agent turn). applyAnswer's isBusy must report "chain turn in
-   *  progress", not "drain in progress" — so an idle-path apply can run its
-   *  incorporation turn while the drain-owned guard still blocks turns. */
+  /** True while the busy guard is held by something other than a chain/agent
+   *  turn: an answer-queue drain, or confirmThreadProposal's doc write + row
+   *  flip. applyAnswer's isBusy must report "chain turn in progress", not
+   *  "drain in progress" — so an idle-path apply can run its incorporation
+   *  turn while the drain-owned guard still blocks turns. */
   private drainHoldsGuard = false;
 
   private roleClients: RoleClients;
@@ -651,14 +652,14 @@ export class ServerSessionManager {
   }
 
   /**
-   * Appends the `kind:'recorded'` thread row for an answer applied through the
-   * answer queue — the production answer path (POST /api/portal/:id/answer →
-   * queueAnswer → applyAnswerNow). Items with no thread get no row: there is no
+   * Appends the `kind:'recorded'` thread row for a committed answer. Two
+   * callers, each once per apply: the answer queue (POST /api/portal/:id/answer
+   * → queueAnswer → applyAnswerNow) and applyConfirmedProposal (the research
+   * "Use proposal" path). Items with no thread get no row: there is no
    * conversation to attach the committed answer to.
    *
    * `confirmThreadProposal` calls applyAnswer directly and appends its own
-   * recorded row, so it never passes through here — the two paths cannot
-   * double-append.
+   * recorded row, so it never passes through here — no path double-appends.
    *
    * @param item Item as returned by applyAnswer (post-apply state).
    * @param answer The committed answer text.
@@ -793,10 +794,19 @@ export class ServerSessionManager {
   /**
    * Confirms a research proposal (user YES or edited text): routes the answer
    * through the SAME answer-applier path with 'user-confirmed-research'
-   * provenance. Throws on item-not-found / no-longer-open (route maps codes).
+   * provenance, then appends the `kind:'recorded'` thread row so the research
+   * variant shows a Recorded-answer bubble exactly like the queue path
+   * (design §4.3/§4.4). Items with no thread get no row.
+   *
+   * @param itemId Portal item id; must be an open question with a pending proposal.
+   * @param answer Final answer text (the proposal text or the user's edit).
+   * @throws item-not-found / no-longer-open from applyAnswer (route maps codes).
    */
   async applyConfirmedProposal(itemId: string, answer: string): Promise<void> {
-    await applyAnswer(this.answerApplierDeps(), itemId, answer, { provenance: 'user-confirmed-research' });
+    const result = await applyAnswer(this.answerApplierDeps(), itemId, answer, {
+      provenance: 'user-confirmed-research'
+    });
+    this.recordAnswerThreadRow(result.updatedItem, answer);
   }
 
   /** Core undo wrapper with SSE status (route for POST /api/portal/:id/undo-auto). */
@@ -930,12 +940,11 @@ export class ServerSessionManager {
    * emits a status event. Serialized per item via threadInFlight — a second
    * turn on the SAME item while one is in flight throws (route maps to 409);
    * different items and chain turns are independent. Throws on
-   * item-not-found / non-open / non-question items.
-   *
-   * `intent` 'ask' (default) is the unchanged advisory path; 'answer' marks the
-   * persisted user row `intent:'answer'` and is otherwise identical.
+   * item-not-found / non-open / non-question items. Committed answers never
+   * come through here — they go through applyAnswer (see
+   * recordAnswerThreadRow).
    */
-  async postThreadMessage(itemId: string, text: string, intent: 'ask' | 'answer' = 'ask'): Promise<PortalItem> {
+  async postThreadMessage(itemId: string, text: string): Promise<PortalItem> {
     const state = this.deps.stateManager.getState();
     const item = (state.portalItems || []).find(i => i.id === itemId);
     if (!item) throw new Error(`Portal item not found: ${itemId}`);
@@ -947,14 +956,7 @@ export class ServerSessionManager {
     }
     this.threadInFlight.add(itemId);
     try {
-      this.appendThreadMessage(itemId, {
-        role: 'user',
-        text,
-        ts: Date.now(),
-        // An answer-intent row is a committed answer: `kind:'recorded'` keeps it
-        // out of the 20-row trim (recorded rows are never dropped).
-        ...(intent === 'answer' ? { intent, kind: 'recorded' as const } : {})
-      });
+      this.appendThreadMessage(itemId, { role: 'user', text, ts: Date.now() });
       const fresh = (this.deps.stateManager.getState().portalItems || []).find(i => i.id === itemId)!;
       const reply = await this.runAdvisoryTurn(fresh);
       if (reply) {

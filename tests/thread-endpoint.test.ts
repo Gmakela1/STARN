@@ -253,12 +253,49 @@ describe('POST /api/portal/:id/thread', () => {
     expect(ADVISORY_SYSTEM_DIRECTIVE).toContain('NEVER write "Decision confirmed"');
   });
 
-  it('postThreadMessage answer intent marks the persisted user row as recorded', async () => {
+  /** Park a pending research proposal on one item (what the gate would write). */
+  function seedProposal(id: string, answer: string): void {
+    const state = stateManager.getState();
+    const stored = (state.portalItems || []).find(i => i.id === id)!;
+    stored.meta = {
+      ...(stored.meta || {}),
+      proposedAnswer: { answer, sources: [], confidence: 0.7, rationale: 'Vendor spec.' }
+    };
+    stateManager.saveState(state);
+  }
+
+  it('confirming a research proposal appends exactly one recorded thread row', async () => {
     const item = seedItem();
-    await session.postThreadMessage(item.id, '48V nominal', 'answer');
-    const thread = storedThread(item.id);
-    // `kind:'recorded'` is what keeps a committed answer out of the 20-row trim.
-    expect(thread[0]).toMatchObject({ role: 'user', text: '48V nominal', intent: 'answer', kind: 'recorded' });
+    keepDocOpen();
+    await request('POST', `/api/portal/${item.id}/thread`, { text: 'Is 48V enough for the coil?' });
+    const before = storedThread(item.id).length;
+    seedProposal(item.id, '48V nominal');
+
+    const res = await request('POST', `/api/portal/${item.id}/confirm-proposal`, {});
+    expect(res.status).toBe(200);
+
+    const rows = storedThread(item.id);
+    const recorded = rows.filter(r => r.kind === 'recorded');
+    // `kind:'recorded'` is what renders the Recorded-answer bubble and what
+    // keeps a committed answer out of the 20-row trim.
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toMatchObject({
+      role: 'user',
+      text: '48V nominal',
+      intent: 'answer',
+      kind: 'recorded'
+    });
+    expect(rows).toHaveLength(before + 1);
+  });
+
+  it('confirming a research proposal on an item with no thread appends no row', async () => {
+    const item = seedItem();
+    keepDocOpen();
+    seedProposal(item.id, '48V nominal');
+
+    const res = await request('POST', `/api/portal/${item.id}/confirm-proposal`, {});
+    expect(res.status).toBe(200);
+    expect(storedThread(item.id)).toHaveLength(0);
   });
 
   it('conclude appends a pending proposal row with basedOn and never writes a doc', async () => {
