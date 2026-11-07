@@ -49,9 +49,9 @@ describe('Markdown link scheme allowlist', () => {
 });
 
 // Containment contract: wide tables must scroll horizontally inside the doc
-// pane, never expand it (DevelopmentView keeps max-w-[72ch] only for table-free
-// docs, so this wrapper is what stops a table's intrinsic width from
-// resizing the pane split).
+// pane, never expand it (the doc measure is min(100%, 88ch) on `.doc-flow` per
+// design §3d.2 — tables keep the full measure width — so this wrapper is what
+// stops a table's intrinsic width from resizing the pane split).
 describe('Markdown table containment', () => {
   it('wraps rendered tables in an overflow-x-auto scroll container', () => {
     render(<Markdown content={'| A | B |\n| --- | --- |\n| 1 | 2 |'} />);

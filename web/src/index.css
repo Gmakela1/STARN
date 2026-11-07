@@ -201,10 +201,10 @@ html, body, #root {
 /* Variants share the .doc-prose base; doubled class selectors here beat the   */
 /* inline tailwind utilities on child blocks (list spacing, heading margins).  */
 
-/* Document variant: 75ch measure, slightly larger base, relaxed leading. */
+/* Document variant: relaxed leading. The measure and the body font size live
+   on `.doc-flow` (design §3d.2) — this block must NOT cap the column. */
 .doc-prose.doc-prose-document {
-  max-width: 75ch;
-  font-size: clamp(1rem, 0.97rem + 0.15vw, 1.05rem);
+  max-width: none;
   line-height: 1.7;
 }
 .doc-prose.doc-prose-document ul,
@@ -341,28 +341,162 @@ html, body, #root {
   color: var(--sf-text-2);
 }
 
-/* Mini-TOC (doc pane): CSS-sticky strip; hidden <3 sections or <lg by the
-   component classes (hidden lg:block). */
-.doc-toc {
+/* ===== §3d.2 — adaptive reading measure ==================================== */
+/* The doc pane is the query container for everything width-dependent in it
+   (never a viewport breakpoint: `hidden lg:block` is what removed the TOC at
+   a 900 px window). */
+.docPane {
+  container: docpane / inline-size;
+}
+/* Padding ladder: 24 / 16 / 12 px per side buys characters back at narrow panes. */
+.doc-body {
+  --doc-pad: 24px;
+  padding: 16px var(--doc-pad);
+}
+@container docpane (max-width: 559px) {
+  .doc-body { --doc-pad: 16px; }
+}
+@container docpane (max-width: 419px) {
+  .doc-body { --doc-pad: 12px; }
+}
+/* ONE measure owner: min(100%, 88ch) = 796 px ≈ 99 characters. `ch` is
+   font-relative, so the document body size is declared HERE — otherwise the cap
+   silently resolves against the 14 px UI font (88ch = 677 px, not 796 px). */
+.doc-flow {
+  width: 100%;
+  max-width: min(100%, 88ch);
+  margin-inline: auto;
+  font-size: clamp(1rem, 0.97rem + 0.15vw, 1.05rem);
+}
+
+/* ===== §3d.1 — document section nav: ONE 36 px row ======================== */
+/* Never wraps, never grows: section count cannot change the height of the top
+   of the document. 26 px pill + 5 px + 5 px of inner clearance (the 4 px focus
+   ring paints inside it). */
+.doc-tocbar {
   position: sticky;
   top: 0;
   z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  margin: 0 calc(-1 * var(--doc-pad)) 12px; /* full-bleed inside the padded body */
+  padding: 0 8px 0 var(--doc-pad);
   background: var(--sf-panel);
   border-bottom: 1px solid var(--sf-border-weak);
-  padding: 0.5rem 0;
 }
-.doc-toc a {
+.doc-tocbar__track {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+          mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+}
+.doc-tocbar__track::-webkit-scrollbar {
+  display: none;
+}
+.doc-tocbar__track a {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid transparent; /* reserved: active adds colour, not size */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1;
   color: var(--sf-text-2);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 0.72rem;
+  text-decoration: none;
+  white-space: nowrap;
 }
-.doc-toc a:hover,
-.doc-toc a:focus-visible {
+.doc-tocbar__track a::after {
+  content: "";
+  position: absolute;
+  inset: -9px -6px; /* 44x44 effective target */
+}
+.doc-tocbar__track a:hover {
+  color: var(--sf-brass);
+  background: var(--sf-hover);
+}
+/* Active section: 4 channels — hue + fill + border + weight. */
+.doc-tocbar__track a[aria-current="true"] {
+  color: #c4b5fd;
+  background: color-mix(in srgb, var(--sf-review-fill) 55%, transparent);
+  border-color: color-mix(in srgb, var(--sf-review) 60%, transparent);
+  font-weight: 600;
+}
+.doc-tocbar__all {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--sf-border-weak);
+  background: var(--sf-raised);
+  color: var(--sf-text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+.doc-tocbar__all::after {
+  content: "";
+  position: absolute;
+  inset: -8px -8px; /* 44 px target */
+}
+.doc-tocbar__all:hover {
   color: var(--sf-brass);
 }
-/* IntersectionObserver active section (brief §6: violet-400 active item). */
-.doc-toc a.doc-toc__active {
-  color: #a78bfa;
+.doc-tocbar__all[aria-expanded="true"] {
+  color: var(--sf-brass);
+  border-color: var(--sf-border-strong);
+}
+/* The complete list on demand — absolute inside the pane (a container-type
+   pane is a containing block for fixed descendants, so never `fixed`). */
+.doc-tocmenu {
+  position: absolute;
+  right: 8px;
+  z-index: 30;
+  width: min(320px, calc(100% - 16px));
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--sf-border-strong);
+  background: var(--sf-panel);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+}
+.doc-tocmenu a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--sf-text-2);
+  text-decoration: none;
+}
+.doc-tocmenu a:hover {
+  color: var(--sf-brass);
+  background: var(--sf-hover);
+}
+.doc-tocmenu a[aria-current="true"] {
+  color: #c4b5fd;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--sf-review-fill) 45%, transparent);
 }
 
 /* ========================================================================= */

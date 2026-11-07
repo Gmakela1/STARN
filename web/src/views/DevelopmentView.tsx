@@ -1027,9 +1027,8 @@ export default function DevelopmentView({
     () => roadmap.find(p => p.id === selectedPhase)?.artifactPath.split('/').pop(),
     [roadmap, selectedPhase]
   );
-  const docHasTable = useMemo(() => /(?:^|\n)\s*\|/m.test(doc?.content ?? ''), [doc]);
   // Mini-TOC: H2 titles from the rendered doc (matches Markdown.tsx slug ids);
-  // rendered sticky in the doc pane when 3+ sections exist.
+  // rendered as ONE 36 px strip in the doc pane when 3+ sections exist (§3d.1).
   const docToc = useMemo(
     () =>
       (doc?.content.match(/^##\s+(.+)$/gm) ?? []).map(h => h.replace(/^##\s+/, '').trim()),
@@ -1056,6 +1055,80 @@ export default function DevelopmentView({
     targets.forEach(t => observer.observe(t));
     return () => observer.disconnect();
   }, [docToc, doc, diffOpen, editing]);
+
+  // §3d.1 — strip refs + the `Sections` popover (the complete list on demand).
+  const tocTrackRef = useRef<HTMLUListElement>(null);
+  const tocMenuRef = useRef<HTMLDivElement>(null);
+  const tocTriggerRef = useRef<HTMLButtonElement>(null);
+  const [tocMenuOpen, setTocMenuOpen] = useState(false);
+  const [tocMenuTop, setTocMenuTop] = useState(0);
+
+  // §3d.1 — keep the active pill inside the strip. Re-centres on active change
+  // AND on resize: a drag never changes `activeTocId`, so the id alone leaves
+  // the active pill scrolled out of view after the pane is widened.
+  useEffect(() => {
+    const track = tocTrackRef.current;
+    if (!track) return;
+    const centreActive = () => {
+      if (!activeTocId) return;
+      // Never yank a link the user is on (native focus scrolling owns that).
+      if (track.contains(document.activeElement)) return;
+      const active = track.querySelector<HTMLElement>('[aria-current="true"]');
+      if (!active) return;
+      const target = active.offsetLeft - track.clientWidth / 2 + active.offsetWidth / 2;
+      const max = track.scrollWidth - track.clientWidth;
+      if (typeof track.scrollTo !== 'function') return;
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+      track.scrollTo({ left: Math.max(0, Math.min(target, max)), behavior: reduced ? 'auto' : 'smooth' });
+    };
+    centreActive();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(centreActive);
+    ro.observe(track);
+    return () => ro.disconnect();
+  }, [activeTocId, docToc]);
+
+  // §3d.1 — Esc closes the popover and returns focus to the trigger; an
+  // outside pointerdown closes it. No focus trap: a list of links, not a modal.
+  useEffect(() => {
+    if (!tocMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setTocMenuOpen(false);
+      tocTriggerRef.current?.focus();
+    };
+    const onPointer = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (tocMenuRef.current?.contains(target) || tocTriggerRef.current?.contains(target)) return;
+      setTocMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('pointerdown', onPointer, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('pointerdown', onPointer, true);
+    };
+  }, [tocMenuOpen]);
+
+  /** Toggle the `Sections` popover, measuring its top off the trigger once. */
+  const toggleTocMenu = (): void => {
+    if (!tocMenuOpen) {
+      const trigger = tocTriggerRef.current;
+      const pane = docPaneRef.current;
+      if (trigger && pane) {
+        setTocMenuTop(trigger.getBoundingClientRect().bottom - pane.getBoundingClientRect().top + 6);
+      }
+    }
+    setTocMenuOpen(open => !open);
+  };
+
+  /** Strip keyboard: ←/→ scroll the single row (links keep native Tab order). */
+  const handleTocTrackKeyDown = (e: ReactKeyboardEvent<HTMLUListElement>): void => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    e.currentTarget.scrollLeft += e.key === 'ArrowRight' ? 120 : -120;
+  };
 
   /** Mini-TOC click: motion-safe smooth scroll + focus the section card. */
   const handleTocClick = (e: ReactMouseEvent<HTMLAnchorElement>, slug: string): void => {
@@ -1791,7 +1864,7 @@ export default function DevelopmentView({
         ref={docPaneRef}
         aria-label="Document workspace"
         style={rightStyle}
-        className={`relative hidden min-h-0 min-w-0 flex-col md:flex ${rightIsRail ? 'overflow-hidden' : ''}`}
+        className={`docPane relative hidden min-h-0 min-w-0 flex-col md:flex ${rightIsRail ? 'overflow-hidden' : ''}`}
       >
         {rightIsRail && (
           <div className="absolute inset-0 z-30 hidden w-11 flex-col items-center justify-center gap-2 bg-[#0d1017]/95 lg:flex">
@@ -2092,13 +2165,20 @@ export default function DevelopmentView({
               className="h-full w-full resize-none bg-[#05070c] p-4 font-mono text-[13px] leading-relaxed text-[#e8edf5] focus:outline-none"
             />
           ) : doc ? (
-            <div className={`px-6 py-4 ${docHasTable ? '' : 'max-w-[72ch]'}`}>
+            <div className="doc-body">
               <p className="mb-3 font-mono text-[11px] text-[#6e7d92]">{doc.path}</p>
-              {/* Mini-TOC: CSS-sticky section links; hidden under 3 sections
-                  or below lg. Anchors target H2 ids emitted by Markdown. */}
-              {docToc.length >= 3 && (
-                <nav aria-label="Document sections" className="doc-toc sticky top-0 mb-2 hidden lg:block">
-                  <ul className="flex flex-wrap gap-x-4 gap-y-1">
+              {/* §3d.1 — ONE 36 px section strip: single row, never wraps, the
+                  active pill auto-centred, `Sections` as the complete list.
+                  Anchors target the H2 ids emitted by Markdown. */}
+              {docToc.length >= 3 && !diffOpen && !editing && (
+                <nav aria-label="Document sections" className="doc-tocbar">
+                  <ul
+                    ref={tocTrackRef}
+                    tabIndex={0}
+                    aria-label="Section strip"
+                    onKeyDown={handleTocTrackKeyDown}
+                    className="doc-tocbar__track"
+                  >
                     {docToc.map((title, i) => {
                       const slug = slugifyHeading(title);
                       const active = activeTocId === slug;
@@ -2107,7 +2187,6 @@ export default function DevelopmentView({
                           <a
                             href={`#${slug}`}
                             aria-current={active ? 'true' : undefined}
-                            className={active ? 'doc-toc__active' : undefined}
                             onClick={e => handleTocClick(e, slug)}
                           >
                             {title}
@@ -2116,16 +2195,30 @@ export default function DevelopmentView({
                       );
                     })}
                   </ul>
+                  <button
+                    type="button"
+                    ref={tocTriggerRef}
+                    className="doc-tocbar__all"
+                    aria-expanded={tocMenuOpen}
+                    aria-controls="doc-toc-menu"
+                    aria-haspopup="true"
+                    onClick={toggleTocMenu}
+                  >
+                    Sections <ChevronDown className="h-3 w-3" aria-hidden />
+                  </button>
                 </nav>
               )}
-              {/* Diff pane replaces the rendered doc while toggled on; the
-                  content equality check drops the pane when the doc was
-                  refreshed after the snapshot was fetched (stale guard). */}
-              {diffOpen && docDiff && doc.content === docDiff.current ? (
-                <DocDiff approved={docDiff.approved!} current={docDiff.current} />
-              ) : (
-                <Markdown content={doc.content} variant="document" />
-              )}
+              {/* §3d.2 — the single measure owner: min(100%, 88ch) on `.doc-flow`. */}
+              <div className="doc-flow">
+                {/* Diff pane replaces the rendered doc while toggled on; the
+                    content equality check drops the pane when the doc was
+                    refreshed after the snapshot was fetched (stale guard). */}
+                {diffOpen && docDiff && doc.content === docDiff.current ? (
+                  <DocDiff approved={docDiff.approved!} current={docDiff.current} />
+                ) : (
+                  <Markdown content={doc.content} variant="document" />
+                )}
+              </div>
             </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -2162,6 +2255,40 @@ export default function DevelopmentView({
             </div>
           )}
         </div>
+
+        {/* §3d.1 — the `Sections` popover lives OUTSIDE the doc scroller so it
+            cannot be clipped and adds no scroll height. It is a child of the
+            pane (already `relative`, and the pane is the containing block for
+            absolute descendants — never `fixed`), so `tocMenuTop` measured from
+            the pane's top lands directly under the trigger. */}
+        {tocMenuOpen && docToc.length >= 3 && !diffOpen && !editing && (
+          <div
+            id="doc-toc-menu"
+            ref={tocMenuRef}
+            role="group"
+            aria-label="All document sections"
+            className="doc-tocmenu"
+            style={{ top: tocMenuTop }}
+          >
+            {docToc.map((title, i) => {
+              const slug = slugifyHeading(title);
+              const active = activeTocId === slug;
+              return (
+                <a
+                  key={`${i}-${title}`}
+                  href={`#${slug}`}
+                  aria-current={active ? 'true' : undefined}
+                  onClick={e => {
+                    handleTocClick(e, slug);
+                    setTocMenuOpen(false);
+                  }}
+                >
+                  {title}
+                </a>
+              );
+            })}
+          </div>
+        )}
       </section>
     </div>
   );

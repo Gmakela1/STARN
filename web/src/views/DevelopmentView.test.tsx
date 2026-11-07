@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { renderWithUser, cleanup } from '../test/render';
 import DevelopmentView from './DevelopmentView';
 import { useAutopilotEvents } from '../hooks/useAutopilotEvents';
@@ -705,5 +705,175 @@ describe('DevelopmentView doc pane header fold ladder', () => {
     expect(screen.queryByRole('button', { name: 'Refresh document' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Attach a quality example' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Collapse document pane' })).toBeInTheDocument();
+  });
+});
+
+// ————— Doc pane section strip + adaptive measure (design 2026-11-03 §3d) —————
+describe('DevelopmentView document section strip and measure', () => {
+  /** Records every observer so a test can fire the active-section callback. */
+  class RecordingIntersectionObserver {
+    static instances: RecordingIntersectionObserver[] = [];
+    cb: IntersectionObserverCallback;
+    observed: Element[] = [];
+    constructor(cb: IntersectionObserverCallback) {
+      this.cb = cb;
+      RecordingIntersectionObserver.instances.push(this);
+    }
+    observe(el: Element): void {
+      this.observed.push(el);
+    }
+    unobserve(): void {}
+    disconnect(): void {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+  }
+
+  /** Marks the LAST observed H2 as the intersecting (active) section. */
+  function activateLastSection(): void {
+    act(() => {
+      for (const io of RecordingIntersectionObserver.instances) {
+        const entries = io.observed.map(
+          target => ({ isIntersecting: true, target }) as unknown as IntersectionObserverEntry
+        );
+        io.cb(entries, {} as IntersectionObserver);
+      }
+    });
+  }
+
+  /** One doc with `sections` H2s (the strip needs 3+ to render at all). */
+  function tocSetup(sections: number): void {
+    const body = Array.from({ length: sections }, (_, i) => `## Section ${i + 1}\n\nBody ${i + 1}.`).join('\n\n');
+    mockedApi.fetchRoadmap.mockResolvedValue([
+      { id: 'P1', name: 'RTM', artifactPath: 'docs/RTM.md', docExists: true, status: 'COMPLETED' }
+    ] as never);
+    mockedApi.fetchDoc.mockResolvedValue({
+      phaseId: 'P1',
+      path: 'docs/RTM.md',
+      content: `# RTM\n\n${body}`,
+      status: 'draft'
+    } as never);
+  }
+
+  beforeEach(() => {
+    RecordingIntersectionObserver.instances = [];
+    vi.stubGlobal('IntersectionObserver', RecordingIntersectionObserver);
+  });
+
+  it('renders the section nav as ONE scrollable row with a single aria-current pill', async () => {
+    tocSetup(12);
+    const { container } = renderView();
+    const nav = await screen.findByRole('navigation', { name: 'Document sections' });
+
+    // One list, never a wrap: the track is the only UL and every pill is a row child.
+    const tracks = nav.querySelectorAll('ul');
+    expect(tracks).toHaveLength(1);
+    const track = tracks[0];
+    expect(track.className).toContain('doc-tocbar__track');
+    expect(track.className).not.toContain('flex-wrap');
+    expect(track.querySelectorAll('li')).toHaveLength(12);
+    // Keyboard reachable strip (arrows scroll it) — not a viewport breakpoint.
+    expect(track).toHaveAttribute('tabindex', '0');
+    expect(nav.className).not.toContain('lg:block');
+    // Overflow escape hatch is a real 44 px control, expanded state announced.
+    const sections = within(nav).getByRole('button', { name: /Sections/ });
+    expect(sections).toHaveAttribute('aria-expanded', 'false');
+
+    // No pill is current before the observer fires; exactly one after.
+    expect(container.querySelectorAll('.doc-tocbar__track a[aria-current="true"]')).toHaveLength(0);
+    activateLastSection();
+    const active = container.querySelectorAll('.doc-tocbar__track a[aria-current="true"]');
+    expect(active).toHaveLength(1);
+    expect(active[0].textContent).toBe('Section 12');
+  });
+
+  it('scrolls the document on pill click through the existing TOC handler', async () => {
+    tocSetup(4);
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView');
+    const { user } = renderView();
+    const nav = await screen.findByRole('navigation', { name: 'Document sections' });
+
+    await user.click(within(nav).getByRole('link', { name: 'Section 3' }));
+
+    expect(scrollSpy).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    scrollSpy.mockRestore();
+  });
+
+  it('lists every section in the Sections popover and closes it on Escape', async () => {
+    tocSetup(5);
+    const { user } = renderView();
+    const nav = await screen.findByRole('navigation', { name: 'Document sections' });
+    const trigger = within(nav).getByRole('button', { name: /Sections/ });
+
+    await user.click(trigger);
+    const menu = screen.getByRole('group', { name: 'All document sections' });
+    expect(within(menu).getAllByRole('link')).toHaveLength(5);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('group', { name: 'All document sections' })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('renders no section nav under three sections', async () => {
+    tocSetup(2);
+    renderView();
+    expect(await screen.findByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Document sections' })).toBeNull();
+  });
+
+  it('puts the measure on .doc-flow and drops the max-w-[72ch] wrapper cap', async () => {
+    tocSetup(3);
+    const { container } = renderView();
+    expect(await screen.findByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+
+    const body = container.querySelector('.doc-body') as HTMLElement;
+    expect(body).not.toBeNull();
+    // §3d.2 — the dead `docHasTable` branch and its 72ch cap are gone.
+    expect(body.className).not.toContain('max-w-[72ch]');
+    expect(container.querySelector('.max-w-\\[72ch\\]')).toBeNull();
+
+    // ONE measure owner: the prose column lives inside .doc-flow.
+    const flow = body.querySelector('.doc-flow') as HTMLElement;
+    expect(flow).not.toBeNull();
+    expect(flow.querySelector('.doc-prose-document')).not.toBeNull();
+    // The strip is furniture: outside the measure column, inside the padded body.
+    expect(flow.querySelector('.doc-tocbar')).toBeNull();
+    expect(body.querySelector('.doc-tocbar')).not.toBeNull();
+  });
+
+  it('exposes the pane splitter as a separator and resizes the panes from the keyboard', async () => {
+    tocSetup(3);
+    renderView();
+    expect(await screen.findByRole('button', { name: 'Refresh document' })).toBeInTheDocument();
+
+    const sep = screen.getByRole('separator');
+    expect(sep).toHaveAttribute('aria-orientation', 'vertical');
+    expect(sep).toHaveAttribute('aria-valuenow', '50');
+    expect(sep).toHaveAttribute('aria-valuetext', '50% conversation, 50% document');
+
+    const leftPane = screen.getByRole('region', { name: 'Agent conversation' });
+    expect(leftPane.style.flexBasis).toBe('50%');
+
+    fireEvent.keyDown(sep, { key: 'ArrowRight' });
+    expect(leftPane.style.flexBasis).toBe('52%');
+    expect(sep).toHaveAttribute('aria-valuetext', '52% conversation, 48% document');
+
+    fireEvent.keyDown(sep, { key: 'End' });
+    expect(leftPane.style.flexBasis).toBe(`${100 - 20}%`);
+  });
+
+  it('keeps Focus document pane as the only doc maximize and it still works', async () => {
+    tocSetup(3);
+    const { user } = renderView();
+    const focus = await screen.findByRole('button', { name: 'Focus document pane' });
+
+    await user.click(focus);
+    expect(screen.getByRole('button', { name: 'Exit focus' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Focus document pane' })).toBeNull();
+    // Focused pane takes the width; the chat collapses to its rail.
+    expect(screen.getByRole('region', { name: 'Document workspace' }).style.flex).toBe('1 1 0%');
+    // No second maximize control was added anywhere.
+    expect(screen.queryAllByRole('button', { name: 'Focus document pane' })).toHaveLength(0);
   });
 });

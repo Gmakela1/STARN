@@ -96,6 +96,13 @@ export default function PaneSplitter({
     onCommit?.(clamped);
   };
 
+  /** Double-click resets to 50/50 and persists it through onCommit. */
+  const handleDoubleClick = () => {
+    const even = clampPct(50, minPct, maxPct);
+    onChange(even);
+    onCommit?.(even);
+  };
+
   return (
     <div
       role="separator"
@@ -104,14 +111,23 @@ export default function PaneSplitter({
       aria-valuenow={leftPct}
       aria-valuemin={minPct}
       aria-valuemax={maxPct}
+      aria-valuetext={`${Math.round(leftPct)}% conversation, ${Math.round(100 - leftPct)}% document`}
       tabIndex={0}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onKeyDown={handleKeyDown}
-      className={`group flex w-2 shrink-0 cursor-col-resize items-center justify-center bg-[#0d1017] hover:bg-[#11151d] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/60 ${className ?? ''}`}
+      onDoubleClick={handleDoubleClick}
+      className={`group relative flex w-2 shrink-0 cursor-col-resize items-center justify-center bg-[#0d1017] hover:bg-[#11151d] ${className ?? ''}`}
     >
-      <span className="h-8 w-0.5 rounded-full bg-[#3b4658] group-hover:bg-[#ff2a3c]/60" aria-hidden />
+      {/* 16 px pointer band: the layout width stays 8 px (drag math measures the
+          parentElement), the target does not. */}
+      <span className="absolute inset-y-0 -left-1 -right-1 cursor-col-resize" aria-hidden />
+      {/* 3 px brass grip on hover / keyboard focus only — no chrome at rest. */}
+      <span
+        className="relative h-8 w-[3px] rounded-full bg-[#3b4658] group-hover:bg-[#d9a441]/75 group-focus-visible:bg-[#d9a441]/75"
+        aria-hidden
+      />
     </div>
   );
 }
