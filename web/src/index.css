@@ -16,6 +16,9 @@ body,
   --sf-hover: #171c26; --sf-border-weak: #2a3342; --sf-border-strong: #3b4658;
   --sf-text: #e8edf5; --sf-text-2: #a8b3c4; --sf-text-mut: #6e7d92;
   --sf-power: #ff2a3c; --sf-power-btn: #d61f2c; --sf-brass: #d9a441;
+  /* Unified question chat (design 2026-11-03 §7): violet = review/advice,
+     crimson = commit. Aliases of values already used inline by QuestionPanel. */
+  --sf-review: #8b5cf6; --sf-review-fill: #2e1065; --sf-record-fill: #1a0208;
   /* Document presentation v2 (design brief §2): row-stripe tint (positional,
      not hue), brass H1 hero hairline, and the callout bg-alpha multiplier knob
      (callout bg = color-mix with calc(var(--sf-callout-tint) * N%)). */
@@ -511,3 +514,385 @@ html, body, #root {
   100% { background-color: transparent;          box-shadow: 0 0 0 0 rgba(167,139,250,0); }
 }
 .animate-anchor-flash { animation: anchor-flash 2400ms ease-out; }
+
+/* ========================================================================= */
+/* Unified question chat (design 2026-11-03 §7, §2b.7, §2b.8)                 */
+/* One conversation per question: label row, log, composer. Violet = review/  */
+/* advice, crimson = commit. No height/width transitions anywhere (instant    */
+/* mode flip, no layout shift); spinners are opt-in via motion-safe utilities. */
+/* ========================================================================= */
+.qchat-wrap {
+  container-type: inline-size;
+  flex: 0 1 auto;
+  min-height: 0;
+}
+.qchat {
+  border-top: 1px solid var(--sf-border-weak);
+  background: color-mix(in srgb, var(--sf-panel) 80%, transparent);
+  padding: 0.375rem 0.75rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Label row: plain text at rest, one 44px toggle once a thread exists. */
+.qchat-label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 24px;
+  font-size: 11px;
+  color: var(--sf-text-2);
+}
+.qchat-label b { font-weight: 600; color: var(--sf-text); }
+.qchat-label--history { min-height: 44px; margin-top: -0.375rem; }
+.qchat-count {
+  height: 20px;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  border: 1px solid var(--sf-border-strong);
+  background: var(--sf-raised);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.qchat-conclude {
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--sf-review) 60%, transparent);
+  background: color-mix(in srgb, var(--sf-review-fill) 40%, transparent);
+  color: #ddd6fe;
+  font-size: 12px;
+  font-weight: 600;
+}
+.qchat-conclude:hover { background: rgba(59, 29, 122, 0.5); }
+
+/* Log: shrinks first, never the memo (§3 hard rule). */
+.qchat-log {
+  flex: 1 1 auto;
+  min-height: 96px;
+  max-height: clamp(96px, 26vh, 176px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  margin: 0 -0.25rem;
+  padding: 0 0.25rem;
+}
+.qchat-log.is-proposal { max-height: clamp(120px, 40vh, 264px); }
+
+/* Row types (§3.2 S4). */
+.qchat-ask {
+  max-width: 86%;
+  align-self: flex-end;
+  border-radius: 10px 10px 2px 10px;
+  background: color-mix(in srgb, var(--sf-review-fill) 40%, transparent);
+  padding: 0.375rem 0.625rem;
+  font-size: 13px;
+}
+.qchat-specialist-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #c4b5fd;
+}
+.qchat-specialist-body {
+  font-size: 13px;
+  color: var(--sf-text-2);
+  max-width: 62ch;
+}
+.qchat-recorded {
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 42, 60, 0.45);
+  border-left: 3px solid var(--sf-power);
+  background: var(--sf-record-fill);
+  padding: 0.5rem 0.75rem;
+}
+.qchat-recorded-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #ffb3bd;
+}
+.qchat-proposal {
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--sf-review) 50%, transparent);
+  background: color-mix(in srgb, var(--sf-review-fill) 20%, transparent);
+  padding: 0.625rem;
+}
+
+/* Nav-chip conversation pill (§4.6): icon + number, never hue alone. */
+.qchat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  border: 1px solid var(--sf-border-strong);
+  background: var(--sf-raised);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--sf-text-2);
+}
+.qchat-chip.is-proposal {
+  border-color: color-mix(in srgb, var(--sf-review) 70%, transparent);
+  background: color-mix(in srgb, var(--sf-review-fill) 55%, transparent);
+  color: #ddd6fe;
+}
+
+/* ---- Composer (§2b.7 advisory / §2b.8 answer) ------------------------- */
+.qchat-composer {
+  container-type: inline-size;
+  margin-top: 0.25rem;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.qchat-composer.is-advisory {
+  border: 1px solid rgba(139, 92, 246, 0.5);
+  background: rgba(46, 16, 101, 0.22);
+  box-shadow: inset 2px 0 0 0 rgba(139, 92, 246, 0.85);
+}
+.qchat-composer.is-answer {
+  border: 1px solid rgba(255, 42, 60, 0.62);
+  background: var(--sf-record-fill);
+  box-shadow:
+    inset 3px 0 0 0 var(--sf-power),
+    0 0 0 1px rgba(255, 42, 60, 0.18),
+    0 4px 16px rgba(255, 42, 60, 0.1);
+}
+.qchat-modehead {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 40px;
+  padding: 0 0.5rem;
+  border-bottom: 1px solid rgba(139, 92, 246, 0.25);
+}
+.qchat-composer.is-answer .qchat-modehead {
+  background: rgba(255, 42, 60, 0.09);
+  border-bottom-color: rgba(255, 42, 60, 0.35);
+}
+.qchat-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #a99ee0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qchat-composer.is-answer .qchat-hint { color: #ffb3bd; }
+
+/* Mode segment: 30px visual, 44px hit box via the ::after overhang. */
+.qchat-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.125rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.35);
+}
+.qchat-seg-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 30px;
+  padding: 0 0.625rem;
+  border-radius: 0.375rem;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sf-text-2);
+}
+.qchat-seg-btn::after {
+  content: '';
+  position: absolute;
+  inset: -7px 0;
+}
+.qchat-seg-btn[aria-checked='true'] {
+  border-color: rgba(139, 92, 246, 0.75);
+  background: rgba(46, 16, 101, 0.9);
+  color: #ddd6fe;
+}
+.qchat-composer.is-answer .qchat-seg-btn[aria-checked='true'] {
+  border-color: rgba(255, 42, 60, 0.75);
+  background: rgba(214, 31, 44, 0.85);
+  color: #fff;
+}
+
+.qchat-inputrow {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem 0.5rem;
+}
+.qchat-textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  max-height: 122px;
+  resize: none;
+  border-radius: 0.5rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 13px;
+  line-height: 18px;
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  background: rgba(5, 7, 12, 0.75);
+  color: var(--sf-text);
+}
+.qchat-textarea::placeholder { color: #8b85b8; }
+.qchat-textarea:focus-visible {
+  border-color: var(--sf-review);
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.4);
+}
+.qchat-composer.is-answer .qchat-textarea {
+  border-color: rgba(255, 42, 60, 0.45);
+  background: #0b0104;
+}
+.qchat-composer.is-answer .qchat-textarea::placeholder { color: rgba(255, 179, 189, 0.7); }
+.qchat-composer.is-answer .qchat-textarea:focus-visible {
+  border-color: var(--sf-power);
+  box-shadow: 0 0 0 2px rgba(255, 42, 60, 0.45);
+}
+
+.qchat-mic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 0.5rem;
+  border: 1px solid var(--sf-border-strong);
+  background: var(--sf-raised);
+  color: var(--sf-text-2);
+}
+.qchat-mic[aria-pressed='true'] {
+  border-color: rgba(255, 42, 60, 0.6);
+  background: rgba(74, 4, 17, 0.6);
+  color: #ffb3bd;
+}
+.qchat-mic:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.qchat-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 44px;
+  min-width: 44px;
+  padding: 0 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 12px;
+  font-weight: 600;
+}
+.qchat-send.is-advisory {
+  border: 1px solid rgba(139, 92, 246, 0.6);
+  background: rgba(46, 16, 101, 0.45);
+  color: #ddd6fe;
+}
+.qchat-send.is-advisory:hover { background: rgba(59, 29, 122, 0.6); }
+.qchat-send.is-answer {
+  border: 1px solid rgba(190, 18, 60, 0.5);
+  background: var(--sf-power-btn);
+  color: #fff;
+  box-shadow: 0 2px 12px rgba(255, 42, 60, 0.28);
+}
+.qchat-send.is-answer:hover { background: #e11d3f; }
+.qchat-send:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Visible kbd chip only when the REGION is wide enough (container query, not
+   viewport — the pane is 635px at 1280 and 450px at 900). */
+.qchat-kbd {
+  display: none;
+  align-items: center;
+  height: 18px;
+  padding: 0 0.3rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--sf-border-strong);
+  background: var(--sf-void);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--sf-text-mut);
+}
+@container (min-width: 600px) {
+  .qchat-kbd { display: inline-flex; }
+}
+
+/* Locked row (§4.3 / S9 / S10): 52px, icon + words, Undo where applicable. */
+.qchat-locked {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 52px;
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 13px;
+  font-weight: 500;
+}
+.qchat-locked.is-queued {
+  border: 1px solid rgba(255, 42, 60, 0.45);
+  background: var(--sf-record-fill);
+  color: #ffb3bd;
+}
+.qchat-locked.is-resolved,
+.qchat-locked.is-auto {
+  border: 1px solid color-mix(in srgb, var(--sf-review) 60%, transparent);
+  background: color-mix(in srgb, var(--sf-review-fill) 40%, transparent);
+  color: var(--sf-text);
+}
+.qchat-undo {
+  min-height: 44px;
+  padding: 0 0.625rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--sf-border-strong);
+  background: var(--sf-panel);
+  color: var(--sf-text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+.qchat-undo:hover { color: var(--sf-text); background: var(--sf-hover); }
+
+/* Error card (S6 / R5). */
+.qchat-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.375rem 0.5rem 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(190, 18, 60, 0.6);
+  background: rgba(76, 5, 25, 0.4);
+  padding: 0.25rem 0.625rem;
+  font-size: 12px;
+  color: #fda4af;
+}
+.qchat-retry {
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(190, 18, 60, 0.5);
+  background: var(--sf-power-btn);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Under forced contrast the two borders go full-opacity; nothing depends on
+   hue alone (rule width, fill, words and icons also differ). */
+@media (prefers-contrast: more) {
+  .qchat-composer.is-advisory { border-color: var(--sf-review); }
+  .qchat-composer.is-answer { border-color: var(--sf-power); }
+}
