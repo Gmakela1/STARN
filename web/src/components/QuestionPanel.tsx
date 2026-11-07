@@ -4,6 +4,7 @@ import {
   Check,
   CheckCircle2,
   Clock3,
+  ListChecks,
   Loader2,
   Maximize2,
   MessageSquare,
@@ -16,8 +17,9 @@ import { AnswerState, PortalItem } from '../types/api';
 import { renderDetail } from '../lib/portalDetail';
 import { cleanQuestionTitle, groupPortalItemsByTopic } from '../lib/portalGrouping';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
-// React Bits (reactbits.dev) component — see web/src/components/reactbits.
-import VoicePill from './reactbits/VoicePill/VoicePill';
+import QuestionChat from './question-chat/QuestionChat';
+import type { ComposerMode } from './question-chat/ChatComposer';
+import ProposalCard from './question-chat/ProposalCard';
 
 export interface QuestionPanelProps {
   surface: 'closed' | 'open' | 'minimized';
@@ -47,6 +49,12 @@ export interface QuestionPanelProps {
   onResearchAll?: () => Promise<void>;
   /** T-C answer-thread — one advisory specialist Q&A turn on an open question. */
   onThreadMessage?: (id: string, text: string) => Promise<void>;
+  /** Conclude-from-chat — the server drafts one answer from the conversation. */
+  onConcludeThread?: (id: string) => Promise<void>;
+  /** Conclude-from-chat — accept the drafted answer (editedText overrides it). */
+  onConfirmThreadProposal?: (id: string, proposalTs: number, editedText?: string) => Promise<void>;
+  /** Conclude-from-chat — reject the drafted answer. */
+  onRejectThreadProposal?: (id: string, proposalTs: number) => Promise<void>;
 }
 
 /** §1.4.1 — per-phase chip visuals, keyed off the AnswerPhase union (moved from QuestionBar). */
@@ -161,7 +169,10 @@ export default function QuestionPanel({
   onRejectProposal,
   onUndoAuto,
   onResearchAll,
-  onThreadMessage
+  onThreadMessage,
+  onConcludeThread,
+  onConfirmThreadProposal,
+  onRejectThreadProposal
 }: QuestionPanelProps) {
   // F3 guard: the core intake rejects empty-title questions; legacy persisted
   // data may still hold some. Never render them (bare nav buttons / blank
@@ -189,10 +200,24 @@ export default function QuestionPanel({
   /** Research-all backfill — one run in flight at a time (client state; per-item researching chips come from data). */
   const [researchAllBusy, setResearchAllBusy] = useState(false);
   const [researchAllError, setResearchAllError] = useState<string | null>(null);
-  /** T-C answer-thread — per-item advisory draft, in-flight flag, and last error. */
-  const [threadDrafts, setThreadDrafts] = useState<Record<string, string>>({});
+  /** T-C answer-thread — in-flight flag and last error (the draft is `drafts`). */
   const [threadBusyId, setThreadBusyId] = useState<string | null>(null);
   const [threadErrors, setThreadErrors] = useState<Record<string, string>>({});
+  /**
+   * Composer mode per item (design §2b.4). Session-only, never persisted: an
+   * absent key means 'advisory' (R1). Reset on mount, panel reopen, question
+   * switch and after every send.
+   */
+  const [modes, setModes] = useState<Record<string, ComposerMode>>({});
+  /** Log expansion per item (§4.7) — session-only, collapsed by default. */
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  /** Conclude-from-chat — item id with a conclusion being drafted. */
+  const [concludingId, setConcludingId] = useState<string | null>(null);
+  /** Conclude-from-chat — inline edit of the pending drafted answer. */
+  const [threadProposalEdit, setThreadProposalEdit] = useState<{ id: string; text: string } | null>(null);
+  /** Conclude-from-chat proposal actions — one in flight per item, per-item error. */
+  const [threadActionId, setThreadActionId] = useState<string | null>(null);
+  const [threadActionError, setThreadActionError] = useState<Record<string, string>>({});
   /**
    * Snapshot of just-applied items so the 8s "Resolved ✓" dwell keeps rendering
    * after the item leaves the open pool (the open-only poll carries it away).
@@ -202,7 +227,8 @@ export default function QuestionPanel({
   const dwellTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const dwellHandledRef = useRef<Set<string>>(new Set());
   const itemsByIdRef = useRef<Map<string, PortalItem>>(new Map());
-  const composerRef = useRef<HTMLTextAreaElement>(null);
+  /** Panel root — the chat composer's textarea is found inside it (focus + caret). */
+  const panelRef = useRef<HTMLDivElement>(null);
   const parkedActionRef = useRef<HTMLButtonElement>(null);
   const returnDocRef = useRef<HTMLButtonElement>(null);
   const expandRef = useRef<HTMLButtonElement>(null);
@@ -213,6 +239,8 @@ export default function QuestionPanel({
   const onCloseRef = useRef(onClose);
   const onFocusDocumentRef = useRef(onFocusDocument);
   const recordingRef = useRef(false);
+  const proposalEditRef = useRef(proposalEdit);
+  const threadProposalEditRef = useRef(threadProposalEdit);
   /** Pending caret-restore timer from the latest voice append (design §2). */
   const caretTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Element that held focus when the latest voice append landed. */
@@ -226,6 +254,32 @@ export default function QuestionPanel({
   useEffect(() => { draftsRef.current = drafts; }, [drafts]);
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => { onFocusDocumentRef.current = onFocusDocument; }, [onFocusDocument]);
+  useEffect(() => { proposalEditRef.current = proposalEdit; }, [proposalEdit]);
+  useEffect(() => { threadProposalEditRef.current = threadProposalEdit; }, [threadProposalEdit]);
+
+  /** The single per-question textarea, owned by QuestionChat's composer. */
+  const composerEl = useCallback(
+    (): HTMLTextAreaElement | null =>
+      panelRef.current?.querySelector<HTMLTextAreaElement>('textarea.qchat-textarea') ?? null,
+    []
+  );
+
+  // §2b.4 R1 — the mode is advisory on mount, on panel reopen, on every
+  // question switch and after every send. Keeping only non-advisory entries
+  // makes the reset a delete and keeps the mode out of storage (R2).
+  useEffect(() => {
+    setModes(prev => (Object.keys(prev).length === 0 ? prev : {}));
+  }, [activeId, surface]);
+
+  /** R1/R3 — return one item's composer to advisory. */
+  const resetMode = useCallback((id: string): void => {
+    setModes(prev => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
 
   // Last-known item map. The snapshot effect needs the item even in the frame
   // where the poll drops it in the same batch as the applied state arrives.
@@ -332,7 +386,7 @@ export default function QuestionPanel({
       if (item.type === 'parked') {
         parkedActionRef.current?.focus();
       } else {
-        composerRef.current?.focus();
+        composerEl()?.focus();
       }
       if (!focusRequest) onFocusDocumentRef.current?.(item);
     } else if (surface === 'minimized' && prev !== 'minimized') {
@@ -353,10 +407,10 @@ export default function QuestionPanel({
     if (item.type === 'parked') {
       parkedActionRef.current?.focus();
     } else {
-      composerRef.current?.focus();
+      composerEl()?.focus();
     }
     onFocusDocumentRef.current?.(item);
-  }, [focusRequest, items]);
+  }, [focusRequest, items, composerEl]);
 
   const showEmptyState =
     surface === 'open' && items.length === 0 && Object.keys(recentlyResolved).length === 0;
@@ -368,30 +422,6 @@ export default function QuestionPanel({
   // Alt-hold-to-talk; transcribed text appends into the active answer draft.
   const { recording, startRecording, stopRecording, error: voiceError } = useVoiceRecorder();
   useEffect(() => { recordingRef.current = recording; }, [recording]);
-
-  // VoicePill (React Bits) is the click affordance for the answer composer.
-  // It is self-managed (no controlled listening prop) and never transcribes,
-  // so useVoiceRecorder stays the single recorder: the pill's onStart/onStop
-  // proxy it, transcripts flow into the item draft exactly as before, and
-  // `reactive='simulated'` guarantees no second getUserMedia path. Alt-hold
-  // listeners below are unchanged; while a recording is pill-initiated the
-  // pill itself is the indicator (live waveform), otherwise the compact
-  // text indicator renders for Alt-initiated recordings.
-  const pillRecordingRef = useRef(false);
-  useEffect(() => {
-    if (!recording) pillRecordingRef.current = false;
-  }, [recording]);
-
-  // Mic-denial seam: the pill's internal listening state is self-managed, so
-  // when the recorder reports an error out-of-band (e.g. getUserMedia denied
-  // after onStart), the pill would stay "pressed" with a fake waveform.
-  // Bumping a remount key on error forces a fresh idle pill, and the pill is
-  // disabled while the error is showing (the next startRecording attempt —
-  // e.g. Alt-hold — clears the error and re-enables it).
-  const [voiceAttempt, setVoiceAttempt] = useState(0);
-  useEffect(() => {
-    if (voiceError) setVoiceAttempt(n => n + 1);
-  }, [voiceError]);
 
   /**
    * Voice is live only while the panel is open on an answerable item
@@ -417,15 +447,15 @@ export default function QuestionPanel({
     setDrafts(prev => ({ ...prev, [id]: combined }));
     // Caret retention (design §2): a transcript append must leave the caret at
     // the end of the appended text and the composer focused, so the user can
-    // keep dictating or press Enter immediately. The pill (or whatever held
-    // focus) steals focus on click, so restore once per append — deferred one
-    // task so a user who already moved focus elsewhere (before the timer
+    // keep dictating or press Enter immediately. The mic button (or whatever
+    // held focus) steals focus on click, so restore once per append — deferred
+    // one task so a user who already moved focus elsewhere (before the timer
     // fires) is not yanked back.
     focusAtAppendRef.current = document.activeElement;
     if (caretTimerRef.current) clearTimeout(caretTimerRef.current);
     caretTimerRef.current = setTimeout(() => {
       caretTimerRef.current = null;
-      const ta = composerRef.current;
+      const ta = composerEl();
       const stolen = document.activeElement !== focusAtAppendRef.current;
       focusAtAppendRef.current = null;
       if (!ta || stolen) return;
@@ -433,7 +463,7 @@ export default function QuestionPanel({
       ta.focus();
       ta.setSelectionRange(end, end);
     }, 0);
-  }, []);
+  }, [composerEl]);
 
   // Alt-hold-to-record key listener (same shape as the doc composer's).
   useEffect(() => {
@@ -479,11 +509,28 @@ export default function QuestionPanel({
       if (e.key !== 'Escape') return;
       if (surfaceRef.current !== 'open') return;
       const id = activeIdRef.current;
+      // Order (design §5): 1) cancel an open proposal edit → 2) clear a
+      // non-empty draft (which also returns the composer to advisory, R3) →
+      // 3) close the panel.
+      if (threadProposalEditRef.current?.id === id) {
+        setThreadProposalEdit(null);
+        return;
+      }
+      if (proposalEditRef.current?.id === id) {
+        setProposalEdit(null);
+        return;
+      }
       const draft = draftsRef.current[id]?.trim() ?? '';
       if (draft.length > 0) {
         dropDraft(id);
         setDrafts(prev => {
           if (!prev[id]) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        setModes(prev => {
+          if (!(id in prev)) return prev;
           const next = { ...prev };
           delete next[id];
           return next;
@@ -531,7 +578,7 @@ export default function QuestionPanel({
     if (text) {
       void handleSubmit(id, text);
     } else {
-      composerRef.current?.focus();
+      composerEl()?.focus();
     }
   };
 
@@ -574,11 +621,12 @@ export default function QuestionPanel({
     }
   };
 
-  /** T-C answer-thread — one advisory question per item; the specialist reply lands via the poll. */
+  /** The ASK action: one advisory question per item; the reply lands via the poll. */
   const handleThreadSubmit = async (id: string, text: string): Promise<void> => {
     const trimmed = text.trim();
     if (!trimmed || !onThreadMessage) return;
     if (threadBusyId !== null) return;
+    resetMode(id);
     setThreadErrors(prev => {
       if (!(id in prev)) return prev;
       const next = { ...prev };
@@ -588,7 +636,10 @@ export default function QuestionPanel({
     setThreadBusyId(id);
     try {
       await onThreadMessage(id, trimmed);
-      setThreadDrafts(prev => {
+      // Success clears the one per-item draft (the persisted mirror too); a
+      // failure keeps it so the log's Retry can replay it (S6).
+      dropDraft(id);
+      setDrafts(prev => {
         if (!(id in prev)) return prev;
         const next = { ...prev };
         delete next[id];
@@ -600,6 +651,66 @@ export default function QuestionPanel({
       setThreadBusyId(prev => (prev === id ? null : prev));
     }
   };
+
+  /** The ANSWER action: same submit path as before, then back to advisory (R1). */
+  const handleAnswer = async (id: string, text: string): Promise<void> => {
+    resetMode(id);
+    await handleSubmit(id, text);
+  };
+
+  /** Conclude-from-chat: the server drafts the answer and appends a proposal row. */
+  const handleConclude = async (id: string): Promise<void> => {
+    if (!onConcludeThread || concludingId !== null) return;
+    setThreadErrors(prev => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setConcludingId(id);
+    try {
+      await onConcludeThread(id);
+    } catch (err) {
+      setThreadErrors(prev => ({
+        ...prev,
+        [id]: err instanceof Error ? err.message : "Couldn't conclude — try again."
+      }));
+    } finally {
+      setConcludingId(prev => (prev === id ? null : prev));
+    }
+  };
+
+  /** Concluded-proposal actions: per-item in-flight flag + error catch. */
+  const runThreadAction = async (id: string, action: () => Promise<void>): Promise<void> => {
+    setThreadActionId(id);
+    setThreadActionError(prev => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    try {
+      await action();
+      setThreadProposalEdit(prev => (prev?.id === id ? null : prev));
+    } catch (err) {
+      setThreadActionError(prev => ({
+        ...prev,
+        [id]: err instanceof Error ? err.message : 'Action failed.'
+      }));
+    } finally {
+      setThreadActionId(prev => (prev === id ? null : prev));
+    }
+  };
+  const confirmThreadProposal = (id: string, proposalTs: number, editedText?: string): Promise<void> =>
+    runThreadAction(id, () =>
+      onConfirmThreadProposal
+        ? onConfirmThreadProposal(id, proposalTs, editedText)
+        : Promise.resolve()
+    );
+  const rejectThreadProposal = (id: string, proposalTs: number): Promise<void> =>
+    runThreadAction(id, () =>
+      onRejectThreadProposal ? onRejectThreadProposal(id, proposalTs) : Promise.resolve()
+    );
 
   const renderStateChip = (id: string): ReactNode => {
     const st = answerStates[id];
@@ -675,9 +786,10 @@ export default function QuestionPanel({
     items.find(i => i.id === activeId) ?? recentlyResolved[activeId]?.item ?? fallbackItem ?? null;
 
   let body: ReactNode = null;
-  let composer: ReactNode = null;
-  // V2 card order — the advisory chat moves below the response area (footer).
-  let threadPanel: ReactNode = null;
+  /** Recorded/resolved banner and the research proposal — above the conversation. */
+  let aux: ReactNode = null;
+  /** The one per-question conversation region (replaces the two old boxes). */
+  let conversation: ReactNode = null;
 
   if (!item) {
     body = (
@@ -708,6 +820,27 @@ export default function QuestionPanel({
     const autoAppliedActive = auto !== undefined;
     const proposal = item.status === 'open' ? item.meta?.proposedAnswer : undefined;
     const researching = item.status === 'open' && item.meta?.researching === true;
+    // Answer-thread state (§4.5–§4.7): one log, one draft, one mode per item.
+    const thread = item.meta?.thread ?? [];
+    const pendingProposalRow = [...thread]
+      .reverse()
+      .find(m => m.kind === 'proposal' && m.proposal?.status === 'pending');
+    const pendingProposal = pendingProposalRow?.proposal ?? null;
+    const specialistReplied = thread.some(m => m.role === 'specialist');
+    const threadBusy = threadBusyId === item.id;
+    const answerBusy = submittingId === item.id;
+    const canConclude =
+      onConcludeThread !== undefined &&
+      item.type === 'question' &&
+      item.status === 'open' &&
+      specialistReplied &&
+      pendingProposal === null &&
+      threadBusyId === null;
+    const answerPhase = answerStates[item.id]?.phase;
+    const recordedState =
+      answerPhase !== undefined
+        ? { label: stateChip[answerPhase].label, tone: answerPhase }
+        : undefined;
 
     let cardTone = 'border-l-amber-500 bg-amber-950/10';
     let labelText = 'AI needs input';
@@ -931,95 +1064,6 @@ export default function QuestionPanel({
           );
         })()}
 
-        {proposal && (
-          <div className="mt-2 rounded-md border border-[#8b5cf6]/50 bg-[#2e1065]/20 p-2.5">
-            <p className="text-[11px] font-semibold text-violet-300">
-              Research proposal — {Math.round(proposal.confidence * 100)}% confidence
-            </p>
-            <p className="mt-1 text-xs leading-relaxed text-[#e8edf5]">{proposal.answer}</p>
-            {proposal.sources.length > 0 && (
-              <ul className="mt-1 list-inside list-disc space-y-0.5">
-                {proposal.sources.map((s, i) => (
-                  <li key={i} className="text-[11px] text-[#a8b3c4]">
-                    {s.url ? (
-                      <a href={s.url} target="_blank" rel="noreferrer" className="underline hover:text-[#e8edf5]">{s.title || s.url}</a>
-                    ) : (
-                      s.title
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {proposal.rationale && <p className="mt-1 text-[11px] text-[#6e7d92]">{proposal.rationale}</p>}
-            {gateActionError[item.id] && (
-              <p role="alert" className="mt-1 rounded-md border border-rose-800/60 bg-rose-950/40 px-2.5 py-1 text-xs text-rose-300">
-                {gateActionError[item.id]}
-              </p>
-            )}
-            {proposalEdit?.id === item.id ? (
-              <div className="mt-1.5 space-y-1">
-                <label htmlFor={`proposal-edit-${item.id}`} className="text-[11px] font-semibold text-[#a8b3c4]">
-                  Edit proposal
-                </label>
-                <textarea
-                  id={`proposal-edit-${item.id}`}
-                  value={proposalEdit.text}
-                  onChange={e => setProposalEdit({ id: item.id, text: e.target.value })}
-                  className="min-h-[64px] w-full resize-y rounded-lg border border-[#3b4658] bg-[#05070c] px-2.5 py-2 text-xs text-[#e8edf5] focus:border-[#ff2a3c] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/40"
-                />
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => confirmProposal(item.id, proposalEdit.text)}
-                    disabled={gateActionId === item.id}
-                    aria-label="Use edited answer"
-                    className="min-h-[32px] rounded-lg border border-rose-700/40 bg-[#d61f2c] px-2.5 text-[11px] font-semibold text-white transition hover:bg-[#e11d3f] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
-                  >
-                    Use edited answer
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setProposalEdit(null)}
-                    aria-label="Cancel edit"
-                    className="min-h-[32px] rounded-lg border border-[#3b4658] bg-[#0d1017] px-2.5 text-[11px] font-medium text-[#a8b3c4] transition hover:bg-[#11151d] focus:ring-2 focus:ring-[#ff2a3c]/60"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-1.5 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => confirmProposal(item.id)}
-                  disabled={gateActionId === item.id}
-                  aria-label="Use proposal answer"
-                  className="min-h-[32px] rounded-lg border border-rose-700/40 bg-[#d61f2c] px-2.5 text-[11px] font-semibold text-white transition hover:bg-[#e11d3f] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
-                >
-                  Use proposal
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setProposalEdit({ id: item.id, text: proposal.answer })}
-                  aria-label="Edit proposal answer"
-                  className="min-h-[32px] rounded-lg border border-[#3b4658] bg-[#0d1017] px-2.5 text-[11px] font-medium text-[#a8b3c4] transition hover:bg-[#11151d] focus:ring-2 focus:ring-[#ff2a3c]/60"
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => rejectProposal(item.id)}
-                  disabled={gateActionId === item.id}
-                  aria-label="Reject proposal"
-                  className="min-h-[32px] rounded-lg border border-[#3b4658] bg-[#0d1017] px-2.5 text-[11px] font-medium text-[#a8b3c4] transition hover:bg-[#11151d] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
-                >
-                  Reject
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
         {isParked && item.gaps && item.gaps.length > 0 && (
           <div className="mt-2 space-y-1">
             <p className="text-[11px] font-semibold text-rose-300">Missing requirements:</p>
@@ -1066,208 +1110,161 @@ export default function QuestionPanel({
       </div>
     );
 
-    // V2 card order — the advisory chat renders below the response area in the
-    // footer. Handlers/markup unchanged from the in-body version.
-    threadPanel = item.type === 'question' && item.status === 'open' && onThreadMessage ? (() => {
-      const thread = item.meta?.thread ?? [];
-      const threadBusy = threadBusyId === item.id;
-      return (
-        <div className="rounded-md border border-[#2a3342] bg-[#0d1017]/70 p-2.5">
-          <p className="text-[11px] font-semibold text-[#a8b3c4]">Ask the specialist</p>
-          <p className="mt-0.5 text-[11px] text-[#6e7d92]">
-            Advisory only — your answer goes through the response fields.
-          </p>
-          {thread.length > 0 && (
-            <ul className="mt-1.5 max-h-56 space-y-1.5 overflow-y-auto">
-              {thread.map((m, i) => (
-                <li key={`${m.ts}-${i}`} className={m.role === 'user' ? 'flex justify-end' : ''}>
-                  {m.role === 'user' ? (
-                    <p className="max-w-[85%] rounded-lg bg-[#2e1065]/40 px-2.5 py-1.5 text-right text-xs leading-relaxed text-[#e8edf5]">
-                      {m.text}
-                    </p>
-                  ) : (
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-300">Specialist</p>
-                      <p className="whitespace-pre-line text-xs leading-relaxed text-[#a8b3c4]">{m.text}</p>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-          {threadErrors[item.id] && (
-            <p role="alert" className="mt-1 rounded-md border border-rose-800/60 bg-rose-950/40 px-2.5 py-1 text-xs text-rose-300">
-              {threadErrors[item.id]}
-            </p>
-          )}
-          <div className="mt-1.5 flex items-end gap-2">
-            <textarea
-              aria-label="Advisory question"
-              value={threadDrafts[item.id] ?? ''}
-              onChange={e => setThreadDrafts(prev => ({ ...prev, [item.id]: e.target.value }))}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  void handleThreadSubmit(item.id, threadDrafts[item.id] ?? '');
-                }
-              }}
-              disabled={threadBusyId !== null}
-              maxLength={1000}
-              placeholder="Ask a clarifying question…"
-              className="min-h-[44px] min-w-0 flex-1 resize-y rounded-lg border border-[#3b4658] bg-[#05070c] px-2.5 py-2 text-xs text-[#e8edf5] placeholder:text-[#6e7d92] focus:border-[#ff2a3c] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/40 disabled:opacity-50"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                void handleThreadSubmit(item.id, threadDrafts[item.id] ?? '');
-              }}
-              disabled={threadBusyId !== null || !(threadDrafts[item.id] ?? '').trim()}
-              aria-label="Send advisory question"
-              title="Send advisory question — or press Enter"
-              className="flex min-h-[44px] shrink-0 items-center gap-1.5 self-end rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 text-xs font-semibold text-violet-200 transition hover:bg-[#3b1d7a]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {threadBusy && <Loader2 className="h-3 w-3 motion-safe:animate-spin" aria-hidden />}
-              Ask
-            </button>
-          </div>
-        </div>
-      );
-    })() : null;
+    // §4.1/§4.7 — ONE conversation region per question replaces the old
+    // answer composer + advisory chat boxes. `key={item.id}` siloes the log,
+    // the expansion flag, the draft and the mode; no text crosses items.
+    // Open questions always get the conversation (the Answer verb must exist
+    // even when the parent wired no Ask handler — S11 legacy path).
+    conversation =
+      item.type === 'question' &&
+      item.status === 'open' &&
+      !dwellActive &&
+      !autoAppliedActive ? (
+        <QuestionChat
+          key={item.id}
+          id={item.id}
+          title={item.title}
+          messages={thread}
+          expanded={expanded[item.id] === true}
+          onToggleExpanded={() =>
+            setExpanded(prev => ({ ...prev, [item.id]: prev[item.id] !== true }))
+          }
+          busy={threadBusy || answerBusy || threadActionId === item.id}
+          busyKind={threadBusy ? 'ask' : undefined}
+          threadError={threadErrors[item.id]}
+          onRetryThread={() => {
+            void handleThreadSubmit(item.id, drafts[item.id] ?? '');
+          }}
+          canConclude={canConclude}
+          concluding={concludingId === item.id}
+          onConclude={() => {
+            void handleConclude(item.id);
+          }}
+          proposal={pendingProposal}
+          editingProposal={threadProposalEdit?.id === item.id}
+          proposalError={threadActionError[item.id]}
+          onUseProposal={() => {
+            if (pendingProposalRow) void confirmThreadProposal(item.id, pendingProposalRow.ts);
+          }}
+          onEditProposal={() => {
+            if (pendingProposal) setThreadProposalEdit({ id: item.id, text: pendingProposal.text });
+          }}
+          onRejectProposal={() => {
+            if (pendingProposalRow) void rejectThreadProposal(item.id, pendingProposalRow.ts);
+          }}
+          onSaveProposalEdit={text => {
+            if (pendingProposalRow) void confirmThreadProposal(item.id, pendingProposalRow.ts, text);
+          }}
+          onCancelProposalEdit={() => setThreadProposalEdit(null)}
+          recordedState={recordedState}
+          mode={modes[item.id] ?? 'advisory'}
+          onModeChange={mode => setModes(prev => ({ ...prev, [item.id]: mode }))}
+          draft={drafts[item.id] ?? ''}
+          onDraftChange={text => {
+            writeDraft(item.id, text);
+            setDrafts(prev => ({ ...prev, [item.id]: text }));
+          }}
+          onAsk={() => {
+            void handleThreadSubmit(item.id, drafts[item.id] ?? '');
+          }}
+          onAnswer={() => {
+            void handleAnswer(item.id, drafts[item.id] ?? '');
+          }}
+          locked={
+            answerPhase === 'queued' || answerPhase === 'applying'
+              ? { kind: 'queued', text: 'Answer recorded — applies after this phase' }
+              : undefined
+          }
+          recording={recording}
+          onMicDown={startRecording}
+          onMicUp={() => {
+            void stopRecording().then(text => {
+              if (text) appendVoiceText(item.id, text);
+            });
+          }}
+          answerError={submitError ?? undefined}
+          placeholder={
+            thread.length > 0
+              ? 'Reply, or write your answer — the agent reads this conversation'
+              : 'Ask the specialist, or write your answer…'
+          }
+        />
+      ) : null;
 
-    if (!isParked) {
-      const composingDisabled =
-        answerStates[item.id]?.phase === 'queued' || answerStates[item.id]?.phase === 'applying';
-      composer = (
-        <div className="space-y-1.5">
-          <label htmlFor="question-panel-composer" className="text-xs font-semibold text-[#a8b3c4]">
-            Your answer
-          </label>
-          {dwellActive || autoAppliedActive ? (
-            autoAppliedActive && auto ? (
-              <div
-                role="status"
-                className="rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 py-2.5 text-sm font-medium text-[#e8edf5]"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <Check className="h-4 w-4" aria-hidden />
-                  <span>
-                    Auto-applied from research ({Math.round(auto.confidence * 100)}% confidence) — pending incorporation
-                  </span>
-                  {!auto.incorporated && (
-                    <button
-                      type="button"
-                      onClick={() => undoAuto(item.id)}
-                      disabled={gateActionId === item.id}
-                      aria-label="Undo auto-applied answer"
-                      className="min-h-[32px] rounded-lg border border-[#3b4658] bg-[#0d1017] px-2.5 text-[11px] font-semibold text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
-                    >
-                      Undo
-                    </button>
-                  )}
-                </div>
-                {gateActionError[item.id] && (
-                  <p role="alert" className="mt-1 rounded-md border border-rose-800/60 bg-rose-950/40 px-2.5 py-1 text-xs text-rose-300">
-                    {gateActionError[item.id]}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div
-                role="status"
-                className="flex min-h-[96px] items-center gap-2 rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 py-2.5 text-sm font-medium text-[#e8edf5]"
-              >
-                <Check className="h-4 w-4" aria-hidden /> Resolved ✓
-              </div>
-            )
-          ) : (
-            <>
-              {/* Recording indicator (Alt-initiated only — pill-initiated
-                  recordings show the live VoicePill instead) + voice errors */}
-              {recording && !pillRecordingRef.current && (
-                <div
-                  role="status"
-                  className="flex items-center gap-2 rounded-md bg-rose-950/40 px-3 py-1.5 text-xs text-rose-300"
-                >
-                  <span className="inline-block h-2 w-2 rounded-full bg-rose-500 motion-safe:animate-pulse" aria-hidden />
-                  🎤 Recording… (release Alt to send)
-                </div>
-              )}
-              {voiceError && (
-                <p role="status" aria-live="polite" className="rounded-md bg-rose-950/40 px-3 py-1.5 text-xs text-rose-300">
-                  {voiceError}
-                </p>
-              )}
-              <div className="flex items-end gap-2">
-                <textarea
-                  id="question-panel-composer"
-                  ref={composerRef}
-                  value={drafts[item.id] ?? ''}
-                  onChange={e => {
-                    writeDraft(item.id, e.target.value);
-                    setDrafts(prev => ({ ...prev, [item.id]: e.target.value }));
-                  }}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      void handleSubmit(item.id, drafts[item.id] ?? '');
-                    }
-                  }}
-                  disabled={composingDisabled}
-                  placeholder="Type your answer to the AI…"
-                  className="min-h-[96px] min-w-0 flex-1 resize-y rounded-lg border border-[#3b4658] bg-[#05070c] px-3 py-2.5 text-sm text-[#e8edf5] placeholder:text-[#6e7d92] focus:border-[#ff2a3c] focus:outline-none focus:ring-2 focus:ring-[#ff2a3c]/40 disabled:opacity-50"
-                />
-                {/* VoicePill (React Bits): click toggle for recording — the
-                    recorder stays in useVoiceRecorder; 44px hit target via
-                    the pill's reach + waveform expansion. */}
-                <VoicePill
-                  key={`voice-attempt-${voiceAttempt}`}
-                  ariaLabel="Record answer"
-                  mode="toggle"
-                  reactive="simulated"
-                  accentColor="#ff2a3c"
-                  background="#11151d"
-                  disabled={composingDisabled || voiceError !== null}
-                  onStart={() => {
-                    pillRecordingRef.current = true;
-                    if (!recordingRef.current) startRecording();
-                  }}
-                  onStop={() => {
-                    void stopRecording().then(text => {
-                      if (text) appendVoiceText(item.id, text);
-                    });
-                  }}
-                />
-                {/* Send: same submit path as Enter, far right of the action
-                    row. Disabled while the trimmed draft is empty, while that
-                    item's submit is in flight, or while composing is gated
-                    (queued/applying) — matching the Enter path's guards. */}
+    // Recorded / resolved banner (unchanged behaviour) + the research proposal
+    // card, both above the conversation region.
+    const statusBanner = isParked
+      ? null
+      : autoAppliedActive && auto ? (
+          <div
+            role="status"
+            className="rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 py-2.5 text-sm font-medium text-[#e8edf5]"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <Check className="h-4 w-4" aria-hidden />
+              <span>
+                Auto-applied from research ({Math.round(auto.confidence * 100)}% confidence) — pending incorporation
+              </span>
+              {!auto.incorporated && (
                 <button
                   type="button"
-                  onClick={() => {
-                    void handleSubmit(item.id, drafts[item.id] ?? '');
-                  }}
-                  disabled={
-                    composingDisabled ||
-                    submittingId === item.id ||
-                    !(drafts[item.id] ?? '').trim()
-                  }
-                  aria-label="Send answer"
-                  title="Send answer — or press Enter"
-                  className="flex min-h-[44px] shrink-0 items-center gap-1.5 self-end rounded-lg border border-rose-700/40 bg-[#d61f2c] px-3 text-xs font-semibold text-white transition hover:bg-[#e11d3f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => undoAuto(item.id)}
+                  disabled={gateActionId === item.id}
+                  aria-label="Undo auto-applied answer"
+                  className="min-h-[32px] rounded-lg border border-[#3b4658] bg-[#0d1017] px-2.5 text-[11px] font-semibold text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
                 >
-                  Send
+                  Undo
                 </button>
-              </div>
-            </>
-          )}
-          {!dwellActive && !autoAppliedActive && (
-            <p className="text-xs text-[#6e7d92]">Usually 1–3 sentences is enough.</p>
-          )}
-          {!dwellActive && !autoAppliedActive && submitError && (
-            <p role="alert" className="mt-1.5 rounded-md border border-rose-800/60 bg-rose-950/40 px-2.5 py-1.5 text-xs text-rose-300">
-              {submitError}
-            </p>
-          )}
+              )}
+            </div>
+            {gateActionError[item.id] && (
+              <p role="alert" className="mt-1 rounded-md border border-rose-800/60 bg-rose-950/40 px-2.5 py-1 text-xs text-rose-300">
+                {gateActionError[item.id]}
+              </p>
+            )}
+          </div>
+        ) : dwellActive ? (
+          <div
+            role="status"
+            className="flex min-h-[96px] items-center gap-2 rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 py-2.5 text-sm font-medium text-[#e8edf5]"
+          >
+            <Check className="h-4 w-4" aria-hidden /> Resolved ✓
+          </div>
+        ) : voiceError ? (
+          <p role="status" aria-live="polite" className="rounded-md bg-rose-950/40 px-3 py-1.5 text-xs text-rose-300">
+            {voiceError}
+          </p>
+        ) : null;
+
+    const researchProposalCard = proposal ? (
+      <ProposalCard
+        variant="research"
+        title={`Research proposal — ${Math.round(proposal.confidence * 100)}% confidence`}
+        text={proposal.answer}
+        sources={proposal.sources}
+        rationale={proposal.rationale}
+        editing={proposalEdit?.id === item.id}
+        busy={gateActionId === item.id}
+        error={gateActionError[item.id]}
+        onUse={() => {
+          void confirmProposal(item.id);
+        }}
+        onEdit={() => setProposalEdit({ id: item.id, text: proposal.answer })}
+        onReject={() => {
+          void rejectProposal(item.id);
+        }}
+        onSaveEdit={text => {
+          void confirmProposal(item.id, text);
+        }}
+        onCancelEdit={() => setProposalEdit(null)}
+      />
+    ) : null;
+
+    if (statusBanner || researchProposalCard) {
+      aux = (
+        <div className="shrink-0 space-y-2 border-t border-[#2a3342] bg-[#0d1017]/70 p-3">
+          {statusBanner}
+          {researchProposalCard}
         </div>
       );
     }
@@ -1278,6 +1275,7 @@ export default function QuestionPanel({
 
   return (
     <div
+      ref={panelRef}
       id="question-panel"
       role="region"
       aria-label="Questions from AI"
@@ -1385,6 +1383,15 @@ export default function QuestionPanel({
             } else if (queuedPhase === 'queued' || queuedPhase === 'applying') {
               dotClass = 'bg-violet-400';
             }
+            // §4.6 — trailing conversation pill: count = user + specialist +
+            // recorded rows (proposal rows are drafts, not messages). A
+            // pending proposal swaps the icon to ListChecks (shape + hue).
+            const chipThread = navItem.meta?.thread ?? [];
+            const chipCount = chipThread.filter(m => m.kind !== 'proposal').length;
+            const chipProposal = chipThread.some(
+              m => m.kind === 'proposal' && m.proposal?.status === 'pending'
+            );
+            const ChipIcon = chipProposal ? ListChecks : MessageSquare;
             return (
               <button
                 key={navItem.id}
@@ -1401,7 +1408,21 @@ export default function QuestionPanel({
                 }`}
               >
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} aria-hidden />
-                <span className="max-w-[140px] truncate">{cleanQuestionTitle(navItem.title)}</span>
+                <span className={chipCount > 0 ? 'max-w-[112px] truncate' : 'max-w-[140px] truncate'}>
+                  {cleanQuestionTitle(navItem.title)}
+                </span>
+                {chipCount > 0 && (
+                  <>
+                    <span className={`qchat-chip ${chipProposal ? 'is-proposal' : ''}`} aria-hidden>
+                      <ChipIcon className="h-[10px] w-[10px]" aria-hidden />
+                      {chipCount}
+                    </span>
+                    <span className="sr-only">
+                      {chipCount} messages in conversation
+                      {chipProposal ? ', proposed answer waiting' : ''}
+                    </span>
+                  </>
+                )}
               </button>
             );
           })}
@@ -1412,17 +1433,8 @@ export default function QuestionPanel({
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">{body}</div>
 
-      {(composer || threadPanel) && (
-        // F1 fix: without a height cap this footer's composer + advisory chat
-        // squeeze the min-h-0 flex-1 body (title/BLUF/findings/suggestion) down
-        // to a sliver once a thread exists. Capped at half the panel height;
-        // overflow scrolls INTERNALLY here — the thread list keeps its own
-        // max-h-56 scroller and never pushes the memo sections out of view.
-        <footer className="max-h-[50%] shrink-0 space-y-2 overflow-y-auto border-t border-[#2a3342] bg-[#0d1017]/70 p-3">
-          {composer}
-          {threadPanel}
-        </footer>
-      )}
+      {aux}
+      {conversation}
     </div>
   );
 }

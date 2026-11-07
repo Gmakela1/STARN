@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { act, waitFor, screen } from '@testing-library/react';
+import { act, waitFor, screen, within } from '@testing-library/react';
 
 // Module-scope stable fixtures for the mocked voice recorder (same seam as
 // QuestionPanel.test.tsx — QuestionPanel always mounts the recorder hook).
@@ -139,7 +139,9 @@ describe('QuestionPanel — research-all button + format-v2 sections', () => {
       }
     });
     renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
-    expect(screen.getByText('Contactor voltage.')).toBeInTheDocument();
+    // The title appears twice by design: the card heading and the
+    // conversation label row ("Conversation about …").
+    expect(screen.getAllByText('Contactor voltage.').length).toBeGreaterThan(0);
     expect(screen.getByText('ELEC')).toBeInTheDocument();
     expect(screen.getByText('The main contactor is rated for 48V DC.')).toBeInTheDocument();
   });
@@ -192,9 +194,10 @@ describe('QuestionPanel — research-all button + format-v2 sections', () => {
     expect(hero!.compareDocumentPosition(findings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // Topic chip renders beside the short title.
     expect(screen.getByText('THERM')).toBeInTheDocument();
-    // Advisory chat lives in the footer, after the response area.
-    const composer = screen.getByLabelText('Send answer');
-    const chat = screen.getByText('Ask the specialist');
-    expect(composer.compareDocumentPosition(chat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The one conversation region lives after the response area, and the memo
+    // body keeps its own scroller (the chat never squeezes it).
+    const chat = screen.getByRole('region', { name: 'Conversation about Coolant choice.' });
+    expect(hero!.compareDocumentPosition(chat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(chat).getAllByRole('textbox')).toHaveLength(1);
   });
 });

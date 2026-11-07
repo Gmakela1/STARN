@@ -100,6 +100,18 @@ export const api = {
   // T-C answer-thread — one advisory specialist Q&A turn on an open question.
   postThreadMessage: (id: string, text: string) =>
     call<{ item: PortalItem }>('POST', `/api/portal/${encodeURIComponent(id)}/thread`, { text }),
+  // Conclude-from-chat — the server drafts one answer from the conversation
+  // (appends a kind:'proposal' row), then the user confirms or rejects it.
+  concludeThread: (id: string) =>
+    call<{ item: PortalItem }>('POST', `/api/portal/${encodeURIComponent(id)}/conclude-thread`),
+  confirmThreadProposal: (id: string, ts: number, answer?: string) =>
+    call<{ item: PortalItem }>(
+      'POST',
+      `/api/portal/${encodeURIComponent(id)}/confirm-thread-proposal`,
+      answer === undefined ? { ts } : { ts, answer }
+    ),
+  rejectThreadProposal: (id: string, ts: number) =>
+    call<{ item: PortalItem }>('POST', `/api/portal/${encodeURIComponent(id)}/reject-thread-proposal`, { ts }),
 
   // Action comments & flags
   postActionComment: (actionId: string, stepId: number, text: string) =>

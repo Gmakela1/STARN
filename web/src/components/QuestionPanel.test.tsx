@@ -64,7 +64,29 @@ function baseProps(overrides: Partial<QuestionPanelProps> = {}): QuestionPanelPr
   };
 }
 
+/** The single per-question textarea — QuestionChat's composer owns it. */
+function textbox(): HTMLTextAreaElement {
+  return screen.getByRole('textbox') as HTMLTextAreaElement;
+}
+
 describe('QuestionPanel', () => {
+  // ————— 0. One conversation replaces the answer + ask boxes —————
+  it('open: the card renders exactly ONE textbox', () => {
+    renderWithUser(<QuestionPanel {...baseProps()} />);
+    expect(screen.getAllByRole('textbox')).toHaveLength(1);
+  });
+
+  it('open: the removed copy is gone (Your answer / Ask the specialist / Advisory only / helper line)', () => {
+    renderWithUser(<QuestionPanel {...baseProps()} />);
+    // `ignore: '.sr-only'` keeps the sr-only composer label out of the match:
+    // the assertion is about VISIBLE copy.
+    expect(screen.queryByText('Your answer', { ignore: '.sr-only' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Ask the specialist', { ignore: '.sr-only' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Advisory only/, { ignore: '.sr-only' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Usually 1–3 sentences/, { ignore: '.sr-only' })
+    ).not.toBeInTheDocument();
+  });
   // ————— 1. BUG 1 regression: minimized strip Expand must call onExpand —————
   it('minimized: "Expand questions" calls onExpand', async () => {
     const props = baseProps({ surface: 'minimized' });
@@ -107,50 +129,52 @@ describe('QuestionPanel', () => {
     expect(props.onClose).toHaveBeenCalledTimes(1);
   });
 
-  // ————— 4. Composer submit —————
-  it('open: typing + Enter submits the trimmed text with the item id', async () => {
+  // ————— 4. Composer submit (answer mode is the recording verb) —————
+  it('open: answer mode + Enter submits the trimmed text with the item id', async () => {
     const props = baseProps();
     const { user } = renderWithUser(<QuestionPanel {...props} />);
 
-    const textarea = screen.getByLabelText('Your answer');
-    await user.type(textarea, '  my answer  ');
+    await user.click(screen.getByRole('radio', { name: 'Answer' }));
+    await user.type(textbox(), '  my answer  ');
     await user.keyboard('{Enter}');
 
     expect(props.onSubmit).toHaveBeenCalledTimes(1);
     expect(props.onSubmit).toHaveBeenCalledWith('A', 'my answer');
   });
 
-  it('open: Shift+Enter does not submit and keeps the draft', async () => {
-    const props = baseProps();
+  it('open: Shift+Enter does not send and keeps the draft', async () => {
+    const onThreadMessage = vi.fn(async () => {});
+    const props = baseProps({ onThreadMessage });
     const { user } = renderWithUser(<QuestionPanel {...props} />);
 
-    const textarea = screen.getByLabelText('Your answer');
+    const textarea = textbox();
     await user.type(textarea, 'keep me');
     await user.keyboard('{Shift>}{Enter}{/Shift}');
 
     expect(props.onSubmit).not.toHaveBeenCalled();
+    expect(onThreadMessage).not.toHaveBeenCalled();
     // Shift+Enter inserts a newline natively (no preventDefault on the shift
     // path) and the draft must be preserved — assert it was not cleared.
-    expect((textarea as HTMLTextAreaElement).value).toContain('keep me');
+    expect(textbox().value).toContain('keep me');
   });
 
-  it('open: Enter while composing (IME) does not submit', () => {
+  it('open: Enter while composing (IME) does not send', () => {
     const props = baseProps();
     renderWithUser(<QuestionPanel {...props} />);
 
-    const textarea = screen.getByLabelText('Your answer');
-    fireEvent.keyDown(textarea, { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(textbox(), { key: 'Enter', isComposing: true });
 
     expect(props.onSubmit).not.toHaveBeenCalled();
   });
 
-  // ————— 5. Composer disabled while queued/applying —————
+  // ————— 5. Composer replaced by one locked row while queued/applying —————
   it.each(['queued', 'applying'] as const)(
-    'open: composer disabled while phase is %s',
+    'open: composer is one locked row while phase is %s',
     (phase) => {
       const props = baseProps({ answerStates: { A: { phase } } });
       renderWithUser(<QuestionPanel {...props} />);
-      expect(screen.getByLabelText('Your answer')).toBeDisabled();
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+      expect(screen.getByText('Answer recorded — applies after this phase')).toBeInTheDocument();
     },
   );
 
@@ -167,13 +191,26 @@ describe('QuestionPanel', () => {
     const props = baseProps();
     const { user } = renderWithUser(<QuestionPanel {...props} />);
 
-    const textarea = screen.getByLabelText('Your answer');
-    await user.type(textarea, 'draft text');
-    expect((textarea as HTMLTextAreaElement).value).toBe('draft text');
+    await user.type(textbox(), 'draft text');
+    expect(textbox().value).toBe('draft text');
 
     fireEvent.keyDown(window, { key: 'Escape' });
 
-    expect((textarea as HTMLTextAreaElement).value).toBe('');
+    expect(textbox().value).toBe('');
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
+
+  it('open + answer mode + draft: Escape returns the composer to advisory (R3)', async () => {
+    const props = baseProps();
+    const { user } = renderWithUser(<QuestionPanel {...props} />);
+
+    await user.click(screen.getByRole('radio', { name: 'Answer' }));
+    expect(screen.getByRole('radio', { name: 'Answer' })).toHaveAttribute('aria-checked', 'true');
+    await user.type(textbox(), 'draft text');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(screen.getByRole('radio', { name: 'Advisory' })).toHaveAttribute('aria-checked', 'true');
     expect(props.onClose).not.toHaveBeenCalled();
   });
 
@@ -193,7 +230,7 @@ describe('QuestionPanel', () => {
     const props = baseProps();
     const { unmount } = renderWithUser(<QuestionPanel {...props} />);
 
-    fireEvent.change(screen.getByLabelText('Your answer'), {
+    fireEvent.change(textbox(), {
       target: { value: big }
     });
 
@@ -206,22 +243,20 @@ describe('QuestionPanel', () => {
 
     unmount();
     renderWithUser(<QuestionPanel {...props} />);
-    const remounted = screen.getByLabelText('Your answer') as HTMLTextAreaElement;
-    expect(remounted.value).toHaveLength(4096);
+    expect(textbox().value).toHaveLength(4096);
   });
 
   it('Escape then remount: the draft is gone from the store (persists nothing)', () => {
     const props = baseProps();
     const { unmount } = renderWithUser(<QuestionPanel {...props} />);
 
-    const textarea = screen.getByLabelText('Your answer');
-    fireEvent.change(textarea, { target: { value: 'draft text' } });
+    fireEvent.change(textbox(), { target: { value: 'draft text' } });
     fireEvent.keyDown(window, { key: 'Escape' });
-    expect((textarea as HTMLTextAreaElement).value).toBe('');
+    expect(textbox().value).toBe('');
 
     unmount();
     renderWithUser(<QuestionPanel {...props} />);
-    expect((screen.getByLabelText('Your answer') as HTMLTextAreaElement).value).toBe('');
+    expect(textbox().value).toBe('');
     const stored: Record<string, string> = JSON.parse(
       window.localStorage.getItem('starn.questionDrafts.v1') ?? '{}'
     );
@@ -297,44 +332,42 @@ describe('QuestionPanel', () => {
     const props = baseProps();
     const view = renderWithUser(<QuestionPanel {...props} />);
 
-    const textarea = screen.getByLabelText('Your answer');
-    await view.user.type(textarea, 'typed but not sent');
+    await view.user.type(textbox(), 'typed but not sent');
 
     // Close (surface 'closed' → panel renders nothing) then reopen.
     view.rerender(<QuestionPanel {...props} surface="closed" />);
-    expect(screen.queryByLabelText('Your answer')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     view.rerender(<QuestionPanel {...props} />);
 
-    expect(screen.getByLabelText('Your answer')).toHaveValue('typed but not sent');
+    expect(textbox()).toHaveValue('typed but not sent');
   });
 
   it('draft survives unmount + remount (page reload) via the persisted store', async () => {
     const props = baseProps();
     const first = renderWithUser(<QuestionPanel {...props} />);
 
-    const textarea = screen.getByLabelText('Your answer');
-    await first.user.type(textarea, 'survives a reload');
+    await first.user.type(textbox(), 'survives a reload');
     first.unmount();
 
     // Fresh mount, as after a full page reload (same module store + storage).
     renderWithUser(<QuestionPanel {...baseProps()} />);
-    expect(screen.getByLabelText('Your answer')).toHaveValue('survives a reload');
+    expect(textbox()).toHaveValue('survives a reload');
   });
 
   it('successful submit clears the draft (state and persisted store)', async () => {
     const props = baseProps();
     const view = renderWithUser(<QuestionPanel {...props} />);
 
-    const textarea = screen.getByLabelText('Your answer');
-    await view.user.type(textarea, 'send this');
+    await view.user.click(screen.getByRole('radio', { name: 'Answer' }));
+    await view.user.type(textbox(), 'send this');
     await view.user.keyboard('{Enter}');
     expect(props.onSubmit).toHaveBeenCalledTimes(1);
 
-    expect(screen.getByLabelText('Your answer')).toHaveValue('');
+    expect(textbox()).toHaveValue('');
     // The store cleared too: a fresh mount shows no draft.
     view.unmount();
     renderWithUser(<QuestionPanel {...baseProps()} />);
-    expect(screen.getByLabelText('Your answer')).toHaveValue('');
+    expect(textbox()).toHaveValue('');
   });
 
   it('failed submit keeps the draft in the composer', async () => {
@@ -342,12 +375,12 @@ describe('QuestionPanel', () => {
     const props = baseProps({ onSubmit: failing });
     const view = renderWithUser(<QuestionPanel {...props} />);
 
-    const textarea = screen.getByLabelText('Your answer');
-    await view.user.type(textarea, 'keep me');
+    await view.user.click(screen.getByRole('radio', { name: 'Answer' }));
+    await view.user.type(textbox(), 'keep me');
     await view.user.keyboard('{Enter}');
     await vi.waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
 
-    expect(screen.getByLabelText('Your answer')).toHaveValue('keep me');
+    expect(textbox()).toHaveValue('keep me');
   });
 
   // ————— Board #53B: queued chip rebuilt from portal data after reload —————
@@ -368,8 +401,8 @@ describe('QuestionPanel', () => {
     const view = renderWithUser(<QuestionPanel {...props} />);
 
     // Submit once — the panel remembers the text for retry
-    const textarea = screen.getByLabelText('Your answer');
-    await view.user.type(textarea, 'apply this fix');
+    await view.user.click(screen.getByRole('radio', { name: 'Answer' }));
+    await view.user.type(textbox(), 'apply this fix');
     await view.user.keyboard('{Enter}');
     expect(props.onSubmit).toHaveBeenCalledWith('A', 'apply this fix');
 
@@ -461,7 +494,7 @@ describe('QuestionPanel', () => {
 
     const region = screen.getByRole('region', { name: 'Questions from AI' });
     expect(region).toHaveAttribute('id', 'question-panel');
-    expect(screen.getByLabelText('Your answer')).toBeInTheDocument();
+    expect(textbox()).toBeInTheDocument();
   });
 
   // ————— 14. focusRequest deep-link adoption (design §5.E) —————
@@ -495,59 +528,43 @@ describe('QuestionPanel', () => {
     expect(onFocusDocument).not.toHaveBeenCalled();
   });
 
-  // ————— 15. Voice input in the answer composer (design §2) —————
-  it('voice: renders the VoicePill with aria-label "Record answer"', () => {
+  // ————— 15. Voice input in the chat composer (design §2) —————
+  it('voice: the composer mic keeps the aria-label "Record answer"', () => {
     renderWithUser(<QuestionPanel {...baseProps()} />);
 
     expect(screen.getByRole('button', { name: 'Record answer' })).toBeInTheDocument();
   });
 
-  it('voice: clicking the pill starts recording; the pill itself becomes the live indicator', async () => {
+  it('voice: mic aria-pressed follows the recorder state', () => {
     const view = renderWithUser(<QuestionPanel {...baseProps()} />);
 
-    const pill = screen.getByRole('button', { name: 'Record answer' });
-    await view.user.click(pill);
-    expect(voiceMock.startRecording).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Record answer' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
 
-    // Simulate the hook flipping to recording state. Pill-initiated: the pill
-    // shows the live waveform indicator (aria-pressed) — no compact text
-    // note and no separate stop button.
     voiceMock.recording = true;
     view.rerender(<QuestionPanel {...baseProps()} />);
-
-    expect(screen.queryByText(/Recording…/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Record answer' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.queryByRole('button', { name: 'Stop recording' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Record answer' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
   });
 
-  it('voice: ending a pill recording appends the transcribed text into the answer textarea', async () => {
+  it('voice: holding the mic records, releasing appends the transcript into the one draft', async () => {
     const view = renderWithUser(<QuestionPanel {...baseProps()} />);
 
-    const textarea = screen.getByLabelText('Your answer');
-    await view.user.type(textarea, 'typed ');
+    await view.user.type(textbox(), 'typed ');
 
-    voiceMock.recording = true;
-    view.rerender(<QuestionPanel {...baseProps()} />);
-    // Recording started outside the pill (Alt-hold path): the first click
-    // syncs the pill into its listening state, the second click ends it and
-    // the recorder's transcript is appended.
-    await view.user.click(screen.getByRole('button', { name: 'Record answer' }));
-    await view.user.click(screen.getByRole('button', { name: 'Record answer' }));
+    const mic = screen.getByRole('button', { name: 'Record answer' });
+    fireEvent.pointerDown(mic);
+    expect(voiceMock.startRecording).toHaveBeenCalledTimes(1);
+    fireEvent.pointerUp(mic);
 
     await vi.waitFor(() => {
-      expect((textarea as HTMLTextAreaElement).value).toBe('typed Transcribed answer text');
+      expect(textbox().value).toBe('typed Transcribed answer text');
     });
     expect(voiceMock.stopRecording).toHaveBeenCalledTimes(1);
-  });
-
-  it('voice: Alt-initiated recording keeps the compact indicator and the pill idle', () => {
-    const view = renderWithUser(<QuestionPanel {...baseProps()} />);
-
-    voiceMock.recording = true;
-    view.rerender(<QuestionPanel {...baseProps()} />);
-
-    expect(screen.getByText(/Recording…/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Record answer' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('voice: Alt-hold starts and releasing appends the transcription', async () => {
@@ -558,15 +575,15 @@ describe('QuestionPanel', () => {
 
     fireEvent.keyUp(window, { key: 'Alt' });
     await vi.waitFor(() => {
-      const textarea = screen.getByLabelText('Your answer') as HTMLTextAreaElement;
-      expect(textarea.value).toBe('Transcribed answer text');
+      expect(textbox().value).toBe('Transcribed answer text');
     });
   });
 
-  it('voice: mic disabled while the composer is disabled (queued/applying)', () => {
+  it('voice: no mic while the answer is queued/applying (composer is one locked row)', () => {
     renderWithUser(<QuestionPanel {...baseProps({ answerStates: { A: { phase: 'queued' } } })} />);
 
-    expect(screen.getByRole('button', { name: 'Record answer' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Record answer' })).not.toBeInTheDocument();
+    expect(screen.getByText('Answer recorded — applies after this phase')).toBeInTheDocument();
   });
 
   it('voice: no mic button when minimized or resolved dwell', () => {
@@ -587,26 +604,11 @@ describe('QuestionPanel', () => {
     consoleSpy.mockRestore();
   });
 
-  it('voice: recorder error after a pill start remounts the pill idle and disables it while shown', async () => {
-    const view = renderWithUser(<QuestionPanel {...baseProps()} />);
-
-    await view.user.click(screen.getByRole('button', { name: 'Record answer' }));
-    expect(voiceMock.startRecording).toHaveBeenCalledTimes(1);
-
-    // The recorder reports mic denial out-of-band (async getUserMedia
-    // failure): voiceError appears while the pill's internal listening is
-    // still up with its simulated waveform.
+  it('voice: a recorder error is announced politely next to the composer', () => {
     voiceMock.error = 'Microphone access denied';
-    view.rerender(<QuestionPanel {...baseProps()} />);
+    renderWithUser(<QuestionPanel {...baseProps()} />);
 
-    // The error is announced politely next to the pill.
-    const error = screen.getByText('Microphone access denied');
-    expect(error).toHaveAttribute('aria-live', 'polite');
-
-    // Remount key + disabled: the stale pressed state is gone.
-    const pill = screen.getByRole('button', { name: 'Record answer' });
-    expect(pill).toHaveAttribute('aria-pressed', 'false');
-    expect(pill).toBeDisabled();
+    expect(screen.getByText('Microphone access denied')).toHaveAttribute('aria-live', 'polite');
   });
 
   it('voice: closing the panel while recording stops the recorder and keeps the transcript', async () => {
@@ -625,8 +627,7 @@ describe('QuestionPanel', () => {
     await act(async () => { await Promise.resolve(); });
     view.rerender(<QuestionPanel {...baseProps()} />);
     await vi.waitFor(() => {
-      const textarea = screen.getByLabelText('Your answer') as HTMLTextAreaElement;
-      expect(textarea.value).toBe('Transcribed answer text');
+      expect(textbox().value).toBe('Transcribed answer text');
     });
   });
 
@@ -643,8 +644,7 @@ describe('QuestionPanel', () => {
     await act(async () => { await Promise.resolve(); });
     view.rerender(<QuestionPanel {...baseProps()} />);
     await vi.waitFor(() => {
-      const textarea = screen.getByLabelText('Your answer') as HTMLTextAreaElement;
-      expect(textarea.value).toBe('Transcribed answer text');
+      expect(textbox().value).toBe('Transcribed answer text');
     });
   });
 
@@ -659,27 +659,37 @@ describe('QuestionPanel', () => {
     expect(voiceMock.stopRecording).not.toHaveBeenCalled();
   });
 
-  // ————— 15b. Send button (same submit path as Enter) —————
-  it('send: renders far right of VoicePill, labeled Send, disabled while the draft is empty', () => {
+  // ————— 15b. The one send verb obeys the visible mode —————
+  it('send: the verb is Ask in advisory mode and disabled while the draft is empty', () => {
     renderWithUser(<QuestionPanel {...baseProps()} />);
 
-    const send = screen.getByRole('button', { name: 'Send answer' });
-    expect(screen.getByText('Send')).toBeInTheDocument();
-    expect(send).toBeDisabled();
-    expect(send).toHaveAttribute('title', 'Send answer — or press Enter');
-
-    // Far right: VoicePill precedes the Send button in the action row.
-    const pill = screen.getByRole('button', { name: 'Record answer' });
-    expect(send.compareDocumentPosition(pill) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    const ask = screen.getByRole('button', { name: 'Ask' });
+    expect(ask).toBeDisabled();
+    expect(ask).toHaveAttribute('title', 'Send as a question — nothing is recorded (Enter)');
+    expect(screen.queryByRole('button', { name: 'Record' })).not.toBeInTheDocument();
   });
 
-  it('send: clicking submits the trimmed text on the same path as Enter', async () => {
+  it('send: Ask calls onThreadMessage (records nothing) and clears the draft', async () => {
+    const onThreadMessage = vi.fn(async () => {});
+    const props = baseProps({ onThreadMessage });
+    const { user } = renderWithUser(<QuestionPanel {...props} />);
+
+    await user.type(textbox(), '  is 48 V enough?  ');
+    await user.click(screen.getByRole('button', { name: 'Ask' }));
+
+    expect(onThreadMessage).toHaveBeenCalledTimes(1);
+    expect(onThreadMessage).toHaveBeenCalledWith('A', 'is 48 V enough?');
+    expect(props.onSubmit).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(textbox()).toHaveValue(''));
+  });
+
+  it('send: the Record verb submits the trimmed text in answer mode', async () => {
     const props = baseProps();
     const { user } = renderWithUser(<QuestionPanel {...props} />);
 
-    const textarea = screen.getByLabelText('Your answer');
-    await user.type(textarea, '  my answer  ');
-    await user.click(screen.getByRole('button', { name: 'Send answer' }));
+    await user.click(screen.getByRole('radio', { name: 'Answer' }));
+    await user.type(textbox(), '  my answer  ');
+    await user.click(screen.getByRole('button', { name: 'Record' }));
 
     expect(props.onSubmit).toHaveBeenCalledTimes(1);
     expect(props.onSubmit).toHaveBeenCalledWith('A', 'my answer');
@@ -691,49 +701,51 @@ describe('QuestionPanel', () => {
     const props = baseProps({ onSubmit });
     const view = renderWithUser(<QuestionPanel {...props} />);
 
-    const textarea = screen.getByLabelText('Your answer');
-    await view.user.type(textarea, 'answer');
-    const send = screen.getByRole('button', { name: 'Send answer' });
+    await view.user.click(screen.getByRole('radio', { name: 'Answer' }));
+    await view.user.type(textbox(), 'answer');
+    const send = screen.getByRole('button', { name: 'Record' });
 
     const click = view.user.click(send);
     await vi.waitFor(() => expect(send).toBeDisabled());
 
-    // Success clears the draft (board #53A), so Send is empty-disabled again.
+    // Success clears the draft (board #53A), so the verb is empty-disabled again.
     // The clear continuation runs outside act; flush it before asserting.
     resolveSubmit();
     await click;
     await act(async () => { await Promise.resolve(); });
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    expect(textarea).toHaveValue('');
+    expect(textbox()).toHaveValue('');
   });
 
-  it('send: a failed submit keeps the draft, shows the error, and re-enables', async () => {
+  it('send: a failed answer keeps the draft, shows the error, and re-enables', async () => {
     const onSubmit = vi.fn(async () => { throw new Error('boom'); });
     const view = renderWithUser(<QuestionPanel {...baseProps({ onSubmit })} />);
 
-    const textarea = screen.getByLabelText('Your answer');
-    await view.user.type(textarea, 'answer');
-    await view.user.click(screen.getByRole('button', { name: 'Send answer' }));
+    await view.user.click(screen.getByRole('radio', { name: 'Answer' }));
+    await view.user.type(textbox(), 'answer');
+    await view.user.click(screen.getByRole('button', { name: 'Record' }));
 
     expect(screen.getByRole('alert')).toHaveTextContent('boom');
-    expect(textarea).toHaveValue('answer');
-    expect(screen.getByRole('button', { name: 'Send answer' })).toBeEnabled();
+    expect(textbox()).toHaveValue('answer');
+    // R5 — a failed answer returns the composer to advisory and keeps the draft.
+    expect(screen.getByRole('radio', { name: 'Advisory' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('button', { name: 'Ask' })).toBeEnabled();
   });
 
   // ————— 15c. Caret retention after a voice append (design §2) —————
   it('voice: caret sits at the end of the appended text and the composer regains focus', async () => {
     const view = renderWithUser(<QuestionPanel {...baseProps()} />);
 
-    const textarea = screen.getByLabelText('Your answer') as HTMLTextAreaElement;
-    await view.user.type(textarea, 'typed ');
+    await view.user.type(textbox(), 'typed ');
 
     voiceMock.recording = true;
     view.rerender(<QuestionPanel {...baseProps()} />);
-    // Pill is toggle-mode: first click starts, second ends it and appends.
-    await view.user.click(screen.getByRole('button', { name: 'Record answer' }));
-    await view.user.click(screen.getByRole('button', { name: 'Record answer' }));
+    const mic = screen.getByRole('button', { name: 'Record answer' });
+    fireEvent.pointerDown(mic);
+    fireEvent.pointerUp(mic);
 
     await vi.waitFor(() => {
+      const textarea = textbox();
       expect(textarea.value).toBe('typed Transcribed answer text');
       expect(document.activeElement).toBe(textarea);
       expect(textarea.selectionStart).toBe(textarea.value.length);
@@ -767,7 +779,7 @@ describe('QuestionPanel', () => {
     screen.getByRole('button', { name: 'Close questions' }).focus();
     act(() => { vi.runAllTimers(); });
 
-    const textarea = screen.getByLabelText('Your answer') as HTMLTextAreaElement;
+    const textarea = textbox();
     expect(textarea.value).toBe('Transcribed answer text');
     expect(document.activeElement).not.toBe(textarea);
 
@@ -885,11 +897,11 @@ describe('QuestionPanel research gate', () => {
     const sourceLink = screen.getByRole('link', { name: 'Vendor datasheet' });
     expect(sourceLink.getAttribute('href')).toBe('https://vendor.example/ds.pdf');
 
-    await user.click(screen.getByRole('button', { name: 'Use proposal answer' }));
+    await user.click(screen.getByRole('button', { name: 'Use proposal' }));
     expect(props.onConfirmProposal).toHaveBeenCalledWith(item.id, undefined);
 
     // EDIT: inline textarea pre-filled with the proposal, confirm-with-text.
-    await user.click(screen.getByRole('button', { name: 'Edit proposal answer' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     const textarea = screen.getByLabelText('Edit proposal') as HTMLTextAreaElement;
     expect(textarea.value).toBe('48V per the vendor datasheet.');
     await user.type(textarea, ' (edited)');
@@ -897,7 +909,7 @@ describe('QuestionPanel research gate', () => {
     expect(props.onConfirmProposal).toHaveBeenCalledWith(item.id, '48V per the vendor datasheet. (edited)');
 
     // NO: reject clears the proposal, item stays open plain.
-    await user.click(screen.getByRole('button', { name: 'Reject proposal' }));
+    await user.click(screen.getByRole('button', { name: 'Reject' }));
     expect(props.onRejectProposal).toHaveBeenCalledWith(item.id);
   });
 
@@ -912,7 +924,7 @@ describe('QuestionPanel research gate', () => {
       onConfirmProposal: vi.fn(async () => { throw new Error('Item no longer open'); }),
     });
     const { user } = renderWithUser(<QuestionPanel {...props} />);
-    await user.click(screen.getByRole('button', { name: 'Use proposal answer' }));
+    await user.click(screen.getByRole('button', { name: 'Use proposal' }));
     expect(await screen.findByRole('alert')).toBeTruthy();
     expect(screen.getByText('Item no longer open')).toBeTruthy();
   });

@@ -1426,6 +1426,23 @@ export default function DevelopmentView({
             onThreadMessage={async (id, text) => {
               await api.postThreadMessage(id, text);
             }}
+            onConcludeThread={async (id) => {
+              // The server appends the kind:'proposal' row; the 3s portal poll
+              // carries it back to the panel, same refresh path as a thread turn.
+              await api.concludeThread(id);
+            }}
+            onConfirmThreadProposal={async (id, proposalTs, editedText) => {
+              try {
+                await api.confirmThreadProposal(id, proposalTs, editedText);
+                await refreshDoc();
+              } catch (err) {
+                appendEntry({ role: 'system', text: `Couldn't record the concluded answer — ${(err as Error).message}.` });
+                throw err;
+              }
+            }}
+            onRejectThreadProposal={async (id, proposalTs) => {
+              await api.rejectThreadProposal(id, proposalTs);
+            }}
             onDismiss={async (id) => {
               setDismissedIds(prev => new Set(prev).add(id));
               try {
