@@ -41,14 +41,38 @@ describe('ChatComposer — keys', () => {
     expect(onAnswer).not.toHaveBeenCalled();
   });
 
-  it('Control+Enter sends as an answer (onAnswer)', async () => {
+  it('Enter in the answer skin sends as an answer (onAnswer)', async () => {
     const onAsk = vi.fn();
     const onAnswer = vi.fn();
-    const { user } = renderWithUser(<Harness onAsk={onAsk} onAnswer={onAnswer} />);
+    const { user } = renderWithUser(
+      <Harness mode="answer" onAsk={onAsk} onAnswer={onAnswer} />
+    );
     await user.type(screen.getByRole('textbox'), 'Use the 2 A fuse.');
-    await user.keyboard('{Control>}{Enter}{/Control}');
+    await user.keyboard('{Enter}');
     expect(onAnswer).toHaveBeenCalledTimes(1);
     expect(onAsk).not.toHaveBeenCalled();
+  });
+
+  it('Alt+A toggles the mode without sending and updates the live region', async () => {
+    const onAsk = vi.fn();
+    const onAnswer = vi.fn();
+    const { user } = renderWithUser(
+      <Harness value="Use the 2 A fuse." onAsk={onAsk} onAnswer={onAnswer} />
+    );
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('Advisory mode — nothing is recorded');
+    screen.getByRole('textbox').focus();
+    await user.keyboard('{Alt>}a{/Alt}');
+    expect(screen.getByRole('radio', { name: 'Answer' })).toHaveAttribute('aria-checked', 'true');
+    expect(status).toHaveTextContent('Answer mode — sending records your answer');
+    expect(onAsk).not.toHaveBeenCalled();
+    expect(onAnswer).not.toHaveBeenCalled();
+  });
+
+  it('renders no Control+Enter shortcut anywhere', () => {
+    const { container } = renderWithUser(<Harness value="Fuse" mode="answer" />);
+    expect(container.innerHTML).not.toContain('Control+Enter');
+    expect(container.innerHTML).not.toContain('Ctrl+Enter');
   });
 
   it('Shift+Enter inserts a newline instead of sending', async () => {

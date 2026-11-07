@@ -61,8 +61,10 @@ const LOCKED_ICON = { queued: Lock, resolved: Check, auto: Check } as const;
 
 /**
  * Chat composer with two skins. Inputs/outputs: see `ChatComposerProps`.
- * Throws: never. Keyboard: Enter sends in the visible mode (advisory → Ask,
- * answer → Record), Control/Meta+Enter always answers, Shift+Enter newlines.
+ * Throws: never. Keyboard (design §2b.5): Enter sends in the visible mode
+ * (advisory → Ask, answer → Record), Shift+Enter newlines, Alt+A toggles the
+ * mode without sending. There is no send-as-answer shortcut: the skin says
+ * what Enter does.
  */
 export default function ChatComposer({
   value,
@@ -127,12 +129,25 @@ export default function ChatComposer({
     if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
     e.preventDefault();
     if (sendDisabled) return;
-    if (e.ctrlKey || e.metaKey || isAnswer) onAnswer();
+    if (isAnswer) onAnswer();
     else onAsk();
   }
 
+  // Alt+A flips the visible skin and sends nothing, so the next Enter still
+  // obeys the skin the user can see. Handled on the composer so it works with
+  // focus in the textarea or on a segment button.
+  function onComposerKeyDown(e: KeyboardEvent<HTMLDivElement>): void {
+    if (!e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key !== 'a' && e.key !== 'A') return;
+    e.preventDefault();
+    onModeChange(isAnswer ? 'advisory' : 'answer');
+  }
+
   return (
-    <div className={`qchat-composer ${isAnswer ? 'is-answer' : 'is-advisory'}`}>
+    <div
+      className={`qchat-composer ${isAnswer ? 'is-answer' : 'is-advisory'}`}
+      onKeyDown={onComposerKeyDown}
+    >
       <div className="qchat-modehead">
         {/* Two-position segmented control: both modes stay visible so the
             alternative is discoverable before typing. */}
@@ -227,10 +242,10 @@ export default function ChatComposer({
           type="button"
           onClick={isAnswer ? onAnswer : onAsk}
           disabled={sendDisabled}
-          aria-keyshortcuts="Enter Control+Enter"
+          aria-keyshortcuts="Enter"
           title={
             isAnswer
-              ? 'Record this as your answer — no undo (Enter or Ctrl+Enter)'
+              ? 'Record this as your answer — no undo (Enter)'
               : 'Send as a question — nothing is recorded (Enter)'
           }
           className={`qchat-send ${isAnswer ? 'is-answer' : 'is-advisory'}`}
@@ -271,12 +286,13 @@ export default function ChatComposer({
       )}
 
       <p id={`${helpId}-help`} className="sr-only">
-        Advisory sends a question to the specialist and records nothing. Answer mode records your
-        answer and cannot be undone. The mode returns to advisory after every send and when you
-        switch question. Shift plus Enter adds a line.
+        Enter sends in the selected mode. Shift plus Enter adds a line. Alt plus A switches between
+        advisory and answer.
       </p>
       <p role="status" className="sr-only">
-        {isAnswer ? 'Answer mode. Sending records your answer.' : 'Advisory mode. Nothing is recorded.'}
+        {isAnswer
+          ? 'Answer mode — sending records your answer'
+          : 'Advisory mode — nothing is recorded'}
       </p>
     </div>
   );
