@@ -172,7 +172,7 @@ describe('runResearchBackfill (core)', () => {
       return { finalResponse: RESEARCH_JSON };
     });
 
-    const result = await runResearchBackfill(gateDeps);
+    const result = await runResearchBackfill({ ...gateDeps, inFlight: new Set([researching.id]) });
     expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0, topicTagged: 1 });
     expect(maxActive).toBe(1); // for..of await — never parallel
 
@@ -277,7 +277,9 @@ describe('runResearchBackfill (core)', () => {
     const longTitle = 'Q1. ' + 'B'.repeat(100);
     const item = makeItem(stateMgr, { title: longTitle });
     const result = await runResearchBackfill(gateDeps);
-    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 0, topicTagged: 0 });
+    // The normalize pass shortens the title even before research runs, then
+    // the enrichment writes sections onto the same (already short) title.
+    expect(result).toEqual({ processed: 1, enriched: 1, normalized: 1, topicTagged: 0 });
     const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
     expect(stored.title).toBe('B'.repeat(57) + '…');
     expect(stored.meta?.originalTitle).toBe(longTitle);
@@ -301,7 +303,8 @@ describe('runResearchBackfill (core)', () => {
       title: 'Repaired question?',
       meta: { sections: completeMemo('Bluf repaired.'), originalTitle: 'O'.repeat(300) }
     });
-    // Long title WITHOUT sections but with a proposal: ineligible, untouched.
+    // Long title WITHOUT sections but with a proposal: still ineligible for
+    // research, but its title is normalized too (every question, sectioned or not).
     const plainLong = makeItem(stateMgr, {
       title: 'Proposed question?',
       meta: { proposedAnswer: { answer: 'x', sources: [], confidence: 0.5, rationale: '' } }
@@ -318,7 +321,7 @@ describe('runResearchBackfill (core)', () => {
 
     const result = await runResearchBackfill(gateDeps);
 
-    expect(result).toEqual({ processed: 0, enriched: 0, normalized: 13, topicTagged: 0 });
+    expect(result).toEqual({ processed: 0, enriched: 0, normalized: 14, topicTagged: 0 });
     // No research machinery touched the legacy items.
     expect(researchClient.chatCompletion).not.toHaveBeenCalled();
     expect(criticClient.chatCompletion).not.toHaveBeenCalled();
@@ -334,7 +337,9 @@ describe('runResearchBackfill (core)', () => {
       expect(s.meta?.sections?.bluf).toBe(`Bluf ${n + 1}.`); // sections untouched
     }
     expect(stored(repaired.id).meta?.originalTitle).toBe('O'.repeat(300));
-    expect(stored(plainLong.id).meta?.originalTitle).toBeUndefined();
+    // The section-less long title was repaired as well (short form + original kept).
+    expect(stored(plainLong.id).title).toBe('P'.repeat(57) + '…');
+    expect(stored(plainLong.id).meta?.originalTitle).toBe('P'.repeat(300));
   });
 
   it('normalize pass repairs a debris title under 200 chars (the old >200 rule skipped it)', async () => {
@@ -362,6 +367,60 @@ describe('runResearchBackfill (core)', () => {
     expect(stored.meta?.sections?.bluf).toBe('Bluf sentinel.'); // sections untouched
     // Idempotent: a second pass finds nothing damaged and rewrites nothing.
     expect((await runResearchBackfill(gateDeps)).normalized).toBe(0);
+  });
+
+  it('normalize pass repairs a debris title on a SECTION-LESS question (live damage)', async () => {
+    // The live damage: two open questions carry no sections, so the old
+    // sections-only normalize pass never touched their debris titles.
+    const debris = 'Retained RK19 hardware measurements.** Two physical-…';
+    const item = makeItem(stateMgr, {
+      title: 'Placeholder question?',
+      meta: { proposedAnswer: { answer: 'x', sources: [], confidence: 0.5, rationale: '' } }
+    });
+    const state0 = stateMgr.getState();
+    (state0.portalItems || []).find(i => i.id === item.id)!.title = debris;
+    stateMgr.saveState(state0);
+
+    const result = await runResearchBackfill(gateDeps);
+
+    expect(result.normalized).toBe(1);
+    expect(result.processed).toBe(0);
+    const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
+    expect(stored.title).toBe('Retained RK19 hardware measurements.');
+    expect(stored.meta?.originalTitle).toBe(debris); // dedupe key kept
+    expect(stored.detail).toBe(debris); // nothing lost
+    expect(stored.meta?.sections).toBeUndefined(); // no section invented
+  });
+
+  it('backfill sweep clears a stale researching flag so the item is researched again', async () => {
+    // A timed-out/hung run once left meta.researching === true forever, and
+    // listBackfillEligibleItems skips researching items — every later backfill
+    // silently ignored the question.
+    const stale = makeItem(stateMgr, { title: 'Stuck researching question?' });
+    const state0 = stateMgr.getState();
+    (state0.portalItems || []).find(i => i.id === stale.id)!.meta = { researching: true };
+    stateMgr.saveState(state0);
+
+    const result = await runResearchBackfill(gateDeps);
+
+    expect(result.processed).toBe(1);
+    expect(result.enriched).toBe(1);
+    const stored = (stateMgr.getState().portalItems || []).find(i => i.id === stale.id)!;
+    expect(stored.meta?.researching).toBe(false);
+    expect(stored.meta?.sections?.bluf).toBe('The main contactor is rated for 48V DC.');
+  });
+
+  it('backfill sweep leaves an item with a run in flight alone', async () => {
+    const busy = makeItem(stateMgr, { title: 'Stuck researching question?' });
+    const state0 = stateMgr.getState();
+    (state0.portalItems || []).find(i => i.id === busy.id)!.meta = { researching: true };
+    stateMgr.saveState(state0);
+
+    const result = await runResearchBackfill({ ...gateDeps, inFlight: new Set([busy.id]) });
+
+    expect(result.processed).toBe(0);
+    const stored = (stateMgr.getState().portalItems || []).find(i => i.id === busy.id)!;
+    expect(stored.meta?.researching).toBe(true); // untouched — a run is live
   });
 
   it('topic pass: legacy enriched items get meta.topic from the title tag WITHOUT re-researching', async () => {

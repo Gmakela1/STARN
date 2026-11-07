@@ -22,6 +22,7 @@ import {
   recoverStaleResearchingItems,
   isAutoAppliedIncorporated,
   RESEARCH_GATE_ALLOWED_TOOLS,
+  RESEARCH_GATE_MAX_TURNS,
   RESEARCH_GATE_ITEM_TIMEOUT_MS,
   ResearchGateDeps,
   ResearchAssessment,
@@ -80,6 +81,16 @@ describe('parseResearchReply', () => {
     expect(lines.some(l => l.startsWith('echoed: ') && l.includes('«'))).toBe(true);
     expect(lines.some(l => l.startsWith('echoed: ') && /settled decisions/i.test(l))).toBe(true);
     expect(research.answer).not.toContain('<<<');
+  });
+});
+
+describe('research loop budget (raised from the 6-turn / 180 s live failure)', () => {
+  it('allows 10 research turns — live items issued 8–13 tool calls', () => {
+    expect(RESEARCH_GATE_MAX_TURNS).toBe(10);
+  });
+
+  it('allows 240 s per item — live items were logged as timed out at 180 s', () => {
+    expect(RESEARCH_GATE_ITEM_TIMEOUT_MS).toBe(240_000);
   });
 });
 
@@ -173,6 +184,40 @@ describe('research gate wiring', () => {
     for (const tool of passed) {
       expect(['fs_read', 'fs_list', 'state_read', 'web_search']).toContain(tool);
     }
+  });
+
+  it('budget-exhausted loop: the forced write is retried ONCE as JSON and the answer parses', async () => {
+    const prompts: string[] = [];
+    let call = 0;
+    const client = {
+      chatCompletion: vi.fn(async (opts: any) => {
+        prompts.push(String(opts.messages[opts.messages.length - 1].content));
+        call++;
+        if (call <= RESEARCH_GATE_MAX_TURNS) {
+          // Still tool-calling: the turn budget runs out with no text reply.
+          return {
+            content: '',
+            raw: {},
+            toolCalls: [{ id: `t${call}`, type: 'function', function: { name: 'no_such_tool', arguments: '{}' } }]
+          } as ChatCompletionResult;
+        }
+        if (call === RESEARCH_GATE_MAX_TURNS + 1) {
+          // Forced write #1: prose, no JSON object → rejected.
+          return chat('Here is a summary of my findings, but no JSON.');
+        }
+        // Forced write #2 (the single retry): the JSON object → accepted.
+        return chat(GOOD_JSON);
+      })
+    };
+
+    const research = await runQuestionResearch({ ...gateDeps, client: client as any }, item);
+
+    expect(research?.answer).toContain('48V');
+    // Exactly ONE retry: maxTurns tool turns + rescue + retry.
+    expect(client.chatCompletion).toHaveBeenCalledTimes(RESEARCH_GATE_MAX_TURNS + 2);
+    expect(prompts[RESEARCH_GATE_MAX_TURNS + 1]).toBe(
+      'Return ONLY the JSON object; no tool calls, no prose, no heading'
+    );
   });
 
   it('end-to-end auto tier: research → critic auto → answer-applier path (pending append, provenance, autoApplied meta)', async () => {

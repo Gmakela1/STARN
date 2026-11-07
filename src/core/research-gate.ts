@@ -52,7 +52,13 @@ import { questionTopic, inferQuestionTopic, firstSentenceEnd, stripEchoedPrefix,
 
 /** Research-turn allow-list: reads + web research only — no write tools. */
 export const RESEARCH_GATE_ALLOWED_TOOLS = [...PREFLIGHT_ALLOWED_TOOLS] as string[];
-export const RESEARCH_GATE_MAX_TURNS = 6;
+/**
+ * Research-turn budget. Live backfill logs showed 8–13 tool calls per item
+ * against the old 6-turn budget, so nearly every item exhausted the loop and
+ * had to be rescued by a forced final write. 10 turns fits the observed call
+ * patterns.
+ */
+export const RESEARCH_GATE_MAX_TURNS = 10;
 /** Critic confidence at or above which the answer auto-applies. */
 export const AUTO_APPLY_CONFIDENCE = 0.95;
 /** Critic confidence at or above which a usable candidate is proposed (below → none). */
@@ -67,8 +73,10 @@ const SOURCE_CAP = 6;
  * Per-item wall-clock cap for a whole gate run (research turn + verifyTopSource
  * fetch + critic). A hung model call or fetch must not wedge the backfill
  * loop or intake forever — runGateWithTimeout abandons the run at this cap.
+ * Raised from 180 s: live runs with 8–13 tool calls regularly needed more than
+ * the old cap and were logged as timed out.
  */
-export const RESEARCH_GATE_ITEM_TIMEOUT_MS = 180_000;
+export const RESEARCH_GATE_ITEM_TIMEOUT_MS = 240_000;
 
 export interface QuestionResearch {
   answer: string;
@@ -316,7 +324,10 @@ If the question is a judgment call, opinion, or cannot be verified from a source
       priorMessages: [],
       signal: deps.signal,
       logger: deps.logger,
-      docId: 'research-gate'
+      docId: 'research-gate',
+      // The reply is a JSON object, not a document: a budget-exhausted loop
+      // gets one explicit JSON-only retry instead of a heading write.
+      jsonFinalReply: true
     });
     return parseResearchReply(result.finalResponse || '');
   } catch (err: any) {
@@ -991,7 +1002,7 @@ export interface ResearchBackfillResult {
   processed: number;
   /** Items that got format-v2 sections written onto meta.sections. */
   enriched: number;
-  /** Legacy enriched items (sections, wall-of-text title, no originalTitle) repaired by the normalize pass. */
+  /** Legacy enriched items (sections) AND section-less questions whose damaged title was repaired by the normalize pass. */
   normalized: number;
   /** Visible questions that gained meta.topic (parsed from the title tag) in the topic pass — no research. */
   topicTagged: number;
@@ -1013,19 +1024,29 @@ export interface ResearchBackfillResult {
  * the loop CONTINUES to the next item.
  */
 export async function runResearchBackfill(deps: ResearchBackfillDeps): Promise<ResearchBackfillResult> {
-  // Normalize pass (BEFORE eligibility filtering): items already enriched
-  // (meta.sections) pre-date the short-title rewrite when they came through
-  // the intake path — repair EVERY damaged title in place (repairTitle: markdown
-  // debris, raw newlines, leading junk, a stale trailing "…"; then the short
-  // display form) with NO research and NO section change, so the damaged titles
-  // vanish on the next Research-all click. meta.originalTitle is kept (it is the
-  // portal dedupe key) and only filled in when absent.
+  // Defensive sweep (BEFORE eligibility filtering): a researching flag with no
+  // in-flight run in this process is a tombstone left behind by a timed-out or
+  // hung run. listBackfillEligibleItems skips researching items, so without
+  // this sweep one stuck flag blocks that question from every future backfill.
+  for (const item of [...(deps.stateManager.getState().portalItems || [])]) {
+    if (item.type !== 'question' || item.meta?.researching !== true) continue;
+    if (deps.inFlight?.has(item.id)) continue;
+    setItemResearching(deps.stateManager, item.id, false);
+  }
+
+  // Normalize pass (BEFORE eligibility filtering): repair EVERY question's
+  // damaged title in place (repairTitle: markdown debris, raw newlines, leading
+  // junk, a stale trailing "…"; then the short display form) — with sections
+  // or without, so a section-less question cannot keep a debris title — with NO
+  // research and NO section change, so the damaged titles vanish on the next
+  // Research-all click. meta.originalTitle is kept (it is the portal dedupe
+  // key) and only filled in when absent.
   // Title repair and research eligibility are separate concerns: this pass
   // writes NO sections, so an old-format memo (no options) stays eligible for
   // re-research below no matter how its title is repaired here.
   let normalized = 0;
   for (const item of deps.stateManager.getState().portalItems || []) {
-    if (item.type !== 'question' || item.status === 'dismissed' || !item.meta?.sections) continue;
+    if (item.type !== 'question' || item.status === 'dismissed') continue;
     // rewriteShortTitle applies repairTitle and re-derives an ellipsis-cut
     // title from meta.originalTitle, so every damage shape lands here and a
     // clean title is a no-op (no save, no count) — idempotent by construction.

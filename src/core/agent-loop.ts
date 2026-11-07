@@ -1,3 +1,13 @@
+/**
+ * Generic budgeted tool loop: model ↔ tool registry for `maxTurns` turns, plus
+ * a budget-exhaustion rescue that makes one final no-tools call so a document
+ * (or JSON reply) is never lost.
+ *
+ * Inputs: AgentLoopOptions (client, model, prompts, registry, allow-list,
+ * context). Output: AgentLoopResult (finalResponse, messages, turn and
+ * tool-call counts, aborted flag). Throws only a non-abort client/tool error;
+ * an ESC abort returns `aborted: true` instead.
+ */
 import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { ToolExecutionContext } from '../tools/types.js';
@@ -19,6 +29,13 @@ export interface AgentLoopOptions {
   logger?: Logger;
   /** Doc id used in budget-exhaustion log lines (e.g. 'bom'). */
   docId?: string;
+  /**
+   * True when the loop's final reply is a JSON OBJECT (research gate) rather
+   * than a document. The budget-exhaustion rescue then accepts a reply that
+   * carries a JSON object, and a rescue reply without one is retried ONCE with
+   * an explicit JSON-only instruction before it is discarded.
+   */
+  jsonFinalReply?: boolean;
 }
 
 export interface AgentLoopResult {
@@ -119,10 +136,9 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
   }
 
   // Budget-exhaustion rescue: the loop ended because the turn budget ran out
-  // while the model was still tool-calling, so finalResponse is empty. Make ONE
-  // final model call with tools disabled so the model must deliver the document
-  // as its plain-text reply. Normal loop endings (a plain-text reply) are
-  // untouched.
+  // while the model was still tool-calling, so finalResponse is empty. Make a
+  // final model call with tools disabled so the model must deliver its reply as
+  // plain text. Normal loop endings (a plain-text reply) are untouched.
   if (finalResponse === '' && endedWithToolCalls) {
     const rescueInstruction =
       'Stop using tools. Write the complete document now as your final reply with a # heading. Do not call any tools.';
@@ -130,19 +146,30 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
       `Agent loop budget exhausted for ${options.docId ?? 'unknown-doc'}: ` +
       `${turn}/${maxTurns} turns, ${toolCallCount} tool calls. Forcing a final no-tools write.`
     );
-    messages.push({ role: 'user', content: rescueInstruction });
-    try {
-      // Tools intentionally omitted: this call must not execute any tools.
+    // One rescue request; tools intentionally omitted so none can execute.
+    const sendRescue = async (instruction: string): Promise<string> => {
+      messages.push({ role: 'user', content: instruction });
       const rescue = await client.chatCompletion({ model, messages, signal });
-      const rescueText = rescue.content || '';
-      if (/^#\s/m.test(rescueText)) {
+      const text = rescue.content || '';
+      messages.push({ role: 'assistant', content: text });
+      return text;
+    };
+    try {
+      let rescueText = await sendRescue(rescueInstruction);
+      if (options.jsonFinalReply && !/\{[\s\S]*\}/.test(rescueText)) {
+        // A heading-shaped rescue is the wrong reply for a JSON loop: retry
+        // ONCE with an explicit JSON-only instruction before giving up.
+        rescueText = await sendRescue('Return ONLY the JSON object; no tool calls, no prose, no heading');
+      }
+      const accepted = options.jsonFinalReply ? /\{[\s\S]*\}/.test(rescueText) : /^#\s/m.test(rescueText);
+      if (accepted) {
         finalResponse = rescueText;
       } else {
         options.logger?.warn(
-          `Forced final write for ${options.docId ?? 'unknown-doc'} produced no # heading; keeping empty finalResponse.`
+          `Forced final write for ${options.docId ?? 'unknown-doc'} produced no ` +
+          `${options.jsonFinalReply ? 'JSON object' : '# heading'}; keeping empty finalResponse.`
         );
       }
-      messages.push({ role: 'assistant', content: rescueText });
     } catch (err: any) {
       if (err?.name === 'AbortError' || signal?.aborted) {
         return { finalResponse: '', messages, aborted: true, toolCallCount, turnsUsed: turn };
