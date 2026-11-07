@@ -74,6 +74,79 @@ export const portalModule: RouteModule = {
       }
     }
 
+    // Conclude from chat: ONE read-only turn drafts a proposed answer row. No
+    // body; the item id and its thread are the whole input.
+    if (segments[1] === 'portal' && segments.length === 4 && segments[3] === 'conclude-thread' && method === 'POST') {
+      const itemId = decodeURIComponent(segments[2]);
+      const session = deps.session;
+      if (!session) return fail(res, 503, 'No active session');
+      try {
+        const item = await session.concludeThread(itemId);
+        return ok(res, { item });
+      } catch (err: any) {
+        const message = err?.message ?? String(err);
+        if (message.includes('not found')) return fail(res, 404, message);
+        if (
+          message.includes('in progress') ||
+          message.includes('open question items') ||
+          message.includes('No specialist reply')
+        ) {
+          return fail(res, 409, message);
+        }
+        return fail(res, 500, message);
+      }
+    }
+
+    if (
+      segments[1] === 'portal' &&
+      segments.length === 4 &&
+      segments[3] === 'confirm-thread-proposal' &&
+      method === 'POST'
+    ) {
+      const itemId = decodeURIComponent(segments[2]);
+      const body = await readJsonBody(req);
+      const proposalTs = Number(body?.ts);
+      if (!Number.isFinite(proposalTs)) return fail(res, 400, 'Missing "ts"');
+      const edited = typeof body?.answer === 'string' ? body.answer.trim() : '';
+      if (edited.length > 4096) return fail(res, 400, 'Answer too long (max 4096 chars)');
+      const session = deps.session;
+      if (!session) return fail(res, 503, 'No active session');
+      try {
+        const item = await session.confirmThreadProposal(itemId, proposalTs, edited || undefined);
+        return ok(res, { item });
+      } catch (err: any) {
+        const message = err?.message ?? String(err);
+        if (message.includes('not found') || message.includes('No thread proposal')) return fail(res, 404, message);
+        if (message.includes('no longer pending') || message.includes('no longer open') || message.includes('No answer text')) {
+          return fail(res, 409, message);
+        }
+        return fail(res, 500, message);
+      }
+    }
+
+    if (
+      segments[1] === 'portal' &&
+      segments.length === 4 &&
+      segments[3] === 'reject-thread-proposal' &&
+      method === 'POST'
+    ) {
+      const itemId = decodeURIComponent(segments[2]);
+      const body = await readJsonBody(req);
+      const proposalTs = Number(body?.ts);
+      if (!Number.isFinite(proposalTs)) return fail(res, 400, 'Missing "ts"');
+      const session = deps.session;
+      if (!session) return fail(res, 503, 'No active session');
+      try {
+        const item = await session.rejectThreadProposal(itemId, proposalTs);
+        return ok(res, { item });
+      } catch (err: any) {
+        const message = err?.message ?? String(err);
+        if (message.includes('not found') || message.includes('No thread proposal')) return fail(res, 404, message);
+        if (message.includes('no longer pending')) return fail(res, 409, message);
+        return fail(res, 500, message);
+      }
+    }
+
     if (segments[1] === 'portal' && segments.length === 4 && segments[3] === 'answer' && method === 'POST') {
       const itemId = decodeURIComponent(segments[2]);
       const body = await readJsonBody(req);

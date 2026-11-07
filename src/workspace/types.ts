@@ -118,6 +118,8 @@ export interface PortalThreadMessage {
     status: 'pending' | 'accepted' | 'rejected' | 'superseded';
     /** Messages the draft was built from ("Based on 4 messages"). */
     basedOn: number;
+    /** The drafted answer text the user accepts or edits. */
+    text: string;
     /** Set when the user used Edit. */
     editedText?: string;
   };

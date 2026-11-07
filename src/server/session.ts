@@ -49,6 +49,16 @@ const THREAD_REPLY_CHAR_CAP = 2000;
 const THREAD_MAX_TURNS = 3;
 /** Thread-turn allow-list: reads only — NO write tools ever, NO web_search for v1. */
 const THREAD_ALLOWED_TOOLS = ['fs_read', 'fs_list', 'state_read'] as const;
+/** Conclude-from-chat proposal answer cap (chars) — one short paragraph. */
+const CONCLUDE_ANSWER_CHAR_CAP = 400;
+/** Conclude turn: the reply markers the parser below reads back. */
+const CONCLUDE_ANSWER_MARKER = 'PROPOSED ANSWER:';
+const CONCLUDE_RATIONALE_MARKER = 'RATIONALE:';
+/** Conclude turn output contract (parsed back in runConcludeTurn). */
+const CONCLUDE_INSTRUCTION = `CONCLUDE THIS CONVERSATION: draft the answer the user should record for this open question.
+Reply with exactly two labelled blocks and nothing else:
+${CONCLUDE_ANSWER_MARKER} <one paragraph, <=400 characters, plain text>
+${CONCLUDE_RATIONALE_MARKER} <one line saying why this answer follows from the conversation>`;
 /**
  * Appended to the answering specialist's own system prompt. The specialist
  * prompt carries drafting/file-writing mandates; this directive overrides
@@ -56,7 +66,9 @@ const THREAD_ALLOWED_TOOLS = ['fs_read', 'fs_list', 'state_read'] as const;
  */
 export const ADVISORY_SYSTEM_DIRECTIVE = `ADVISORY TURN OVERRIDE (ADVICE ONLY — NOT A DRAFTING TURN):
 The drafting instructions in your system prompt (write files, produce a document, Open Questions section) DO NOT apply to this turn. Do NOT call fs_write, fs_edit or state_update.
-You are answering a user's clarifying question about an open question. ADVISE ONLY: never draft or edit documents. Answer from the project docs, recorded decisions, and prior research. Be concise (<=150 words). If unsure, say what would resolve it. Your final reply is PLAIN TEXT only — no headings, no markdown fences.`;
+You are answering a user's clarifying question about an open question. ADVISE ONLY: never draft or edit documents. Answer from the project docs, recorded decisions, and prior research. Be concise (<=150 words). If unsure, say what would resolve it. Your final reply is PLAIN TEXT only — no headings, no markdown fences.
+NOTHING IS RECORDED YET: an advisory reply records no decision. End EVERY reply with this exact sentence: "Nothing is recorded yet — send it as your answer, or use Conclude from chat."
+NEVER write "Decision confirmed" and NEVER claim or imply that a decision was recorded, accepted or saved — only the user's answer (or Conclude from chat) records anything.`;
 
 export interface SessionDeps {
   projectPath: string;
@@ -752,20 +764,31 @@ export class ServerSessionManager {
   private readonly threadInFlight = new Set<string>();
 
   /**
-   * Appends one thread message to a portal item: synchronous read-fresh →
-   * mutate → save (atomic vs other async work in this process). Trims past
-   * THREAD_MESSAGE_CAP via the pure core rule (keeps the first row and every
-   * `recorded`/`proposal` row). Returns null when the item no longer exists.
+   * Mutates one item's thread rows: synchronous read-fresh → mutate → save
+   * (atomic vs other async work in this process). Returns null when the item
+   * no longer exists. Trimming is the caller's business (appendThreadMessage).
    */
-  private appendThreadMessage(itemId: string, message: PortalThreadMessage): PortalItem | null {
+  private mutateThread(
+    itemId: string,
+    mutate: (rows: PortalThreadMessage[]) => PortalThreadMessage[]
+  ): PortalItem | null {
     const state = this.deps.stateManager.getState();
     const item = (state.portalItems || []).find(i => i.id === itemId);
     if (!item) return null;
     const prior = Array.isArray(item.meta?.thread) ? item.meta!.thread : [];
-    item.meta = { ...(item.meta || {}), thread: appendThreadRow(prior, message) };
+    item.meta = { ...(item.meta || {}), thread: mutate(prior) };
     item.updatedAt = new Date().toISOString();
     this.deps.stateManager.saveState(state);
     return item;
+  }
+
+  /**
+   * Appends one thread message to a portal item. Trims past
+   * THREAD_MESSAGE_CAP via the pure core rule (keeps the first row and every
+   * `recorded`/`proposal` row). Returns null when the item no longer exists.
+   */
+  private appendThreadMessage(itemId: string, message: PortalThreadMessage): PortalItem | null {
+    return this.mutateThread(itemId, rows => appendThreadRow(rows, message));
   }
 
   /** Specialist package for the item's doc (docs/CONOPS.md → 'conops'); general fallback. */
@@ -838,8 +861,11 @@ export class ServerSessionManager {
    * turn on the SAME item while one is in flight throws (route maps to 409);
    * different items and chain turns are independent. Throws on
    * item-not-found / non-open / non-question items.
+   *
+   * `intent` 'ask' (default) is the unchanged advisory path; 'answer' marks the
+   * persisted user row `intent:'answer'` and is otherwise identical.
    */
-  async postThreadMessage(itemId: string, text: string): Promise<PortalItem> {
+  async postThreadMessage(itemId: string, text: string, intent: 'ask' | 'answer' = 'ask'): Promise<PortalItem> {
     const state = this.deps.stateManager.getState();
     const item = (state.portalItems || []).find(i => i.id === itemId);
     if (!item) throw new Error(`Portal item not found: ${itemId}`);
@@ -851,7 +877,12 @@ export class ServerSessionManager {
     }
     this.threadInFlight.add(itemId);
     try {
-      this.appendThreadMessage(itemId, { role: 'user', text, ts: Date.now() });
+      this.appendThreadMessage(itemId, {
+        role: 'user',
+        text,
+        ts: Date.now(),
+        ...(intent === 'answer' ? { intent } : {})
+      });
       const fresh = (this.deps.stateManager.getState().portalItems || []).find(i => i.id === itemId)!;
       const reply = await this.runAdvisoryTurn(fresh);
       if (reply) {
@@ -866,6 +897,199 @@ export class ServerSessionManager {
       this.threadInFlight.delete(itemId);
     }
   }
+
+  /**
+   * One read-only conclude turn over the whole thread: asks the specialist for
+   * a short proposed answer + a one-line rationale (same allow-list and turn
+   * budget as the advisory turn) and parses them back out of the reply.
+   * Returns null when nothing usable came back; throws only on abort.
+   */
+  private async runConcludeTurn(
+    item: PortalItem,
+    history: PortalThreadMessage[]
+  ): Promise<{ answer: string; rationale: string } | null> {
+    const specialist = this.specialistForDoc(item.docPath);
+    // Proposal rows are drafts, not conversation — excluded from the transcript.
+    const transcript = history
+      .filter(m => m.kind !== 'proposal')
+      .map(m => {
+        if (m.role !== 'user') return `Specialist: ${m.text}`;
+        return m.kind === 'recorded' ? `User (recorded answer): ${m.text}` : `User: ${m.text}`;
+      })
+      .join('\n');
+    const userMessage = [
+      `OPEN QUESTION: ${item.title}`,
+      item.meta?.proposedAnswer ? `RESEARCH PROPOSAL: ${item.meta.proposedAnswer.answer}` : '',
+      `THREAD (oldest first):\n${transcript}`,
+      CONCLUDE_INSTRUCTION
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+    try {
+      const { runAgentToolLoop } = await import('../core/agent-loop.js');
+      const result = await runAgentToolLoop({
+        client: this.roleClients.drafting.client,
+        model: this.roleClients.drafting.model,
+        systemPrompt: `${specialist.systemPrompt}\n\n${ADVISORY_SYSTEM_DIRECTIVE}`,
+        userMessage,
+        toolRegistry: this.deps.toolRegistry,
+        allowedTools: [...THREAD_ALLOWED_TOOLS],
+        context: { projectPath: this.deps.projectPath, stateManager: this.deps.stateManager },
+        maxTurns: THREAD_MAX_TURNS,
+        priorMessages: [],
+        logger: this.deps.logger,
+        docId: 'conclude-thread'
+      });
+      const reply = (result.finalResponse || '')
+        .split('\n')
+        .map(sanitizeResearchLine)
+        .join('\n')
+        .trim();
+      if (!reply) return null;
+      const rationaleIdx = reply.search(/RATIONALE:/i);
+      const answerRaw = rationaleIdx >= 0 ? reply.slice(0, rationaleIdx) : reply;
+      const rationaleRaw = rationaleIdx >= 0 ? reply.slice(rationaleIdx) : '';
+      const answer = answerRaw
+        .replace(/PROPOSED ANSWER:/i, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, CONCLUDE_ANSWER_CHAR_CAP);
+      if (!answer) return null;
+      const rationale = rationaleRaw
+        .replace(/^RATIONALE:\s*/i, '')
+        .split('\n')[0]
+        .replace(/\s+/g, ' ')
+        .trim();
+      return { answer, rationale };
+    } catch (err: any) {
+      if (err?.name === 'AbortError') throw err; // ESC must abort, not degrade silently.
+      this.deps.logger?.warn(`Conclude turn failed for item ${item.id}: ${err?.message || err}`);
+      return null;
+    }
+  }
+
+  /**
+   * Concludes an open question's conversation: ONE read-only turn drafts a
+   * short proposed answer + rationale, appended as a pending `kind:'proposal'`
+   * row (any earlier pending proposal flips to 'superseded'). Never writes a
+   * doc — only confirmThreadProposal records. Throws on item-not-found /
+   * non-open / no-specialist-reply / in-flight (route maps the codes).
+   */
+  async concludeThread(itemId: string): Promise<PortalItem> {
+    const state = this.deps.stateManager.getState();
+    const item = (state.portalItems || []).find(i => i.id === itemId);
+    if (!item) throw new Error(`Portal item not found: ${itemId}`);
+    if (item.type !== 'question' || item.status !== 'open') {
+      throw new Error('Thread is only available on open question items');
+    }
+    if (this.threadInFlight.has(itemId)) {
+      throw new Error(`An advisory reply is already in progress for this item: ${itemId}`);
+    }
+    const history = (Array.isArray(item.meta?.thread) ? item.meta!.thread : []) as PortalThreadMessage[];
+    // A concluded draft needs at least one real specialist reply (proposal
+    // rows are drafts, not replies).
+    if (!history.some(m => m.role === 'specialist' && (m.kind ?? 'message') === 'message')) {
+      throw new Error('No specialist reply in this thread to conclude');
+    }
+    this.threadInFlight.add(itemId);
+    try {
+      const turn = await this.runConcludeTurn(item, history);
+      if (!turn) throw new Error('The specialist produced no usable proposal — try again');
+      const basedOn = history.filter(m => (m.kind ?? 'message') === 'message').length;
+      const updated = this.mutateThread(itemId, rows =>
+        appendThreadRow(
+          rows.map(r =>
+            r.kind === 'proposal' && r.proposal?.status === 'pending'
+              ? { ...r, proposal: { ...r.proposal!, status: 'superseded' as const } }
+              : r
+          ),
+          {
+            role: 'specialist',
+            text: turn.rationale || 'Drafted from the conversation above.',
+            ts: Date.now(),
+            kind: 'proposal',
+            proposal: { status: 'pending', basedOn, text: turn.answer }
+          }
+        )
+      );
+      this.publish({ kind: 'status', message: 'Proposed answer drafted from the conversation' });
+      return updated ?? item;
+    } finally {
+      this.threadInFlight.delete(itemId);
+    }
+  }
+
+  /**
+   * Records an accepted thread proposal as the item's answer through the SAME
+   * core applier the answer queue drains (applyAnswer), then flips the row to
+   * 'accepted' and appends the `kind:'recorded'` row. `editedText` wins over
+   * the drafted text. Throws on item-not-found / unknown ts / not-pending /
+   * item-no-longer-open (route maps the codes).
+   */
+  async confirmThreadProposal(itemId: string, proposalTs: number, editedText?: string): Promise<PortalItem> {
+    const state = this.deps.stateManager.getState();
+    const item = (state.portalItems || []).find(i => i.id === itemId);
+    if (!item) throw new Error(`Portal item not found: ${itemId}`);
+    const row = (Array.isArray(item.meta?.thread) ? item.meta!.thread : []).find(
+      r => r.kind === 'proposal' && r.ts === proposalTs
+    );
+    if (!row) throw new Error(`No thread proposal at ts ${proposalTs} for item ${itemId}`);
+    if (row.proposal?.status !== 'pending') {
+      throw new Error(`Thread proposal is no longer pending (${row.proposal?.status ?? 'unknown'})`);
+    }
+    const edited = (editedText ?? '').trim();
+    const finalText = edited || row.proposal.text;
+    if (!finalText) throw new Error('No answer text to record');
+    // Same pipeline as POST /api/portal/:id/answer (queue → applyAnswer); no
+    // duplicated doc/portal/incorporation logic here.
+    await applyAnswer(this.answerApplierDeps(), itemId, finalText);
+    const updated = this.mutateThread(itemId, rows => {
+      const next = rows.map(r =>
+        r.kind === 'proposal' && r.ts === proposalTs
+          ? {
+              ...r,
+              proposal: { ...r.proposal!, status: 'accepted' as const, ...(edited ? { editedText: edited } : {}) }
+            }
+          : r
+      );
+      return appendThreadRow(next, {
+        role: 'user',
+        intent: 'answer',
+        kind: 'recorded',
+        text: finalText,
+        ts: Date.now()
+      });
+    });
+    this.publish({ kind: 'status', message: 'Proposed answer recorded' });
+    return updated ?? item;
+  }
+
+  /**
+   * Rejects a pending thread proposal: flips the row to 'rejected' and records
+   * nothing (no doc write, no answer). Throws on item-not-found / unknown ts /
+   * not-pending (route maps the codes).
+   */
+  async rejectThreadProposal(itemId: string, proposalTs: number): Promise<PortalItem> {
+    const state = this.deps.stateManager.getState();
+    const item = (state.portalItems || []).find(i => i.id === itemId);
+    if (!item) throw new Error(`Portal item not found: ${itemId}`);
+    const row = (Array.isArray(item.meta?.thread) ? item.meta!.thread : []).find(
+      r => r.kind === 'proposal' && r.ts === proposalTs
+    );
+    if (!row) throw new Error(`No thread proposal at ts ${proposalTs} for item ${itemId}`);
+    if (row.proposal?.status !== 'pending') {
+      throw new Error(`Thread proposal is no longer pending (${row.proposal?.status ?? 'unknown'})`);
+    }
+    const updated = this.mutateThread(itemId, rows =>
+      rows.map(r =>
+        r.kind === 'proposal' && r.ts === proposalTs
+          ? { ...r, proposal: { ...r.proposal!, status: 'rejected' as const } }
+          : r
+      )
+    );
+    return updated ?? item;
+  }
+
   autopilotResume(docId?: string): void {
     // Prevent double-start: if already running, reject.
     const st = this.deps.stateManager.getState();
