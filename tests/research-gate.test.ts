@@ -11,6 +11,8 @@ import {
   runResearchGate,
   runGateWithTimeout,
   rewriteShortTitle,
+  repairTitle,
+  writeItemSections,
   enrichItem,
   ensureItemTopic,
   assessResearch,
@@ -553,6 +555,105 @@ describe('research gate wiring', () => {
       expect(stripped.startsWith(stem)).toBe(true);
       expect(stripped[stem.length]).toBe(' ');
       expect(stored.meta?.originalTitle).toBe(original);
+    });
+  });
+
+  describe('damaged-title repair (repairTitle / needsTitleRepair)', () => {
+    it('strips markdown debris, the stale trailing ellipsis and its dangling fragment', () => {
+      expect(repairTitle('Lithium-ion sub-chemistry and module architecture.** Lith…')).toBe(
+        'Lithium-ion sub-chemistry and module architecture.'
+      );
+    });
+
+    it('collapses a raw newline into one space', () => {
+      expect(repairTitle('Main bus\nvoltage decision?')).toBe('Main bus voltage decision?');
+    });
+
+    it('strips leading / - — . ) : junk', () => {
+      expect(repairTitle('/ BOM Q8 voltage conflict')).toBe('BOM Q8 voltage conflict');
+      expect(repairTitle('— . ) : Which fuse?')).toBe('Which fuse?');
+    });
+
+    it('strips backticks and drops the trailing ellipsis', () => {
+      expect(repairTitle('Pack `Ah` sizing…')).toBe('Pack Ah sizing');
+    });
+
+    it('leaves a clean title unchanged', () => {
+      expect(repairTitle('What is the main contactor voltage rating?')).toBe(
+        'What is the main contactor voltage rating?'
+      );
+    });
+
+    it('cuts an over-120-char title at the first sentence boundary', () => {
+      const debris =
+        'Continuous-duty load vs. ICD-E-01 continuous current rating (pack sizing reconciliation).** The derived continuous load exceeds the 120 A baseline.';
+      expect(debris.length).toBeGreaterThan(120);
+      expect(repairTitle(debris)).toBe(
+        'Continuous-duty load vs. ICD-E-01 continuous current rating (pack sizing reconciliation).'
+      );
+    });
+
+    it('treats a leading "Qn." numbering prefix as numbering, not a sentence end', () => {
+      const numbered = `Q10. ${'B'.repeat(200)} charging question?`;
+      expect(repairTitle(numbered).startsWith('Q10. BBBB')).toBe(true);
+      expect(repairTitle(numbered).length).toBe(numbered.length);
+    });
+
+    it('repairs every damage shape and spares a clean title', () => {
+      const damaged: Array<[string, string]> = [
+        ['Lithium-ion sub-chemistry and module architecture.** Lith…', 'Lithium-ion sub-chemistry and module architecture.'],
+        ['Main bus\nvoltage decision?', 'Main bus voltage decision?'],
+        ['/ BOM Q8 voltage conflict', 'BOM Q8 voltage conflict'],
+        ['Pack `Ah` sizing', 'Pack Ah sizing'],
+        ['Garage branch circuit rating (15 A vs. 20 A).** ICD-E-04', 'Garage branch circuit rating (15 A vs. 20 A). ICD-E-04']
+      ];
+      for (const [before, after] of damaged) expect(repairTitle(before)).toBe(after);
+      expect(repairTitle('What is the main contactor voltage rating?')).toBe(
+        'What is the main contactor voltage rating?'
+      );
+    });
+
+    it('rewriteShortTitle repairs a debris title instead of shortening it mid-word', () => {
+      const debris = 'Lithium-ion sub-chemistry and module architecture.** Lith…';
+      const item = makeItem(stateMgr, { title: debris });
+      expect(rewriteShortTitle(stateMgr, item.id)).toBe(true);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
+      expect(stored.title).toBe('Lithium-ion sub-chemistry and module architecture.');
+      expect(stored.meta?.originalTitle).toBe(debris);
+    });
+
+    it('re-derives a mid-word ellipsis title from meta.originalTitle', () => {
+      // The live damage: a previous word cut left a mid-word "…" while the
+      // untrimmed header still sits on meta.originalTitle.
+      const originalTitle =
+        'ME1115 mounting bolt-circle discrepancy.** ICD-M-01 specifies 4x 3/8-16 UNC face holes on a 4.75 in bolt circle, while the ME1115 Rev A drawing shows a different pattern.';
+      const item = makeItem(stateMgr, {
+        title: 'ME1115 mounting bolt-circle discrepancy.** ICD-M-01 speci…',
+        meta: { originalTitle }
+      });
+      expect(rewriteShortTitle(stateMgr, item.id)).toBe(true);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
+      expect(stored.title).toBe('ME1115 mounting bolt-circle discrepancy.');
+      expect(stored.meta?.originalTitle).toBe(originalTitle);
+      // Idempotent: the re-derived title is stable.
+      expect(rewriteShortTitle(stateMgr, item.id)).toBe(false);
+    });
+
+    it('writeItemSections strips a leaked "echoed: " prefix from every section text', () => {
+      const item = makeItem(stateMgr);
+      expect(
+        writeItemSections(stateMgr, item.id, {
+          bluf: 'echoed: Use the 50/50 glycol loop.',
+          findings: 'Echoed: The datasheet confirms compatibility.',
+          suggestion: 'Glycol 50/50.',
+          defer: 'echoed: Blocks the pump BOM line.'
+        })
+      ).toBe(true);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
+      expect(stored.meta?.sections?.bluf).toBe('Use the 50/50 glycol loop.');
+      expect(stored.meta?.sections?.findings).toBe('The datasheet confirms compatibility.');
+      expect(stored.meta?.sections?.defer).toBe('Blocks the pump BOM line.');
+      expect(stored.meta?.sections?.suggestion).toBe('Glycol 50/50.');
     });
   });
 

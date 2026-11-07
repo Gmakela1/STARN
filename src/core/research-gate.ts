@@ -48,7 +48,7 @@ import {
 } from './research-preflight.js';
 import { PENDING_INCORPORATION_MARKER } from './incorporation-prompt.js';
 import type { QuestionSections } from './open-questions-parser.js';
-import { questionTopic, inferQuestionTopic, firstSentenceEnd } from './open-questions-parser.js';
+import { questionTopic, inferQuestionTopic, firstSentenceEnd, stripEchoedPrefix } from './open-questions-parser.js';
 
 /** Research-turn allow-list: reads + web research only — no write tools. */
 export const RESEARCH_GATE_ALLOWED_TOOLS = [...PREFLIGHT_ALLOWED_TOOLS] as string[];
@@ -149,9 +149,10 @@ const SHORT_TITLE_BOUNDARY_WINDOW = 120;
  * firstSentenceEnd (so "No. 6 AWG" / "e.g. " / "i.e. " / "vs. " never cut) —
  * so a header written as one full question keeps that question whole instead
  * of being truncated mid-sentence. When no sentence boundary exists in that
- * window, the title is truncated at a word boundary near
- * SHORT_TITLE_CHAR_CAP (never mid-word, unless the head contains no space at
- * all) and marked with an ellipsis.
+ * window, a title that already IS one complete sentence (ends with `.`, `?`
+ * or `!`) and fits that window is kept whole; otherwise the title is truncated
+ * at a word boundary near SHORT_TITLE_CHAR_CAP (never mid-word, unless the
+ * head contains no space at all) and marked with an ellipsis.
  *
  * @param title - the stored question title (may carry a "Qn. " prefix)
  * @returns the short display title — never longer than
@@ -163,10 +164,51 @@ export function shortResearchTitle(title: string): string {
   if (stripped.length <= SHORT_TITLE_CHAR_CAP) return stripped;
   const end = firstSentenceEnd(stripped, SHORT_TITLE_BOUNDARY_WINDOW);
   if (end >= 0) return stripped.slice(0, end + 1);
+  // A complete sentence that fits the window is coherent as-is — keep it whole.
+  if (stripped.length <= SHORT_TITLE_BOUNDARY_WINDOW && /[.!?]$/.test(stripped)) return stripped;
   const head = stripped.slice(0, SHORT_TITLE_CHAR_CAP);
   const lastSpace = head.lastIndexOf(' ');
   const stem = lastSpace > 0 ? head.slice(0, lastSpace) : stripped.slice(0, SHORT_TITLE_CHAR_CAP - 3);
   return `${stem}…`;
+}
+
+/** Char cap above which a repaired title is cut at its first sentence boundary. */
+const TITLE_REPAIR_CHAR_CAP = 120;
+
+/**
+ * Repairs a damaged stored question title into plain coherent text: every
+ * `*`/backtick char removed, whitespace and newlines collapsed to single
+ * spaces, leading `/ - — . ) :` junk stripped, a trailing "…" (left by an
+ * earlier truncation) dropped, and — when the result still exceeds
+ * TITLE_REPAIR_CHAR_CAP chars — cut at the first sentence boundary via the
+ * shared abbreviation-safe firstSentenceEnd. A title that WAS truncated with
+ * "…" also loses the dangling fragment after its last complete sentence (the
+ * truncated word is unrecoverable). A clean title comes back unchanged.
+ *
+ * @param title - the stored question title, in any damage shape
+ * @returns the repaired title, never containing markdown or newlines
+ */
+export function repairTitle(title: string): string {
+  const truncated = /…\s*$/.test(title);
+  let text = title
+    .replace(/[*`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[\/\-—.):\s]+/, '')
+    .replace(/…+$/, '')
+    .trim();
+  if (truncated) {
+    const end = firstSentenceEnd(text, text.length);
+    if (end >= 0 && end + 1 < text.length) text = text.slice(0, end + 1).trim();
+  }
+  if (text.length > TITLE_REPAIR_CHAR_CAP) {
+    // A leading "Qn." numbering prefix is not a sentence boundary — scan past it.
+    const numbering = /^Q\d+[.:)]\s*/i.exec(text)?.[0] ?? '';
+    const body = text.slice(numbering.length);
+    const end = firstSentenceEnd(body, body.length);
+    if (end >= 0) text = `${numbering}${body.slice(0, end + 1)}`.trim();
+  }
+  return text;
 }
 
 /**
@@ -741,10 +783,28 @@ export function buildQuestionSections(
 }
 
 /**
+ * Drops the leaked research-sanitizer "echoed: " prefix from every section
+ * text (BLUF / findings / suggestion / alternatives / defer) at persist time,
+ * so the user never sees it.
+ *
+ * @param sections - the sections about to be persisted
+ * @returns a copy with the prefixes stripped
+ */
+function stripEchoedSections(sections: QuestionSections): QuestionSections {
+  const cleaned: QuestionSections = { ...sections };
+  for (const key of ['bluf', 'findings', 'suggestion', 'alternatives', 'defer'] as const) {
+    const value = cleaned[key];
+    if (value) cleaned[key] = stripEchoedPrefix(value);
+  }
+  return cleaned;
+}
+
+/**
  * Merges format-v2 sections into meta.sections on a portal item (atomic
  * read-fresh → mutate → save). Open and answered items are written (a
  * dismissed item is left alone); a stale researching flag is cleared on the
- * way. Returns false when the item vanished or was dismissed.
+ * way; a leaked "echoed: " prefix is stripped from every section text. Returns
+ * false when the item vanished or was dismissed.
  */
 export function writeItemSections(
   stateManager: ProjectStateManager,
@@ -754,7 +814,7 @@ export function writeItemSections(
   const state = stateManager.getState();
   const item = (state.portalItems || []).find(i => i.id === itemId);
   if (!item || item.status === 'dismissed') return false;
-  item.meta = { ...(item.meta || {}), researching: false, sections };
+  item.meta = { ...(item.meta || {}), researching: false, sections: stripEchoedSections(sections) };
   stateManager.saveState(state);
   return true;
 }
@@ -807,9 +867,12 @@ export function ensureItemTopic(
 }
 
 /**
- * Rewrites a portal item's wall-of-text title to the short display form
- * (shortResearchTitle: cut at the first sentence boundary inside the first 120
- * chars, else word-truncated) once the format-v2 sections are written,
+ * Rewrites a portal item's wall-of-text or damaged title to the short display
+ * form (repairTitle first — markdown, newlines, leading junk and a stale
+ * trailing "…" removed — then shortResearchTitle: cut at the first sentence
+ * boundary inside the first 120 chars, else word-truncated) once the format-v2
+ * sections are written, re-deriving an ellipsis-cut title from
+ * meta.originalTitle when the untrimmed header is still there,
  * persisting the dedupe key in meta.originalTitle and — when the item has no
  * detail — mirroring the full original text into item.detail so the panel body
  * keeps the complete question (no information lost by shortening). Only
@@ -823,7 +886,11 @@ export function rewriteShortTitle(stateManager: ProjectStateManager, itemId: str
   const state = stateManager.getState();
   const item = (state.portalItems || []).find(i => i.id === itemId);
   if (!item || item.status === 'dismissed') return false;
-  const short = shortResearchTitle(item.title);
+  // An ellipsis-cut title is a LOSSY display form: when the untrimmed header is
+  // still on meta.originalTitle, re-derive from it (a mid-word cut becomes the
+  // whole first sentence). Otherwise repair the stored title in place.
+  const source = item.title.endsWith('…') && item.meta?.originalTitle ? item.meta.originalTitle : item.title;
+  const short = shortResearchTitle(repairTitle(source));
   if (short === item.title) return false;
   const original = item.title;
   // Keep a caller-supplied originalTitle (the parser's raw header): the
@@ -892,17 +959,17 @@ export interface ResearchBackfillResult {
 export async function runResearchBackfill(deps: ResearchBackfillDeps): Promise<ResearchBackfillResult> {
   // Normalize pass (BEFORE eligibility filtering): items already enriched
   // (meta.sections) pre-date the short-title rewrite when they came through
-  // the intake path — repair them in place (short title + originalTitle +
-  // detail mirror) with NO research and NO section change, so the legacy
-  // wall-of-text titles vanish on the next Research-all click.
+  // the intake path — repair EVERY damaged title in place (repairTitle: markdown
+  // debris, raw newlines, leading junk, a stale trailing "…"; then the short
+  // display form) with NO research and NO section change, so the damaged titles
+  // vanish on the next Research-all click. meta.originalTitle is kept (it is the
+  // portal dedupe key) and only filled in when absent.
   let normalized = 0;
   for (const item of deps.stateManager.getState().portalItems || []) {
-    if (
-      item.type !== 'question' ||
-      !item.meta?.sections ||
-      item.meta?.originalTitle ||
-      item.title.length <= 200
-    ) continue;
+    if (item.type !== 'question' || item.status === 'dismissed' || !item.meta?.sections) continue;
+    // rewriteShortTitle applies repairTitle and re-derives an ellipsis-cut
+    // title from meta.originalTitle, so every damage shape lands here and a
+    // clean title is a no-op (no save, no count) — idempotent by construction.
     if (rewriteShortTitle(deps.stateManager, item.id)) normalized++;
   }
 

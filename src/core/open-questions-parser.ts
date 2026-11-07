@@ -15,6 +15,16 @@ import { PENDING_INCORPORATION_MARKER } from './incorporation-prompt.js';
  */
 export const OPEN_QUESTIONS_HEADING = /^##\s*(?:\d+\.?\s*)?Open Questions.*$/im;
 
+/** One labelled alternative option (`A) …`, `B) …`) parsed from `alternatives`. */
+export interface QuestionOption {
+  /** Option label as written, uppercased — a single letter ("A", "B", "C"). */
+  id: string;
+  /** Option text: label and any recommendation marker removed. */
+  text: string;
+  /** True for the ONE option the memo marks Recommended. */
+  recommended?: boolean;
+}
+
 /**
  * Format-v2 labeled sections of a decision-memo question entry (rules text in
  * src/specialists/open-questions.ts). All fields optional — legacy single-line
@@ -34,6 +44,20 @@ export interface QuestionSections {
   defer?: string;
   /** Legacy alias: "Why it matters:" maps here. */
   background?: string;
+  /** Structured A/B/C options parsed out of `alternatives` (2+ labelled options). */
+  options?: QuestionOption[];
+  /** The chosen option id (e.g. "B") taken from the Recommended marker. */
+  recommendation?: string;
+}
+
+/**
+ * Strips the literal "echoed: " prefix the research sanitizer adds to echoed
+ * model lines (research-preflight sanitizeResearchLine) — user-visible garbage
+ * once it reaches a BLUF or findings line. Case-insensitive; text unchanged
+ * when the prefix is absent.
+ */
+export function stripEchoedPrefix(text: string): string {
+  return text.replace(/^\s*echoed:\s*/i, '');
 }
 
 /** One parsed question entry: the title (the parse/dedupe key) plus optional v2 sections. */
@@ -52,7 +76,8 @@ export interface ParsedQuestionItem {
   sections?: QuestionSections;
 }
 
-type QuestionSectionKey = keyof QuestionSections;
+/** The text-valued section keys a line label can fill (not `options`). */
+type QuestionSectionKey = 'bluf' | 'findings' | 'suggestion' | 'alternatives' | 'defer' | 'background';
 
 /** Labeled-section matchers. The five v2 labels are line-anchored (they start
  * their own line in the decision-memo format); the legacy "Why it matters"
@@ -67,11 +92,68 @@ const SECTION_LABEL_MATCHERS: Array<{ key: QuestionSectionKey; re: RegExp }> = [
 ];
 
 /**
+ * Option-label matcher for an `alternatives` value: `A) …`, `A. …`, `A: …`,
+ * `(A) …`, `**A** …` and `**A)** …`, at the start of the value, of a line, or
+ * after a ";" separator. Capture groups 1-4 are the label spellings
+ * (`(A)`, `**A**`, `A)`, `A**` — the last because the section extractor strips
+ * a leading `**` from the value).
+ */
+const OPTION_LABEL_RE = /(?:^|[;\n])[ \t]*(?:\*\*)?[ \t]*(?:\(([A-H])\)|\*\*([A-H])\*\*|([A-H])[).:]|([A-H])\*\*)[ \t]*(?:\*\*)?[ \t]*/g;
+
+/** Any "recommended" word — the marker that flags one option as the choice. */
+const RECOMMENDED_RE = /\brecommended\b/i;
+
+/** Explicit "Recommended: B" / "Recommended - B" marker carrying the option id. */
+const RECOMMENDED_ID_RE = /\brecommended\s*[:\-–—]\s*\(?([A-H])\)?/i;
+
+/**
+ * Parses labelled options out of one `alternatives` value: 2+ labelled options
+ * become `options`; a "Recommended: <letter>" marker or a per-option
+ * "(Recommended)" marker yields `recommendation` and marks exactly one option
+ * `recommended`. Fewer than two labels → `{}` (the raw text stays as-is).
+ *
+ * @param alternatives - the raw `Alternatives:` section value
+ * @returns `options` and `recommendation`, each omitted when absent
+ */
+export function parseQuestionOptions(alternatives: string): Pick<QuestionSections, 'options' | 'recommendation'> {
+  const labels: Array<{ id: string; start: number; bodyStart: number }> = [];
+  OPTION_LABEL_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = OPTION_LABEL_RE.exec(alternatives)) !== null) {
+    labels.push({
+      id: (match[1] || match[2] || match[3] || match[4]).toUpperCase(),
+      start: match.index,
+      bodyStart: match.index + match[0].length
+    });
+  }
+  if (labels.length < 2) return {};
+  const options: QuestionOption[] = labels.map((label, i) => {
+    const end = i + 1 < labels.length ? labels[i + 1].start : alternatives.length;
+    const raw = alternatives.slice(label.bodyStart, end);
+    const text = raw
+      .replace(/[*;,\s]+$/, '')
+      .replace(/\s*[;(]?\s*recommended\s*[:\-–—]?\s*\(?[A-H]?\)?\s*$/i, '')
+      .replace(/^[*;,\s]+/, '')
+      .trim();
+    return RECOMMENDED_RE.test(raw) ? { id: label.id, text, recommended: true } : { id: label.id, text };
+  });
+  const explicit = alternatives.match(RECOMMENDED_ID_RE)?.[1]?.toUpperCase();
+  const recommendation = explicit ?? options.find(option => option.recommended)?.id;
+  for (const option of options) {
+    if (option.id === recommendation) option.recommended = true;
+    else delete option.recommended;
+  }
+  return { options, ...(recommendation ? { recommendation } : {}) };
+}
+
+/**
  * Extracts the optional labeled sections (BLUF / Research findings / Main
  * suggestion / Alternatives / Defer; legacy "Why it matters" → background)
  * from a captured question entry. Tolerant: missing sections stay undefined;
  * each value runs from its label to the next label (in text order) or the end.
- * Returns undefined when no labeled section is present.
+ * A leaked "echoed: " prefix is stripped from every value; labelled A/B/C
+ * options are parsed out of `alternatives`. Returns undefined when no labeled
+ * section is present.
  */
 export function extractQuestionSections(entryText: string): QuestionSections | undefined {
   const hits: Array<{ key: QuestionSectionKey; start: number; bodyStart: number }> = [];
@@ -86,8 +168,15 @@ export function extractQuestionSections(entryText: string): QuestionSections | u
   const sections: QuestionSections = {};
   for (let i = 0; i < hits.length; i++) {
     const end = i + 1 < hits.length ? hits[i + 1].start : entryText.length;
-    const value = entryText.slice(hits[i].bodyStart, end).trim().replace(/^\*+/, '').replace(/\*+$/, '').trim();
+    const value = stripEchoedPrefix(
+      entryText.slice(hits[i].bodyStart, end).trim().replace(/^\*+/, '').replace(/\*+$/, '').trim()
+    );
     if (value) sections[hits[i].key] = value;
+  }
+  if (sections.alternatives) {
+    const parsed = parseQuestionOptions(sections.alternatives);
+    if (parsed.options) sections.options = parsed.options;
+    if (parsed.recommendation) sections.recommendation = parsed.recommendation;
   }
   return Object.keys(sections).length > 0 ? sections : undefined;
 }

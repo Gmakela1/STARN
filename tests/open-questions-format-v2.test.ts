@@ -175,6 +175,86 @@ describe('format-v2 question parsing (decision memo)', () => {
   });
 });
 
+describe('labelled A/B/C alternatives options + Recommended', () => {
+  /** Parses one alternatives value through the section extractor. */
+  const parseAlternatives = (alternatives: string) =>
+    extractQuestionSections(`BLUF: 48 V nominal.\nAlternatives: ${alternatives}\nDefer: Blocks the electrical BOM.`);
+
+  it('parses "A)" labels and a "Recommended: C" marker', () => {
+    const sections = parseAlternatives(
+      'A) Straight water — best heat capacity; B) Dielectric fluid — no corrosion; C) 50/50 glycol — compatible. Recommended: C'
+    );
+    expect(sections?.options?.map(option => option.id)).toEqual(['A', 'B', 'C']);
+    expect(sections?.recommendation).toBe('C');
+    expect(sections?.options?.filter(option => option.recommended).map(option => option.id)).toEqual(['C']);
+    expect(sections?.options?.[0].text).toBe('Straight water — best heat capacity');
+    // The raw alternatives text is kept alongside the structured options.
+    expect(sections?.alternatives).toContain('A) Straight water');
+  });
+
+  it('parses "A." labels', () => {
+    const sections = parseAlternatives(
+      'A. Straight water — best heat capacity; B. Dielectric fluid — no corrosion. Recommended: B'
+    );
+    expect(sections?.options?.map(option => option.id)).toEqual(['A', 'B']);
+    expect(sections?.recommendation).toBe('B');
+  });
+
+  it('parses "(A)" labels', () => {
+    const sections = parseAlternatives(
+      '(A) Straight water — best heat capacity; (B) Dielectric fluid — no corrosion. Recommended: A'
+    );
+    expect(sections?.options?.map(option => option.id)).toEqual(['A', 'B']);
+    expect(sections?.recommendation).toBe('A');
+  });
+
+  it('parses "**A**" labels', () => {
+    const sections = parseAlternatives(
+      '**A** Straight water — best heat capacity; **B** Dielectric fluid — no corrosion. Recommended: B'
+    );
+    expect(sections?.options?.map(option => option.id)).toEqual(['A', 'B']);
+    expect(sections?.recommendation).toBe('B');
+  });
+
+  it('parses "**A)**" labels and a "(Recommended)" per-option marker', () => {
+    const sections = parseAlternatives(
+      '**A)** Straight water — best heat capacity; **B)** Dielectric fluid — no corrosion (Recommended)'
+    );
+    expect(sections?.options?.map(option => option.id)).toEqual(['A', 'B']);
+    expect(sections?.recommendation).toBe('B');
+    expect(sections?.options?.filter(option => option.recommended).map(option => option.id)).toEqual(['B']);
+    expect(sections?.options?.[1].text).toBe('Dielectric fluid — no corrosion');
+  });
+
+  it('unlabelled alternatives stay raw text only (no options invented)', () => {
+    const sections = parseAlternatives(
+      'Straight water — best heat capacity but freezes below 0 C; dielectric fluid — no corrosion but 3x cost.'
+    );
+    expect(sections?.options).toBeUndefined();
+    expect(sections?.recommendation).toBeUndefined();
+    expect(sections?.alternatives).toContain('Straight water');
+  });
+
+  it('strips a leaked "echoed: " prefix from BLUF and findings', () => {
+    const sections = extractQuestionSections(
+      'BLUF: echoed: Use the 50/50 glycol loop.\nResearch findings: Echoed: The Pump-X datasheet confirms compatibility.\nMain suggestion: Glycol 50/50.'
+    );
+    expect(sections?.bluf).toBe('Use the 50/50 glycol loop.');
+    expect(sections?.findings).toBe('The Pump-X datasheet confirms compatibility.');
+  });
+
+  it('the prompt mandates all five sections, A/B/C options and exactly one Recommended', () => {
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('Recommended: <letter>');
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('A) <option>');
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('B) <option>');
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('C) <option>');
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('at most 240 characters');
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('No verified source found.');
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('Defer:');
+    expect(OPEN_QUESTIONS_SECTION_RULES).toContain('never carrying markdown');
+  });
+});
+
 describe('abbreviation-safe header cut + raw-title preservation', () => {
   /** Parses ONE header line and returns the entry (title + rawTitle + sections). */
   const parseTitle = (header: string) =>

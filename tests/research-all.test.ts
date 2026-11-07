@@ -309,6 +309,33 @@ describe('runResearchBackfill (core)', () => {
     expect(stored(plainLong.id).meta?.originalTitle).toBeUndefined();
   });
 
+  it('normalize pass repairs a debris title under 200 chars (the old >200 rule skipped it)', async () => {
+    // The live damage: markdown debris plus a mid-word ellipsis, 62 chars long —
+    // short enough for the old `title.length > 200` condition to skip it, so it
+    // survived every Research-all click.
+    const debris = 'Lithium-ion sub-chemistry and module architecture.** Lith…';
+    expect(debris.length).toBeLessThan(200);
+    const item = makeItem(stateMgr, {
+      title: 'Placeholder question?',
+      meta: { sections: { bluf: 'Bluf sentinel.', findings: 'Findings sentinel.' } }
+    });
+    const state0 = stateMgr.getState();
+    (state0.portalItems || []).find(i => i.id === item.id)!.title = debris;
+    stateMgr.saveState(state0);
+
+    const result = await runResearchBackfill(gateDeps);
+
+    expect(result).toEqual({ processed: 0, enriched: 0, normalized: 1, topicTagged: 0 });
+    expect(researchClient.chatCompletion).not.toHaveBeenCalled();
+    const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
+    expect(stored.title).toBe('Lithium-ion sub-chemistry and module architecture.');
+    expect(stored.meta?.originalTitle).toBe(debris); // dedupe key kept
+    expect(stored.detail).toBe(debris); // nothing lost
+    expect(stored.meta?.sections?.bluf).toBe('Bluf sentinel.'); // sections untouched
+    // Idempotent: a second pass finds nothing damaged and rewrites nothing.
+    expect((await runResearchBackfill(gateDeps)).normalized).toBe(0);
+  });
+
   it('topic pass: legacy enriched items get meta.topic from the title tag WITHOUT re-researching', async () => {
     const tagged = makeItem(stateMgr, {
       title: 'Q3. [MECHANICAL] Chassis rail gauge?',
