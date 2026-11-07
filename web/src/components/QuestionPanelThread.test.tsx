@@ -106,7 +106,7 @@ describe('QuestionPanel — one per-question conversation', () => {
     expect(screen.queryByLabelText('Advisory question')).not.toBeInTheDocument();
   });
 
-  it('memo sections stay above the conversation and the body keeps its grow contract', () => {
+  it('the memo body leaves the left pane: chips → context header → conversation', () => {
     const item = makeItem({
       meta: {
         thread: [ASK_ROW],
@@ -119,23 +119,37 @@ describe('QuestionPanel — one per-question conversation', () => {
     });
     renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
 
-    const bluf = screen.getByText('Close the 72 V bus with a selective fuse pair.');
-    const findings = screen.getByText('Vendor datasheet: upstream 60 A, downstream 30 A.');
-    const suggestion = screen.getByText('Use 60 A upstream and 30 A downstream.');
+    // Only the BLUF survives here, inside the context header (§3b.4); findings
+    // and suggestion are QuestionDetails' (right pane) business now.
+    const bluf = screen.getByText(/Close the 72 V bus with a selective fuse pair\./);
+    expect(screen.queryByText('Vendor datasheet: upstream 60 A, downstream 30 A.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Use 60 A upstream and 30 A downstream.')).not.toBeInTheDocument();
+
+    const header = screen.getByRole('region', { name: 'Question context' });
     const conversation = screen.getByRole('region', { name: 'Conversation about Question A' });
+    expect(header.contains(bluf)).toBe(true);
 
     const following = (a: Element, b: Element) =>
       (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-    expect(following(bluf, findings)).toBe(true);
-    expect(following(findings, suggestion)).toBe(true);
-    expect(following(suggestion, conversation)).toBe(true);
+    expect(following(header, conversation)).toBe(true);
 
-    // The memo body is the only scroller and keeps its flex-1 contract — the
-    // conversation can never be squeezed into it.
-    const body = bluf.closest('div.min-h-0');
-    expect(body).not.toBeNull();
-    expect(body!.className).toContain('flex-1');
-    expect(body!.className).not.toMatch(/max-h/);
+    // The conversation is the pane's grow band (no separate memo scroller).
+    expect(conversation.className).toContain('flex-1');
+    expect(conversation.className).not.toMatch(/max-h/);
+  });
+
+  it('the answer state chip rides the conversation banner slot, above the composer', () => {
+    const item = makeItem({ meta: { thread: [ASK_ROW, REPLY_ROW] } });
+    renderWithUser(
+      <QuestionPanel {...baseProps({ items: [item], answerStates: { A: { phase: 'failed' } } })} />
+    );
+
+    const chat = screen.getByRole('region', { name: 'Conversation about Question A' });
+    const chip = within(chat).getByText("Couldn't apply");
+    const composer = within(chat).getByRole('textbox');
+    // Banner sits between the log and the composer (design §3b.3.7).
+    expect(chip.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(chat).getByRole('button', { name: /Retry/ })).toBeInTheDocument();
   });
 
   // ————— the two verbs —————

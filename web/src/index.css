@@ -523,8 +523,13 @@ html, body, #root {
 /* ========================================================================= */
 .qchat-wrap {
   container-type: inline-size;
-  flex: 0 1 auto;
   min-height: 0;
+  /* The panel passes `flex-1` (unlayered CSS would beat the layered utility),
+     so the grow/shrink contract is the caller's; the content hugs the bottom
+     (composer at mt-auto, §3b.3.1). */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
 }
 .qchat {
   border-top: 1px solid var(--sf-border-weak);

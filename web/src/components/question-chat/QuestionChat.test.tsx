@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import { cleanup, renderWithUser } from '../../test/render';
@@ -42,7 +43,13 @@ function baseProps(overrides: Partial<QuestionChatProps> = {}): QuestionChatProp
 }
 
 /** Parent-side harness: expanded + messages + draft live here, as in QuestionPanel. */
-function Harness({ initial = [] as PortalThreadMessage[] }) {
+function Harness({
+  initial = [] as PortalThreadMessage[],
+  banner
+}: {
+  initial?: PortalThreadMessage[];
+  banner?: ReactNode;
+}) {
   const [messages, setMessages] = useState(initial);
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState('');
@@ -61,6 +68,7 @@ function Harness({ initial = [] as PortalThreadMessage[] }) {
         onDraftChange={setDraft}
         mode={mode}
         onModeChange={setMode}
+        banner={banner}
         onAsk={() => {
           setMessages(m => [...m, { role: 'user', text: draft, ts: 99, intent: 'ask' }]);
           setDraft('');
@@ -115,6 +123,32 @@ describe('QuestionChat — composition', () => {
     await user.click(screen.getByRole('button', { name: /Conversation about/ }));
     expect(screen.getByRole('log', { name: 'Conversation about Fuse selectivity (coordination)' }))
       .toBeInTheDocument();
+  });
+});
+
+describe('QuestionChat — banner slot (§3b.3.7)', () => {
+  it('renders the banner shrink-0 between the log and the composer', async () => {
+    const { user, container } = renderWithUser(
+      <Harness initial={[ask, reply]} banner={<p>Resolved ✓</p>} />
+    );
+
+    await user.click(screen.getByRole('button', { name: /Conversation about/ }));
+
+    const banner = screen.getByText('Resolved ✓');
+    const slot = banner.parentElement!;
+    expect(slot.className).toContain('shrink-0');
+
+    const log = screen.getByRole('log');
+    const composer = container.querySelector('.qchat-composer')!;
+    expect(log.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(slot.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('appends the caller className to the root section', () => {
+    const { container } = renderWithUser(<QuestionChat {...baseProps({ className: 'flex-1' })} />);
+    const section = container.querySelector('.qchat-wrap')!;
+    expect(section.className).toContain('qchat-wrap');
+    expect(section.className).toContain('flex-1');
   });
 });
 

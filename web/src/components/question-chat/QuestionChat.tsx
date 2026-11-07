@@ -1,10 +1,12 @@
 // One question's whole conversation region (design 2026-11-03 §4.1, §4.7):
 // <section aria-label="Conversation about {title}"> = ChatHeader + optional
-// ChatLog + ChatComposer. This file owns no state — `expanded` (session-only,
-// keyed by item in the parent), the draft and the composer mode all live in
-// the parent. The only thing it does on its own is auto-expand the log when a
-// row arrives (send, specialist reply, concluded proposal).
+// ChatLog + optional `banner` slot + ChatComposer. This file owns no state —
+// `expanded` (session-only, keyed by item in the parent), the draft and the
+// composer mode all live in the parent. The only thing it does on its own is
+// auto-expand the log when a row arrives (send, specialist reply, concluded
+// proposal).
 import { useEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
 import ChatHeader from './ChatHeader';
 import ChatLog from './ChatLog';
 import type { ChatRecordedState } from './ChatLog';
@@ -71,6 +73,14 @@ export interface QuestionChatProps {
   /** Answer-send failure (R5): Retry-as-answer card in the composer. */
   answerError?: string;
   placeholder?: string;
+  /**
+   * Slot between the log and the composer (design §3b.3.7): the recorded /
+   * resolved status banner, the answer state chip and the research proposal
+   * card. `shrink-0` — the log is the only band that gives up height.
+   */
+  banner?: ReactNode;
+  /** Extra classes on the root section (the panel passes `flex-1`). */
+  className?: string;
 }
 
 /**
@@ -113,7 +123,9 @@ export default function QuestionChat({
   onMicDown,
   onMicUp,
   answerError,
-  placeholder
+  placeholder,
+  banner,
+  className
 }: QuestionChatProps) {
   const cleanTitle = cleanQuestionTitle(title);
   const pendingProposal = proposal?.status === 'pending' ? proposal : null;
@@ -133,7 +145,10 @@ export default function QuestionChat({
   }, [messages.length, busy, pendingProposal, expanded, onToggleExpanded]);
 
   return (
-    <section aria-label={`Conversation about ${cleanTitle}`} className="qchat-wrap">
+    <section
+      aria-label={`Conversation about ${cleanTitle}`}
+      className={className ? `qchat-wrap ${className}` : 'qchat-wrap'}
+    >
       <div className="qchat">
         <ChatHeader
           id={id}
@@ -166,6 +181,7 @@ export default function QuestionChat({
             recordedState={recordedState}
           />
         )}
+        {banner && <div className="shrink-0">{banner}</div>}
         <ChatComposer
           value={draft}
           onChange={onDraftChange}

@@ -14,10 +14,10 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { AnswerState, PortalItem } from '../types/api';
-import { renderDetail } from '../lib/portalDetail';
 import { cleanQuestionTitle, groupPortalItemsByTopic } from '../lib/portalGrouping';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import QuestionChat from './question-chat/QuestionChat';
+import QuestionContextHeader from './question-chat/QuestionContextHeader';
 import type { ComposerMode } from './question-chat/ChatComposer';
 import ProposalCard from './question-chat/ProposalCard';
 
@@ -55,6 +55,13 @@ export interface QuestionPanelProps {
   onConfirmThreadProposal?: (id: string, proposalTs: number, editedText?: string) => Promise<void>;
   /** Conclude-from-chat — reject the drafted answer. */
   onRejectThreadProposal?: (id: string, proposalTs: number) => Promise<void>;
+  /**
+   * State lift (design §3b.3.3): the adopted active item, emitted once per
+   * change so the parent can key the right-pane Details view.
+   */
+  onActiveItemChange?: (item: PortalItem | null) => void;
+  /** Context header "Details" (§3b.4) — the parent flips the right pane. */
+  onOpenDetails?: (item: PortalItem) => void;
 }
 
 /** §1.4.1 — per-phase chip visuals, keyed off the AnswerPhase union (moved from QuestionBar). */
@@ -147,9 +154,11 @@ function latestResolvedItem(resolved: Record<string, { item: PortalItem; until: 
 
 /**
  * Right-pane question overlay (§8.4). Owns active-item selection (by id, never
- * index), per-item composer drafts, the show-full expander, retry text, and the
- * minimized dock strip. The parent holds `surface` and `items`; the panel holds
- * everything the 3s poll must not disturb (D6, D8).
+ * index), per-item composer drafts, retry text, and the minimized dock strip.
+ * The parent holds `surface` and `items`; the panel holds everything the 3s
+ * poll must not disturb (D6, D8). The memo body, sources, the original-detail
+ * disclosure and the answer history live in the right pane (QuestionDetails);
+ * the left pane is chips → context header → conversation (design §3b.3.1).
  */
 export default function QuestionPanel({
   surface,
@@ -172,7 +181,9 @@ export default function QuestionPanel({
   onThreadMessage,
   onConcludeThread,
   onConfirmThreadProposal,
-  onRejectThreadProposal
+  onRejectThreadProposal,
+  onActiveItemChange,
+  onOpenDetails
 }: QuestionPanelProps) {
   // F3 guard: the core intake rejects empty-title questions; legacy persisted
   // data may still hold some. Never render them (bare nav buttons / blank
@@ -184,10 +195,7 @@ export default function QuestionPanel({
   // Board #53A — drafts seed from the module store so close/reopen, unmount,
   // and page reload all restore the typed-but-unsubmitted answer.
   const [drafts, setDrafts] = useState<Record<string, string>>({ ...draftStore });
-  const [showFull, setShowFull] = useState<string | null>(null);
   const [retryText, setRetryText] = useState<Record<string, string>>({});
-  /** Per-item expansion of the follow-up answer-history disclosure (§3 board #52). */
-  const [showHistory, setShowHistory] = useState<Record<string, boolean>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   /** Item id with a submit in flight — gates the Send button (never Enter). */
   const [submittingId, setSubmittingId] = useState<string | null>(null);
@@ -238,6 +246,7 @@ export default function QuestionPanel({
   const draftsRef = useRef(drafts);
   const onCloseRef = useRef(onClose);
   const onFocusDocumentRef = useRef(onFocusDocument);
+  const onActiveItemChangeRef = useRef(onActiveItemChange);
   const recordingRef = useRef(false);
   const proposalEditRef = useRef(proposalEdit);
   const threadProposalEditRef = useRef(threadProposalEdit);
@@ -254,6 +263,7 @@ export default function QuestionPanel({
   useEffect(() => { draftsRef.current = drafts; }, [drafts]);
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => { onFocusDocumentRef.current = onFocusDocument; }, [onFocusDocument]);
+  useEffect(() => { onActiveItemChangeRef.current = onActiveItemChange; }, [onActiveItemChange]);
   useEffect(() => { proposalEditRef.current = proposalEdit; }, [proposalEdit]);
   useEffect(() => { threadProposalEditRef.current = threadProposalEdit; }, [threadProposalEdit]);
 
@@ -297,11 +307,9 @@ export default function QuestionPanel({
   useEffect(() => {
     if (surface !== 'closed') return;
     setActiveId(items[0]?.id ?? '');
-    setShowFull(null);
     setSubmitError(null);
     setRecentlyResolved({});
     setRetryText({});
-    setShowHistory({});
   }, [surface, items]);
 
   // §1.6.3 — "Resolved ✓" dwell keyed off the paid answer state: one snapshot
@@ -370,6 +378,16 @@ export default function QuestionPanel({
     }
     prevItemsRef.current = ids;
   }, [items, activeId]);
+
+  // §3b.3.3 state lift: one emission per active-item change (no new state) so
+  // the parent can point the right pane at the question on screen. The id
+  // guard keeps a poll-driven new `items` array from re-emitting.
+  const emittedActiveIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (emittedActiveIdRef.current === activeId) return;
+    emittedActiveIdRef.current = activeId;
+    onActiveItemChangeRef.current?.(items.find(i => i.id === activeId) ?? null);
+  }, [activeId, items]);
 
   // Focus integrity (§8.8): open → composer (question) or first action button
   // (parked); minimize → Expand. Close → the parent's badge gets focus.
@@ -786,8 +804,12 @@ export default function QuestionPanel({
     items.find(i => i.id === activeId) ?? recentlyResolved[activeId]?.item ?? fallbackItem ?? null;
 
   let body: ReactNode = null;
-  /** Recorded/resolved banner and the research proposal — above the conversation. */
-  let aux: ReactNode = null;
+  /**
+   * Recorded/resolved banner, answer state chip and the research proposal —
+   * the conversation's `banner` slot (§3b.3.7). Rendered by QuestionChat when
+   * there is a conversation, otherwise straight below the chips.
+   */
+  let banner: ReactNode = null;
   /** The one per-question conversation region (replaces the two old boxes). */
   let conversation: ReactNode = null;
 
@@ -842,249 +864,59 @@ export default function QuestionPanel({
         ? { label: stateChip[answerPhase].label, tone: answerPhase }
         : undefined;
 
-    let cardTone = 'border-l-amber-500 bg-amber-950/10';
-    let labelText = 'AI needs input';
-    let labelClass = 'text-amber-200';
-    let iconClass = 'text-amber-400';
-    let LabelIcon = MessageSquare;
+    // Parked items have no conversation, no context header and no Details view
+    // (§3b.3.6): the critic's gaps and the two manual actions stay in the left
+    // pane. Everything memo-shaped (sections, sources, original detail, answer
+    // history) lives in the right pane now.
     if (isParked) {
-      cardTone = 'border-l-rose-500 bg-rose-950/20';
-      labelText = 'Critic blocked';
-      labelClass = 'text-rose-200';
-      iconClass = 'text-rose-400';
-      LabelIcon = TriangleAlert;
-    } else if (autoAppliedActive) {
-      cardTone = 'border-l-[#3b4658] bg-[#0d1017]/70';
-      labelText = 'Auto-applied from research';
-      labelClass = 'text-[#a8b3c4]';
-      iconClass = 'text-[#c4b5fd]';
-      LabelIcon = CheckCircle2;
-    } else if (dwellActive) {
-      cardTone = 'border-l-[#3b4658] bg-[#0d1017]/70';
-      labelText = 'Resolved ✓';
-      labelClass = 'text-[#a8b3c4]';
-      iconClass = 'text-[#c4b5fd]';
-      LabelIcon = Check;
-    }
-
-    const sectionsMeta = item.meta?.sections;
-    const hasSections =
-      !!sectionsMeta &&
-      !!(sectionsMeta.bluf || sectionsMeta.findings || sectionsMeta.suggestion ||
-        sectionsMeta.alternatives || sectionsMeta.defer || sectionsMeta.background);
-
-    const detailView = (() => {
-      if (!item.detail) return null;
-      // Sections-first detail (v2): when decision-memo sections exist, the raw
-      // legacy body hides behind a muted "Original detail" collapsible.
-      if (hasSections) {
-        const open = showFull === item.id;
-        return (
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowFull(prev => (prev === item.id ? null : item.id))}
-              aria-expanded={open}
-              className="rounded text-[11px] font-medium text-[#6e7d92] hover:text-[#a8b3c4] focus:ring-2 focus:ring-[#ff2a3c]/60"
-            >
-              Original detail
-            </button>
-            {open && (
-              <p className="mt-1 whitespace-pre-line rounded-md border border-[#2a3342] bg-[#05070c]/60 p-2.5 text-xs leading-relaxed text-[#6e7d92]">
-                {item.detail}
-              </p>
+      body = (
+        <div className="rounded-lg border-l-2 border-l-rose-500 bg-rose-950/20 p-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <TriangleAlert className="h-4 w-4 shrink-0 text-rose-400" aria-hidden />
+              <span className="text-xs font-bold text-rose-200">Critic blocked</span>
+              {item.docPath && (
+                <span className="max-w-[120px] truncate text-[11px] font-mono text-[#6e7d92]">
+                  {item.docPath.split('/').pop()}
+                </span>
+              )}
+            </div>
+            {items.some(i => i.id === item.id) && (
+              <button
+                type="button"
+                onClick={() => {
+                  // Local-first: the parent drops the id from its dismissed set
+                  // before the server call, so a server error can't resurrect it.
+                  void onDismiss(item.id).catch(() => {});
+                }}
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#6e7d92] transition hover:text-[#a8b3c4] focus:ring-2 focus:ring-[#ff2a3c]/60"
+                aria-label="Dismiss"
+              >
+                <X className="h-3 w-3" aria-hidden />
+              </button>
             )}
           </div>
-        );
-      }
-      const r = renderDetail(item.detail);
-      const isOpen = showFull === item.id;
-      if (r.bullets.length === 0 && !r.wasTruncated && r.overflow === 0) {
-        return <p className="text-xs leading-relaxed text-[#a8b3c4]">{item.detail}</p>;
-      }
-      return (
-        <>
-          {r.bullets.length > 0 && (
-            <ul className="list-disc space-y-1 pl-3.5 text-xs leading-relaxed text-[#a8b3c4]">
-              {r.bullets.map((b, i) => (
-                <li key={i} className="pl-0.5">
-                  {b}
-                  {i === r.bullets.length - 1 && r.overflow > 0 ? ` +${r.overflow} more` : ''}
-                </li>
-              ))}
-            </ul>
-          )}
-          {r.bullets.length === 0 && r.wasTruncated && (
-            <p className="line-clamp-2 text-xs leading-relaxed text-[#a8b3c4]">{item.detail}</p>
-          )}
-          {(r.overflow > 0 || r.wasTruncated) && !isOpen && (
-            <button
-              type="button"
-              onClick={() => setShowFull(prev => (prev === item.id ? null : item.id))}
-              className="mt-1 rounded text-[11px] font-medium text-violet-400 hover:text-violet-300 focus:ring-2 focus:ring-[#ff2a3c]/60"
-            >
-              Show full question
-            </button>
-          )}
-          {isOpen && (
-            <p className="mt-1.5 rounded-md border border-[#2a3342] bg-[#05070c]/60 p-2.5 text-xs leading-relaxed text-[#a8b3c4]">
-              {item.detail}
-            </p>
-          )}
-        </>
-      );
-    })();
 
-    body = (
-      <div className={`rounded-lg border-l-2 p-3 ${cardTone}`}>
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <LabelIcon className={`h-4 w-4 shrink-0 ${iconClass}`} aria-hidden />
-            <span className={`text-xs font-bold ${labelClass}`}>{labelText}</span>
-            {researching && (
-              <span className="inline-flex min-h-[24px] items-center gap-1.5 rounded-full border border-violet-700/50 bg-violet-950/40 px-2.5 py-0.5 text-[11px] font-medium text-violet-300">
-                <Loader2 className="h-3 w-3 motion-safe:animate-spin" aria-hidden /> Researching…
-              </span>
-            )}
-            {item.docPath && (
-              <span className="max-w-[120px] truncate text-[11px] font-mono text-[#6e7d92]">
-                {item.docPath.split('/').pop()}
-              </span>
-            )}
-          </div>
-          {items.some(i => i.id === item.id) && (
-            <button
-              type="button"
-              onClick={() => {
-                // Local-first: the parent drops the id from its dismissed set
-                // before the server call, so a server error can't resurrect it.
-                void onDismiss(item.id).catch(() => {});
-              }}
-              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#6e7d92] transition hover:text-[#a8b3c4] focus:ring-2 focus:ring-[#ff2a3c]/60"
-              aria-label="Dismiss"
-            >
-              <X className="h-3 w-3" aria-hidden />
-            </button>
-          )}
-        </div>
-
-        {/* V2 card order: short title + topic chip lead the card. */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-          <p className="text-sm font-bold text-[#e8edf5]" title={cleanQuestionTitle(item.title)}>
+          <p className="mt-1.5 text-sm font-bold text-[#e8edf5]" title={cleanQuestionTitle(item.title)}>
             {cleanQuestionTitle(item.title)}
           </p>
-          {item.meta?.topic && (
-            <span className="rounded bg-[#11151d] px-1.5 py-0.5 text-[10px] font-mono text-[#a8b3c4]">
-              {item.meta.topic}
-            </span>
-          )}
-        </div>
 
-        {/* V2: BLUF is a standalone hero callout above the memo sections. */}
-        {item.meta?.sections?.bluf && (
-          <div className="sf-bluf-callout mt-1.5">
-            <p
-              role="heading"
-              aria-level={4}
-              className="text-[11px] font-semibold uppercase tracking-wide text-[#ffb3bd]"
-            >
-              BLUF
-            </p>
-            <p className="whitespace-pre-line text-xs font-bold leading-relaxed text-[#e8edf5]">
-              {item.meta.sections.bluf}
-            </p>
-          </div>
-        )}
-
-        {/* §3 board #52 — item returned as a follow-up after an applied answer.
-            The chip is a disclosure toggle; expanding lists the prior answers
-            (text + date, oldest first) in a scrollable list. */}
-        {item.meta?.answerHistory && item.meta.answerHistory.length > 0 && (
-          <div className="mt-1.5">
-            <button
-              type="button"
-              onClick={() => setShowHistory(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
-              aria-expanded={showHistory[item.id] === true}
-              className="inline-flex min-h-[44px] items-center gap-1 rounded-full border border-amber-500/40 bg-amber-950/40 px-2.5 text-[11px] font-medium text-amber-300 transition hover:bg-amber-900/40 focus:ring-2 focus:ring-amber-500/40"
-            >
-              <RotateCcw className="h-3 w-3" aria-hidden /> Follow-up
-            </button>
-            {showHistory[item.id] && (
-              <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-[#2a3342] bg-[#0d1017]/70 p-2">
-                {item.meta.answerHistory.map((entry, i) => (
-                  <li key={`${entry.at}-${i}`} className="text-[11px] text-[#a8b3c4]">
-                    <time dateTime={entry.at} className="text-[#6e7d92]">{entry.at.slice(0, 10)}</time>{' '}
-                    <span className="text-[#e8edf5]">{entry.text}</span>
+          {item.gaps && item.gaps.length > 0 && (
+            <div className="mt-2 space-y-1">
+              <p className="text-[11px] font-semibold text-rose-300">Missing requirements:</p>
+              <ul className="list-inside list-disc space-y-0.5">
+                {item.gaps.slice(0, 8).map((gap, i) => (
+                  <li key={i} className="text-[11px] text-rose-200/70">
+                    {gap}
                   </li>
                 ))}
+                {item.gaps.length > 8 && (
+                  <li className="text-[11px] text-rose-200/50">+{item.gaps.length - 8} more gaps</li>
+                )}
               </ul>
-            )}
-          </div>
-        )}
-
-        {detailView && <div className="mt-1.5">{detailView}</div>}
-
-        {/* Format-v2 decision-memo sections (meta.sections): BLUF headline is
-            prominent, findings carry cited sources, suggestion/alternatives/
-            defer follow. Legacy items without sections render exactly as
-            before. No emoji; text-only section labels. */}
-        {(() => {
-          const s = item.meta?.sections;
-          if (!s) return null;
-          // V2: BLUF renders as the hero callout above; tone marks primary /
-          // secondary / muted emphasis for the remaining memo rows.
-          const rows: Array<{ label: string; text: string; tone: 'primary' | 'secondary' | 'muted' }> = [];
-          if (s.findings) rows.push({ label: 'Research findings', text: s.findings, tone: 'secondary' });
-          if (s.suggestion) rows.push({ label: 'Main suggestion', text: s.suggestion, tone: 'primary' });
-          if (s.alternatives) rows.push({ label: 'Alternatives', text: s.alternatives, tone: 'secondary' });
-          if (s.defer) rows.push({ label: 'Defer', text: s.defer, tone: 'muted' });
-          if (s.background) rows.push({ label: 'Background', text: s.background, tone: 'muted' });
-          if (rows.length === 0) return null;
-          return (
-            <div className="mt-1.5 space-y-1.5 rounded-md border border-[#2a3342] bg-[#0d1017]/70 p-2.5">
-              {rows.map(row => (
-                <div key={row.label}>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6e7d92]">
-                    {row.label}
-                  </p>
-                  <p
-                    className={`whitespace-pre-line text-xs leading-relaxed ${
-                      row.tone === 'primary'
-                        ? 'text-[#e8edf5]'
-                        : row.tone === 'muted'
-                          ? 'text-[#6e7d92]'
-                          : 'text-[#a8b3c4]'
-                    }`}
-                  >
-                    {row.text}
-                  </p>
-                </div>
-              ))}
             </div>
-          );
-        })()}
+          )}
 
-        {isParked && item.gaps && item.gaps.length > 0 && (
-          <div className="mt-2 space-y-1">
-            <p className="text-[11px] font-semibold text-rose-300">Missing requirements:</p>
-            <ul className="list-inside list-disc space-y-0.5">
-              {item.gaps.slice(0, 8).map((gap, i) => (
-                <li key={i} className="text-[11px] text-rose-200/70">
-                  {gap}
-                </li>
-              ))}
-              {item.gaps.length > 8 && (
-                <li className="text-[11px] text-rose-200/50">+{item.gaps.length - 8} more gaps</li>
-              )}
-            </ul>
-          </div>
-        )}
-
-        {answerStates[item.id] && (
-          <div className="mt-2 flex flex-wrap items-center gap-2">{renderStateChip(item.id)}</div>
-        )}
-
-        {isParked && (
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               ref={parkedActionRef}
@@ -1106,9 +938,98 @@ export default function QuestionPanel({
               Edit Manually
             </button>
           </div>
-        )}
-      </div>
-    );
+        </div>
+      );
+    }
+
+    // Recorded / resolved banner (unchanged behaviour) + the research proposal
+    // card. Both ride the conversation's `banner` slot (§3b.3.7).
+    const statusBanner = isParked
+      ? null
+      : autoAppliedActive && auto ? (
+          <div
+            role="status"
+            className="rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 py-2.5 text-sm font-medium text-[#e8edf5]"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <Check className="h-4 w-4" aria-hidden />
+              <span>
+                Auto-applied from research ({Math.round(auto.confidence * 100)}% confidence) — pending incorporation
+              </span>
+              {!auto.incorporated && (
+                <button
+                  type="button"
+                  onClick={() => undoAuto(item.id)}
+                  disabled={gateActionId === item.id}
+                  aria-label="Undo auto-applied answer"
+                  className="min-h-[32px] rounded-lg border border-[#3b4658] bg-[#0d1017] px-2.5 text-[11px] font-semibold text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
+                >
+                  Undo
+                </button>
+              )}
+            </div>
+            {gateActionError[item.id] && (
+              <p role="alert" className="mt-1 rounded-md border border-rose-800/60 bg-rose-950/40 px-2.5 py-1 text-xs text-rose-300">
+                {gateActionError[item.id]}
+              </p>
+            )}
+          </div>
+        ) : dwellActive ? (
+          <div
+            role="status"
+            className="flex min-h-[96px] items-center gap-2 rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 py-2.5 text-sm font-medium text-[#e8edf5]"
+          >
+            <Check className="h-4 w-4" aria-hidden /> Resolved ✓
+          </div>
+        ) : voiceError ? (
+          <p role="status" aria-live="polite" className="rounded-md bg-rose-950/40 px-3 py-1.5 text-xs text-rose-300">
+            {voiceError}
+          </p>
+        ) : null;
+
+    const researchProposalCard = proposal ? (
+      <ProposalCard
+        variant="research"
+        title={`Research proposal — ${Math.round(proposal.confidence * 100)}% confidence`}
+        text={proposal.answer}
+        sources={proposal.sources}
+        rationale={proposal.rationale}
+        editing={proposalEdit?.id === item.id}
+        busy={gateActionId === item.id}
+        error={gateActionError[item.id]}
+        onUse={() => {
+          void confirmProposal(item.id);
+        }}
+        onEdit={() => setProposalEdit({ id: item.id, text: proposal.answer })}
+        onReject={() => {
+          void rejectProposal(item.id);
+        }}
+        onSaveEdit={text => {
+          void confirmProposal(item.id, text);
+        }}
+        onCancelEdit={() => setProposalEdit(null)}
+      />
+    ) : null;
+
+    // Answer state chip (§3b.3.6 — stays left): the last row of the banner.
+    const stateChipRow = answerStates[item.id] ? (
+      <div className="flex flex-wrap items-center gap-2">{renderStateChip(item.id)}</div>
+    ) : null;
+
+    if (researching || statusBanner || stateChipRow || researchProposalCard) {
+      banner = (
+        <div className="space-y-2 border-t border-[#2a3342] bg-[#0d1017]/70 p-3">
+          {researching && (
+            <span className="inline-flex min-h-[24px] items-center gap-1.5 rounded-full border border-violet-700/50 bg-violet-950/40 px-2.5 py-0.5 text-[11px] font-medium text-violet-300">
+              <Loader2 className="h-3 w-3 motion-safe:animate-spin" aria-hidden /> Researching…
+            </span>
+          )}
+          {statusBanner}
+          {stateChipRow}
+          {researchProposalCard}
+        </div>
+      );
+    }
 
     // §4.1/§4.7 — ONE conversation region per question replaces the old
     // answer composer + advisory chat boxes. `key={item.id}` siloes the log,
@@ -1122,6 +1043,8 @@ export default function QuestionPanel({
       !autoAppliedActive ? (
         <QuestionChat
           key={item.id}
+          className="flex-1"
+          banner={banner ?? undefined}
           id={item.id}
           title={item.title}
           messages={thread}
@@ -1190,84 +1113,6 @@ export default function QuestionPanel({
           }
         />
       ) : null;
-
-    // Recorded / resolved banner (unchanged behaviour) + the research proposal
-    // card, both above the conversation region.
-    const statusBanner = isParked
-      ? null
-      : autoAppliedActive && auto ? (
-          <div
-            role="status"
-            className="rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 py-2.5 text-sm font-medium text-[#e8edf5]"
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <Check className="h-4 w-4" aria-hidden />
-              <span>
-                Auto-applied from research ({Math.round(auto.confidence * 100)}% confidence) — pending incorporation
-              </span>
-              {!auto.incorporated && (
-                <button
-                  type="button"
-                  onClick={() => undoAuto(item.id)}
-                  disabled={gateActionId === item.id}
-                  aria-label="Undo auto-applied answer"
-                  className="min-h-[32px] rounded-lg border border-[#3b4658] bg-[#0d1017] px-2.5 text-[11px] font-semibold text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
-                >
-                  Undo
-                </button>
-              )}
-            </div>
-            {gateActionError[item.id] && (
-              <p role="alert" className="mt-1 rounded-md border border-rose-800/60 bg-rose-950/40 px-2.5 py-1 text-xs text-rose-300">
-                {gateActionError[item.id]}
-              </p>
-            )}
-          </div>
-        ) : dwellActive ? (
-          <div
-            role="status"
-            className="flex min-h-[96px] items-center gap-2 rounded-lg border border-[#8b5cf6]/60 bg-[#2e1065]/40 px-3 py-2.5 text-sm font-medium text-[#e8edf5]"
-          >
-            <Check className="h-4 w-4" aria-hidden /> Resolved ✓
-          </div>
-        ) : voiceError ? (
-          <p role="status" aria-live="polite" className="rounded-md bg-rose-950/40 px-3 py-1.5 text-xs text-rose-300">
-            {voiceError}
-          </p>
-        ) : null;
-
-    const researchProposalCard = proposal ? (
-      <ProposalCard
-        variant="research"
-        title={`Research proposal — ${Math.round(proposal.confidence * 100)}% confidence`}
-        text={proposal.answer}
-        sources={proposal.sources}
-        rationale={proposal.rationale}
-        editing={proposalEdit?.id === item.id}
-        busy={gateActionId === item.id}
-        error={gateActionError[item.id]}
-        onUse={() => {
-          void confirmProposal(item.id);
-        }}
-        onEdit={() => setProposalEdit({ id: item.id, text: proposal.answer })}
-        onReject={() => {
-          void rejectProposal(item.id);
-        }}
-        onSaveEdit={text => {
-          void confirmProposal(item.id, text);
-        }}
-        onCancelEdit={() => setProposalEdit(null)}
-      />
-    ) : null;
-
-    if (statusBanner || researchProposalCard) {
-      aux = (
-        <div className="shrink-0 space-y-2 border-t border-[#2a3342] bg-[#0d1017]/70 p-3">
-          {statusBanner}
-          {researchProposalCard}
-        </div>
-      );
-    }
   }
 
   const activeIndex = items.findIndex(i => i.id === activeId);
@@ -1288,11 +1133,8 @@ export default function QuestionPanel({
           <span className="rounded-full bg-[#11151d] px-2 py-0.5 text-[11px] font-bold tabular-nums text-[#ffb3bd]">
             {items.length}
           </span>
-          {item?.docPath && (
-            <span className="rounded bg-[#11151d] px-1.5 py-0.5 font-mono text-[10px] text-[#a8b3c4]">
-              {item.docPath.split('/').pop()}
-            </span>
-          )}
+          {/* The doc chip and the "N of M" pager moved into the context header
+              (§3b.4) so this row stays a single 60 px line at 900 px. */}
           {item?.section && (
             <span className="rounded bg-[#11151d] px-1.5 py-0.5 text-[10px] font-medium text-[#a8b3c4]">
               asked while {item.section}
@@ -1301,11 +1143,6 @@ export default function QuestionPanel({
           {item?.severity === 'blocking' && (
             <span className="rounded border border-rose-700 bg-rose-950/60 px-1.5 py-0.5 text-[10px] font-bold text-rose-300">
               BLOCKING
-            </span>
-          )}
-          {items.length >= 2 && (
-            <span className="text-[11px] font-mono text-[#6e7d92] tabular-nums">
-              {pagerIndex} of {items.length}
             </span>
           )}
           <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -1431,10 +1268,28 @@ export default function QuestionPanel({
         </div>
       )}
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">{body}</div>
+      {body && (
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">{body}</div>
+      )}
 
-      {aux}
+      {/* Left pane for a question: chips → context header → conversation
+          (§3b.3.1). Parked items have neither header nor conversation. */}
+      {item && item.type !== 'parked' && (
+        <QuestionContextHeader
+          item={item}
+          pagerIndex={pagerIndex}
+          total={items.length}
+          selectedDocName={selectedDocName}
+          onOpenDetails={() => {
+            if (item) onOpenDetails?.(item);
+          }}
+        />
+      )}
+
       {conversation}
+      {/* No conversation (resolved dwell, auto-applied, parked): the banner
+          still renders, just outside a log that does not exist. */}
+      {!conversation && banner && <div className="shrink-0">{banner}</div>}
     </div>
   );
 }

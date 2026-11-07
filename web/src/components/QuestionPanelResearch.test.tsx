@@ -95,7 +95,7 @@ describe('QuestionPanel — research-all button + format-v2 sections', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Autopilot chain is running');
   });
 
-  it('renders format-v2 sections: BLUF headline, findings, suggestion, alternatives, defer', () => {
+  it('the context header carries the BLUF; the memo sections stay out of the left pane', () => {
     const item = makeItem({
       meta: {
         sections: {
@@ -108,13 +108,17 @@ describe('QuestionPanel — research-all button + format-v2 sections', () => {
       },
     });
     renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
-    expect(screen.getByText('BLUF')).toBeInTheDocument();
-    expect(screen.getByText('Use the 50/50 glycol loop.')).toBeInTheDocument();
-    expect(screen.getByText('Research findings')).toBeInTheDocument();
-    expect(screen.getByText(/Thermal dossier baselines glycol/)).toBeInTheDocument();
-    expect(screen.getByText('Main suggestion')).toBeInTheDocument();
-    expect(screen.getByText('Alternatives')).toBeInTheDocument();
-    expect(screen.getByText('Defer')).toBeInTheDocument();
+
+    const header = screen.getByRole('region', { name: 'Question context' });
+    expect(within(header).getByText('BLUF')).toBeInTheDocument();
+    expect(within(header).getByText(/Use the 50\/50 glycol loop\./)).toBeInTheDocument();
+
+    // QuestionDetails owns the memo rows (design §3b.3.6).
+    expect(screen.queryByText('Research findings')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Thermal dossier baselines glycol/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Main suggestion')).not.toBeInTheDocument();
+    expect(screen.queryByText('Alternatives')).not.toBeInTheDocument();
+    expect(screen.queryByText('Defer')).not.toBeInTheDocument();
   });
 
   it('legacy items without sections render without the section block', () => {
@@ -123,11 +127,11 @@ describe('QuestionPanel — research-all button + format-v2 sections', () => {
     expect(screen.queryByText('Main suggestion')).not.toBeInTheDocument();
   });
 
-  it('legacy background alias renders under a Background label', () => {
+  it('the legacy background alias moved to the right pane (no Background label here)', () => {
     const item = makeItem({ meta: { sections: { background: 'affects motor choice.' } } });
     renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
-    expect(screen.getByText('Background')).toBeInTheDocument();
-    expect(screen.getByText('affects motor choice.')).toBeInTheDocument();
+    expect(screen.queryByText('Background')).not.toBeInTheDocument();
+    expect(screen.queryByText('affects motor choice.')).not.toBeInTheDocument();
   });
 
   it('list card shows the topic tag and BLUF preview line when sections exist', () => {
@@ -146,17 +150,17 @@ describe('QuestionPanel — research-all button + format-v2 sections', () => {
     expect(screen.getByText('The main contactor is rated for 48V DC.')).toBeInTheDocument();
   });
 
-  it('sections-first detail: raw legacy body hides behind a muted collapsible when sections exist', async () => {
+  it('the sections-first "Original detail" disclosure lives in the right pane, not here', () => {
     const wall = 'W'.repeat(400);
     const item = makeItem({
       meta: { sections: { bluf: 'Use the 50/50 glycol loop.' } },
       detail: wall
     });
-    const { user } = renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
-    expect(screen.getByText('Use the 50/50 glycol loop.')).toBeInTheDocument();
+    renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
+
+    expect(screen.getByText(/Use the 50\/50 glycol loop\./)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Original detail' })).not.toBeInTheDocument();
     expect(screen.queryByText(wall)).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Original detail' }));
-    expect(screen.getByText(wall)).toBeInTheDocument();
   });
 
   it('sections with no original text behind them render no collapsible; no sections keeps the plain detail', () => {
@@ -164,11 +168,9 @@ describe('QuestionPanel — research-all button + format-v2 sections', () => {
     expect(screen.queryByText('Original detail')).not.toBeInTheDocument();
   });
 
-  // V2 card order: short title + topic chip → BLUF hero → findings →
-  // suggestion (primary) → alternatives → defer (muted) → response area →
-  // advisory chat (footer). Here we lock the headline invariants: BLUF hero
-  // precedes the findings row, and the topic chip sits with the title.
-  it('v2 card order: BLUF hero before findings; topic chip beside the title', () => {
+  // The left pane order (§3b.3.1): chips → context header (topic tag, pager,
+  // source, title, BLUF) → conversation. Nothing memo-shaped between them.
+  it('left-pane order: topic tag and BLUF in the context header, then the conversation', () => {
     const item = makeItem({
       title: 'Coolant choice.',
       meta: {
@@ -182,22 +184,43 @@ describe('QuestionPanel — research-all button + format-v2 sections', () => {
         }
       }
     });
-    // onThreadMessage is required for the footer advisory thread to mount.
-    const { container } = renderWithUser(
+    renderWithUser(
       <QuestionPanel {...baseProps({ items: [item], onThreadMessage: vi.fn(async () => {}) })} />
     );
-    const hero = container.querySelector('.sf-bluf-callout');
-    expect(hero).not.toBeNull();
-    expect(hero!.textContent).toContain('Use the 50/50 glycol loop.');
-    const findings = screen.getByText('Research findings');
-    // BLUF hero must precede the findings row in DOM order.
-    expect(hero!.compareDocumentPosition(findings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // Topic chip renders beside the short title.
-    expect(screen.getByText('THERM')).toBeInTheDocument();
-    // The one conversation region lives after the response area, and the memo
-    // body keeps its own scroller (the chat never squeezes it).
+
+    const header = screen.getByRole('region', { name: 'Question context' });
+    // Topic tag and BLUF are header slots now (the old card hero is gone).
+    expect(within(header).getByText('THERM')).toBeInTheDocument();
+    expect(within(header).getByText(/Use the 50\/50 glycol loop\./)).toBeInTheDocument();
+    expect(document.querySelector('.sf-bluf-callout')).toBeNull();
+
     const chat = screen.getByRole('region', { name: 'Conversation about Coolant choice.' });
-    expect(hero!.compareDocumentPosition(chat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      header.compareDocumentPosition(chat) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
     expect(within(chat).getAllByRole('textbox')).toHaveLength(1);
+  });
+
+  it('the research proposal card renders in the conversation banner slot', () => {
+    const item = makeItem({
+      meta: {
+        thread: [{ role: 'user', text: 'Is 48 V enough?', ts: 1 }],
+        proposedAnswer: {
+          answer: '48V per the vendor datasheet.',
+          sources: [{ title: 'Vendor datasheet', url: 'https://vendor.example/ds.pdf' }],
+          confidence: 0.7,
+          rationale: 'Stated verbatim.'
+        }
+      }
+    });
+    renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
+
+    const chat = screen.getByRole('region', { name: 'Conversation about Question A' });
+    const card = within(chat).getByText('Research proposal — 70% confidence');
+    // Between the log and the composer: the card precedes the composer's one
+    // textarea and follows the (collapsed) log band.
+    const composer = within(chat).getByRole('textbox');
+    expect(card.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(chat).getByRole('button', { name: 'Use proposal' })).toBeInTheDocument();
   });
 });

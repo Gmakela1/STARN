@@ -228,6 +228,36 @@ describe('QuestionDetails — actions stay in the conversation', () => {
   });
 });
 
+describe('QuestionDetails — answer history (moved out of the left pane)', () => {
+  it('is an amber, worded disclosure listing the prior answers oldest first', async () => {
+    const item = fullItem({
+      meta: {
+        answerHistory: [
+          { text: 'First reply', at: '2025-01-01T00:00:00.000Z' },
+          { text: 'Second reply', at: '2025-01-02T00:00:00.000Z' }
+        ]
+      }
+    });
+    const { user } = renderWithUser(<QuestionDetails {...props({ item })} />);
+
+    const toggle = screen.getByRole('button', { name: 'Follow-up' });
+    expect(toggle.className).toContain('text-amber-300');
+    expect(toggle.className).toContain('bg-amber-950/40');
+    expect(toggle.className).toContain('border-amber-500/40');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const entries = screen.getAllByRole('listitem');
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toHaveTextContent('First reply');
+    expect(entries[0]).toHaveTextContent('2025-01-01');
+    expect(entries[1]).toHaveTextContent('Second reply');
+    expect(entries[1]).toHaveTextContent('2025-01-02');
+  });
+});
+
 describe('QuestionDetails — degraded record', () => {
   it('shows the plain sentence and the original body when meta.sections is absent', () => {
     const item = fullItem({ meta: { topic: 'electrical' } });

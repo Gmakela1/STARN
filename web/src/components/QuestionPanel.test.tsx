@@ -263,8 +263,8 @@ describe('QuestionPanel', () => {
     expect(stored.A).toBeUndefined();
   });
 
-  // ————— 7. renderDetail bullets + "Show full question" —————
-  it('open: long detail renders 3 bullets with +N more and toggles full text', async () => {
+  // ————— 7. The detail body moved to the right pane (design §3b.3.6) —————
+  it('open: the detail body and its "Show full question" disclosure leave the left pane', () => {
     const longDetail = [
       'The widget under test exposes three call sites to the parser.',
       'Two of those pathways are already covered by integration tests.',
@@ -273,18 +273,14 @@ describe('QuestionPanel', () => {
       'A fifth detail about the final verification step in the sequence.',
     ].join(' ');
     const props = baseProps({ items: [makeItem({ id: 'A', detail: longDetail })] });
-    const { user } = renderWithUser(<QuestionPanel {...props} />);
+    renderWithUser(<QuestionPanel {...props} />);
 
-    const list = screen.getByRole('list');
-    const bullets = within(list).getAllByRole('listitem');
-    expect(bullets).toHaveLength(3);
-    expect(bullets[2]).toHaveTextContent('+2 more');
-
-    const toggle = screen.getByRole('button', { name: 'Show full question' });
-    await user.click(toggle);
-
-    expect(screen.getByText(longDetail)).toBeInTheDocument();
+    // QuestionDetails owns the record now: the left pane is chips → context
+    // header → conversation, with no bullet list and no expander.
+    expect(screen.queryByRole('list')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Show full question' })).not.toBeInTheDocument();
+    expect(screen.queryByText(longDetail)).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Question context' })).toBeInTheDocument();
   });
 
   // ————— 8. Empty state —————
@@ -795,17 +791,18 @@ describe('QuestionPanel', () => {
     expect(chip.className).not.toContain('amber');
   });
 
-  it('lifecycle: follow-up chip is amber with the word Follow-up when the item has answer history', () => {
+  it('lifecycle: the Follow-up disclosure moved to the right pane (none in the left pane)', () => {
     const item = makeItem({
       id: 'A',
       meta: { answerHistory: [{ text: '42V nominal', at: '2025-01-01T00:00:00.000Z' }] },
     });
     renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
 
-    const chip = screen.getByText('Follow-up');
-    expect(chip.className).toContain('text-amber-300');
-    expect(chip.className).toContain('bg-amber-950/40');
-    expect(chip.className).toContain('border-amber-500/40');
+    // QuestionDetails renders the disclosure (and its amber styling); the left
+    // pane keeps only the chips, the context header and the conversation.
+    expect(screen.queryByText('Follow-up')).not.toBeInTheDocument();
+    // The question itself still renders: context header title + conversation label.
+    expect(screen.getByRole('heading', { level: 2, name: 'Question A' })).toBeInTheDocument();
   });
 
   it('lifecycle: no follow-up chip without answer history', () => {
@@ -814,7 +811,7 @@ describe('QuestionPanel', () => {
     expect(screen.queryByText('Follow-up')).not.toBeInTheDocument();
   });
 
-  it('lifecycle: follow-up chip is a collapsed disclosure that expands to the prior answers (oldest first)', async () => {
+  it('lifecycle: prior answers render no rows in the left pane (the disclosure is in Details)', () => {
     const item = makeItem({
       id: 'A',
       meta: {
@@ -824,22 +821,11 @@ describe('QuestionPanel', () => {
         ],
       },
     });
-    const { user } = renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
+    renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
 
-    const toggle = screen.getByRole('button', { name: 'Follow-up' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: 'Follow-up' })).not.toBeInTheDocument();
     expect(screen.queryByText('First reply')).not.toBeInTheDocument();
-
-    await user.click(toggle);
-
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    const list = within(toggle.closest('div') as HTMLElement).getByRole('list');
-    const entries = within(list).getAllByRole('listitem');
-    expect(entries).toHaveLength(2);
-    expect(entries[0]).toHaveTextContent('First reply');
-    expect(entries[0]).toHaveTextContent('2025-01-01');
-    expect(entries[1]).toHaveTextContent('Second reply');
-    expect(entries[1]).toHaveTextContent('2025-01-02');
+    expect(screen.queryByText('Second reply')).not.toBeInTheDocument();
   });
 
   it('lifecycle: nav dots — amber pending, violet queued, rose parked', () => {
@@ -984,6 +970,121 @@ describe('QuestionPanel research gate', () => {
     expect(screen.getByText('Electrical (1)')).toBeInTheDocument();
     expect(screen.getByText('Thermal (1)')).toBeInTheDocument();
     expect(screen.queryByText(/Other \(/)).toBeNull();
+  });
+
+  // ————— Left pane composition (design §3b.3.1, §3b.4, §3b.3.6) —————
+  describe('left pane = chips + context header + conversation', () => {
+    const withMeta = makeItem({
+      id: 'A',
+      title: 'Is the 2 A fuse selective?',
+      detail: 'SS-04.e asks whether the 2 A fuse coordinates with the 50 A upstream fuse.',
+      docPath: 'docs/RTM.md',
+      meta: {
+        topic: 'electrical',
+        sections: {
+          bluf: 'Use the 2 A slow-blow fuse.',
+          findings: 'Vendor datasheet: 2 A at 48 V.',
+          suggestion: 'Fit the 2 A slow-blow fuse.',
+          alternatives: 'Use a 3 A fuse.',
+          defer: 'Blocks the charger build.',
+          background: 'The rail feeds the charger.',
+        },
+      },
+    });
+
+    it('renders the context header: topic tag, pager position, source line and BLUF', () => {
+      renderWithUser(<QuestionPanel {...baseProps({ items: [withMeta] })} />);
+
+      const header = screen.getByRole('region', { name: 'Question context' });
+      expect(within(header).getByText('electrical')).toBeInTheDocument();
+      expect(within(header).getByText('1 of 1')).toBeInTheDocument();
+      expect(within(header).getByText('RTM.md')).toBeInTheDocument();
+      expect(within(header).getByText(/· SS-04\.e/)).toBeInTheDocument();
+      expect(within(header).getByText(/Use the 2 A slow-blow fuse\./)).toBeInTheDocument();
+      expect(within(header).getByRole('heading', { level: 2 })).toHaveTextContent(
+        'Is the 2 A fuse selective?'
+      );
+    });
+
+    it('the panel header keeps no doc chip and no pager (both moved into the header above)', () => {
+      const { container } = renderWithUser(<QuestionPanel {...baseProps({ items: [withMeta] })} />);
+
+      const panelHeader = container.querySelector('#question-panel > header');
+      expect(panelHeader).not.toBeNull();
+      expect(panelHeader!.textContent).toContain('Questions from AI');
+      expect(panelHeader!.textContent).not.toContain('RTM.md');
+      expect(panelHeader!.textContent).not.toMatch(/\d+ of \d+/);
+    });
+
+    it('no memo section renders in the left pane (the record lives in QuestionDetails)', () => {
+      renderWithUser(<QuestionPanel {...baseProps({ items: [withMeta] })} />);
+
+      for (const label of [
+        'Research findings',
+        'Main suggestion',
+        'Alternatives',
+        'Defer',
+        'Background',
+        'Sources',
+        'Original detail',
+      ]) {
+        expect(screen.queryByText(label), label).not.toBeInTheDocument();
+      }
+      expect(screen.queryByText('Vendor datasheet: 2 A at 48 V.')).not.toBeInTheDocument();
+      expect(screen.queryByText('Blocks the charger build.')).not.toBeInTheDocument();
+    });
+
+    it('onActiveItemChange emits once per active-item change', async () => {
+      const A = makeItem({ id: 'A', title: 'Question A' });
+      const B = makeItem({ id: 'B', title: 'Question B' });
+      const onActiveItemChange = vi.fn();
+      const props = baseProps({ items: [A, B], onActiveItemChange });
+      const view = renderWithUser(<QuestionPanel {...props} />);
+
+      expect(onActiveItemChange).toHaveBeenCalledTimes(1);
+      expect(onActiveItemChange).toHaveBeenLastCalledWith(A);
+
+      await view.user.click(screen.getByRole('button', { name: /^Question B/ }));
+      expect(onActiveItemChange).toHaveBeenCalledTimes(2);
+      expect(onActiveItemChange).toHaveBeenLastCalledWith(B);
+
+      // A poll hands over a fresh array of the same items — no re-emission.
+      view.rerender(<QuestionPanel {...props} items={[{ ...A }, { ...B }]} />);
+      expect(onActiveItemChange).toHaveBeenCalledTimes(2);
+    });
+
+    it('the header Details button hands the active item to onOpenDetails', async () => {
+      const onOpenDetails = vi.fn();
+      const { user } = renderWithUser(
+        <QuestionPanel {...baseProps({ items: [withMeta], onOpenDetails })} />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Details' }));
+      expect(onOpenDetails).toHaveBeenCalledTimes(1);
+      expect(onOpenDetails).toHaveBeenCalledWith(withMeta);
+    });
+
+    it('a parked item shows gaps and the manual actions, with no conversation or context header', () => {
+      const parked = makeItem({
+        id: 'P',
+        type: 'parked',
+        title: 'Fuse coordination unverified',
+        docPath: 'docs/RTM.md',
+        gaps: ['SS-04.e missing', 'SS-09.a missing'],
+      });
+      renderWithUser(<QuestionPanel {...baseProps({ items: [parked] })} />);
+
+      expect(screen.getByText('Critic blocked')).toBeInTheDocument();
+      expect(screen.getByText('Fuse coordination unverified')).toBeInTheDocument();
+      expect(screen.getByText('Missing requirements:')).toBeInTheDocument();
+      expect(screen.getByText('SS-04.e missing')).toBeInTheDocument();
+      expect(screen.getByText('SS-09.a missing')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Resolve & Resume/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Edit Manually/ })).toBeInTheDocument();
+      expect(screen.queryByRole('region', { name: /Conversation about/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('region', { name: 'Question context' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    });
   });
 
   // ————— F3: empty-title items never render a bare button —————
