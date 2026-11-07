@@ -60,11 +60,6 @@ function textbox(): HTMLTextAreaElement {
   return screen.getByRole('textbox') as HTMLTextAreaElement;
 }
 
-/** The label row doubles as the log toggle once the thread has history. */
-function conversationToggle(title = 'Question A'): HTMLElement {
-  return screen.getByRole('button', { name: new RegExp(`Conversation about ${title}`) });
-}
-
 const ASK_ROW: PortalThreadMessage = { role: 'user', text: 'Is 48V enough for the coil?', ts: 1 };
 const REPLY_ROW: PortalThreadMessage = {
   role: 'specialist',
@@ -81,19 +76,17 @@ const PROPOSAL_ROW: PortalThreadMessage = {
 
 describe('QuestionPanel — one per-question conversation', () => {
   // ————— structure —————
-  it('renders the persisted transcript once the log is expanded', async () => {
+  it('renders the persisted transcript with no toggle — the chat window is always open', () => {
     const item = makeItem({ meta: { thread: [ASK_ROW, REPLY_ROW] } });
-    const { user } = renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
+    renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
 
-    // Collapsed by default when the question already has history (§4.7).
-    expect(screen.queryByText(ASK_ROW.text)).not.toBeInTheDocument();
-
-    await user.click(conversationToggle());
-
-    expect(conversationToggle()).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText(ASK_ROW.text)).toBeInTheDocument();
     expect(screen.getByText('Specialist')).toBeInTheDocument();
     expect(screen.getByText(REPLY_ROW.text)).toBeInTheDocument();
+
+    // §3c.10.1 — no collapse toggle and no aria-expanded control in the pane.
+    expect(screen.queryByRole('button', { name: /Conversation about/ })).toBeNull();
+    expect(screen.getByRole('log', { name: 'Conversation about Question A' })).toBeInTheDocument();
   });
 
   it('the card has exactly one textbox and none of the removed copy', () => {
@@ -221,7 +214,6 @@ describe('QuestionPanel — one per-question conversation', () => {
     const props = baseProps({ items: [A, B] });
     const { user } = renderWithUser(<QuestionPanel {...props} />);
 
-    await user.click(conversationToggle('Question A'));
     expect(screen.getByText(ASK_ROW.text)).toBeInTheDocument();
     await user.type(textbox(), 'draft for A');
 
@@ -232,7 +224,6 @@ describe('QuestionPanel — one per-question conversation', () => {
     expect(screen.queryByText(REPLY_ROW.text)).not.toBeInTheDocument();
     expect(textbox()).toHaveValue('');
 
-    await user.click(conversationToggle('Question B'));
     expect(screen.getByText('B-only question')).toBeInTheDocument();
 
     // Back to A: its own draft is still there, B's rows are gone.
@@ -272,29 +263,36 @@ describe('QuestionPanel — one per-question conversation', () => {
     expect(pill!.querySelector('svg')!.getAttribute('class')).toContain('lucide-list-checks');
   });
 
-  // ————— Conclude from chat (§4.5) —————
-  it('Conclude appears only after a specialist reply and calls onConcludeThread', async () => {
+  // ————— Conclude from chat (§3c.7 — the composer's Answer skin) —————
+  it('Conclude appears in the composer only after a specialist reply and calls onConcludeThread', async () => {
     const onConcludeThread = vi.fn(async () => {});
     const asked = makeItem({ id: 'A', title: 'Question A', meta: { thread: [ASK_ROW] } });
     const answered = makeItem({ id: 'B', title: 'Question B', meta: { thread: [ASK_ROW, REPLY_ROW] } });
     const props = baseProps({ items: [asked, answered], onConcludeThread });
     const { user } = renderWithUser(<QuestionPanel {...props} />);
 
-    // Only a user question — nothing to conclude from.
+    // Advisory skin never concludes; A has no specialist reply either way.
+    expect(screen.queryByRole('button', { name: 'Conclude from chat' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: 'Answer' }));
     expect(screen.queryByRole('button', { name: 'Conclude from chat' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^Question B/ }));
+    // A chip switch returns the composer to advisory (R1), so re-arm it.
+    await user.click(screen.getByRole('radio', { name: 'Answer' }));
     const conclude = screen.getByRole('button', { name: 'Conclude from chat' });
+    // It lives at the submit area, not above the log (§3c.10.6).
+    expect(within(screen.getByRole('region', { name: 'Conversation about Question B' })).getByRole('button', { name: 'Conclude from chat' })).toBe(conclude);
     await user.click(conclude);
 
     expect(onConcludeThread).toHaveBeenCalledWith('B');
   });
 
-  it('Conclude is hidden while a proposal is already pending', () => {
+  it('Conclude is hidden while a proposal is already pending', async () => {
     const item = makeItem({ meta: { thread: [ASK_ROW, REPLY_ROW, PROPOSAL_ROW] } });
     const props = baseProps({ items: [item], onConcludeThread: vi.fn(async () => {}) });
-    renderWithUser(<QuestionPanel {...props} />);
+    const { user } = renderWithUser(<QuestionPanel {...props} />);
 
+    await user.click(screen.getByRole('radio', { name: 'Answer' }));
     expect(screen.queryByRole('button', { name: 'Conclude from chat' })).not.toBeInTheDocument();
   });
 
@@ -305,8 +303,6 @@ describe('QuestionPanel — one per-question conversation', () => {
     const item = makeItem({ meta: { thread: [ASK_ROW, REPLY_ROW, PROPOSAL_ROW] } });
     const props = baseProps({ items: [item], onConfirmThreadProposal, onRejectThreadProposal });
     const { user } = renderWithUser(<QuestionPanel {...props} />);
-
-    await user.click(conversationToggle());
 
     const card = screen.getByRole('group', { name: 'Proposed answer' });
     expect(card).toHaveTextContent('Based on 2 messages');
@@ -332,7 +328,6 @@ describe('QuestionPanel — one per-question conversation', () => {
     const props = baseProps({ items: [item] });
     const { user } = renderWithUser(<QuestionPanel {...props} />);
 
-    await user.click(conversationToggle());
     await user.type(textbox(), 'my draft');
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     expect(screen.getByLabelText('Edit proposal')).toBeInTheDocument();
@@ -358,9 +353,7 @@ describe('QuestionPanel — one per-question conversation', () => {
       kind: 'recorded',
     };
     const item = makeItem({ meta: { thread: [ASK_ROW, REPLY_ROW, recorded] } });
-    const { user } = renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
-
-    await user.click(conversationToggle());
+    renderWithUser(<QuestionPanel {...baseProps({ items: [item] })} />);
 
     expect(screen.getByText('Recorded answer')).toBeInTheDocument();
     expect(screen.getByText('Use the 2 A fuse.')).toBeInTheDocument();

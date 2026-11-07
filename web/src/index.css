@@ -516,22 +516,24 @@ html, body, #root {
 .animate-anchor-flash { animation: anchor-flash 2400ms ease-out; }
 
 /* ========================================================================= */
-/* Unified question chat (design 2026-11-03 §7, §2b.7, §2b.8)                 */
-/* One conversation per question: label row, log, composer. Violet = review/  */
-/* advice, crimson = commit. No height/width transitions anywhere (instant    */
-/* mode flip, no layout shift); spinners are opt-in via motion-safe utilities. */
+/* Unified question chat (design 2026-11-03 §3c, §2b.7, §2b.8)                 */
+/* One conversation per question, and it fills the pane: the log is the only   */
+/* scroller, the composer is pinned below it (§3c.1). Violet = review/advice,  */
+/* crimson = commit. No height/width transitions anywhere (instant mode flip,  */
+/* no layout shift); spinners are opt-in via motion-safe utilities.            */
 /* ========================================================================= */
 .qchat-wrap {
   container-type: inline-size;
-  min-height: 0;
-  /* The panel passes `flex-1` (unlayered CSS would beat the layered utility),
-     so the grow/shrink contract is the caller's; the content hugs the bottom
-     (composer at mt-auto, §3b.3.1). */
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  min-height: 0;
+  /* The panel passes `flex-1 min-h-0`, so the grow/shrink contract is the
+     caller's. No `justify-content: flex-end` — that floated the block to the
+     bottom and left the 127 px void (§3c.1). */
 }
 .qchat {
+  position: relative;
+  flex: 1 1 auto;
   border-top: 1px solid var(--sf-border-weak);
   background: color-mix(in srgb, var(--sf-panel) 80%, transparent);
   padding: 0.375rem 0.75rem 0.5rem;
@@ -540,56 +542,92 @@ html, body, #root {
   min-height: 0;
 }
 
-/* Label row: plain text at rest, one 44px toggle once a thread exists. */
-.qchat-label {
+/* The conversation band: log fills, composer and banner are shrink-0 (§3c.1). */
+.qchat-logwrap {
+  position: relative;
   display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Log: the ONLY scroller, no height cap and no minimum (§3c.1, §3c.10.1). */
+.qchat-log {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 0.25rem;
+}
+
+/* One measure for every row: bubbles, specialist bodies and cards share it. */
+.qchat-col {
+  width: 100%;
+  max-width: min(100%, 72ch);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+/* "Jump to latest" pill (§3c.3): 44 px, opaque, floats over the log's own
+   bottom padding so it never covers message text. */
+.qchat-jump {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  min-height: 24px;
-  font-size: 11px;
-  color: var(--sf-text-2);
-}
-.qchat-label b { font-weight: 600; color: var(--sf-text); }
-.qchat-label--history { min-height: 44px; margin-top: -0.375rem; }
-.qchat-count {
-  height: 20px;
-  padding: 0 0.375rem;
+  min-height: 44px;
+  padding: 0 0.875rem;
   border-radius: 999px;
-  border: 1px solid var(--sf-border-strong);
-  background: var(--sf-raised);
-  font-size: 10px;
-  font-weight: 700;
+  border: 1px solid color-mix(in srgb, var(--sf-review) 65%, transparent);
+  background: #150c2e;
+  color: #ddd6fe;
+  font-size: 11.5px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.qchat-jump:hover { background: #1d1140; }
+.qchat-jump-count {
+  min-width: 18px;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.35);
   font-variant-numeric: tabular-nums;
 }
+
+/* Conclude from chat (§3c.7): in the Answer skin's mode bar, 30 px visual with
+   a 44 px hit box via the ::after overhang. */
 .qchat-conclude {
-  min-height: 44px;
-  padding: 0 0.75rem;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 30px;
+  padding: 0 0.625rem;
   border-radius: 0.5rem;
   border: 1px solid color-mix(in srgb, var(--sf-review) 60%, transparent);
   background: color-mix(in srgb, var(--sf-review-fill) 40%, transparent);
   color: #ddd6fe;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
+  white-space: nowrap;
 }
-.qchat-conclude:hover { background: rgba(59, 29, 122, 0.5); }
-
-/* Log: shrinks first, never the memo (§3 hard rule). */
-.qchat-log {
-  flex: 1 1 auto;
-  min-height: 96px;
-  max-height: clamp(96px, 26vh, 176px);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-  margin: 0 -0.25rem;
-  padding: 0 0.25rem;
+.qchat-conclude::after {
+  content: '';
+  position: absolute;
+  inset: -7px 0;
 }
-.qchat-log.is-proposal { max-height: clamp(120px, 40vh, 264px); }
+.qchat-conclude:hover:not(:disabled) { background: rgba(59, 29, 122, 0.5); }
+.qchat-conclude:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* Row types (§3.2 S4). */
 .qchat-ask {
-  max-width: 86%;
+  max-width: min(88%, 60ch);
   align-self: flex-end;
   border-radius: 10px 10px 2px 10px;
   background: color-mix(in srgb, var(--sf-review-fill) 40%, transparent);
@@ -606,7 +644,9 @@ html, body, #root {
 .qchat-specialist-body {
   font-size: 13px;
   color: var(--sf-text-2);
-  max-width: 62ch;
+  /* No `ch` cap on the row: it inherits `.qchat-col` (§3c.6). */
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .qchat-recorded {
   border-radius: 0.5rem;
@@ -632,6 +672,62 @@ html, body, #root {
   padding: 0.625rem;
 }
 
+/* ---- Chips strip (§3c.4): one 45 px horizontal scroller with an honest
+   affordance — an edge fade AND a 44 px chevron, shown only on a side that
+   actually hides content. Height = 1 px border + py-1.5 (6+6) + h-8 chips. */
+.chips-wrap {
+  position: relative;
+  border-bottom: 1px solid var(--sf-border-weak);
+}
+.chips-wrap::before,
+.chips-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 1px;
+  width: 34px;
+  z-index: 5;
+  pointer-events: none;
+}
+.chips-wrap[data-edge='middle']::before,
+.chips-wrap[data-edge='end']::before {
+  left: 0;
+  background: linear-gradient(to right, var(--sf-void), transparent);
+}
+.chips-wrap[data-edge='middle']::after,
+.chips-wrap[data-edge='start']::after {
+  right: 0;
+  background: linear-gradient(to left, var(--sf-void), transparent);
+}
+.chips-wrap[data-edge='none']::before,
+.chips-wrap[data-edge='none']::after {
+  content: none;
+}
+.chips-wrap > [role='group']:focus-visible {
+  outline: 2px solid var(--sf-review);
+  outline-offset: -2px;
+}
+.chips-next {
+  position: absolute;
+  top: 0;
+  bottom: 1px;
+  z-index: 10;
+  display: flex;
+  width: 48px;
+  align-items: center;
+  justify-content: center;
+  color: #ddd6fe;
+}
+.chips-next.is-left {
+  left: 0;
+  background: linear-gradient(to right, var(--sf-void) 40%, transparent);
+}
+.chips-next.is-right {
+  right: 0;
+  background: linear-gradient(to left, var(--sf-void) 40%, transparent);
+}
+.chips-next:hover { color: #fff; }
+
 /* Nav-chip conversation pill (§4.6): icon + number, never hue alone. */
 .qchat-chip {
   display: inline-flex;
@@ -656,9 +752,13 @@ html, body, #root {
 /* ---- Composer (§2b.7 advisory / §2b.8 answer) ------------------------- */
 .qchat-composer {
   container-type: inline-size;
-  margin-top: 0.25rem;
+  /* Input and transcript share one column (§3c.6). */
+  width: 100%;
+  max-width: min(100%, 72ch);
+  margin: 0.25rem auto 0;
   border-radius: 10px;
   overflow: hidden;
+  flex-shrink: 0;
 }
 .qchat-composer.is-advisory {
   border: 1px solid rgba(139, 92, 246, 0.5);

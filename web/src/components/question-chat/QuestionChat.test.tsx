@@ -17,8 +17,6 @@ function baseProps(overrides: Partial<QuestionChatProps> = {}): QuestionChatProp
     id: 'q1',
     title: '**Fuse selectivity** (coordination)',
     messages: [],
-    expanded: false,
-    onToggleExpanded: vi.fn(),
     busy: false,
     canConclude: false,
     concluding: false,
@@ -42,7 +40,7 @@ function baseProps(overrides: Partial<QuestionChatProps> = {}): QuestionChatProp
   };
 }
 
-/** Parent-side harness: expanded + messages + draft live here, as in QuestionPanel. */
+/** Parent-side harness: messages + draft + mode live here, as in QuestionPanel. */
 function Harness({
   initial = [] as PortalThreadMessage[],
   banner
@@ -51,7 +49,6 @@ function Harness({
   banner?: ReactNode;
 }) {
   const [messages, setMessages] = useState(initial);
-  const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState('');
   const [mode, setMode] = useState<ComposerMode>('advisory');
   return (
@@ -62,8 +59,6 @@ function Harness({
       <QuestionChat
         {...baseProps()}
         messages={messages}
-        expanded={expanded}
-        onToggleExpanded={() => setExpanded(v => !v)}
         draft={draft}
         onDraftChange={setDraft}
         mode={mode}
@@ -73,26 +68,6 @@ function Harness({
           setMessages(m => [...m, { role: 'user', text: draft, ts: 99, intent: 'ask' }]);
           setDraft('');
         }}
-      />
-    </>
-  );
-}
-
-/** Parent-side harness for the proposal-arrival path (§4.7). */
-function ProposalHarness() {
-  const [proposal, setProposal] = useState<PortalThreadMessage['proposal'] | null>(null);
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setProposal({ status: 'pending', basedOn: 2, text: 'Use the 2 A fuse.' })}
-      >
-        inject proposal
-      </button>
-      <QuestionChat
-        {...baseProps({ messages: [ask, reply], proposal, expanded })}
-        onToggleExpanded={() => setExpanded(v => !v)}
       />
     </>
   );
@@ -109,71 +84,101 @@ describe('QuestionChat — composition', () => {
     expect(container.querySelector('.qchat-wrap')).toBe(section);
   });
 
-  it('starts collapsed when the thread already has history', () => {
+  it('always renders the log — there is no collapse toggle (§3c.10.1)', () => {
     renderWithUser(<QuestionChat {...baseProps({ messages: [ask, reply] })} />);
-    expect(screen.queryByRole('log')).toBeNull();
-    expect(screen.getByRole('button', { name: /Conversation about/ })).toHaveAttribute(
-      'aria-expanded',
-      'false'
-    );
+
+    const log = screen.getByRole('log', {
+      name: 'Conversation about Fuse selectivity (coordination)'
+    });
+    expect(log).toHaveTextContent('Is the fuse rated?');
+    expect(log).toHaveTextContent('Yes, 2 A slow-blow.');
+    // No aria-expanded control anywhere in the region.
+    expect(screen.queryByRole('button', { name: /Conversation about/ })).toBeNull();
+    expect(screen.getByRole('region', { name: /Conversation about/ }).querySelector('[aria-expanded]'))
+      .toBeNull();
   });
 
-  it('opens the log when the toggle is clicked', async () => {
-    const { user } = renderWithUser(<Harness initial={[ask, reply]} />);
-    await user.click(screen.getByRole('button', { name: /Conversation about/ }));
-    expect(screen.getByRole('log', { name: 'Conversation about Fuse selectivity (coordination)' }))
-      .toBeInTheDocument();
+  it('renders the log before the composer, both inside the fill band', () => {
+    const { container } = renderWithUser(<QuestionChat {...baseProps({ messages: [ask] })} />);
+    const log = screen.getByRole('log');
+    const composer = container.querySelector('.qchat-composer')!;
+    expect(log.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelector('.qchat')!.contains(log)).toBe(true);
   });
 });
 
 describe('QuestionChat — banner slot (§3b.3.7)', () => {
-  it('renders the banner shrink-0 between the log and the composer', async () => {
-    const { user, container } = renderWithUser(
-      <Harness initial={[ask, reply]} banner={<p>Resolved ✓</p>} />
-    );
-
-    await user.click(screen.getByRole('button', { name: /Conversation about/ }));
+  it('renders the banner shrink-0 between the log and the composer', () => {
+    renderWithUser(<Harness initial={[ask, reply]} banner={<p>Resolved ✓</p>} />);
 
     const banner = screen.getByText('Resolved ✓');
     const slot = banner.parentElement!;
     expect(slot.className).toContain('shrink-0');
 
     const log = screen.getByRole('log');
-    const composer = container.querySelector('.qchat-composer')!;
+    const composer = document.querySelector('.qchat-composer')!;
     expect(log.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(slot.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('appends the caller className to the root section', () => {
-    const { container } = renderWithUser(<QuestionChat {...baseProps({ className: 'flex-1' })} />);
+    const { container } = renderWithUser(
+      <QuestionChat {...baseProps({ className: 'flex-1 min-h-0' })} />
+    );
     const section = container.querySelector('.qchat-wrap')!;
     expect(section.className).toContain('qchat-wrap');
     expect(section.className).toContain('flex-1');
+    expect(section.className).toContain('min-h-0');
   });
 });
 
-describe('QuestionChat — auto-expand (§4.7)', () => {
-  it('auto-expands when a message is sent', async () => {
+describe('QuestionChat — live rows', () => {
+  it('appends a sent question to the always-visible log', async () => {
     const { user } = renderWithUser(<Harness />);
-    expect(screen.queryByRole('log')).toBeNull();
     await user.type(screen.getByRole('textbox'), 'Is the fuse rated?');
     await user.click(screen.getByRole('button', { name: 'Ask' }));
-    expect(screen.getByRole('log')).toBeInTheDocument();
     expect(screen.getByText(/Is the fuse rated\?/)).toBeInTheDocument();
   });
 
-  it('auto-expands when a new specialist reply arrives', async () => {
+  it('renders a newly arrived specialist reply without expanding anything', async () => {
     const { user } = renderWithUser(<Harness initial={[ask]} />);
-    expect(screen.queryByRole('log')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'inject reply' }));
-    expect(screen.getByRole('log')).toBeInTheDocument();
     expect(screen.getByText('Yes, 2 A slow-blow.')).toBeInTheDocument();
   });
+});
 
-  it('auto-expands when a concluded proposal arrives', async () => {
-    const { user } = renderWithUser(<ProposalHarness />);
-    expect(screen.queryByRole('log')).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'inject proposal' }));
-    expect(screen.getByRole('group', { name: 'Proposed answer' })).toBeInTheDocument();
+/** Parent-side mode harness: the composer is fully controlled (§2b.4). */
+function ModeHarness(props: Partial<QuestionChatProps>) {
+  const [mode, setMode] = useState<ComposerMode>('advisory');
+  return <QuestionChat {...baseProps(props)} mode={mode} onModeChange={setMode} />;
+}
+
+describe('QuestionChat — Conclude from chat (§3c.7)', () => {
+  it('forwards the conclude gate to the composer and renders it in the Answer skin', async () => {
+    const onConclude = vi.fn();
+    const { user } = renderWithUser(
+      <ModeHarness messages={[ask, reply]} canConclude onConclude={onConclude} />
+    );
+
+    // Advisory skin: concluding produces an answer, so no button here.
+    expect(screen.queryByRole('button', { name: /Conclude/ })).toBeNull();
+
+    await user.click(screen.getByRole('radio', { name: 'Answer' }));
+    const conclude = screen.getByRole('button', { name: 'Conclude from chat' });
+    expect(document.querySelector('.qchat-modehead')!.contains(conclude)).toBe(true);
+
+    await user.click(conclude);
+    expect(onConclude).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps Conclude out of the conversation band entirely', () => {
+    renderWithUser(
+      <QuestionChat
+        {...baseProps({ messages: [ask, reply], mode: 'answer', canConclude: true })}
+      />
+    );
+    const conclude = screen.getByRole('button', { name: 'Conclude from chat' });
+    expect(screen.getByRole('log').contains(conclude)).toBe(false);
+    expect(document.querySelector('.qchat-logwrap')!.contains(conclude)).toBe(false);
   });
 });

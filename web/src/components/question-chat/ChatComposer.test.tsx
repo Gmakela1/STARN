@@ -167,6 +167,58 @@ describe('ChatComposer — locked rows', () => {
   });
 });
 
+describe('ChatComposer — Conclude from chat (§3c.7)', () => {
+  it('does not exist in the advisory skin (concluding produces an answer)', () => {
+    renderWithUser(<Harness canConclude />);
+    expect(screen.queryByRole('button', { name: /Conclude/ })).toBeNull();
+  });
+
+  it('sits in the Answer skin mode bar and fires onConclude', async () => {
+    const onConclude = vi.fn();
+    const { user } = renderWithUser(<Harness mode="answer" canConclude onConclude={onConclude} />);
+
+    const conclude = screen.getByRole('button', { name: 'Conclude from chat' });
+    // The mode bar owns it — never the conversation band (§3c.10.6).
+    expect(document.querySelector('.qchat-modehead')!.contains(conclude)).toBe(true);
+    await user.click(conclude);
+    expect(onConclude).toHaveBeenCalledTimes(1);
+  });
+
+  it('is hidden while a proposal is already pending', () => {
+    renderWithUser(<Harness mode="answer" canConclude proposalPending />);
+    expect(screen.queryByRole('button', { name: /Conclude/ })).toBeNull();
+  });
+
+  it('is disabled while a draft exists, so Conclude and Record are never both enabled', async () => {
+    const { user } = renderWithUser(<Harness mode="answer" canConclude />);
+
+    // Empty draft: Conclude is the one enabled verb.
+    expect(screen.getByRole('button', { name: 'Conclude from chat' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Record' })).toBeDisabled();
+
+    await user.type(screen.getByRole('textbox'), 'Use the 2 A fuse.');
+
+    // Draft present: the inverse, same position, with the reason announced.
+    expect(screen.getByRole('button', { name: 'Conclude from chat' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Record' })).toBeEnabled();
+    expect(
+      screen.getByText('Clear the draft to draft an answer from the conversation.')
+    ).toBeInTheDocument();
+
+    await user.clear(screen.getByRole('textbox'));
+    expect(screen.getByRole('button', { name: 'Conclude from chat' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Record' })).toBeDisabled();
+  });
+
+  it('shows Drafting… with aria-busy while the server drafts', () => {
+    renderWithUser(<Harness mode="answer" canConclude concluding />);
+    const button = screen.getByRole('button', { name: 'Drafting…' });
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(button).toBeDisabled();
+    expect(screen.queryByText('Conclude from chat')).toBeNull();
+  });
+});
+
 describe('ChatComposer — answer failure (R5)', () => {
   it('shows a role=alert card whose Retry as answer re-arms and re-sends', async () => {
     const onAnswer = vi.fn();

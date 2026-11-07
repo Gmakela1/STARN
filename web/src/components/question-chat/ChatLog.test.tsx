@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { cleanup, renderWithUser } from '../../test/render';
 import ChatLog, { type ChatLogProps } from './ChatLog';
 import type { PortalThreadMessage } from '../../types/api';
@@ -39,12 +39,59 @@ function baseProps(overrides: Partial<ChatLogProps> = {}): ChatLogProps {
   };
 }
 
+/**
+ * jsdom reports every layout metric as 0, so the log's stick-to-bottom test
+ * (scrollHeight - scrollTop - clientHeight <= 24) can never be exercised
+ * without pinning the metrics the component actually reads.
+ */
+function pinMetrics(
+  el: HTMLElement,
+  metrics: { scrollTop: number; scrollHeight: number; clientHeight: number }
+): void {
+  Object.defineProperty(el, 'scrollTop', {
+    value: metrics.scrollTop,
+    writable: true,
+    configurable: true
+  });
+  Object.defineProperty(el, 'scrollHeight', { value: metrics.scrollHeight, configurable: true });
+  Object.defineProperty(el, 'clientHeight', { value: metrics.clientHeight, configurable: true });
+}
+
+/** jsdom has no Element.scrollTo; spy on the call instead of the position. */
+function spyScrollTo(el: HTMLElement): ReturnType<typeof vi.fn> {
+  const scrollTo = vi.fn();
+  Object.defineProperty(el, 'scrollTo', { value: scrollTo, configurable: true });
+  return scrollTo;
+}
+
 describe('ChatLog — log element', () => {
   it('is a labelled log that only announces additions', () => {
     renderWithUser(<ChatLog {...baseProps({ messages: [ask] })} />);
     const log = screen.getByRole('log', { name: 'Conversation about Fuse selectivity' });
     expect(log).toHaveAttribute('aria-relevant', 'additions');
     expect(log).toHaveAttribute('id', 'qc-log-q1');
+  });
+
+  it('carries no height cap and no minimum — the log fills the band (§3c.1)', () => {
+    const { container } = renderWithUser(<ChatLog {...baseProps({ messages: [ask, reply] })} />);
+    const log = screen.getByRole('log');
+    // The class contract: no Tailwind max-h/min-h utility, no is-proposal cap.
+    expect(log.className).toBe('qchat-log');
+    expect(log.className).not.toMatch(/max-h|min-h/);
+
+    // The measure lives on the column, and the log is the band's only scroller.
+    const wrap = container.querySelector('.qchat-logwrap')!;
+    const col = log.querySelector('.qchat-col')!;
+    expect(wrap.contains(log)).toBe(true);
+    expect(col.parentElement).toBe(log);
+    expect(col).toHaveTextContent('Is the fuse rated?');
+  });
+
+  it('shows the empty state inside the log when the thread has no rows', () => {
+    renderWithUser(<ChatLog {...baseProps()} />);
+    const log = screen.getByRole('log');
+    expect(log).toHaveTextContent('No conversation yet.');
+    expect(log).toHaveTextContent('Ask the specialist below — nothing is recorded.');
   });
 });
 
@@ -59,12 +106,22 @@ describe('ChatLog — row variants', () => {
     expect(screen.queryByText('Recorded answer')).toBeNull();
   });
 
+  it('caps the bubble width with the min() recipe, not a fixed percentage', () => {
+    const { container } = renderWithUser(<ChatLog {...baseProps({ messages: [ask] })} />);
+    const row = container.querySelector('.qchat-ask')!;
+    // `.qchat-ask { max-width: min(88%, 60ch) }` lives in index.css (§3c.6);
+    // the element itself must carry no width utility that could win.
+    expect(row.className).toBe('qchat-ask');
+    expect(row.className).not.toMatch(/max-w-/);
+  });
+
   it('renders the specialist reply with its own label', () => {
     const { container } = renderWithUser(<ChatLog {...baseProps({ messages: [reply] })} />);
     expect(container.querySelector('.qchat-specialist-label')).toHaveTextContent('Specialist');
-    expect(container.querySelector('.qchat-specialist-body')).toHaveTextContent(
-      'Yes, 2 A slow-blow.'
-    );
+    const body = container.querySelector('.qchat-specialist-body')!;
+    expect(body).toHaveTextContent('Yes, 2 A slow-blow.');
+    // No `ch` cap on the row: the column owns the measure (§3c.6).
+    expect(body.className).not.toMatch(/max-w-/);
   });
 
   it('renders a recorded answer as a card with Lock, words and the state chip', () => {
@@ -130,5 +187,89 @@ describe('ChatLog — status and errors', () => {
     expect(alert).toHaveTextContent('Network down');
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ChatLog — progressive scroll (§3c.3)', () => {
+  it('jumps to the latest row instantly (never smooth) on a question switch', () => {
+    const { rerender } = renderWithUser(<ChatLog {...baseProps({ messages: [ask, reply] })} />);
+    const log = screen.getByRole('log');
+    pinMetrics(log, { scrollTop: 0, scrollHeight: 900, clientHeight: 300 });
+    const scrollTo = spyScrollTo(log);
+
+    rerender(<ChatLog {...baseProps({ id: 'q2', title: 'Other', messages: [ask, reply] })} />);
+
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 900, behavior: 'auto' });
+  });
+
+  it('does not move the view when a row arrives while the reader is scrolled up', () => {
+    const { rerender } = renderWithUser(<ChatLog {...baseProps({ messages: [ask] })} />);
+    const log = screen.getByRole('log');
+    pinMetrics(log, { scrollTop: 0, scrollHeight: 900, clientHeight: 300 });
+    const scrollTo = spyScrollTo(log);
+
+    // The reader scrolls into history: 600 px above the bottom.
+    fireEvent.scroll(log);
+
+    rerender(<ChatLog {...baseProps({ messages: [ask, reply] })} />);
+
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(log.scrollTop).toBe(0);
+    // The pill is the only way back to the latest row.
+    expect(screen.getByRole('button', { name: /Jump to latest/ })).toBeInTheDocument();
+  });
+
+  it('follows the new row when the reader is already at the bottom', () => {
+    const { rerender } = renderWithUser(<ChatLog {...baseProps({ messages: [ask] })} />);
+    const log = screen.getByRole('log');
+    pinMetrics(log, { scrollTop: 600, scrollHeight: 900, clientHeight: 300 });
+    const scrollTo = spyScrollTo(log);
+
+    fireEvent.scroll(log);
+    expect(screen.queryByRole('button', { name: /Jump to latest/ })).toBeNull();
+
+    rerender(<ChatLog {...baseProps({ messages: [ask, reply] })} />);
+
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo.mock.calls[0][0]).toEqual({ top: 900, behavior: 'smooth' });
+    expect(screen.queryByRole('button', { name: /Jump to latest/ })).toBeNull();
+  });
+
+  it('treats the 24 px band at the bottom as "at the bottom"', () => {
+    const { rerender } = renderWithUser(<ChatLog {...baseProps({ messages: [ask] })} />);
+    const log = screen.getByRole('log');
+    pinMetrics(log, { scrollTop: 576, scrollHeight: 900, clientHeight: 300 });
+    const scrollTo = spyScrollTo(log);
+
+    fireEvent.scroll(log);
+    rerender(<ChatLog {...baseProps({ messages: [ask, reply] })} />);
+
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it('the Jump to latest pill jumps to the bottom and then hides', async () => {
+    const { user } = renderWithUser(<ChatLog {...baseProps({ messages: [ask, reply] })} />);
+    const log = screen.getByRole('log');
+    pinMetrics(log, { scrollTop: 0, scrollHeight: 900, clientHeight: 300 });
+    const scrollTo = spyScrollTo(log);
+
+    fireEvent.scroll(log);
+    const pill = screen.getByRole('button', { name: /Jump to latest/ });
+    await user.click(pill);
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 900, behavior: 'smooth' });
+    expect(screen.queryByRole('button', { name: /Jump to latest/ })).toBeNull();
+  });
+
+  it('counts the rows that arrived while the reader was scrolled up', () => {
+    const { rerender } = renderWithUser(<ChatLog {...baseProps({ messages: [ask] })} />);
+    const log = screen.getByRole('log');
+    pinMetrics(log, { scrollTop: 0, scrollHeight: 900, clientHeight: 300 });
+    fireEvent.scroll(log);
+
+    rerender(<ChatLog {...baseProps({ messages: [ask, reply, recorded] })} />);
+
+    expect(screen.getByRole('button', { name: /Jump to latest/ })).toHaveTextContent('2');
   });
 });

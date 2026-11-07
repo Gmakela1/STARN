@@ -17,7 +17,15 @@
 //   R7 conclude / proposal accept / Ask-in-flight never change the mode.
 import { useId, useRef } from 'react';
 import type { KeyboardEvent } from 'react';
-import { Check, Loader2, Lock, MessageCircleQuestion, Mic, SendHorizontal } from 'lucide-react';
+import {
+  Check,
+  ListChecks,
+  Loader2,
+  Lock,
+  MessageCircleQuestion,
+  Mic,
+  SendHorizontal
+} from 'lucide-react';
 import { useAutosizeTextarea } from './useAutosizeTextarea';
 
 /** 'advisory' asks the specialist and records nothing; 'answer' commits. */
@@ -55,6 +63,16 @@ export interface ChatComposerProps {
   placeholder?: string;
   /** Answer-send failure (R5): role=alert card with Retry as answer. */
   answerError?: string;
+  /**
+   * Conclude-from-chat gate (§3c.7): ≥1 specialist reply, no pending proposal,
+   * nothing in flight. Rendered in the Answer skin's mode bar only.
+   */
+  canConclude?: boolean;
+  /** The server is drafting the conclusion. */
+  concluding?: boolean;
+  onConclude?: () => void;
+  /** A concluded draft is waiting for Use/Edit/Reject — no second entry point. */
+  proposalPending?: boolean;
 }
 
 const LOCKED_ICON = { queued: Lock, resolved: Check, auto: Check } as const;
@@ -64,7 +82,9 @@ const LOCKED_ICON = { queued: Lock, resolved: Check, auto: Check } as const;
  * Throws: never. Keyboard (design §2b.5): Enter sends in the visible mode
  * (advisory → Ask, answer → Record), Shift+Enter newlines, Alt+A toggles the
  * mode without sending. There is no send-as-answer shortcut: the skin says
- * what Enter does.
+ * what Enter does. The Answer skin's mode bar also carries `Conclude from
+ * chat` (§3c.7) — disabled while a draft exists, so exactly one verb is ever
+ * enabled.
  */
 export default function ChatComposer({
   value,
@@ -81,7 +101,11 @@ export default function ChatComposer({
   onMicDown,
   onMicUp,
   placeholder,
-  answerError
+  answerError,
+  canConclude = false,
+  concluding = false,
+  onConclude,
+  proposalPending = false
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const advisoryRef = useRef<HTMLButtonElement>(null);
@@ -109,6 +133,8 @@ export default function ChatComposer({
 
   const empty = value.trim() === '';
   const sendDisabled = disabled || busy || empty;
+  /** A non-empty draft keeps Conclude disabled (§3c.7). */
+  const draftBlocksConclude = !empty;
 
   function selectMode(next: ComposerMode, moveFocus: boolean): void {
     onModeChange(next);
@@ -197,6 +223,32 @@ export default function ChatComposer({
             </>
           )}
         </p>
+        {/* §3c.7 — Conclude lives at the submit area, Answer skin only, and is
+            disabled while a draft exists so Conclude and Record can never both
+            be enabled. Same position while disabled: typing never shifts the
+            row. */}
+        {isAnswer && canConclude && !proposalPending && (
+          <button
+            type="button"
+            onClick={onConclude}
+            aria-busy={concluding}
+            aria-describedby={draftBlocksConclude ? `${helpId}-conclude-help` : undefined}
+            disabled={concluding || draftBlocksConclude}
+            title={
+              draftBlocksConclude
+                ? 'Clear the draft to draft an answer from the conversation.'
+                : 'Draft an answer from the conversation — records nothing'
+            }
+            className="qchat-conclude"
+          >
+            {concluding ? (
+              <Loader2 className="h-3 w-3 motion-safe:animate-spin" aria-hidden />
+            ) : (
+              <ListChecks className="h-3 w-3" aria-hidden />
+            )}
+            {concluding ? 'Drafting…' : 'Conclude from chat'}
+          </button>
+        )}
       </div>
 
       <div className="qchat-inputrow">
@@ -289,6 +341,11 @@ export default function ChatComposer({
         Enter sends in the selected mode. Shift plus Enter adds a line. Alt plus A switches between
         advisory and answer.
       </p>
+      {draftBlocksConclude && (
+        <p id={`${helpId}-conclude-help`} className="sr-only">
+          Clear the draft to draft an answer from the conversation.
+        </p>
+      )}
       <p role="status" className="sr-only">
         {isAnswer
           ? 'Answer mode — sending records your answer'

@@ -1053,6 +1053,74 @@ describe('QuestionPanel research gate', () => {
       expect(onActiveItemChange).toHaveBeenCalledTimes(2);
     });
 
+    // ————— Chips strip (§3c.4): one 45 px horizontal scroller —————
+    it('chips strip is one horizontal scroller with a fixed 45 px row', () => {
+      const a = makeItem({ id: 'A', title: 'Question A' });
+      const b = makeItem({ id: 'B', title: 'Question B' });
+      const { container } = renderWithUser(<QuestionPanel {...baseProps({ items: [a, b] })} />);
+
+      const strip = screen.getByRole('group', { name: 'Open questions' });
+      expect(strip.className).toContain('overflow-x-auto');
+      expect(strip.className).toContain('overscroll-x-contain');
+      expect(strip.className).toContain('py-1.5');
+      expect(strip).toHaveAttribute('tabindex', '0');
+
+      // Height lock: 1 px border + py-1.5 (6+6) + h-8 chips = 45.
+      expect(container.querySelector('.chips-wrap')).toHaveAttribute('data-edge');
+      const chip = screen.getByRole('button', { name: /^Question A/ });
+      expect(chip.className).toContain('h-8');
+      expect(chip.className).not.toContain('py-1');
+    });
+
+    it('shows a chevron only on a side that hides content, and nudges the strip', async () => {
+      const a = makeItem({ id: 'A', title: 'Question A' });
+      const b = makeItem({ id: 'B', title: 'Question B' });
+      const { user } = renderWithUser(<QuestionPanel {...baseProps({ items: [a, b] })} />);
+      const strip = screen.getByRole('group', { name: 'Open questions' });
+
+      // jsdom has no layout: pin a strip wider than its box, scrolled to start.
+      Object.defineProperty(strip, 'scrollWidth', { value: 900, configurable: true });
+      Object.defineProperty(strip, 'clientWidth', { value: 300, configurable: true });
+      Object.defineProperty(strip, 'scrollLeft', { value: 0, writable: true, configurable: true });
+      fireEvent.scroll(strip);
+
+      expect(screen.getByRole('button', { name: 'Scroll questions right' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Scroll questions left' })).toBeNull();
+
+      const scrollBy = vi.fn();
+      Object.defineProperty(strip, 'scrollBy', { value: scrollBy, configurable: true });
+      await user.click(screen.getByRole('button', { name: 'Scroll questions right' }));
+      expect(scrollBy).toHaveBeenCalledTimes(1);
+      expect(scrollBy.mock.calls[0][0].left).toBeGreaterThan(0);
+
+      // Scrolled into the middle: both sides hide content.
+      strip.scrollLeft = 300;
+      fireEvent.scroll(strip);
+      expect(screen.getByRole('button', { name: 'Scroll questions left' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Scroll questions right' })).toBeInTheDocument();
+    });
+
+    it('scrolls the active chip into view after a switch (§3c.4)', async () => {
+      const a = makeItem({ id: 'A', title: 'Question A' });
+      const b = makeItem({ id: 'B', title: 'Question B' });
+      const { user } = renderWithUser(<QuestionPanel {...baseProps({ items: [a, b] })} />);
+      const spy = vi.spyOn(Element.prototype, 'scrollIntoView');
+      spy.mockClear();
+
+      await user.click(screen.getByRole('button', { name: /^Question B/ }));
+
+      expect(spy).toHaveBeenCalledWith({
+        inline: 'nearest',
+        block: 'nearest',
+        behavior: 'smooth'
+      });
+      expect(screen.getByRole('button', { name: /^Question B/ })).toHaveAttribute(
+        'aria-current',
+        'true'
+      );
+      spy.mockRestore();
+    });
+
     it('the header Details button hands the active item to onOpenDetails', async () => {
       const onOpenDetails = vi.fn();
       const { user } = renderWithUser(

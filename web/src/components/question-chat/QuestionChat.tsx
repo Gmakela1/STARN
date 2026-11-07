@@ -1,13 +1,11 @@
-// One question's whole conversation region (design 2026-11-03 §4.1, §4.7):
-// <section aria-label="Conversation about {title}"> = ChatHeader + optional
-// ChatLog + optional `banner` slot + ChatComposer. This file owns no state —
-// `expanded` (session-only, keyed by item in the parent), the draft and the
-// composer mode all live in the parent. The only thing it does on its own is
-// auto-expand the log when a row arrives (send, specialist reply, concluded
-// proposal).
-import { useEffect, useRef } from 'react';
+// One question's whole conversation region (design 2026-11-03 §3c.1):
+// <section aria-label="Conversation about {title}"> = ChatLog + optional
+// `banner` slot + ChatComposer. The left pane IS a chat window: the log fills
+// all remaining height between the pinned context header above and the pinned
+// composer below, and there is no collapse toggle (§3c, §3c.8.1).
+// This file owns no state — the draft, the composer mode and the pending
+// proposal all live in the parent.
 import type { ReactNode } from 'react';
-import ChatHeader from './ChatHeader';
 import ChatLog from './ChatLog';
 import type { ChatRecordedState } from './ChatLog';
 import ChatComposer from './ChatComposer';
@@ -22,9 +20,6 @@ export interface QuestionChatProps {
   title: string;
   /** `item.meta.thread` — the parent's rows, oldest first. */
   messages: PortalThreadMessage[];
-  /** Session-only, parent-owned (§4.7). */
-  expanded: boolean;
-  onToggleExpanded: () => void;
 
   // ---- thread send state -------------------------------------------------
   /** An Ask or an answer is in flight. */
@@ -79,22 +74,19 @@ export interface QuestionChatProps {
    * card. `shrink-0` — the log is the only band that gives up height.
    */
   banner?: ReactNode;
-  /** Extra classes on the root section (the panel passes `flex-1`). */
+  /** Extra classes on the root section (the panel passes `flex-1 min-h-0`). */
   className?: string;
 }
 
 /**
  * Composes the conversation region. Inputs/outputs: see `QuestionChatProps`.
- * Throws: never. Auto-expand (§4.7) fires only for a *new* row, an Ask going
- * in flight, or a newly arrived pending proposal — never for existing history,
- * so switching to a question with a thread stays collapsed.
+ * Throws: never. No expansion state: the conversation is always rendered and
+ * the log is the only scrollable band (§3c.10.1).
  */
 export default function QuestionChat({
   id,
   title,
   messages,
-  expanded,
-  onToggleExpanded,
   busy,
   busyKind,
   threadError,
@@ -129,20 +121,6 @@ export default function QuestionChat({
 }: QuestionChatProps) {
   const cleanTitle = cleanQuestionTitle(title);
   const pendingProposal = proposal?.status === 'pending' ? proposal : null;
-  const seen = useRef({
-    rows: messages.length,
-    busy,
-    pending: pendingProposal !== null
-  });
-
-  useEffect(() => {
-    const prev = seen.current;
-    const grew = messages.length > prev.rows;
-    const sendStarted = busy && !prev.busy;
-    const proposalArrived = pendingProposal !== null && !prev.pending;
-    seen.current = { rows: messages.length, busy, pending: pendingProposal !== null };
-    if (!expanded && (grew || sendStarted || proposalArrived)) onToggleExpanded();
-  }, [messages.length, busy, pendingProposal, expanded, onToggleExpanded]);
 
   return (
     <section
@@ -150,37 +128,24 @@ export default function QuestionChat({
       className={className ? `qchat-wrap ${className}` : 'qchat-wrap'}
     >
       <div className="qchat">
-        <ChatHeader
+        <ChatLog
           id={id}
           title={cleanTitle}
           messages={messages}
-          expanded={expanded}
-          onToggleExpanded={onToggleExpanded}
-          canConclude={canConclude}
-          concluding={concluding}
-          onConclude={onConclude}
-          proposalPending={pendingProposal !== null}
+          busy={busy}
+          busyKind={busyKind}
+          error={threadError}
+          onRetry={onRetryThread}
+          proposal={pendingProposal}
+          editingProposal={editingProposal}
+          proposalError={proposalError}
+          onUseProposal={onUseProposal}
+          onEditProposal={onEditProposal}
+          onRejectProposal={onRejectProposal}
+          onSaveProposalEdit={onSaveProposalEdit}
+          onCancelProposalEdit={onCancelProposalEdit}
+          recordedState={recordedState}
         />
-        {expanded && (
-          <ChatLog
-            id={id}
-            title={cleanTitle}
-            messages={messages}
-            busy={busy}
-            busyKind={busyKind}
-            error={threadError}
-            onRetry={onRetryThread}
-            proposal={pendingProposal}
-            editingProposal={editingProposal}
-            proposalError={proposalError}
-            onUseProposal={onUseProposal}
-            onEditProposal={onEditProposal}
-            onRejectProposal={onRejectProposal}
-            onSaveProposalEdit={onSaveProposalEdit}
-            onCancelProposalEdit={onCancelProposalEdit}
-            recordedState={recordedState}
-          />
-        )}
         {banner && <div className="shrink-0">{banner}</div>}
         <ChatComposer
           value={draft}
@@ -197,6 +162,10 @@ export default function QuestionChat({
           onMicUp={onMicUp}
           answerError={answerError}
           placeholder={placeholder}
+          canConclude={canConclude}
+          concluding={concluding}
+          onConclude={onConclude}
+          proposalPending={pendingProposal !== null}
         />
       </div>
     </section>

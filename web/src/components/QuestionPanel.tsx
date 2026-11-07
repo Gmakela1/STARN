@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import {
   Check,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   ListChecks,
   Loader2,
@@ -217,8 +219,9 @@ export default function QuestionPanel({
    * switch and after every send.
    */
   const [modes, setModes] = useState<Record<string, ComposerMode>>({});
-  /** Log expansion per item (§4.7) — session-only, collapsed by default. */
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  /** Chips strip overflow affordance (§3c.4): which edges hide content. */
+  const [chipEdge, setChipEdge] = useState<'none' | 'start' | 'middle' | 'end'>('none');
+  const chipStripRef = useRef<HTMLDivElement>(null);
   /** Conclude-from-chat — item id with a conclusion being drafted. */
   const [concludingId, setConcludingId] = useState<string | null>(null);
   /** Conclude-from-chat — inline edit of the pending drafted answer. */
@@ -266,6 +269,47 @@ export default function QuestionPanel({
   useEffect(() => { onActiveItemChangeRef.current = onActiveItemChange; }, [onActiveItemChange]);
   useEffect(() => { proposalEditRef.current = proposalEdit; }, [proposalEdit]);
   useEffect(() => { threadProposalEditRef.current = threadProposalEdit; }, [threadProposalEdit]);
+
+  // §3c.4 — the chips strip is one 45 px horizontal scroller. One `chipEdge`
+  // value drives both the edge fade and the chevron buttons, so a side with no
+  // hidden content never shows a fade or a control.
+  const measureChipStrip = useCallback((): void => {
+    const el = chipStripRef.current;
+    if (!el) return;
+    if (el.scrollWidth <= el.clientWidth) {
+      setChipEdge('none');
+      return;
+    }
+    const left = el.scrollLeft || 0;
+    const atStart = left <= 2;
+    const atEnd = left + el.clientWidth >= el.scrollWidth - 2;
+    setChipEdge(atStart ? 'start' : atEnd ? 'end' : 'middle');
+  }, []);
+
+  useEffect(() => {
+    measureChipStrip();
+    const el = chipStripRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measureChipStrip);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measureChipStrip, items.length]);
+
+  // §3c.4 — the active chip is always reachable: move the strip by the minimum
+  // distance and never scroll the page or the pane (`block:'nearest'`).
+  useEffect(() => {
+    const chip = chipStripRef.current?.querySelector<HTMLElement>('[aria-current="true"]');
+    chip?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
+  }, [activeId]);
+
+  /** Chevron click: one page-ish nudge along the strip (§3c.4). */
+  const nudgeChips = useCallback((direction: -1 | 1): void => {
+    const el = chipStripRef.current;
+    if (!el) return;
+    const delta = direction * Math.max(120, Math.round(el.clientWidth * 0.8));
+    if (typeof el.scrollBy === 'function') el.scrollBy({ left: delta, behavior: 'smooth' });
+    else el.scrollLeft += delta;
+  }, []);
 
   /** The single per-question textarea, owned by QuestionChat's composer. */
   const composerEl = useCallback(
@@ -1043,15 +1087,11 @@ export default function QuestionPanel({
       !autoAppliedActive ? (
         <QuestionChat
           key={item.id}
-          className="flex-1"
+          className="flex-1 min-h-0"
           banner={banner ?? undefined}
           id={item.id}
           title={item.title}
           messages={thread}
-          expanded={expanded[item.id] === true}
-          onToggleExpanded={() =>
-            setExpanded(prev => ({ ...prev, [item.id]: prev[item.id] !== true }))
-          }
           busy={threadBusy || answerBusy || threadActionId === item.id}
           busyKind={threadBusy ? 'ask' : undefined}
           threadError={threadErrors[item.id]}
@@ -1124,7 +1164,7 @@ export default function QuestionPanel({
       id="question-panel"
       role="region"
       aria-label="Questions from AI"
-      className="absolute inset-0 z-20 flex flex-col bg-[#05070c] animate-panel-in"
+      className="absolute inset-0 z-20 flex flex-col overflow-hidden bg-[#05070c] animate-panel-in"
     >
       <header className="@container shrink-0 border-b border-[#2a3342] bg-[#0d1017]/90 px-3 py-2">
         {/* §3b.6(iii) — one 60 px row at 900 px: no wrap; the Research button
@@ -1196,7 +1236,18 @@ export default function QuestionPanel({
       </header>
 
       {items.length >= 2 && (
-        <div className="flex overflow-x-auto gap-1.5 border-b border-[#2a3342] px-3 py-1.5">
+        /* §3c.4 — one 45 px horizontal scroller: 1 px border + py-1.5 (6+6) +
+           h-8 chips. The strip is the only horizontal scroller; the fade and
+           the chevrons appear only on a side that actually hides content. */
+        <div className="chips-wrap shrink-0" data-edge={chipEdge}>
+          <div
+            ref={chipStripRef}
+            role="group"
+            aria-label="Open questions"
+            tabIndex={0}
+            onScroll={measureChipStrip}
+            className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain px-3 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
           {/* P5 — ICD-system topic grouping (portalGrouping lib): text headers
               with counts; no color-only distinction, no emoji. Unknown or
               missing meta.topic lands in the "Other" section. */}
@@ -1240,7 +1291,7 @@ export default function QuestionPanel({
                   onFocusDocument?.(navItem);
                 }}
                 aria-current={isActive ? 'true' : undefined}
-                className={`flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium transition-colors ${
                   isActive
                     ? 'border-violet-800/60 bg-violet-950/70 text-violet-200'
                     : 'border-[#2a3342] bg-[#0d1017] text-[#a8b3c4] hover:bg-[#11151d] hover:text-[#e8edf5]'
@@ -1267,6 +1318,27 @@ export default function QuestionPanel({
           })}
             </div>
           ))}
+          </div>
+          {chipEdge !== 'none' && chipEdge !== 'start' && (
+            <button
+              type="button"
+              aria-label="Scroll questions left"
+              onClick={() => nudgeChips(-1)}
+              className="chips-next is-left"
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden />
+            </button>
+          )}
+          {chipEdge !== 'none' && chipEdge !== 'end' && (
+            <button
+              type="button"
+              aria-label="Scroll questions right"
+              onClick={() => nudgeChips(1)}
+              className="chips-next is-right"
+            >
+              <ChevronRight className="h-4 w-4" aria-hidden />
+            </button>
+          )}
         </div>
       )}
 
