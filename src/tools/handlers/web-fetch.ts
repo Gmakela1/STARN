@@ -45,6 +45,61 @@ export function looksLikePdf(contentType: string | null, bytes: Uint8Array): boo
 }
 
 /**
+ * Application subtypes that are text even though they do not start with `text/`.
+ * `application/pdf` is absent on purpose: it is routed to the PDF branch first.
+ */
+const TEXT_APPLICATION_SUBTYPES = new Set([
+  'application/json',
+  'application/xml',
+  'application/xhtml+xml',
+  'application/ld+json',
+  'application/javascript',
+  'application/x-javascript',
+  'application/rss+xml',
+  'application/atom+xml'
+]);
+
+/**
+ * MIME essence of a `content-type` header: parameters dropped, lowercased.
+ *
+ * @param contentType Raw `content-type` header value (may be null).
+ * @returns The MIME type (e.g. `image/png`), or `''` when the header is absent.
+ */
+export function mimeOf(contentType: string | null): string {
+  return (contentType ?? '').split(';')[0].trim().toLowerCase();
+}
+
+/**
+ * True when a body with this `content-type` may be decoded as text. A missing header is
+ * allowed (many static servers omit it), as are `text/*`, the known text application
+ * subtypes, and any `+json` / `+xml` suffix. Images, archives and octet-streams are not:
+ * decoding them as UTF-8 yields mojibake, never a page.
+ *
+ * @param contentType Raw `content-type` header value (may be null).
+ * @returns `true` when the body is safe to decode and extract.
+ */
+export function isTextContentType(contentType: string | null): boolean {
+  const mime = mimeOf(contentType);
+  if (!mime) return true;
+  if (mime.startsWith('text/')) return true;
+  if (TEXT_APPLICATION_SUBTYPES.has(mime)) return true;
+  return mime.endsWith('+json') || mime.endsWith('+xml');
+}
+
+/**
+ * Refusal for a non-text body (image, audio, video, archive, octet-stream, ...).
+ *
+ * @param mime MIME type of the refused body (e.g. `image/png`).
+ * @returns `success:false` response naming the type and the fallback route.
+ */
+function nonTextRefusal(mime: string): ToolExecutionResponse {
+  return {
+    success: false,
+    error: `This URL is ${mime}, not a text page. Download it into reference/ and read it with fs_read.`
+  };
+}
+
+/**
  * Charset label declared by a `content-type` header (e.g. `text/html;
  * charset=iso-8859-1`), with surrounding single or double quotes stripped —
  * TextDecoder rejects a quoted label and would fall back to utf-8.
@@ -562,6 +617,12 @@ export const webFetchHandler: ToolHandler = {
       const bytes = read.bytes;
       if (looksLikePdf(bodyContentType, bytes)) {
         return await buildPdfFetchResult(bytes, parsed.toString());
+      }
+
+      // Everything past this point is decoded as text, so a binary type is refused here
+      // instead of surfacing as UTF-8 mojibake in a `success:true` result.
+      if (!isTextContentType(bodyContentType)) {
+        return nonTextRefusal(mimeOf(bodyContentType));
       }
 
       // Non-PDF bytes arrive already capped at MAX_RAW_BYTES by readBodyBounded.
