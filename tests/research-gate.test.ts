@@ -175,6 +175,13 @@ describe('research gate wiring', () => {
     expect(systemPrompt).toContain('Alternatives: none');
   });
 
+  it('research turn prompt tells the gate to read charts with an explicit axes declaration', async () => {
+    await runQuestionResearch(gateDeps, item);
+    const systemPrompt = (researchClient.chatCompletion.mock.calls[0][0] as any).messages[0].content as string;
+    expect(systemPrompt).toContain('read_chart_data with an explicit axes declaration');
+    expect(systemPrompt).toContain('[Charts detected: ...]');
+  });
+
   it('research loop runs read-only (registry called with the gate allow-list)', async () => {
     const spy = vi.spyOn(registry, 'getDefinitions');
     const research = await import('../src/core/research-gate.js').then(m => m.runQuestionResearch(gateDeps, item));
@@ -182,7 +189,7 @@ describe('research gate wiring', () => {
     expect(spy).toHaveBeenCalled();
     const passed = spy.mock.calls.flatMap(c => c[0] as string[]);
     for (const tool of passed) {
-      expect(['fs_read', 'fs_list', 'state_read', 'web_search']).toContain(tool);
+      expect(['fs_read', 'fs_list', 'state_read', 'web_search', 'read_chart_data']).toContain(tool);
     }
   });
 

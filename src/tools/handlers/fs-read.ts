@@ -19,13 +19,15 @@ async function chartBanner(filePath: string): Promise<string> {
     const lines = probes.map((probe) => {
       const named = probe.series.length > 0;
       if (!probe.reliable) {
-        const count = named ? `${probe.series.length} series` : `${probe.dataPaths} plotted paths`;
-        return `[Charts detected: page ${probe.page} — ${count}, axis assignment ambiguous.\n read_chart_data will require an explicit series→axis mapping.]`;
+        const count = named
+          ? `${probe.series.length} series (${probe.series.join(', ')})`
+          : `${probe.dataPaths} plotted paths`;
+        return `[Charts detected: page ${probe.page} — ${count}. Curves are vector paths; text extraction cannot read their values. If read_chart_data is available, call it with declared axes; otherwise request research to extract the curve values.]`;
       }
       const count = named
         ? `${probe.series.length} series (${probe.series.join(', ')})`
         : `${probe.dataPaths} plotted paths`;
-      return `[Charts detected: page ${probe.page} — ${count}.\n Call read_chart_data(path, page) to read numeric values.]`;
+      return `[Charts detected: page ${probe.page} — ${count}. Curves are vector paths; text extraction cannot read their values. If read_chart_data is available, call it for numeric values; otherwise request research.]`;
     });
     return `\n${lines.join('\n')}\n`;
   } catch {
