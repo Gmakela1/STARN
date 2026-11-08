@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   axisToValue,
@@ -5,6 +8,7 @@ import {
   calibrateAxesDeclared,
   classifyPaths,
   clusterSeries,
+  extractChartData,
   mapLegend,
   sampleSeries,
   walkOperatorList,
@@ -309,22 +313,50 @@ describe('stage 4 — sampleSeries', () => {
   });
 });
 
-// --- stage 3b fixtures: a legend band below the plot -------------------------
+// --- stage 3b fixtures: the legend measured on the reference sheet ----------
+// Swatches are vertical strips 6 pt wide x 50 pt tall, bbox y 718-768.
+// Labels sit at page y 646.7, i.e. ~72 pt ABOVE the swatch band.
 const PAGE_BOX: BBox = { x0: 0, y0: 0, x1: 612, y1: 792 };
+const SWATCH_Y0 = 718;
+const LABEL_Y = 646.7;
 
-/** Short horizontal legend key at page y 60-62 (inside the band below PLOT). */
-function swatchPath(x: number, stroke: string): DrawingPath {
+/** One legend row entry with its measured swatch and label x0. */
+interface LegendEntry {
+  stroke: string;
+  swatchX0: number;
+  label: string;
+  labelX0: number;
+}
+
+const MEASURED_LEGEND: LegendEntry[] = [
+  { stroke: '#000000', swatchX0: 128, label: 'RPM', labelX0: 138 },
+  { stroke: '#ff0000', swatchX0: 149, label: 'Amps', labelX0: 157 },
+  { stroke: '#006500', swatchX0: 170, label: 'Volts', labelX0: 176 },
+  { stroke: '#00ffff', swatchX0: 191, label: 'Watts Out', labelX0: 195 },
+  { stroke: '#0000ff', swatchX0: 212, label: 'Eff.', labelX0: 214 },
+];
+
+/** Vertical legend strip: 6 pt wide, 50 pt tall. */
+function stripSwatch(x0: number, stroke: string, y0 = SWATCH_Y0): DrawingPath {
   return {
-    points: [{ x, y: 60 }, { x: x + 10, y: 60 }],
+    points: [{ x: x0, y: y0 }, { x: x0, y: y0 + 50 }],
     closed: false,
     style: { stroke, dash: [], lineWidth: 1 },
-    bbox: { x0: x, y0: 60, x1: x + 10, y1: 62 },
+    bbox: { x0, y0, x1: x0 + 6, y1: y0 + 50 },
   };
 }
 
-/** Legend label sitting just above the swatch row. */
-function legendLabel(str: string, x: number): TextItemLike {
-  return { str, x, y: 64, width: 20, height: 8 };
+/** Legend label in the measured row, ~72 pt above the swatch band. */
+function legendLabel(str: string, x: number, y = LABEL_Y): TextItemLike {
+  return { str, x, y, width: str.length * 4, height: 8 };
+}
+
+/** @returns The swatch paths and text items of a legend row. */
+function legendRow(entries: LegendEntry[] = MEASURED_LEGEND): { paths: DrawingPath[]; textItems: TextItemLike[] } {
+  return {
+    paths: entries.map((entry) => stripSwatch(entry.swatchX0, entry.stroke)),
+    textItems: entries.map((entry) => legendLabel(entry.label, entry.labelX0)),
+  };
 }
 
 function curveCluster(stroke: string, x0 = 100): SeriesCluster {
@@ -337,9 +369,18 @@ function curveCluster(stroke: string, x0 = 100): SeriesCluster {
 }
 
 describe('stage 3b — mapLegend', () => {
-  it('pairs each cluster style with its swatch label and flags unmatched clusters', () => {
-    const paths: DrawingPath[] = [swatchPath(110, '#ff0000'), swatchPath(130, '#0000ff')];
-    const textItems: TextItemLike[] = [legendLabel('Amps', 123), legendLabel('Volts', 143)];
+  it('names the measured legend left-to-right by swatch/label offset', () => {
+    const { paths, textItems } = legendRow();
+    const clusters = MEASURED_LEGEND.map((entry) => curveCluster(entry.stroke));
+
+    const mapped = mapLegend(paths, textItems, clusters, PAGE_BOX);
+
+    expect(mapped.map((cluster) => cluster.name)).toEqual(['RPM', 'Amps', 'Volts', 'Watts Out', 'Eff.']);
+    expect(mapped.every((cluster) => cluster.unnamed === false)).toBe(true);
+  });
+
+  it('pairs a two-swatch row and flags the unmatched cluster', () => {
+    const { paths, textItems } = legendRow([MEASURED_LEGEND[1], MEASURED_LEGEND[4]]);
     const clusters: SeriesCluster[] = [curveCluster('#ff0000'), curveCluster('#0000ff'), curveCluster('#00aa00')];
 
     const mapped = mapLegend(paths, textItems, clusters, PAGE_BOX);
@@ -347,7 +388,7 @@ describe('stage 3b — mapLegend', () => {
     expect(mapped).toHaveLength(3);
     expect(mapped[0].name).toBe('Amps');
     expect(mapped[0].unnamed).toBe(false);
-    expect(mapped[1].name).toBe('Volts');
+    expect(mapped[1].name).toBe('Eff.');
     expect(mapped[1].unnamed).toBe(false);
     expect(mapped[2].name).toBe('series 3');
     expect(mapped[2].unnamed).toBe(true);
@@ -356,15 +397,89 @@ describe('stage 3b — mapLegend', () => {
 
   it('does not take a left-hand axis title for the first legend label', () => {
     // Measured layout: axis title RPM at x138, swatch #ff0000 at x149, label Amps at x157.
-    const paths: DrawingPath[] = [swatchPath(149, '#ff0000'), swatchPath(170, '#006500')];
+    const paths: DrawingPath[] = [stripSwatch(149, '#ff0000'), stripSwatch(170, '#006500')];
     const textItems: TextItemLike[] = [legendLabel('RPM', 138), legendLabel('Amps', 157), legendLabel('Volts', 176)];
-    const mapped = mapLegend(
-      paths,
-      textItems,
-      [curveCluster('#ff0000'), curveCluster('#006500')],
-      PAGE_BOX,
-    );
+    const mapped = mapLegend(paths, textItems, [curveCluster('#ff0000'), curveCluster('#006500')], PAGE_BOX);
     expect(mapped.map((cluster) => cluster.name)).toEqual(['Amps', 'Volts']);
+  });
+
+  it('leaves a swatch with no label in range unnamed', () => {
+    const { paths, textItems } = legendRow();
+    // Sixth strip in the same row: its only label is 30 pt to the right (> 20 pt).
+    paths.push(stripSwatch(400, '#00aa00'));
+    textItems.push(legendLabel('Far', 430));
+    const clusters = [...MEASURED_LEGEND.map((entry) => curveCluster(entry.stroke)), curveCluster('#00aa00')];
+
+    const mapped = mapLegend(paths, textItems, clusters, PAGE_BOX);
+
+    const stray = mapped[mapped.length - 1];
+    expect(stray.style.stroke).toBe('#00aa00');
+    expect(stray.name).toBe('series 6');
+    expect(stray.unnamed).toBe(true);
+  });
+
+  it('prefers the legend-band swatch when one colour appears twice', () => {
+    const { paths, textItems } = legendRow();
+    // A same-colour strip far above the legend row, with its own nearby label.
+    paths.push(stripSwatch(300, '#ff0000', 100));
+    textItems.push(legendLabel('Stray', 305, 121));
+
+    const mapped = mapLegend(paths, textItems, [curveCluster('#ff0000')], PAGE_BOX);
+
+    expect(mapped[0].name).toBe('Amps');
+    expect(mapped[0].unnamed).toBe(false);
+  });
+});
+
+// --- auto-refusal path: a page with curves but no tick labels ----------------
+const VECTOR_CONTENT = [
+  '0 0 0 RG 1 w',
+  '100 100 m 500 100 l S',
+  '100 100 m 100 400 l S',
+  '1 0 0 RG 2 w',
+  '100 120 m 200 200 l 300 280 l 400 340 l S',
+  '0 0 1 RG 2 w',
+  '100 140 m 200 220 l 300 300 l 400 380 l S',
+].join('\n');
+
+/** @returns A one-page PDF whose content stream is `content`, with no text items. */
+function vectorPdf(content: string): Buffer {
+  const objects = [
+    '<</Type/Catalog/Pages 2 0 R>>',
+    '<</Type/Pages/Kids[3 0 R]/Count 1>>',
+    '<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<<>>/Contents 4 0 R>>',
+    `<</Length ${content.length}>>stream\n${content}\nendstream`,
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objects.forEach((body, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj${body}endobj\n`;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  pdf += `trailer<</Size ${objects.length + 1}/Root 1 0 R>>\nstartxref\n${xref}\n%%EOF`;
+  return Buffer.from(pdf, 'latin1');
+}
+
+describe('extractChartData — refused calibration', () => {
+  it('returns no series, only the refusal, when automatic calibration fails', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'starn-chart-legend-'));
+    const file = path.join(dir, 'chart.pdf');
+    fs.writeFileSync(file, vectorPdf(VECTOR_CONTENT));
+
+    const refused = await extractChartData(file);
+    expect(refused.calibration.ok).toBe(false);
+    expect(refused.series).toEqual([]);
+    expect(refused.refusals.join(' ')).toMatch(/fewer than 2 anchors on the x axis/);
+
+    const declared = await extractChartData(file, { axes: { x: { min: 0, max: 300 }, y: { min: 0, max: 2000 } } });
+    expect(declared.calibration.ok).toBe(true);
+    expect(declared.series).toHaveLength(2);
+    expect(declared.series.every((entry) => entry.samples.length > 0)).toBe(true);
+
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
 

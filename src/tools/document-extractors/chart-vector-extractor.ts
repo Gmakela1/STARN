@@ -758,36 +758,116 @@ export function clusterSeries(dataPaths: DrawingPath[], plotBox: BBox): SeriesCl
 // Stage 3b — legend mapping
 // ---------------------------------------------------------------------------
 
-/** Swatch bbox limits from spec §6 stage 3b. */
-const SWATCH_MAX_HEIGHT = 12;
-const SWATCH_MAX_WIDTH = 14;
-/** Legend label vertical centre tolerance, in points. */
-const LEGEND_BAND = 20;
-/** Legend band depth below the plot, as a fraction of page height. */
-const LEGEND_BAND_FRACTION = 0.25;
-
-/** @returns True when a path is short enough to be a legend swatch. */
-function isSwatchCandidate(candidate: DrawingPath): boolean {
-  return (
-    candidate.bbox.y1 - candidate.bbox.y0 < SWATCH_MAX_HEIGHT &&
-    candidate.bbox.x1 - candidate.bbox.x0 < SWATCH_MAX_WIDTH
-  );
-}
+/** Swatch bbox limits from spec §6 stage 3b: vertical strips and horizontal dashes. */
+const SWATCH_MAX_THICKNESS = 12;
+const SWATCH_MIN_LENGTH = 20;
+/** Height of the y-row band that holds one legend row, in points. */
+const LEGEND_ROW_HEIGHT = 60;
+/** A row needs at least this many swatches to count as the legend band. */
+const LEGEND_ROW_MIN_SWATCHES = 3;
+/** Legend labels sit at most this far from their swatch row, in points. */
+const LEGEND_LABEL_VERTICAL = 120;
+/** Correct pairing is a left-to-right offset: label.x0 - swatch.x0 in (0, 20]. */
+const LEGEND_LABEL_OFFSET = 20;
 
 /** @returns The stroke colour key of a style, lowercased; 'none' when unset. */
 function colourKey(style: PathStyle): string {
   return (style.stroke ?? 'none').toLowerCase();
 }
 
+/** @returns True when the stroke is painted and is not white. */
+function hasVisibleStroke(style: PathStyle): boolean {
+  const key = colourKey(style);
+  if (key === 'none' || key === 'white') return false;
+  return !/^#f{3}$|^#f{6}$/.test(key);
+}
+
+/** @returns True when a path is a legend swatch: a vertical strip or a horizontal dash. */
+function isLegendSwatch(candidate: DrawingPath): boolean {
+  const width = candidate.bbox.x1 - candidate.bbox.x0;
+  const height = candidate.bbox.y1 - candidate.bbox.y0;
+  const vertical = width <= SWATCH_MAX_THICKNESS && height >= SWATCH_MIN_LENGTH;
+  const horizontal = width >= SWATCH_MIN_LENGTH && height <= SWATCH_MAX_THICKNESS;
+  return (vertical || horizontal) && hasVisibleStroke(candidate.style);
+}
+
+/** @returns The y centre of the swatch row holding the most swatches, or null below 3. */
+function legendRowCentre(swatches: DrawingPath[]): number | null {
+  let bestCentre: number | null = null;
+  let bestCount = 0;
+  for (const swatch of swatches) {
+    const centre = (swatch.bbox.y0 + swatch.bbox.y1) / 2;
+    let count = 0;
+    for (const other of swatches) {
+      if (Math.abs((other.bbox.y0 + other.bbox.y1) / 2 - centre) <= LEGEND_ROW_HEIGHT / 2) count++;
+    }
+    if (count > bestCount) {
+      bestCount = count;
+      bestCentre = centre;
+    }
+  }
+  return bestCount >= LEGEND_ROW_MIN_SWATCHES ? bestCentre : null;
+}
+
+/**
+ * Pairs one swatch with its legend label.
+ *
+ * @param swatch One legend swatch.
+ * @param textItems Page text items.
+ * @param used Labels already given to another swatch.
+ * @returns The label naming this swatch, or undefined when none is in range.
+ */
+function matchLegendLabel(
+  swatch: DrawingPath,
+  textItems: TextItemLike[],
+  used: Set<TextItemLike>,
+): TextItemLike | undefined {
+  const centreX = (swatch.bbox.x0 + swatch.bbox.x1) / 2;
+  const centreY = (swatch.bbox.y0 + swatch.bbox.y1) / 2;
+  const candidates = textItems.filter((item) => {
+    if (used.has(item)) return false;
+    if (!/[A-Za-z]/.test(item.str)) return false;
+    return Math.abs(item.y + item.height / 2 - centreY) <= LEGEND_LABEL_VERTICAL;
+  });
+
+  // Preferred: the label whose x0 sits just right of the swatch x0.
+  let best: TextItemLike | undefined;
+  let bestOffset = Infinity;
+  for (const item of candidates) {
+    const offset = item.x - swatch.bbox.x0;
+    if (offset <= 0 || offset > LEGEND_LABEL_OFFSET) continue;
+    if (offset < bestOffset) {
+      bestOffset = offset;
+      best = item;
+    }
+  }
+  if (best) return best;
+
+  // Fallback: nearest by centre distance, still within one swatch offset horizontally.
+  let bestDistance = Infinity;
+  for (const item of candidates) {
+    if (Math.abs(item.x - swatch.bbox.x0) > LEGEND_LABEL_OFFSET) continue;
+    const distance = Math.hypot(item.x + item.width / 2 - centreX, item.y + item.height / 2 - centreY);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = item;
+    }
+  }
+  return best;
+}
+
 /**
  * Stage 3b. Names clusters from legend swatches and their labels.
  *
- * Swatches are short paths in the band below the plot (within 25 % of page
- * height). A cluster is matched by stroke colour; when several clusters share a
- * colour the swatches are handed out left-to-right in cluster order. The label
- * is the text item with a vertical centre within 20 pt of the swatch band whose
- * horizontal centre is nearest, preferring text to the right of the swatch so an
- * axis title on the left is not taken for a legend key.
+ * A swatch is a vertical strip (width ≤ 12 pt, height ≥ 20 pt) or a horizontal
+ * dash (width ≥ 20 pt, height ≤ 12 pt) with a non-white stroke. The legend band
+ * is the 60 pt y-row holding the most swatches, when it holds at least 3.
+ * Labels are matched left-to-right: the label whose x0 sits 0-20 pt right of the
+ * swatch x0 wins (labels on the reference sheet sit ~72 pt above their swatch,
+ * so a vertical-proximity rule cannot match), with the nearest label by centre
+ * distance as fallback. A cluster takes the name of the swatch with the same
+ * stroke colour; swatches inside the band win over same-colour swatches
+ * elsewhere on the page.
  *
  * Best-effort: clusters with no swatch keep `series N` and are marked
  * `unnamed`. Never throws, never blocks extraction.
@@ -795,7 +875,8 @@ function colourKey(style: PathStyle): string {
  * @param paths Every path of the page (stage 0 output, all classes).
  * @param textItems Page text items.
  * @param clusters Clusters from stage 3, in extraction order.
- * @param pageBox Page extent; the band depth falls back to twice the plot height.
+ * @param pageBox Page extent. Unused since the band comes from the swatch row;
+ *   kept so both call sites keep one signature.
  * @returns Copies of the clusters with `name` (and `unnamed` when unmatched) set.
  */
 export function mapLegend(
@@ -804,73 +885,31 @@ export function mapLegend(
   clusters: SeriesCluster[],
   pageBox?: BBox,
 ): SeriesCluster[] {
-  const geometry = paths.filter((candidate) => !isSwatchCandidate(candidate));
-  const plotBox = pathsBounds(geometry.length > 0 ? geometry : paths);
-  const plotHeight = plotBox ? plotBox.y1 - plotBox.y0 : 0;
-  const pageHeight = pageBox ? pageBox.y1 - pageBox.y0 : 2 * plotHeight;
-  const bandBottom = plotBox ? plotBox.y0 - Math.abs(pageHeight) * LEGEND_BAND_FRACTION : -Infinity;
-  // When the input holds swatches only there is no plot to sit below: accept any band.
-  const hasPlot = geometry.length > 0 && plotBox !== null;
+  const swatches = paths.filter(isLegendSwatch);
+  const rowCentre = legendRowCentre(swatches);
+  const inRow = (swatch: DrawingPath): boolean =>
+    rowCentre !== null && Math.abs((swatch.bbox.y0 + swatch.bbox.y1) / 2 - rowCentre) <= LEGEND_ROW_HEIGHT / 2;
 
-  const swatches = paths
-    .filter((candidate) => {
-      if (!isSwatchCandidate(candidate)) return false;
-      const inBand = hasPlot ? candidate.bbox.y0 >= bandBottom && candidate.bbox.y1 <= plotBox!.y0 + 1 : true;
-      return inBand && colourKey(candidate.style) !== 'none';
-    })
-    .sort((a, b) => a.bbox.x0 - b.bbox.x0);
-
-  // Greedy label assignment: each label names at most one swatch.
+  // Each label names at most one swatch; band swatches claim labels first.
   const usedLabels = new Set<TextItemLike>();
-  const labels: (string | undefined)[] = swatches.map((swatch) => {
-    const swatchCx = (swatch.bbox.x0 + swatch.bbox.x1) / 2;
-    const swatchCy = (swatch.bbox.y0 + swatch.bbox.y1) / 2;
-    let best: TextItemLike | undefined;
-    let bestScore = Infinity;
-    for (const item of textItems) {
-      if (usedLabels.has(item)) continue;
-      const text = item.str.trim();
-      if (!text) continue;
-      const cx = item.x + item.width / 2;
-      const cy = item.y + item.height / 2;
-      if (Math.abs(cy - swatchCy) > LEGEND_BAND) continue;
-      // Legend labels sit to the right of their swatch; a label whose centre is
-      // not past the swatch's right edge is a poorer candidate (axis titles).
-      const leftPenalty = cx < swatch.bbox.x1 ? LEGEND_BAND : 0;
-      const score = Math.abs(cx - swatchCx) + leftPenalty;
-      if (score < bestScore) {
-        bestScore = score;
-        best = item;
-      }
+  const byColour = new Map<string, string>();
+  const assign = (group: DrawingPath[]): void => {
+    for (const swatch of [...group].sort((a, b) => a.bbox.x0 - b.bbox.x0)) {
+      const label = matchLegendLabel(swatch, textItems, usedLabels);
+      if (!label) continue;
+      usedLabels.add(label);
+      const key = colourKey(swatch.style);
+      if (!byColour.has(key)) byColour.set(key, label.str.trim());
     }
-    if (!best) return undefined;
-    usedLabels.add(best);
-    return best.str.trim();
+  };
+  assign(swatches.filter(inRow));
+  assign(swatches.filter((swatch) => !inRow(swatch)));
+
+  return clusters.map((cluster, index) => {
+    const name = byColour.get(colourKey(cluster.style));
+    if (!name) return { ...cluster, name: `series ${index + 1}`, unnamed: true };
+    return { ...cluster, name, unnamed: false };
   });
-
-  const assigned = new Map<number, string>();
-  const taken = new Set<number>();
-  for (let i = 0; i < clusters.length; i++) {
-    const key = colourKey(clusters[i].style);
-    const index = swatches.findIndex((swatch, swatchIndex) => !taken.has(swatchIndex) && colourKey(swatch.style) === key);
-    if (index < 0) continue;
-    taken.add(index);
-    const label = labels[index];
-    if (label) assigned.set(i, label);
-  }
-
-  const result: SeriesCluster[] = [];
-  for (let i = 0; i < clusters.length; i++) {
-    const cluster = clusters[i];
-    let name = assigned.get(i);
-    let unnamed = false;
-    if (!name) {
-      name = `series ${i + 1}`;
-      unnamed = true;
-    }
-    result.push({ ...cluster, name, unnamed });
-  }
-  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -1045,7 +1084,12 @@ export async function extractChartData(
     const calibration: AxisCalibration = opts.axes
       ? calibrateAxesDeclared(opts.axes.x, opts.axes.y, plotBox)
       : calibrateAxes(drawing.textItems, classes.frame, classes.data);
-    if (!calibration.ok) refusals.push(calibration.reason ?? 'axis calibration refused');
+    if (!calibration.ok) {
+      refusals.push(calibration.reason ?? 'axis calibration refused');
+      // Without declared axes there is no scale: return the refusal and no series.
+      // A table of empty columns would read as data; the caller must pass `axes`.
+      return failed(calibration);
+    }
 
     const clusters = clusterSeries(classes.data, plotBox);
     const mapped = mapLegend(drawing.paths, drawing.textItems, clusters, drawing.pageBox);
@@ -1067,7 +1111,7 @@ export async function extractChartData(
     const ySide = calibration.yAxes?.[0]?.side === 'right' ? 'right' : 'left';
     const series: ChartSeries[] = mapped.map((cluster, index) => {
       const name = cluster.name ?? `series ${index + 1}`;
-      const samples = calibration.ok ? (sampleSeries([cluster], calibration, maxSamples)[0]?.samples ?? []) : [];
+      const samples = sampleSeries([cluster], calibration, maxSamples)[0]?.samples ?? [];
       return {
         name,
         axis: opts.seriesAxes?.[name] ?? ySide,
