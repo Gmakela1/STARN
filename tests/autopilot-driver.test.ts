@@ -63,7 +63,8 @@ describe('AutopilotDriver', () => {
       stateManager: overrides?.stateManager ?? stateMgr,
       projectPath: overrides?.projectPath ?? tmpDir,
       executeTurn: overrides?.executeTurn ?? executeTurnMock,
-      logger: (overrides as { logger?: Logger } | undefined)?.logger
+      logger: (overrides as { logger?: Logger } | undefined)?.logger,
+      onSettled: overrides?.onSettled
     };
     return new AutopilotDriver(deps, (ev) => { capturedEvents.push(ev); });
   }
@@ -252,24 +253,39 @@ describe('AutopilotDriver', () => {
       return makeTurnResult(opts.forceSpecialistId);
     });
 
-    const driver = createDriver();
-    driver.start();
+    // Settlement gate: runChain()'s finally always calls deps.onSettled, which
+    // is the real "this run is over" signal. A 'complete' event alone is not:
+    // it is emitted before the finally settles the run, and polling for it
+    // makes the test depend on timer granularity.
+    let releaseSettlement: (() => void) | null = null;
+    /** Resolves the next time the driver reports settlement. Arm before start/resume. */
+    const nextSettlement = (): Promise<void> =>
+      new Promise<void>((resolve) => { releaseSettlement = resolve; });
+    /** AutopilotDeps.onSettled: releases the currently armed settlement gate. */
+    const onSettled = (): void => {
+      const release = releaseSettlement;
+      releaseSettlement = null;
+      release?.();
+    };
 
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    const driver = createDriver({ onSettled });
+
+    const firstRunSettled = nextSettlement();
+    driver.start();
+    await firstRunSettled;
 
     // First run: conops passed, architecture parked
+    expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
     expect(stateMgr.getState().autopilot!.blocks).toBeGreaterThanOrEqual(1);
     expect(stateMgr.getState().autopilot!.running).toBe(false);
 
-    // Resume architecture
+    // Resume architecture (previous run has fully settled, so no overlap)
     capturedEvents = []; // clear events for resume
+    const resumeSettled = nextSettlement();
     driver.resume('architecture');
+    await resumeSettled;
 
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
 
     const state = stateMgr.getState();
     expect(state.autopilot!.running).toBe(false);
