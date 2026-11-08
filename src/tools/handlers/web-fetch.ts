@@ -77,9 +77,13 @@ async function buildPdfFetchResult(bytes: Uint8Array, url: string): Promise<Tool
   if (bytes.byteLength > MAX_RAW_BYTES) {
     return { success: false, error: PDF_REFUSAL };
   }
+  // pdfjs refuses a Node Buffer ("Please provide binary data as 'Uint8Array', rather than
+  // 'Buffer'."), so hand it a Uint8Array view. Required, not an optimisation: same memory,
+  // no copy.
+  const data = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let text: string;
   try {
-    text = await extractTextFromPdfBuffer(bytes);
+    text = await extractTextFromPdfBuffer(data);
   } catch {
     return { success: false, error: PDF_REFUSAL };
   }

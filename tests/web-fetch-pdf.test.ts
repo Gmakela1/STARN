@@ -25,6 +25,22 @@ function htmlBytes(html: string): Uint8Array {
   return new TextEncoder().encode(html);
 }
 
+/**
+ * A real, parseable one-page PDF carrying the text "Dummy PDF file". pdfjs is NOT
+ * mocked for the end-to-end test, so this must be a genuine document.
+ */
+function realPdfBytes(): Uint8Array {
+  return new TextEncoder().encode(
+    '%PDF-1.4\n' +
+      '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n' +
+      '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n' +
+      '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj\n' +
+      '4 0 obj << /Length 44 >> stream\nBT /F1 24 Tf 72 700 Td (Dummy PDF file) Tj ET\nendstream endobj\n' +
+      '5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n' +
+      'trailer << /Root 1 0 R /Size 6 >>\n%%EOF\n'
+  );
+}
+
 function stubFetch(bytes: Uint8Array, contentType: string | null): void {
   const headers = new Headers();
   if (contentType) headers.set('content-type', contentType);
@@ -66,6 +82,33 @@ describe('web_fetch PDF handling', () => {
     expect(res.result).not.toContain('stream');
     expect(extractMock).toHaveBeenCalledOnce();
   });
+
+  // Regression for 7cea897: pdfjs rejects a Node Buffer ("Please provide binary data as
+  // 'Uint8Array', rather than 'Buffer'"), so every remote PDF failed with PDF_REFUSAL.
+  it('hands the extractor a Uint8Array, never a Node Buffer', async () => {
+    extractMock.mockResolvedValue('Peak Current: 450A');
+    stubFetch(pdfBytes(), 'application/pdf');
+
+    await registry.execute('web_fetch', { url: 'https://example.com/datasheet.pdf' }, context, ['web_fetch']);
+
+    const received = extractMock.mock.calls[0][0];
+    expect(Buffer.isBuffer(received)).toBe(false);
+    expect(received).toBeInstanceOf(Uint8Array);
+  });
+
+  // Same regression, unmocked: the real pdfjs must accept the bytes and return the text.
+  it('extracts text from a real PDF body end-to-end', async () => {
+    vi.doUnmock('../src/tools/handlers/pdf-extractor.js');
+    vi.resetModules();
+    stubFetch(realPdfBytes(), 'application/pdf');
+
+    const { webFetchHandler } = await import('../src/tools/handlers/web-fetch.js');
+    const res = await webFetchHandler.execute({ url: 'https://example.com/dummy.pdf' }, context);
+
+    expect(res.success).toBe(true);
+    expect(res.result).toContain('[pdf text extracted from url]');
+    expect(res.result).toContain('Dummy PDF file');
+  }, 60000);
 
   it('treats %PDF- magic bytes as a PDF even without a pdf content-type', async () => {
     extractMock.mockResolvedValue('Torque: 12 Nm');
