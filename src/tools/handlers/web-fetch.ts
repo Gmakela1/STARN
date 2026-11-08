@@ -2,6 +2,7 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import { ToolHandler, ToolExecutionContext, ToolExecutionResponse } from '../types.js';
+import { NO_PDF_TEXT_MARKER, extractTextFromPdfBuffer } from './pdf-extractor.js';
 
 /** Maximum raw HTML bytes considered for cleaning (raised from 50 KB). */
 const MAX_RAW_BYTES = 2 * 1024 * 1024;
@@ -9,6 +10,48 @@ const MAX_RAW_BYTES = 2 * 1024 * 1024;
 const MAX_OUTPUT_CHARS = 20000;
 const TRUNCATION_NOTICE = '\n\n[Content truncated at 20,000 characters]';
 const EMPTY_PAGE_NOTICE = 'Web page was empty or contained no readable text.';
+const PDF_HEADER = '[pdf text extracted from url]';
+/** Refusal used for every unreadable-PDF outcome; matches this handler's `success:false` convention. */
+const PDF_REFUSAL =
+  'This URL is a PDF and its text layer could not be read. Download it into reference/ and read it with fs_read, or use read_chart_data for charts.';
+
+/**
+ * True when the response body is a PDF, judged by content-type or the `%PDF-` magic bytes.
+ *
+ * @param contentType Raw `content-type` header value (may be null).
+ * @param bytes Raw response body.
+ * @returns `true` for PDF responses.
+ */
+export function looksLikePdf(contentType: string | null, bytes: Uint8Array): boolean {
+  if ((contentType ?? '').toLowerCase().includes('application/pdf')) return true;
+  return Buffer.from(bytes.subarray(0, 5)).toString('latin1') === '%PDF-';
+}
+
+/**
+ * Builds the tool response for a PDF URL by extracting its text layer.
+ *
+ * @param bytes Raw PDF bytes.
+ * @param url Source URL echoed in the result header.
+ * @returns `success:true` with capped extracted text, or `success:false` with `PDF_REFUSAL`.
+ * @throws Never: extraction errors are converted to the refusal response.
+ */
+async function buildPdfFetchResult(bytes: Uint8Array, url: string): Promise<ToolExecutionResponse> {
+  let text: string;
+  try {
+    text = await extractTextFromPdfBuffer(bytes);
+  } catch {
+    return { success: false, error: PDF_REFUSAL };
+  }
+
+  if (!text || text === NO_PDF_TEXT_MARKER) {
+    return { success: false, error: PDF_REFUSAL };
+  }
+
+  const capped = text.length > MAX_OUTPUT_CHARS
+    ? text.slice(0, MAX_OUTPUT_CHARS) + TRUNCATION_NOTICE
+    : text;
+  return { success: true, result: `${PDF_HEADER} ${url}\n\n${capped}` };
+}
 
 /** Product fields recovered from JSON-LD / Open Graph metadata. All fields optional. */
 export interface StructuredData {
@@ -345,7 +388,13 @@ export const webFetchHandler: ToolHandler = {
         return { success: false, error: `HTTP ${res.status}: ${res.statusText}` };
       }
 
-      const bodyText = await res.text();
+      // Read the body once: the same bytes feed the PDF probe, PDF extraction, and HTML decoding.
+      const bytes = Buffer.from(await res.arrayBuffer());
+      if (looksLikePdf(res.headers.get('content-type'), bytes)) {
+        return await buildPdfFetchResult(new Uint8Array(bytes), parsed.toString());
+      }
+
+      const bodyText = bytes.toString('utf-8');
       // Clean the whole (capped) document, then cap the cleaned text.
       const finalResult = buildWebFetchResult(bodyText.slice(0, MAX_RAW_BYTES));
 

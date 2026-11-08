@@ -29,9 +29,19 @@ async function getPdfJsLib(): Promise<any> {
 const PROBE_MAX_PAGES = 5;
 const PROBE_MAX_PATH_OPS = 2000;
 
-export async function extractTextFromPdf(filePath: string): Promise<string> {
+/** Returned when a PDF carries no text layer (scanned or image-only). Callers detect this exact string. */
+export const NO_PDF_TEXT_MARKER =
+  '(No extractable text found in this PDF. It may be a scanned document or image-based PDF.)';
+
+/**
+ * Extracts the text layer of an in-memory PDF.
+ *
+ * @param data Raw PDF bytes.
+ * @returns Page text joined by `--- Page Break ---`, or `NO_PDF_TEXT_MARKER` when no page has text.
+ * @throws Whatever pdfjs throws for a corrupt/encrypted document.
+ */
+export async function extractTextFromPdfBuffer(data: Uint8Array): Promise<string> {
   const lib = await getPdfJsLib();
-  const data = new Uint8Array(fs.readFileSync(filePath));
   const doc = await lib.getDocument({ data }).promise;
   const pages: string[] = [];
 
@@ -45,7 +55,18 @@ export async function extractTextFromPdf(filePath: string): Promise<string> {
   }
 
   const result = pages.join('\n\n--- Page Break ---\n\n');
-  return result || '(No extractable text found in this PDF. It may be a scanned document or image-based PDF.)';
+  return result || NO_PDF_TEXT_MARKER;
+}
+
+/**
+ * Reads a PDF from disk and delegates to {@link extractTextFromPdfBuffer}.
+ *
+ * @param filePath Absolute or project-relative path to a PDF file.
+ * @returns Same contract as {@link extractTextFromPdfBuffer}.
+ * @throws When the file cannot be read or pdfjs rejects the document.
+ */
+export async function extractTextFromPdf(filePath: string): Promise<string> {
+  return extractTextFromPdfBuffer(new Uint8Array(fs.readFileSync(filePath)));
 }
 
 /**

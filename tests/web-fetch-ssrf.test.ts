@@ -83,7 +83,7 @@ describe('web_fetch Tool Handler & SSRF Defense', () => {
       ok: true,
       status: 200,
       headers: new Headers({ 'content-type': 'text/html' }),
-      text: async () => mockHtml
+      arrayBuffer: async () => new TextEncoder().encode(mockHtml).buffer
     });
     vi.stubGlobal('fetch', mockFetch);
 
