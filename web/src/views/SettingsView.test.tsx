@@ -52,7 +52,7 @@ function aiGroup() {
   return screen.getByRole('group', { name: 'AI & automation' });
 }
 
-describe('SettingsView save bars', () => {
+describe('SettingsView save action', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocked.fetchSearchSettings.mockResolvedValue({ provider: 'openrouter', hasTavilyKey: false, hasBraveKey: false });
@@ -66,88 +66,187 @@ describe('SettingsView save bars', () => {
     });
   });
 
-  it('starts clean with Save disabled and the group containing Autopilot before Web Search', async () => {
+  it('shows the clean ghost chip when nothing is unsaved', async () => {
     await renderLoaded();
-    const group = aiGroup();
-    expect(within(group).getByText('All AI settings saved')).toBeInTheDocument();
-    expect(within(group).getByRole('button', { name: 'Save AI settings' })).toBeDisabled();
-    expect(within(group).getByRole('heading', { name: 'Autopilot' })).toBeInTheDocument();
-    expect(within(group).getByRole('heading', { name: 'Providers' })).toBeInTheDocument();
-    const autopilot = screen.getByRole('heading', { name: 'Autopilot' });
-    const search = screen.getByRole('heading', { name: /Web Search/ });
-    expect(autopilot.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const chip = screen.getByRole('button', { name: 'All settings saved' });
+    expect(chip).toHaveAttribute('aria-disabled', 'true');
+    expect(chip).toHaveAttribute('tabindex', '-1');
+    expect(screen.queryByRole('button', { name: 'Save Settings' })).not.toBeInTheDocument();
   });
 
-  it('shows which part is unsaved when a toggle changes', async () => {
+  it('turns the pill actionable as soon as one slice is dirty', async () => {
     const { user } = await renderLoaded();
     await user.click(screen.getByRole('switch', { name: 'Toggle autopilot' }));
-    expect(within(aiGroup()).getByText('Unsaved changes: Autopilot')).toBeInTheDocument();
-    expect(within(aiGroup()).getByRole('button', { name: 'Save AI settings' })).toBeEnabled();
+    const pill = screen.getByRole('button', { name: 'Save Settings' });
+    expect(pill).not.toHaveAttribute('aria-disabled', 'true');
+    expect(document.getElementById('settings-save-status')).toHaveTextContent('Unsaved changes: Autopilot');
+    expect(within(aiGroup()).getByText('Unsaved: Autopilot.')).toBeInTheDocument();
     await user.click(screen.getByRole('switch', { name: 'Toggle document transcription' }));
-    expect(within(aiGroup()).getByText('Unsaved changes: Transcription, Autopilot')).toBeInTheDocument();
+    expect(within(aiGroup()).getByText('Unsaved: Transcription, Autopilot.')).toBeInTheDocument();
   });
 
-  it('saves and shows the success message inside the AI group, then calls onSaved', async () => {
+  it('treats a search provider radio change alone as dirty', async () => {
+    const { user } = await renderLoaded();
+    await user.click(screen.getByRole('radio', { name: /Tavily/ }));
+    expect(screen.getByRole('button', { name: 'Save Settings' })).toBeInTheDocument();
+    expect(screen.getByText('Unsaved: Search provider.')).toBeInTheDocument();
+  });
+
+  it('shows Saving… with aria-busy while the POST is in flight', async () => {
+    const { user } = await renderLoaded();
+    let release: (s: Settings) => void = () => {};
+    mocked.saveSettings.mockReturnValue(new Promise<Settings>(resolve => { release = resolve; }));
+    await user.click(screen.getByRole('switch', { name: 'Toggle autopilot' }));
+    await user.click(screen.getByRole('button', { name: 'Save Settings' }));
+
+    const busy = screen.getByRole('button', { name: 'Saving…' });
+    expect(busy).toHaveAttribute('aria-busy', 'true');
+    expect(busy).toHaveAttribute('aria-disabled', 'true');
+
+    release(buildSettings());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'All settings saved' })).toBeInTheDocument());
+  });
+
+  it('saves both slices, reports success once and calls onSaved', async () => {
     const { user, onSaved } = await renderLoaded();
     mocked.saveSettings.mockResolvedValue(buildSettings({ autopilotEnabled: false }));
+    mocked.saveSearchSettings.mockResolvedValue({ provider: 'tavily', hasTavilyKey: true, hasBraveKey: false });
+
     await user.click(screen.getByRole('switch', { name: 'Toggle autopilot' }));
-    await user.click(screen.getByRole('button', { name: 'Save AI settings' }));
-    expect(await within(aiGroup()).findByText('AI settings saved. New settings apply to your next request.')).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: /Tavily/ }));
+    await user.click(screen.getByRole('button', { name: 'Save Settings' }));
+
+    expect(await screen.findByRole('button', { name: 'All settings saved' })).toBeInTheDocument();
     expect(mocked.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ autopilotEnabled: false }));
+    expect(mocked.saveSearchSettings).toHaveBeenCalledWith({ provider: 'tavily', tavilyApiKey: undefined, braveApiKey: undefined });
     expect(onSaved).toHaveBeenCalledTimes(1);
-    expect(within(aiGroup()).getByRole('button', { name: 'Save AI settings' })).toBeDisabled();
   });
 
-  it('discard restores the saved values', async () => {
+  it('composes a partial failure and keeps the unsaved search fields', async () => {
     const { user } = await renderLoaded();
+    mocked.saveSettings.mockResolvedValue(buildSettings({ autopilotEnabled: false }));
+    mocked.saveSearchSettings.mockRejectedValue(new Error('quota exceeded'));
+
     await user.click(screen.getByRole('switch', { name: 'Toggle autopilot' }));
-    await user.click(screen.getByRole('button', { name: 'Discard' }));
-    expect(screen.getByRole('switch', { name: 'Toggle autopilot' })).toHaveAttribute('aria-checked', 'true');
-    expect(within(aiGroup()).getByText('All AI settings saved')).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: /Tavily/ }));
+    const keyField = screen.getByPlaceholderText('tvly-...') as HTMLInputElement;
+    await user.type(keyField, 'secret');
+    await user.click(screen.getByRole('button', { name: 'Save Settings' }));
+
+    const alert = await screen.findByRole('alert');
+    await waitFor(() =>
+      expect(alert).toHaveTextContent(
+        "AI settings saved. Search settings didn't save: quota exceeded. Your Search settings changes are still here — try again."
+      )
+    );
+    // Unsaved search input survives the failed slice.
+    expect((screen.getByPlaceholderText(/tvly-|Leave blank to keep stored key/) as HTMLInputElement).value).toBe('secret');
+    // The pill is actionable again for the retry.
+    expect(screen.getByRole('button', { name: 'Save Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Revert unsaved changes' })).toBeInTheDocument();
   });
 
-  it('blocks Save and names the missing role when a model is blank', async () => {
+  it('retries only the failing slice', async () => {
+    const { user } = await renderLoaded();
+    mocked.saveSettings.mockResolvedValue(buildSettings({ autopilotEnabled: false }));
+    mocked.saveSearchSettings.mockRejectedValueOnce(new Error('quota exceeded'));
+    mocked.saveSearchSettings.mockResolvedValue({ provider: 'tavily', hasTavilyKey: true, hasBraveKey: false });
+
+    await user.click(screen.getByRole('switch', { name: 'Toggle autopilot' }));
+    await user.click(screen.getByRole('radio', { name: /Tavily/ }));
+    await user.click(screen.getByRole('button', { name: 'Save Settings' }));
+    await screen.findByRole('alert');
+
+    expect(mocked.saveSettings).toHaveBeenCalledTimes(1);
+    expect(mocked.saveSearchSettings).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('button', { name: 'Save Settings' }));
+
+    // AI slice was rebaselined on success → the retry POSTs only search.
+    await waitFor(() => expect(mocked.saveSearchSettings).toHaveBeenCalledTimes(2));
+    expect(mocked.saveSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports what failed inline in the AI card and keeps the edits', async () => {
+    const { user } = await renderLoaded();
+    mocked.saveSettings.mockRejectedValue(new Error('disk full'));
+    await user.click(screen.getByRole('switch', { name: 'Toggle autopilot' }));
+    await user.click(screen.getByRole('button', { name: 'Save Settings' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        "AI settings didn't save: disk full. Your AI settings changes are still here — try again."
+      )
+    );
+    expect(within(aiGroup()).getByText("Couldn't save: disk full. Your changes are still here. Try again.")).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Toggle autopilot' })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('keeps the probe warning next to the AI status line', async () => {
+    const { user } = await renderLoaded();
+    mocked.saveSettings.mockResolvedValue({ ...buildSettings(), probe: { ok: false, detail: 'no tools' } });
+    await user.click(screen.getByRole('switch', { name: 'Toggle autopilot' }));
+    await user.click(screen.getByRole('button', { name: 'Save Settings' }));
+    expect(
+      await within(aiGroup()).findByText(/Saved, but the Drafting model \(base-model\) didn't pass the tool-calling test: no tools\./)
+    ).toBeInTheDocument();
+  });
+
+  it('blocks the pill and names the missing role when a model is blank', async () => {
     const { user, container } = await renderLoaded();
     const input = container.querySelector('#assign-model-critic') as HTMLInputElement;
     await user.clear(input);
-    expect(within(aiGroup()).getByText('Choose a model for every role before saving. Missing: Critic.')).toBeInTheDocument();
-    expect(within(aiGroup()).getByRole('button', { name: 'Save AI settings' })).toBeDisabled();
+    const blocked = within(aiGroup()).getByText('Choose a model for every role before saving. Missing: Critic.');
+    expect(blocked).toHaveAttribute('id', 'settings-ai-blocked');
+    const pill = screen.getByRole('button', { name: 'Save Settings' });
+    expect(pill).toHaveAttribute('aria-disabled', 'true');
+    expect(pill).toHaveAttribute('aria-describedby', 'settings-ai-blocked');
   });
 
-  it('shows the drafting helper and checking label only when the drafting assignment changed', async () => {
+  it('reverts every dirty slice from the failure alert', async () => {
+    const { user } = await renderLoaded();
+    mocked.saveSettings.mockRejectedValue(new Error('disk full'));
+    await user.click(screen.getByRole('switch', { name: 'Toggle autopilot' }));
+    await user.click(screen.getByRole('radio', { name: /Tavily/ }));
+    await user.click(screen.getByRole('button', { name: 'Save Settings' }));
+    await user.click(await screen.findByRole('button', { name: 'Revert unsaved changes' }));
+
+    expect(screen.getByRole('switch', { name: 'Toggle autopilot' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: /OpenRouter/ })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'All settings saved' })).toBeInTheDocument();
+  });
+
+  it('marks Speech-to-text dirty and saves voiceInputModel', async () => {
+    const { user } = await renderLoaded();
+    mocked.saveSettings.mockResolvedValue(buildSettings({ voiceInputModel: 'openai/gpt-4o-mini-transcribe' }));
+    const stt = within(aiGroup()).getByRole('region', { name: 'Speech-to-text (voice input)' });
+    await user.selectOptions(within(stt).getByLabelText('Model'), 'openai/gpt-4o-mini-transcribe');
+    expect(within(aiGroup()).getByText('Unsaved: Speech-to-text.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save Settings' }));
+    expect(mocked.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ voiceInputModel: 'openai/gpt-4o-mini-transcribe' }));
+  });
+
+  it('shows the drafting probe hint only when the drafting assignment changed', async () => {
     const { user, container } = await renderLoaded();
     const helper = /quick test to confirm it can use tools/;
     await user.click(screen.getByRole('switch', { name: 'Toggle autopilot' }));
     expect(screen.queryByText(helper)).not.toBeInTheDocument();
-
-    let release: (s: Settings) => void = () => {};
-    mocked.saveSettings.mockReturnValue(new Promise<Settings>(resolve => { release = resolve; }));
     const input = container.querySelector('#assign-model-drafting') as HTMLInputElement;
     await user.type(input, '-v2');
     expect(screen.getByText(helper)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Save AI settings' }));
-    expect(screen.getByRole('button', { name: 'Saving and checking drafting model…' })).toBeDisabled();
-    release(buildSettings());
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Saving and checking drafting model…' })).not.toBeInTheDocument());
   });
 
-  it('keeps a probe-failure warning next to the Save button', async () => {
+  it('keeps Test search connection and its hint, and clears the typed key on save', async () => {
     const { user } = await renderLoaded();
-    mocked.saveSettings.mockResolvedValue({ ...buildSettings(), probe: { ok: false, detail: 'no tools' } });
-    await user.click(screen.getByRole('switch', { name: 'Toggle autopilot' }));
-    await user.click(screen.getByRole('button', { name: 'Save AI settings' }));
-    const alert = await within(aiGroup()).findByRole('alert');
-    expect(alert).toHaveTextContent("Saved, but the Drafting model (base-model) didn't pass the tool-calling test: no tools.");
-  });
-
-  it('shows a save error locally and keeps the edits', async () => {
-    const { user } = await renderLoaded();
-    mocked.saveSettings.mockRejectedValue(new Error('disk full'));
-    await user.click(screen.getByRole('switch', { name: 'Toggle autopilot' }));
-    await user.click(screen.getByRole('button', { name: 'Save AI settings' }));
-    const alert = await within(aiGroup()).findByRole('alert');
-    expect(alert).toHaveTextContent("Couldn't save: disk full. Your changes are still here. Try again.");
-    expect(screen.getByRole('switch', { name: 'Toggle autopilot' })).toHaveAttribute('aria-checked', 'false');
+    mocked.saveSearchSettings.mockResolvedValue({ provider: 'tavily', hasTavilyKey: true, hasBraveKey: false });
+    await user.click(screen.getByRole('radio', { name: /Tavily/ }));
+    await user.type(screen.getByPlaceholderText('tvly-...'), 'secret');
+    await user.click(screen.getByRole('button', { name: 'Save Settings' }));
+    await waitFor(() =>
+      expect((screen.getByPlaceholderText(/Leave blank to keep stored key/) as HTMLInputElement).value).toBe('')
+    );
+    expect(screen.getByRole('button', { name: 'Test search connection' })).toBeInTheDocument();
+    expect(screen.getByText('Test uses the key you typed; Save to keep it.')).toBeInTheDocument();
   });
 
   it('renders the Speech-to-text section and renames Transcriber to Document OCR', async () => {
@@ -158,21 +257,9 @@ describe('SettingsView save bars', () => {
     const stt = within(group).getByRole('region', { name: 'Speech-to-text (voice input)' });
     const select = within(stt).getByLabelText('Model') as HTMLSelectElement;
     expect(select).toHaveValue('openai/whisper-large-v3');
-    // Display-only rename: the transcriber role shows the OCR label and helper.
     expect(within(group).getByText('Document OCR (scanned PDFs)')).toBeInTheDocument();
     expect(within(group).getByText('Reads text from scanned PDF pages.')).toBeInTheDocument();
     expect(within(group).queryByText('Transcriber')).not.toBeInTheDocument();
-  });
-
-  it('marks Speech-to-text dirty and saves voiceInputModel', async () => {
-    const { user } = await renderLoaded();
-    mocked.saveSettings.mockResolvedValue(buildSettings({ voiceInputModel: 'openai/gpt-4o-mini-transcribe' }));
-    expect(within(aiGroup()).queryByText(/Unsaved changes: Speech-to-text/)).not.toBeInTheDocument();
-    const stt = within(aiGroup()).getByRole('region', { name: 'Speech-to-text (voice input)' });
-    await user.selectOptions(within(stt).getByLabelText('Model'), 'openai/gpt-4o-mini-transcribe');
-    expect(within(aiGroup()).getByText('Unsaved changes: Speech-to-text')).toBeInTheDocument();
-    await user.click(within(aiGroup()).getByRole('button', { name: 'Save AI settings' }));
-    expect(mocked.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ voiceInputModel: 'openai/gpt-4o-mini-transcribe' }));
   });
 
   it('falls back to the static STT list when the transcription fetch fails', async () => {
@@ -185,18 +272,10 @@ describe('SettingsView save bars', () => {
     expect(names).toContain('microsoft/mai-transcribe-2');
   });
 
-  it('search bar saves, confirms locally and clears the typed key', async () => {
-    const { user } = await renderLoaded();
-    mocked.saveSearchSettings.mockResolvedValue({ provider: 'tavily', hasTavilyKey: true, hasBraveKey: false });
-    expect(screen.getByText('Search settings saved')).toBeInTheDocument();
-    await user.click(screen.getByRole('radio', { name: /Tavily/ }));
-    await user.type(screen.getByPlaceholderText('tvly-...'), 'secret');
-    expect(screen.getByText('Unsaved changes: Search provider, API key')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Save search settings' }));
-    expect(await screen.findByText('Search settings saved.')).toBeInTheDocument();
-    expect(mocked.saveSearchSettings).toHaveBeenCalledWith({ provider: 'tavily', tavilyApiKey: 'secret', braveApiKey: undefined });
-    await waitFor(() => expect((screen.getByPlaceholderText(/Leave blank to keep stored key/) as HTMLInputElement).value).toBe(''));
-    expect(screen.getByRole('button', { name: 'Test search connection' })).toBeInTheDocument();
-    expect(screen.getByText('Test uses the key you typed; Save to keep it.')).toBeInTheDocument();
+  it('keeps the AI group before Web Search', async () => {
+    await renderLoaded();
+    const autopilot = screen.getByRole('heading', { name: 'Autopilot' });
+    const search = screen.getByRole('heading', { name: /Web Search/ });
+    expect(autopilot.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

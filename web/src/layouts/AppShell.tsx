@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Box,
+  CircleAlert,
   FolderArchive,
   MessageSquareWarning,
   PackageSearch,
@@ -28,6 +29,12 @@ import SettingsView from '../views/SettingsView';
 export type BuildSubTab = 'parts' | 'work' | 'issues';
 export type VaultSubTab = 'library' | 'twin' | 'settings';
 
+/** Destination of a guarded hub / sub-tab change. */
+interface PendingNav {
+  tab: TabId;
+  vaultSub?: VaultSubTab;
+}
+
 const BUILD_SUB_TABS: Array<{ id: BuildSubTab; label: string; icon: typeof PackageSearch }> = [
   { id: 'parts', label: 'Shopping List & BOM', icon: PackageSearch },
   { id: 'work', label: 'Work Instructions (Shop Mode)', icon: Wrench },
@@ -47,6 +54,14 @@ export default function AppShell() {
   const [studioPhase, setStudioPhase] = useState<string | undefined>(undefined);
   const [studioQuestionId, setStudioQuestionId] = useState<string | undefined>(undefined);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Settings leave-guard (§4): the view reports unsaved edits; a hub or Vault
+  // sub-tab change is held in `pendingNav` until the maker decides.
+  const [settingsDirty, setSettingsDirty] = useState<{ dirty: boolean; parts: string[] }>({ dirty: false, parts: [] });
+  const [pendingNav, setPendingNav] = useState<PendingNav | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  const saveSettingsRef = useRef<(() => Promise<boolean>) | null>(null);
+  const saveAndLeaveRef = useRef<HTMLButtonElement | null>(null);
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [connected, setConnected] = useState(true);
@@ -129,6 +144,63 @@ export default function AppShell() {
     setTab('development');
   };
 
+  const navigate = (dest: PendingNav) => {
+    setSettingsDirty({ dirty: false, parts: [] });
+    setTab(dest.tab);
+    if (dest.tab === 'vault' && dest.vaultSub) setVaultSubTab(dest.vaultSub);
+  };
+
+  /**
+   * Navigates, or holds the change behind the save-before-leaving dialog when
+   * the settings page has unsaved edits.
+   */
+  const guardedNavigate = (dest: PendingNav) => {
+    const onSettings = tab === 'vault' && vaultSubTab === 'settings';
+    const leavesSettings = dest.tab !== 'vault' || dest.vaultSub !== 'settings';
+    if (onSettings && leavesSettings && settingsDirty.dirty) {
+      setPendingNav(dest);
+      return;
+    }
+    navigate(dest);
+  };
+
+  const stayOnSettings = () => {
+    setPendingNav(null);
+    // Focus returns to the active hub tab (the Vault tab this dialog came from).
+    document.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
+  };
+
+  const saveAndLeave = async () => {
+    setLeaving(true);
+    const saved = (await saveSettingsRef.current?.()) ?? false;
+    setLeaving(false);
+    if (saved && pendingNav) navigate(pendingNav);
+    setPendingNav(null);
+  };
+
+  const registerSaveHandler = useCallback((handler: (() => Promise<boolean>) | null) => {
+    saveSettingsRef.current = handler;
+  }, []);
+
+  const handleSettingsDirty = useCallback((dirty: boolean, parts: string[]) => {
+    setSettingsDirty({ dirty, parts });
+  }, []);
+
+  // Esc = Stay; focus lands on "Save and leave" when the dialog opens.
+  useEffect(() => {
+    if (!pendingNav) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        stayOnSettings();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    saveAndLeaveRef.current?.focus();
+    return () => window.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingNav]);
+
   // Design §5.E: clear the deep-link when leaving the studio so navigating
   // back without a fresh question focus never re-triggers the one-shot effect.
   useEffect(() => {
@@ -162,7 +234,7 @@ export default function AppShell() {
       <TopBar
         project={project}
         tab={tab}
-        onSelectTab={setTab}
+        onSelectTab={id => guardedNavigate({ tab: id })}
         runState={runState}
         runDetail={runDetail}
         runDetailTitle={runDetailTitle}
@@ -216,7 +288,7 @@ export default function AppShell() {
                   key={id}
                   type="button"
                   onClick={() => {
-                    setTab(id);
+                    guardedNavigate({ tab: id });
                     setMobileMenuOpen(false);
                   }}
                   className={`flex min-h-[48px] w-full items-center gap-4 rounded-xl px-4 py-3.5 text-left transition-colors ${
@@ -259,7 +331,7 @@ export default function AppShell() {
       {/* Active Hub View */}
       <main key={projectRevision} className="relative z-10 min-h-0 flex-1 overflow-hidden">
         {tab === 'dashboard' && (
-          <DashboardView onNavigate={(t) => setTab(t as TabId)} onOpenQuestion={handleOpenQuestion} />
+          <DashboardView onNavigate={(t) => guardedNavigate({ tab: t as TabId })} onOpenQuestion={handleOpenQuestion} />
         )}
 
         {tab === 'roadmap' && <RoadmapView onSelectPhase={handleSelectPhase} />}
@@ -274,8 +346,7 @@ export default function AppShell() {
             // Workstream C/D: state-based return path to the queue (design BC-5).
             // Optional second arg selects a Vault sub-tab (PromptBar upload deep-link).
             onNavigate={(t, sub) => {
-              setTab(t as TabId);
-              if (t === 'vault' && sub) setVaultSubTab(sub as VaultSubTab);
+              guardedNavigate({ tab: t as TabId, vaultSub: t === 'vault' && sub ? (sub as VaultSubTab) : undefined });
             }}
           />
         )}
@@ -339,7 +410,7 @@ export default function AppShell() {
                     <button
                       key={id}
                       type="button"
-                      onClick={() => setVaultSubTab(id)}
+                      onClick={() => guardedNavigate({ tab: 'vault', vaultSub: id })}
                       className={`flex min-h-[36px] items-center gap-2 rounded-full px-3.5 py-1 text-xs font-medium transition-all whitespace-nowrap ${
                         active
                           ? 'bg-[#1a0208] text-[#ffb3bd] border border-[#ff2a3c]/45 shadow-sm font-semibold'
@@ -361,6 +432,8 @@ export default function AppShell() {
               {vaultSubTab === 'settings' && (
                 <SettingsView
                   onSaved={refreshProject}
+                  onDirtyChange={handleSettingsDirty}
+                  onSaveHandler={registerSaveHandler}
                   onProjectSwitched={async () => {
                     setProjectRevision(r => r + 1);
                     await refreshProject();
@@ -371,6 +444,59 @@ export default function AppShell() {
           </div>
         )}
       </main>
+
+      {/* Leave-with-unsaved-edits confirm (§4) — only while the settings page is dirty. */}
+      {pendingNav && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#05070c]/85 p-4 backdrop-blur">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="leave-settings-heading"
+            aria-describedby="leave-settings-detail"
+            className="w-full max-w-md space-y-4 rounded-xl border border-[#2a3342] bg-[#0d1017] p-5"
+          >
+            <div className="flex items-start gap-2.5">
+              <CircleAlert className="h-5 w-5 shrink-0 text-[#d9a441]" aria-hidden />
+              <div>
+                <h2 id="leave-settings-heading" className="text-sm font-bold text-[#e8edf5]">
+                  Save settings before leaving?
+                </h2>
+                <p id="leave-settings-detail" className="mt-1 text-sm text-[#a8b3c4]">
+                  Your changes to {settingsDirty.parts.join(', ')} haven&apos;t been saved.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={stayOnSettings}
+                className="min-h-[44px] rounded-lg border border-[#3b4658] px-4 text-sm text-[#e8edf5] hover:bg-[#11151d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]"
+              >
+                Stay
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  navigate(pendingNav);
+                  setPendingNav(null);
+                }}
+                className="min-h-[44px] rounded-lg border border-[#3b4658] px-4 text-sm text-[#e8edf5] hover:bg-[#11151d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]"
+              >
+                Leave without saving
+              </button>
+              <button
+                type="button"
+                ref={saveAndLeaveRef}
+                onClick={() => void saveAndLeave()}
+                disabled={leaving}
+                className="min-h-[44px] rounded-lg bg-[#d9a441] px-4 text-sm font-semibold text-[#05070c] hover:bg-[#f0c060] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d1017]"
+              >
+                {leaving ? 'Saving…' : 'Save and leave'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

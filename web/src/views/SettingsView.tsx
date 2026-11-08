@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Loader2,
   Settings2,
@@ -12,13 +12,14 @@ import {
   Search,
   ArrowRight,
   Globe,
-  Bot
+  Bot,
+  Check,
+  CircleAlert,
+  Save
 } from 'lucide-react';
 import { api } from '../api/client';
 import DotGrid from '../components/reactbits/DotGrid';
 import SquishSwitch from '../components/reactbits/SquishSwitch/SquishSwitch';
-import { SettingsSaveBar } from '../components/SettingsSaveBar';
-import type { SettingsSaveBarStatus } from '../components/SettingsSaveBar';
 import {
   Assignments,
   ModelRole,
@@ -33,7 +34,40 @@ import {
 export interface SettingsViewProps {
   onSaved: () => Promise<void> | void;
   onProjectSwitched?: () => Promise<void> | void;
+  /**
+   * Reports whether edits are pending, plus the changed part names, so the
+   * shell can guard hub / sub-tab changes. Empty parts = clean.
+   */
+  onDirtyChange?: (dirty: boolean, parts: string[]) => void;
+  /**
+   * Receives the "save every dirty slice" handler so the shell's
+   * "Save and leave" can run it. Called with `null` on unmount.
+   */
+  onSaveHandler?: (handler: (() => Promise<boolean>) | null) => void;
 }
+
+/** Result of saving one settings slice. Failures carry the reason for the band. */
+type SliceResult = { ok: true } | { ok: false; message: string };
+
+/** Per-slice status line shown inside its own card. */
+type SliceStatus = { kind: 'success' | 'warning' | 'error'; text: string };
+
+/** Composed report for the page band after one Save Settings run. */
+type SaveReport = { kind: 'success' | 'error'; text: string };
+
+/** Pill states from the design table (§2). */
+type PillState = 'clean' | 'dirty' | 'blocked' | 'saving';
+
+const sliceTone = (kind: SliceStatus['kind'] | undefined): string => {
+  switch (kind) {
+    case 'error':
+      return 'text-rose-300';
+    case 'warning':
+      return 'text-amber-200';
+    default:
+      return 'text-[#a8b3c4]';
+  }
+};
 
 const ROLES: Array<{ role: ModelRole; label: string; note?: string }> = [
   { role: 'drafting', label: 'Drafting', note: 'Writes every deliverable and runs intake. Needs tool calling (STARN tests this when you save).' },
@@ -73,16 +107,17 @@ const inputClass =
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'provider';
 
-export default function SettingsView({ onSaved, onProjectSwitched }: SettingsViewProps) {
+export default function SettingsView({ onSaved, onProjectSwitched, onDirtyChange, onSaveHandler }: SettingsViewProps) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [providers, setProviders] = useState<ProviderDraft[]>([]);
   const [assignments, setAssignments] = useState<Assignments | null>(null);
   const [models, setModels] = useState<Record<string, string[] | { error: string }>>({});
   const [testing, setTesting] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
+  const [saveReport, setSaveReport] = useState<SaveReport | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [aiStatus, setAiStatus] = useState<SettingsSaveBarStatus | null>(null);
-  const [searchStatus, setSearchStatus] = useState<SettingsSaveBarStatus | null>(null);
+  const [aiStatus, setAiStatus] = useState<SliceStatus | null>(null);
+  const [searchStatus, setSearchStatus] = useState<SliceStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [transcriptionEnabled, setTranscriptionEnabled] = useState(true);
   const [voiceInputModel, setVoiceInputModel] = useState<string>(DEFAULT_VOICE_INPUT_MODEL);
@@ -111,7 +146,6 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
   const [hasBraveKey, setHasBraveKey] = useState<boolean>(false);
   const [searchProbeResult, setSearchProbeResult] = useState<{ success: boolean; latencyMs?: number; error?: string } | null>(null);
   const [probingSearch, setProbingSearch] = useState<boolean>(false);
-  const [savingSearch, setSavingSearch] = useState<boolean>(false);
 
   const loadProjects = async () => {
     try {
@@ -206,8 +240,9 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
     setSearchStatus(null);
   };
 
-  const handleSaveSearch = async () => {
-    setSavingSearch(true);
+  const handleSaveSearch = async (): Promise<SliceResult> => {
+    // Clean slice: skip the POST so a retry only touches the failing half.
+    if (searchDirtyParts.length === 0) return { ok: true };
     setSearchStatus(null);
     try {
       const res = await api.saveSearchSettings({
@@ -222,10 +257,14 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
       setTavilyKey('');
       setBraveKey('');
       setSearchStatus({ kind: 'success', text: 'Search settings saved.' });
+      return { ok: true };
     } catch (err: any) {
-      setSearchStatus({ kind: 'error', text: `Couldn't save: ${err?.message ?? 'Unknown error'}. Your changes are still here. Try again.` });
-    } finally {
-      setSavingSearch(false);
+      const message = err?.message ?? 'Unknown error';
+      setSearchStatus({
+        kind: 'error',
+        text: `Couldn't save: ${message}. Your changes are still here. Try again.`
+      });
+      return { ok: false, message };
     }
   };
 
@@ -294,24 +333,38 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
     return parts;
   }, [settings, dirtyProviders, assignmentsDirty, transcriptionEnabled, voiceInputDirty, autopilotEnabled]);
 
-  const searchDirtyParts: string[] = [];
-  if (searchProvider !== savedSearchProvider) searchDirtyParts.push('Search provider');
-  if (tavilyKey || braveKey) searchDirtyParts.push('API key');
+  const searchDirtyParts = useMemo(() => {
+    const parts: string[] = [];
+    if (searchProvider !== savedSearchProvider) parts.push('Search provider');
+    if (tavilyKey || braveKey) parts.push('API key');
+    return parts;
+  }, [searchProvider, savedSearchProvider, tavilyKey, braveKey]);
 
   const missingRoles = assignments ? ROLES.filter(r => !assignments[r.role].model.trim()).map(r => r.label) : [];
   const blockedReason =
     missingRoles.length > 0 ? `Choose a model for every role before saving. Missing: ${missingRoles.join(', ')}.` : undefined;
 
-  const anyDirty = aiDirtyParts.length > 0 || searchDirtyParts.length > 0;
+  const isDirty = aiDirtyParts.length > 0 || searchDirtyParts.length > 0;
+  const dirtyPartsAll = useMemo(() => [...aiDirtyParts, ...searchDirtyParts], [aiDirtyParts, searchDirtyParts]);
+
   useEffect(() => {
-    if (!anyDirty) return;
+    if (!isDirty) return;
     const guard = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = '';
     };
     window.addEventListener('beforeunload', guard);
     return () => window.removeEventListener('beforeunload', guard);
-  }, [anyDirty]);
+  }, [isDirty]);
+
+  // The shell guards hub / sub-tab changes with this report (§4).
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  useEffect(() => {
+    onDirtyChangeRef.current = onDirtyChange;
+  });
+  useEffect(() => {
+    onDirtyChangeRef.current?.(isDirty, dirtyPartsAll);
+  }, [isDirty, dirtyPartsAll]);
 
   const updateProvider = (index: number, patch: Partial<ProviderDraft>) => {
     setAiStatus(null);
@@ -335,9 +388,9 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
   const assignedRoles = (providerId: string) =>
     assignments ? ROLES.filter(r => assignments[r.role].providerId === providerId).map(r => r.label) : [];
 
-  const save = async () => {
-    if (!assignments) return;
-    setSaving(true);
+  const saveAi = async (): Promise<SliceResult> => {
+    // Clean slice: skip the POST (and the 5s drafting probe) on a retry.
+    if (!assignments || aiDirtyParts.length === 0) return { ok: true };
     setAiStatus(null);
     try {
       const updated = await api.saveSettings({
@@ -363,13 +416,112 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
       } else {
         setAiStatus({ kind: 'success', text: 'AI settings saved. New settings apply to your next request.' });
       }
-      await onSaved();
+      // A shell refresh failure never turns a saved slice into a failure.
+      await Promise.resolve(onSaved()).catch(() => undefined);
+      return { ok: true };
     } catch (err: any) {
-      setAiStatus({ kind: 'error', text: `Couldn't save: ${err?.message ?? 'Unknown error'}. Your changes are still here. Try again.` });
-    } finally {
-      setSaving(false);
+      const message = err?.message ?? 'Unknown error';
+      setAiStatus({
+        kind: 'error',
+        text: `Couldn't save: ${message}. Your changes are still here. Try again.`
+      });
+      return { ok: false, message };
     }
   };
+
+  /**
+   * Saves every dirty slice in one pass.
+   *
+   * @returns `true` when every slice is saved (clean slices count as saved),
+   * so the shell may navigate away; `false` when at least one slice failed and
+   * its edits are still on screen.
+   */
+  const saveAll = async (): Promise<boolean> => {
+    const aiSubmitted = aiDirtyParts.length > 0;
+    const searchSubmitted = searchDirtyParts.length > 0;
+    setSavingAll(true);
+    setSaveReport(null);
+    const [ai, search] = await Promise.all([saveAi(), handleSaveSearch()]);
+    setSavingAll(false);
+
+    const saved: string[] = [];
+    const failures: Array<{ label: string; message: string }> = [];
+    if (aiSubmitted) {
+      if (ai.ok) saved.push('AI settings');
+      else failures.push({ label: 'AI settings', message: ai.message });
+    }
+    if (searchSubmitted) {
+      if (search.ok) saved.push('Search settings');
+      else failures.push({ label: 'Search settings', message: search.message });
+    }
+
+    if (failures.length === 0) {
+      setSaveReport({ kind: 'success', text: 'All settings saved. New settings apply to your next request.' });
+    } else if (failures.length === 2) {
+      setSaveReport({
+        kind: 'error',
+        text: `Nothing saved. AI settings: ${failures[0].message}. Search settings: ${failures[1].message}. Your changes are still here — try again.`
+      });
+    } else {
+      const only = failures[0];
+      const savedPrefix = saved.length > 0 ? `${saved[0]} saved. ` : '';
+      setSaveReport({
+        kind: 'error',
+        text: `${savedPrefix}${only.label} didn't save: ${only.message}. Your ${only.label} changes are still here — try again.`
+      });
+    }
+    return ai.ok && search.ok;
+  };
+
+  // Hand the shell its "Save and leave" handler; re-registers only on identity change.
+  const saveAllRef = useRef(saveAll);
+  useEffect(() => {
+    saveAllRef.current = saveAll;
+  });
+  useEffect(() => {
+    if (!onSaveHandler) return;
+    onSaveHandler(() => saveAllRef.current());
+    return () => onSaveHandler(null);
+  }, [onSaveHandler]);
+
+  const revertAll = () => {
+    discardAi();
+    discardSearch();
+    setSaveReport(null);
+  };
+
+  let statusLine = 'No unsaved changes';
+  if (savingAll) statusLine = 'Saving…';
+  else if (saveReport?.kind === 'success') statusLine = saveReport.text;
+  else if (isDirty) statusLine = `Unsaved changes: ${dirtyPartsAll.join(', ')}`;
+
+  let pillState: PillState = 'clean';
+  if (savingAll) pillState = 'saving';
+  else if (isDirty) pillState = blockedReason ? 'blocked' : 'dirty';
+
+  const pillBase =
+    'flex h-11 min-w-[148px] shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold motion-safe:transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c] focus-visible:ring-offset-2 focus-visible:ring-offset-[#05070c]';
+  const brassPill = 'bg-[#d9a441] text-[#05070c]';
+  let pillClass = `${pillBase} cursor-default border border-[#3b4658] bg-[#0d1017]/85 text-[#a8b3c4]`;
+  let pillLabel = 'All settings saved';
+  let pillDescribedBy: string | undefined;
+  let pillIcon = <Check className="h-4 w-4 shrink-0 text-[#d9a441]" aria-hidden />;
+
+  if (pillState === 'dirty') {
+    pillClass = `${pillBase} ${brassPill} shadow-[0_6px_18px_rgba(0,0,0,.45)] hover:bg-[#f0c060] active:bg-[#c6923a]`;
+    pillLabel = 'Save Settings';
+    pillDescribedBy = 'settings-save-status';
+    pillIcon = <Save className="h-4 w-4 shrink-0" aria-hidden />;
+  } else if (pillState === 'blocked') {
+    pillClass = `${pillBase} ${brassPill} cursor-not-allowed opacity-60`;
+    pillLabel = 'Save Settings';
+    pillDescribedBy = 'settings-ai-blocked';
+    pillIcon = <CircleAlert className="h-4 w-4 shrink-0" aria-hidden />;
+  } else if (pillState === 'saving') {
+    pillClass = `${pillBase} ${brassPill} cursor-progress opacity-70 pointer-events-none`;
+    pillLabel = 'Saving…';
+    pillIcon = <Loader2 className="h-4 w-4 shrink-0 motion-safe:animate-spin" aria-hidden />;
+  }
 
   if (!settings && !error) {
     return (
@@ -381,12 +533,55 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
 
   return (
     <div className="h-full overflow-y-auto p-4 lg:p-6">
-      <div className="mx-auto max-w-2xl space-y-5">
-        <header className="flex items-center gap-2.5">
-          <Settings2 className="h-5 w-5 text-violet-400" aria-hidden />
-          <h1 className="text-lg font-bold text-[#e8edf5]">Settings</h1>
-        </header>
+      {/* Sticky action band (§1): in-flow, pinned to the top of this scroller. */}
+      <header className="sticky top-0 z-20 -mx-4 -mt-4 border-b border-[#2a3342]/60 bg-[#05070c]/92 px-4 py-3 backdrop-blur lg:-mx-6 lg:-mt-6 lg:px-6">
+        <div className="mx-auto flex max-w-2xl items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Settings2 className="h-5 w-5 shrink-0 text-violet-400" aria-hidden />
+            <h1 className="text-lg font-bold text-[#e8edf5]">Settings</h1>
+          </div>
+          <div className="flex min-w-0 items-center gap-3">
+            {/* Always-mounted polite region: state + last successful save. */}
+            <p id="settings-save-status" role="status" aria-live="polite" className="sr-only text-sm text-[#a8b3c4] sm:not-sr-only">
+              {statusLine}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                if (pillState === 'dirty') void saveAll();
+              }}
+              aria-disabled={pillState === 'dirty' ? undefined : true}
+              aria-busy={pillState === 'saving' ? true : undefined}
+              aria-describedby={pillDescribedBy}
+              tabIndex={pillState === 'clean' ? -1 : undefined}
+              className={pillClass}
+            >
+              {pillIcon}
+              {pillLabel}
+            </button>
+          </div>
+        </div>
+        {/* Always-mounted assertive region: the composed save failure (§3). */}
+        <div className="mx-auto max-w-2xl">
+          <div role="alert" className="sr-only flex flex-wrap items-center gap-2 text-sm text-rose-300 sm:not-sr-only">
+            {saveReport?.kind === 'error' && (
+              <>
+                <CircleAlert className="h-4 w-4 shrink-0" aria-hidden />
+                <span>{saveReport.text}</span>
+                <button
+                  type="button"
+                  onClick={revertAll}
+                  className="shrink-0 rounded underline decoration-dotted underline-offset-2 hover:text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]"
+                >
+                  Revert unsaved changes
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
 
+      <div className="mx-auto mt-5 max-w-2xl space-y-5">
         {error && (
           <p className="rounded-lg border border-rose-900 bg-rose-950/50 px-3 py-2 text-sm text-rose-200" role="alert">{error}</p>
         )}
@@ -583,7 +778,9 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
                           type="password"
                           autoComplete="off"
                           value={p.apiKey ?? ''}
-                          onChange={e => updateProvider(i, { apiKey: e.target.value })}
+                          // Empty string → undefined, else a cleared key stays "dirty" forever
+                          // and POSTs an empty key.
+                          onChange={e => updateProvider(i, { apiKey: e.target.value || undefined })}
                           placeholder={p.hasKey ? 'unchanged' : 'none'}
                           className={inputClass}
                         />
@@ -775,24 +972,22 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
           </div>
         </section>
 
-        <SettingsSaveBar
-          label="Save AI settings"
-          savingLabel={draftingDirty ? 'Saving and checking drafting model…' : 'Saving…'}
-          cleanText="All AI settings saved"
-          dirtyParts={aiDirtyParts}
-          saving={saving}
-          blockedReason={blockedReason}
-          status={aiStatus}
-          extra={
-            draftingDirty ? (
-              <p className="text-xs text-[#a8b3c4]">
-                When you change the Drafting model, STARN does a quick test to confirm it can use tools. This can take a few seconds.
-              </p>
-            ) : undefined
-          }
-          onSave={() => void save()}
-          onDiscard={discardAi}
-        />
+        {/* Save gates + status for the AI slice; the save action is the page pill. */}
+        <div className="space-y-2">
+          {blockedReason && (
+            <p id="settings-ai-blocked" className="text-sm text-amber-200">
+              {blockedReason}
+            </p>
+          )}
+          {draftingDirty && (
+            <p className="text-xs text-[#a8b3c4]">
+              When you change the Drafting model, STARN does a quick test to confirm it can use tools. This can take a few seconds.
+            </p>
+          )}
+          <p role="status" className={`text-sm ${sliceTone(aiStatus?.kind)}`}>
+            {aiStatus?.text ?? (aiDirtyParts.length > 0 ? `Unsaved: ${aiDirtyParts.join(', ')}.` : 'All AI settings saved')}
+          </p>
+        </div>
         </div>
 
         {/* Web Search & Hardware Sourcing */}
@@ -878,37 +1073,29 @@ export default function SettingsView({ onSaved, onProjectSwitched }: SettingsVie
             </div>
           )}
 
-          <SettingsSaveBar
-            label="Save search settings"
-            savingLabel="Saving…"
-            cleanText="Search settings saved"
-            dirtyParts={searchDirtyParts}
-            saving={savingSearch}
-            status={searchStatus}
-            extra={
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => void handleProbeSearch()}
-                  disabled={probingSearch}
-                  className="flex min-h-[44px] items-center gap-2 rounded-lg border border-[#3b4658] bg-[#0d1017] px-4 text-xs font-semibold text-[#e8edf5] transition hover:bg-[#11151d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:opacity-50"
-                >
-                  {probingSearch ? <Loader2 className="h-4 w-4 animate-spin text-violet-400" /> : <PlugZap className="h-4 w-4" />}
-                  Test search connection
-                </button>
-                <span className="text-xs text-[#a8b3c4]">Test uses the key you typed; Save to keep it.</span>
-                {searchProbeResult && (
-                  <span className={`text-xs ${searchProbeResult.success ? 'text-[#e8edf5]' : 'text-rose-400'}`} role="status">
-                    {searchProbeResult.success
-                      ? `Connected (${searchProbeResult.latencyMs}ms)`
-                      : `Connection failed: ${searchProbeResult.error}`}
-                  </span>
-                )}
-              </div>
-            }
-            onSave={() => void handleSaveSearch()}
-            onDiscard={discardSearch}
-          />
+          {/* Probes are not save actions: they test the typed key before saving. */}
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void handleProbeSearch()}
+              disabled={probingSearch || savingAll}
+              className="flex min-h-[44px] items-center gap-2 rounded-lg border border-[#3b4658] bg-[#0d1017] px-4 text-xs font-semibold text-[#e8edf5] transition hover:bg-[#11151d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2a3c]/60 disabled:opacity-50"
+            >
+              {probingSearch ? <Loader2 className="h-4 w-4 animate-spin text-violet-400" /> : <PlugZap className="h-4 w-4" />}
+              Test search connection
+            </button>
+            <span className="text-xs text-[#a8b3c4]">Test uses the key you typed; Save to keep it.</span>
+            {searchProbeResult && (
+              <span className={`text-xs ${searchProbeResult.success ? 'text-[#e8edf5]' : 'text-rose-400'}`} role="status">
+                {searchProbeResult.success
+                  ? `Connected (${searchProbeResult.latencyMs}ms)`
+                  : `Connection failed: ${searchProbeResult.error}`}
+              </span>
+            )}
+          </div>
+          <p role="status" className={`text-sm ${sliceTone(searchStatus?.kind)}`}>
+            {searchStatus?.text ?? (searchDirtyParts.length > 0 ? `Unsaved: ${searchDirtyParts.join(', ')}.` : 'Search settings saved')}
+          </p>
         </section>
 
         {settings && (
