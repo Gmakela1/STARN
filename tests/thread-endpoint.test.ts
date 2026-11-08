@@ -111,7 +111,7 @@ describe('POST /api/portal/:id/thread', () => {
     // Read-only allow-list, fresh priorMessages, small turn budget.
     expect(agentLoopMock).toHaveBeenCalledTimes(1);
     const opts = agentLoopMock.mock.calls[0][0];
-    expect(opts.allowedTools).toEqual(['fs_read', 'fs_list', 'state_read']);
+    expect(opts.allowedTools).toEqual(['fs_read', 'fs_list', 'state_read', 'request_research']);
     expect(opts.maxTurns).toBe(3);
     expect(opts.priorMessages).toEqual([]);
     // Advisory directive overrides the specialist drafting prompt.
@@ -320,7 +320,7 @@ describe('POST /api/portal/:id/thread', () => {
     // One read-only turn, same allow-list/budget as the advisory turn, whole
     // thread in the prompt.
     const opts = agentLoopMock.mock.calls[1][0];
-    expect(opts.allowedTools).toEqual(['fs_read', 'fs_list', 'state_read']);
+    expect(opts.allowedTools).toEqual(['fs_read', 'fs_list', 'state_read', 'request_research']);
     expect(opts.maxTurns).toBe(3);
     // Conclude uses its own directive: the advisory closing-sentence order
     // contradicts "two labelled blocks and nothing else".

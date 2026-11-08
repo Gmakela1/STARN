@@ -12,7 +12,7 @@ import { ProjectStateManager } from '../src/workspace/state.js';
 import { ToolRegistry } from '../src/tools/registry.js';
 import { ChatCompletionResult } from '../src/openrouter/types.js';
 import { ResearchGateDeps } from '../src/core/research-gate.js';
-import { runResearchDelegation, toBand } from '../src/core/research-delegation.js';
+import { runResearchDelegation, runResearchDelegationWithTimeout, toBand } from '../src/core/research-delegation.js';
 
 function chat(content: string): ChatCompletionResult {
   return { content, raw: {} } as ChatCompletionResult;
@@ -180,5 +180,67 @@ describe('research delegation', () => {
     const userMessage = String(call.messages.find((m: any) => m.role === 'user').content);
     expect(userMessage).toContain('QUESTION: What is the contactor rating?');
     expect(userMessage).not.toContain('Focus files:');
+  });
+
+  it('runResearchDelegationWithTimeout: a run that never settles hits the budget and aborts the signal', async () => {
+    let seenSignal: AbortSignal | undefined;
+    const deps = makeDeps({
+      client: {
+        chatCompletion: vi.fn((opts: any) => {
+          seenSignal = opts?.signal;
+          return new Promise(() => { /* never settles */ });
+        })
+      } as any
+    });
+
+    const result = await runResearchDelegationWithTimeout(deps, { question: 'What is the contactor rating?' }, 20);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('timeout');
+    expect(result.detail).toBe('0.02s');
+    // The budget is an AbortController wired to deps.signal, so the abandoned
+    // research loop is actually cancelled rather than left running.
+    expect(seenSignal).toBeInstanceOf(AbortSignal);
+    expect(seenSignal?.aborted).toBe(true);
+  });
+
+  it('runResearchDelegationWithTimeout passes an un-aborted signal through to the delegation', async () => {
+    let seenSignal: AbortSignal | undefined;
+    const deps = makeDeps({
+      criticClient: {
+        chatCompletion: vi.fn(async (opts: any) => {
+          seenSignal = opts?.signal;
+          return chat(criticReply(0.62));
+        })
+      } as any
+    });
+
+    const result = await runResearchDelegationWithTimeout(deps, { question: 'What is the contactor rating?' });
+
+    expect(result.ok).toBe(true);
+    expect(seenSignal).toBeInstanceOf(AbortSignal);
+    expect(seenSignal?.aborted).toBe(false);
+  });
+
+  it('runResearchDelegationWithTimeout: a caller abort ends the run without waiting out the budget', async () => {
+    const controller = new AbortController();
+    const deps = makeDeps({
+      signal: controller.signal,
+      client: { chatCompletion: vi.fn(() => new Promise(() => { /* never settles */ })) } as any
+    });
+    setTimeout(() => controller.abort(), 10);
+    const startedAt = Date.now();
+
+    const result = await runResearchDelegationWithTimeout(
+      deps,
+      { question: 'What is the contactor rating?' },
+      5000
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('timeout');
+    expect(Date.now() - startedAt).toBeLessThan(2000);
   });
 });

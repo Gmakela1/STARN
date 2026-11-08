@@ -111,8 +111,16 @@ export interface PortalThreadMessage {
   ts: number;
   /** user messages: 'ask' (default for legacy rows) | 'answer'. */
   intent?: ThreadIntent;
-  /** absent => 'message'. 'recorded' = committed answer; 'proposal' = concluded draft. */
-  kind?: 'message' | 'recorded' | 'proposal';
+  /** absent => 'message'. 'recorded' = committed answer; 'proposal' = concluded draft; 'research' = a researcher delegation on this thread. */
+  kind?: 'message' | 'recorded' | 'proposal' | 'research';
+  /** kind === 'research' only — what the delegated research run found. */
+  research?: {
+    /** Research-critic confidence, 0–1. */
+    confidence: number;
+    /** Band derived from `confidence` (spec §6) — never a bare number in the UI. */
+    band: 'high' | 'medium' | 'low';
+    sources: { title: string; url?: string }[];
+  };
   /** kind === 'proposal' only */
   proposal?: {
     status: 'pending' | 'accepted' | 'rejected' | 'superseded';

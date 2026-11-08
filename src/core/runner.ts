@@ -21,6 +21,11 @@ import {
   ResearchStageDeps
 } from './research-preflight.js';
 import { maybeCompact } from './compaction.js';
+import {
+  runResearchDelegationWithTimeout,
+  ResearchDelegationDeps,
+  ResearchDelegationRequest
+} from './research-delegation.js';
 import { Logger } from '../util/logger.js';
 import { CriticEvaluator, CriticResult, BaselineDocument, detectStageHint } from './critic.js';
 import { classifyTurnArtifact, buildNoDocumentError } from './artifact-guard.js';
@@ -478,11 +483,30 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     const transcriptionOn = options.transcriptionEnabled !== false;
     const transcriberGated =
       transcriptionOn && options.transcriberClient && specialist.allowedTools.includes('doc_transcribe');
+    // Research delegation capability (spec §5.5): the specialist hands ONE
+    // question to the researcher instead of guessing or reporting unreadable.
+    // Same clients the research stage uses, built from the turn options so the
+    // capability exists even when the pre-turn stages are off; the deps are the
+    // READ-ONLY subset, so a delegation can never apply an answer.
+    const researchDelegationDeps: ResearchDelegationDeps = {
+      client,
+      model,
+      criticClient: options.criticClient ?? client,
+      criticModel: options.criticModel ?? model,
+      projectPath,
+      stateManager,
+      toolRegistry,
+      searchClient: options.searchClient,
+      logger: options.logger
+    };
+    const requestResearch = (req: ResearchDelegationRequest) =>
+      runResearchDelegationWithTimeout({ ...researchDelegationDeps, signal: options.signal }, req);
     const context: ToolExecutionContext = {
       projectPath,
       stateManager,
       editLog: [] as EditEntry[],
       signal: options.signal,
+      requestResearch,
       transcriber: transcriberGated
         ? { client: options.transcriberClient!, model: options.transcriberModel ?? '' }
         : undefined

@@ -35,6 +35,12 @@ import { EventBus } from '../core/event-bus.js';
 import { PortalItem, PortalThreadMessage } from '../workspace/types.js';
 import { appendThreadMessage as appendThreadRow } from '../core/question-portal.js';
 import { sanitizeResearchLine } from '../core/research-preflight.js';
+import {
+  runResearchDelegationWithTimeout,
+  buildResearchThreadRow,
+  ResearchDelegationRequest,
+  ResearchDelegationResult
+} from '../core/research-delegation.js';
 
 // ── T-C answer-thread (advisory specialist Q&A) ──────────────────────────
 /**
@@ -47,8 +53,10 @@ export { THREAD_MESSAGE_CAP } from '../core/question-portal.js';
 const THREAD_REPLY_CHAR_CAP = 2000;
 /** Advisory turn budget: quick read-only Q&A, no web research for v1. */
 const THREAD_MAX_TURNS = 3;
-/** Thread-turn allow-list: reads only — NO write tools ever, NO web_search for v1. */
-const THREAD_ALLOWED_TOOLS = ['fs_read', 'fs_list', 'state_read'] as const;
+/** Thread-turn allow-list: reads only — NO write tools ever, NO web_search for v1.
+ * `request_research` is allowed: it delegates to the read-only research path
+ * (spec §10), so the turn stays read-only while gaining retrieval. */
+const THREAD_ALLOWED_TOOLS = ['fs_read', 'fs_list', 'state_read', 'request_research'] as const;
 /** Conclude-from-chat proposal answer cap (chars) — one short paragraph. */
 const CONCLUDE_ANSWER_CHAR_CAP = 400;
 /** Conclude turn: the reply markers the parser below reads back. */
@@ -778,6 +786,27 @@ export class ServerSessionManager {
     };
   }
 
+  /**
+   * `request_research` capability for ONE thread turn (spec §5.5, §9): runs the
+   * delegation under the shared 240 s budget, then appends ONE
+   * `kind:'research'` row on success. A failed delegation appends nothing — the
+   * specialist's own reply reports the gap.
+   *
+   * @param itemId - the open question whose thread receives the row
+   * @returns the capability the tool handler calls (question in, outcome out)
+   */
+  private buildRequestResearch(
+    itemId: string
+  ): (req: ResearchDelegationRequest) => Promise<ResearchDelegationResult> {
+    const deps = this.buildResearchGateDeps();
+    return async (req: ResearchDelegationRequest) => {
+      const result = await runResearchDelegationWithTimeout(deps, req);
+      const row = buildResearchThreadRow(req, result, Date.now());
+      if (row) this.appendThreadMessage(itemId, row);
+      return result;
+    };
+  }
+
   /** Shared AnswerApplierDeps (answer queue drain, research gate, confirm route). */
   private answerApplierDeps(): AnswerApplierDeps {
     return {
@@ -858,7 +887,9 @@ export class ServerSessionManager {
   /**
    * One transcript rendering shared by the advisory and conclude turns.
    * Proposal rows are drafts, not conversation, so they are dropped; a recorded
-   * row is labelled as the user's committed answer.
+   * row is labelled as the user's committed answer, and a research row is a
+   * delegated lookup (its text is the QUESTION asked, not the specialist's own
+   * words), so it is labelled as research.
    *
    * @param history Thread rows, oldest first.
    * @returns One labelled line per non-proposal row.
@@ -867,7 +898,9 @@ export class ServerSessionManager {
     return history
       .filter(m => m.kind !== 'proposal')
       .map(m => {
-        if (m.role !== 'user') return `Specialist: ${m.text}`;
+        if (m.role !== 'user') {
+          return m.kind === 'research' ? `Researched: ${m.text}` : `Specialist: ${m.text}`;
+        }
         return m.kind === 'recorded' ? `User (recorded answer): ${m.text}` : `User: ${m.text}`;
       })
       .join('\n');
@@ -914,7 +947,11 @@ export class ServerSessionManager {
         userMessage,
         toolRegistry: this.deps.toolRegistry,
         allowedTools: [...THREAD_ALLOWED_TOOLS],
-        context: { projectPath: this.deps.projectPath, stateManager: this.deps.stateManager },
+        context: {
+          projectPath: this.deps.projectPath,
+          stateManager: this.deps.stateManager,
+          requestResearch: this.buildRequestResearch(item.id)
+        },
         maxTurns: THREAD_MAX_TURNS,
         priorMessages: [],
         logger: this.deps.logger,
@@ -1003,7 +1040,11 @@ export class ServerSessionManager {
         userMessage,
         toolRegistry: this.deps.toolRegistry,
         allowedTools: [...THREAD_ALLOWED_TOOLS],
-        context: { projectPath: this.deps.projectPath, stateManager: this.deps.stateManager },
+        context: {
+          projectPath: this.deps.projectPath,
+          stateManager: this.deps.stateManager,
+          requestResearch: this.buildRequestResearch(item.id)
+        },
         maxTurns: THREAD_MAX_TURNS,
         priorMessages: [],
         logger: this.deps.logger,
