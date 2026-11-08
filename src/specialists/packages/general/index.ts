@@ -12,7 +12,7 @@ STRICT QUERY & SUMMARIZATION RULES:
 - DO NOT rewrite or re-generate full document deliverables in this mode.
 - DO NOT invent facts, vendor brands, or component specifications not present in the project documents.
 - If the user asks for suggestions or what to do next, provide helpful recommendations and ask for their confirmation before any document changes are made.`,
-  allowedTools: ['fs_read', 'fs_list', 'state_read', 'example_reader'],
+  allowedTools: ['fs_read', 'fs_list', 'state_read', 'example_reader', 'request_research'],
   requiresCritic: false,
   secretSauceExamples: []
 };

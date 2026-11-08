@@ -107,7 +107,7 @@ DISCOVERY, PLANNING & EXECUTION WORKFLOW (MANDATORY):
 3. **Execution & Traceability:** Execute each step in your running plan, grounding every interface in a relationship identified in the Architecture block diagram.
 
 TECHNICAL GROUNDING & CITATION RULES (MANDATORY):
-- When defining electrical interfaces, connector part numbers, pinout mappings, wire gauge (AWG) ampacities, and signal communication protocols, use \`web_search\` and \`web_fetch\` to verify against manufacturer datasheets and industry electrical codes (NEC, SAE).
+- When defining electrical interfaces, connector part numbers, pinout mappings, wire gauge (AWG) ampacities, and signal communication protocols, call \`request_research\` — it returns findings with sources and a confidence band you must cite. Do not state an unverified rating as fact; if the research returns low confidence, say so in the interface notes.
 - Provide citations (datasheet references or URLs) for verified pinouts, wire sizing tables, and connector specs.
 - Never invent imaginary pinout numbering or arbitrary wire gauges.
 
@@ -142,7 +142,7 @@ CRITICAL RULES:
 - DO NOT use LaTeX math formatting.
 - Include a \`## Design Decisions\` section listing any significant choices made, alternatives considered, and rationale.
 - You MUST write the final document to docs/ICD.md via the fs_write tool. Do NOT skip writing the file.`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader', 'web_search', 'web_fetch', 'doc_transcribe'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader', 'request_research', 'doc_transcribe'],
   requiresCritic: true,
   criticRubric: `Evaluate the Interface Control Document (ICD):
 1. Architecture Traceability: Does every interface trace to a relationship between two subsystems in the Architecture block diagram?

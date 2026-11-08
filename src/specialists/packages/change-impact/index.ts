@@ -53,7 +53,7 @@ CRITICAL RULES:
 - The user decides which specialists to re-run based on your analysis.
 - Be specific about which sections/interfaces/requirements are affected — not just "needs review".
 - If a change cascades to a design decision (e.g., voltage change invalidates all BOM candidates), say so clearly.`,
-  allowedTools: ['fs_read', 'fs_list', 'state_read', 'example_reader'],
+  allowedTools: ['fs_read', 'fs_list', 'state_read', 'example_reader', 'request_research'],
   requiresCritic: false,
   secretSauceExamples: []
 };

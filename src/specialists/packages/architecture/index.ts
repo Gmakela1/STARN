@@ -87,7 +87,7 @@ DISCOVERY, PLANNING & EXECUTION WORKFLOW (MANDATORY):
 3. **Execution & Traceability:** Execute each step in your running plan, grounding every subsystem in a specific CONOPS system-level capability.
 
 TECHNICAL GROUNDING & CITATION RULES (MANDATORY):
-- When establishing subsystem interfaces, communication protocols (e.g. CAN bus, RS-485 Modbus, Ethernet), or power topologies, use \`web_search\` and \`web_fetch\` to research industry standards and verify engineering feasibility.
+- When establishing subsystem interfaces, communication protocols (e.g. CAN bus, RS-485 Modbus, Ethernet), or power topologies, call \`request_research\` to check industry standards and comparable implementations, and cite the returned sources. Low-confidence findings must be labelled as provisional in the architecture.
 - Include citations (datasheet references or URLs) in the Key Design Decisions section for all specific architecture protocols or hardware standards.
 - Never invent proprietary communication standards or non-existent voltages.
 
@@ -116,7 +116,7 @@ CRITICAL FORMAT RULES:
 - Use clean plain-text descriptions only.
 - Include a \`## Design Decisions\` section listing any significant choices made, alternatives considered, and rationale.
 - You MUST write the final document to docs/ARCHITECTURE.md via the fs_write tool. Do NOT skip writing the file.`,
-  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader', 'web_search', 'web_fetch', 'doc_transcribe'],
+  allowedTools: ['fs_read', 'fs_write', 'fs_edit', 'fs_list', 'state_read', 'state_update', 'example_reader', 'request_research', 'doc_transcribe'],
   requiresCritic: true,
   criticRubric: `Evaluate the System Architecture document:
 1. CONOPS Traceability: Does every subsystem trace back to a specific system-level capability from the CONOPS?
