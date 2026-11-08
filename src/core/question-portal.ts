@@ -94,6 +94,15 @@ function dedupeKey(item: Pick<PortalItem, 'type' | 'docPath' | 'title'> & { meta
 }
 
 /**
+ * One pass-2 identity key plus its provenance: derived from the live title or
+ * from `meta.originalTitle` (the pre-short-title-rewrite wording).
+ */
+interface CandidateKey {
+  key: string;
+  fromOriginalTitle: boolean;
+}
+
+/**
  * Pure: candidate identity keys for the pass-2 (open vs closed) comparison
  * only. Pass 1 keeps the single `dedupeKey` identity.
  *
@@ -103,15 +112,18 @@ function dedupeKey(item: Pick<PortalItem, 'type' | 'docPath' | 'title'> & { meta
  * one, and the single `dedupeKey` string never matches.
  *
  * @param item Any item shaped like PortalItem's type/title/meta.
- * @returns A set of 1-2 keys `[type, slug]` — never throws on odd fields.
+ * @returns 1-2 keys `[type, slug]` tagged with their source title — never
+ *   throws on odd fields.
  */
 function dedupeCandidateKeys(
   item: Pick<PortalItem, 'type' | 'title'> & { meta?: { originalTitle?: string } }
-): Set<string> {
-  const keys = new Set<string>([JSON.stringify([item.type, questionSlug(item.title)])]);
+): CandidateKey[] {
+  const keys: CandidateKey[] = [
+    { key: JSON.stringify([item.type, questionSlug(item.title)]), fromOriginalTitle: false }
+  ];
   const original = item.meta?.originalTitle;
   if (typeof original === 'string' && original.trim() !== '') {
-    keys.add(JSON.stringify([item.type, questionSlug(original)]));
+    keys.push({ key: JSON.stringify([item.type, questionSlug(original)]), fromOriginalTitle: true });
   }
   return keys;
 }
@@ -132,10 +144,22 @@ function hasAnswer(item: PortalItem): boolean {
 }
 
 /**
- * When a closed item's answer landed: `updatedAt` (answerPortalItem stamps it)
- * falls back to `createdAt` for legacy rows without one.
+ * When a closed item's answer landed: the LAST `meta.answerHistory` entry's
+ * timestamp (written by answerPortalItem), falling back to `updatedAt ||
+ * createdAt` for legacy rows that predate the history. `updatedAt` alone is
+ * unusable here — thread messages, dismissal, short-title rewrites and undo all
+ * bump it, which would make an old answer look recent.
  */
 function answerTime(item: PortalItem): string {
+  const history = item.meta?.answerHistory;
+  if (Array.isArray(history)) {
+    for (let i = history.length - 1; i >= 0; i--) {
+      const at = history[i]?.at;
+      if (typeof at === 'string' && at.trim() !== '') {
+        return at;
+      }
+    }
+  }
   return item.updatedAt || item.createdAt;
 }
 
@@ -147,8 +171,11 @@ function answerTime(item: PortalItem): string {
  * Pass 2 — open vs ALREADY CLOSED: an open item is a stale twin when a
  * non-open item (answered/resolved/dismissed) whose candidate key set
  * intersects the open item's carries a non-empty answer written strictly AFTER
- * the open item's createdAt. When the open item was created after the answer it
- * may be a genuine re-open and is left alone.
+ * the open item's createdAt — AND the match is specific enough to trust: the
+ * shared key came from a `meta.originalTitle`, or both items are on the same
+ * docPath. Generic short titles on different docs never archive. When the open
+ * item was created after the answer it may be a genuine re-open and is left
+ * alone.
  *
  * Nothing is ever deleted, already-archived items are never touched.
  *
@@ -172,37 +199,36 @@ export function dedupeOpenPortalItems(items: PortalItem[]): boolean {
     changed = true;
   }
 
-  // Pass 2 — latest answer time per candidate key among closed items.
-  // DocPath is deliberately IGNORED here: the same question answered from a
-  // different document (docs/RTM.md open, docs/REQUIREMENTS.md answered) is
-  // still stale, so only the type + title identity is compared.
-  const answeredAt = new Map<string, string>();
-  for (const item of items) {
-    if (item.status === 'open' || !hasAnswer(item)) {
-      continue;
-    }
-    const at = answerTime(item);
-    for (const key of dedupeCandidateKeys(item)) {
-      const prior = answeredAt.get(key);
-      if (prior === undefined || prior.localeCompare(at) < 0) {
-        answeredAt.set(key, at);
-      }
-    }
-  }
+  // Pass 2 — stale twins of ALREADY CLOSED items. A match alone is not enough:
+  // short titles ("power budget", "input voltage") are generic, and a
+  // false-positive archive has no un-archive affordance in the product. Archive
+  // only when the matching key came from a meta.originalTitle (the pre-
+  // short-title-rewrite wording, a real identity) OR both items sit on the same
+  // docPath.
+  const closed = items
+    .filter(item => item.status !== 'open' && hasAnswer(item))
+    .map(item => ({ at: answerTime(item), docPath: item.docPath, keys: dedupeCandidateKeys(item) }));
   for (const item of items) {
     if (item.status !== 'open' || item.meta?.archived === true) {
       continue;
     }
-    let at: string | undefined;
-    for (const key of dedupeCandidateKeys(item)) {
-      const answerAt = answeredAt.get(key);
-      if (answerAt !== undefined && (at === undefined || at.localeCompare(answerAt) < 0)) {
-        at = answerAt;
+    const keys = dedupeCandidateKeys(item);
+    const stale = closed.some(answer => {
+      // `<= 0` = the open item was created at/after the answer → plausible
+      // genuine re-open, never archived.
+      if (answer.at.localeCompare(item.createdAt) <= 0) {
+        return false;
       }
-    }
-    // `<= 0` = the open item was created at/after the answer → plausible
-    // genuine re-open, never archived.
-    if (at === undefined || at.localeCompare(item.createdAt) <= 0) {
+      const sameDoc = answer.docPath !== undefined && answer.docPath === item.docPath;
+      return keys.some(openKey =>
+        answer.keys.some(
+          closedKey =>
+            closedKey.key === openKey.key &&
+            (sameDoc || openKey.fromOriginalTitle || closedKey.fromOriginalTitle)
+        )
+      );
+    });
+    if (!stale) {
       continue;
     }
     item.meta = { ...(item.meta || {}), archived: true };

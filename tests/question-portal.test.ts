@@ -1010,7 +1010,7 @@ describe('dedupeOpenPortalItems — open twins of an ALREADY-ANSWERED item (issu
     expect(openTwin.meta?.archived).toBeUndefined();
   });
 
-  it('archives a cross-docPath twin when the answer is newer (docPath ignored in pass 2)', () => {
+  it('does NOT archive a cross-docPath twin on a bare title match (generic short titles differ by subsystem)', () => {
     const openTwin = item({ id: 'open-twin', docPath: 'docs/RTM.md' });
     const answered = item({
       id: 'answered',
@@ -1021,9 +1021,110 @@ describe('dedupeOpenPortalItems — open twins of an ALREADY-ANSWERED item (issu
       updatedAt: '2026-11-07T00:00:00.000Z'
     });
 
+    expect(dedupeOpenPortalItems([openTwin, answered])).toBe(false);
+    expect(openTwin.meta?.archived).toBeUndefined();
+    expect(answered.meta?.archived).toBeUndefined();
+  });
+
+  it('archives a cross-docPath twin when the shared key comes from meta.originalTitle (RTM vs REQUIREMENTS)', () => {
+    const openTwin = item({ id: 'open-twin', docPath: 'docs/RTM.md' });
+    const answered = item({
+      id: 'answered',
+      status: 'answered',
+      answer: '48V nominal',
+      docPath: 'docs/REQUIREMENTS.md',
+      meta: { originalTitle: 'What max voltage?' },
+      createdAt: '2026-10-31T00:00:00.000Z',
+      updatedAt: '2026-11-07T00:00:00.000Z'
+    });
+
     expect(dedupeOpenPortalItems([openTwin, answered])).toBe(true);
     expect(openTwin.meta?.archived).toBe(true);
-    expect(answered.meta?.archived).toBeUndefined();
+  });
+
+  it('archives a same-docPath twin whose only match is the short title (price / lead time)', () => {
+    const openTwin = item({
+      id: 'open-twin',
+      docPath: 'docs/BOM.md',
+      title: 'ME1115 price and lead time.',
+      createdAt: '2026-10-30T00:00:00.000Z',
+      updatedAt: '2026-10-30T00:00:00.000Z'
+    });
+    const answered = item({
+      id: 'answered',
+      status: 'answered',
+      docPath: 'docs/BOM.md',
+      title: 'ME1115 price and lead time.',
+      answer: '$42 each, 6 weeks',
+      createdAt: '2026-10-31T00:00:00.000Z',
+      updatedAt: '2026-11-07T00:00:00.000Z'
+    });
+
+    expect(dedupeOpenPortalItems([openTwin, answered])).toBe(true);
+    expect(openTwin.meta?.archived).toBe(true);
+  });
+
+  it('does NOT archive two generic short titles on different docs with no originalTitle (power budget / input voltage)', () => {
+    const openA = item({
+      id: 'open-a',
+      docPath: 'docs/THERMAL.md',
+      title: 'Power budget',
+      createdAt: '2026-10-30T00:00:00.000Z',
+      updatedAt: '2026-10-30T00:00:00.000Z'
+    });
+    const openB = item({
+      id: 'open-b',
+      docPath: 'docs/ELECTRICAL.md',
+      title: 'Input voltage',
+      createdAt: '2026-10-30T00:00:00.000Z',
+      updatedAt: '2026-10-30T00:00:00.000Z'
+    });
+    const answered = item({
+      id: 'answered',
+      status: 'answered',
+      docPath: 'docs/CONOPS.md',
+      title: 'Power budget',
+      answer: '1.2 kW continuous',
+      createdAt: '2026-10-31T00:00:00.000Z',
+      updatedAt: '2026-11-07T00:00:00.000Z'
+    });
+
+    expect(dedupeOpenPortalItems([openA, openB, answered])).toBe(false);
+    expect(openA.meta?.archived).toBeUndefined();
+    expect(openB.meta?.archived).toBeUndefined();
+  });
+
+  it('does NOT archive a genuine re-open when a thread message bumped the answered item updatedAt', () => {
+    // The answer landed 2026-11-01 (answerHistory), then a thread message /
+    // dismissal / title rewrite bumped updatedAt to 2026-11-20. Only the real
+    // answer time may order the pair.
+    const answered = item({
+      id: 'answered',
+      status: 'answered',
+      answer: '48V nominal',
+      createdAt: '2026-10-30T00:00:00.000Z',
+      updatedAt: '2026-11-20T00:00:00.000Z',
+      meta: { answerHistory: [{ text: '48V nominal', at: '2026-11-01T00:00:00.000Z' }] }
+    });
+    const reopened = item({ id: 'reopened', createdAt: '2026-11-05T00:00:00.000Z', updatedAt: '2026-11-05T00:00:00.000Z' });
+
+    expect(dedupeOpenPortalItems([answered, reopened])).toBe(false);
+    expect(reopened.meta?.archived).toBeUndefined();
+  });
+
+  it('still archives on answerHistory time when the answer really is newer than the open twin', () => {
+    const openTwin = item({ id: 'open-twin', createdAt: '2026-10-30T00:00:00.000Z', updatedAt: '2026-10-30T00:00:00.000Z' });
+    const answered = item({
+      id: 'answered',
+      status: 'answered',
+      answer: '48V nominal',
+      createdAt: '2026-10-20T00:00:00.000Z',
+      updatedAt: '2026-11-20T00:00:00.000Z',
+      meta: { answerHistory: [{ text: '48V nominal', at: '2026-11-02T00:00:00.000Z' }] }
+    });
+
+    expect(dedupeOpenPortalItems([openTwin, answered])).toBe(true);
+    expect(openTwin.meta?.archived).toBe(true);
   });
 
   it('archives a non-retitled open twin when the answered twin was retitled (meta.originalTitle)', () => {

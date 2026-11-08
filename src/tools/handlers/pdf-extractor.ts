@@ -29,12 +29,15 @@ async function getPdfJsLib(): Promise<any> {
 const PROBE_MAX_PAGES = 5;
 const PROBE_MAX_PATH_OPS = 2000;
 
+/** Text-extraction page budget: web_fetch feeds arbitrary remote PDFs in here. */
+const TEXT_MAX_PAGES = 40;
+
 /** Returned when a PDF carries no text layer (scanned or image-only). Callers detect this exact string. */
 export const NO_PDF_TEXT_MARKER =
   '(No extractable text found in this PDF. It may be a scanned document or image-based PDF.)';
 
 /**
- * Extracts the text layer of an in-memory PDF.
+ * Extracts the text layer of an in-memory PDF (first TEXT_MAX_PAGES pages).
  *
  * @param data Raw PDF bytes.
  * @returns Page text joined by `--- Page Break ---`, or `NO_PDF_TEXT_MARKER` when no page has text.
@@ -43,19 +46,29 @@ export const NO_PDF_TEXT_MARKER =
 export async function extractTextFromPdfBuffer(data: Uint8Array): Promise<string> {
   const lib = await getPdfJsLib();
   const doc = await lib.getDocument({ data }).promise;
-  const pages: string[] = [];
+  try {
+    const pages: string[] = [];
+    const pageCount = Math.min(doc.numPages, TEXT_MAX_PAGES);
 
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i);
-    const content = await page.getTextContent();
-    const text = content.items.map((item: any) => item.str).join(' ');
-    if (text.trim()) {
-      pages.push(text.trim());
+    for (let i = 1; i <= pageCount; i++) {
+      const page = await doc.getPage(i);
+      const content = await page.getTextContent();
+      const text = content.items.map((item: any) => item.str).join(' ');
+      if (text.trim()) {
+        pages.push(text.trim());
+      }
+    }
+
+    const result = pages.join('\n\n--- Page Break ---\n\n');
+    return result || NO_PDF_TEXT_MARKER;
+  } finally {
+    // Release the worker-held document (web_fetch parses remote bytes).
+    try {
+      await doc.destroy();
+    } catch {
+      // Best effort: a failed teardown must not mask the extraction result.
     }
   }
-
-  const result = pages.join('\n\n--- Page Break ---\n\n');
-  return result || NO_PDF_TEXT_MARKER;
 }
 
 /**

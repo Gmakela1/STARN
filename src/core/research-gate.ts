@@ -792,7 +792,12 @@ export function isAutoAppliedIncorporated(projectPath: string, item: PortalItem)
   const auto = item.meta?.autoApplied;
   if (!auto || item.status !== 'answered') return false;
   const docPath = auto.docPath ?? item.docPath;
-  if (!docPath || !auto.appendedText) return true;
+  // A confirmed answer on an empty/missing doc appended nothing: there is no
+  // pending block to consume, so it stays undoable (undo restores the
+  // proposal). Auto-applied stamps without text keep the legacy "incorporated"
+  // verdict.
+  if (!auto.appendedText) return auto.confirmed === true ? false : true;
+  if (!docPath) return true;
   let content: string | null = null;
   try {
     content = fs.readFileSync(path.join(projectPath, docPath), 'utf-8');
@@ -859,6 +864,18 @@ export async function undoAutoApplied(deps: UndoAutoDeps, itemId: string): Promi
     stored.updatedAt = new Date().toISOString();
     const meta = { ...(stored.meta || {}) };
     delete meta.autoApplied;
+    if (auto.confirmed) {
+      // Confirmed answers: the confirm route cleared meta.proposedAnswer, so
+      // the YES/NO/EDIT card would be gone forever. Restore it from the
+      // snapshot — its `answer` is the text the user confirmed (or edited), so
+      // the user's text stays visible in the card and in meta.answerHistory.
+      meta.proposedAnswer = {
+        answer: auto.answer,
+        sources: auto.sources,
+        confidence: auto.confidence,
+        rationale: auto.rationale
+      };
+    }
     stored.meta = { ...meta, researching: false };
     deps.stateManager.saveState(fresh);
   }

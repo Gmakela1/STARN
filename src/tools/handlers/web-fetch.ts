@@ -16,7 +16,8 @@ const PDF_REFUSAL =
   'This URL is a PDF and its text layer could not be read. Download it into reference/ and read it with fs_read, or use read_chart_data for charts.';
 
 /**
- * True when the response body is a PDF, judged by content-type or the `%PDF-` magic bytes.
+ * True when the response body is a PDF, judged by content-type or `%PDF-`
+ * anywhere in the first 1024 bytes (some servers prepend a BOM or junk).
  *
  * @param contentType Raw `content-type` header value (may be null).
  * @param bytes Raw response body.
@@ -24,7 +25,37 @@ const PDF_REFUSAL =
  */
 export function looksLikePdf(contentType: string | null, bytes: Uint8Array): boolean {
   if ((contentType ?? '').toLowerCase().includes('application/pdf')) return true;
-  return Buffer.from(bytes.subarray(0, 5)).toString('latin1') === '%PDF-';
+  return Buffer.from(bytes.subarray(0, 1024)).toString('latin1').includes('%PDF-');
+}
+
+/**
+ * Charset label declared by a `content-type` header (e.g. `text/html;
+ * charset=iso-8859-1`).
+ *
+ * @param contentType Raw header value (may be null).
+ * @returns Lowercased label, or undefined when the header declares none.
+ */
+function charsetFrom(contentType: string | null): string | undefined {
+  const match = /charset="?([^";\s]+)/i.exec(contentType ?? '');
+  return match?.[1]?.toLowerCase();
+}
+
+/**
+ * Decodes a response body with the charset its `content-type` declares (what
+ * `res.text()` used to do), falling back to utf-8 when the label is missing,
+ * unknown or the body is malformed for it.
+ *
+ * @param bytes Raw response body (a Buffer is already a Uint8Array — no copy).
+ * @param contentType Raw `content-type` header value (may be null).
+ * @returns The decoded body text.
+ * @throws Never: any decode failure falls back to a utf-8 decode.
+ */
+export function decodeBody(bytes: Uint8Array, contentType: string | null): string {
+  try {
+    return new TextDecoder(charsetFrom(contentType) ?? 'utf-8').decode(bytes);
+  } catch {
+    return new TextDecoder('utf-8').decode(bytes);
+  }
 }
 
 /**
@@ -36,6 +67,11 @@ export function looksLikePdf(contentType: string | null, bytes: Uint8Array): boo
  * @throws Never: extraction errors are converted to the refusal response.
  */
 async function buildPdfFetchResult(bytes: Uint8Array, url: string): Promise<ToolExecutionResponse> {
+  // Remote PDFs are parsed in-process: refuse absurd bodies before pdfjs sees
+  // them instead of buffering/parsing an unbounded document.
+  if (bytes.byteLength > MAX_RAW_BYTES) {
+    return { success: false, error: PDF_REFUSAL };
+  }
   let text: string;
   try {
     text = await extractTextFromPdfBuffer(bytes);
@@ -388,13 +424,14 @@ export const webFetchHandler: ToolHandler = {
         return { success: false, error: `HTTP ${res.status}: ${res.statusText}` };
       }
 
+      const bodyContentType = res.headers.get('content-type');
       // Read the body once: the same bytes feed the PDF probe, PDF extraction, and HTML decoding.
       const bytes = Buffer.from(await res.arrayBuffer());
-      if (looksLikePdf(res.headers.get('content-type'), bytes)) {
-        return await buildPdfFetchResult(new Uint8Array(bytes), parsed.toString());
+      if (looksLikePdf(bodyContentType, bytes)) {
+        return await buildPdfFetchResult(bytes, parsed.toString());
       }
 
-      const bodyText = bytes.toString('utf-8');
+      const bodyText = decodeBody(bytes, bodyContentType);
       // Clean the whole (capped) document, then cap the cleaned text.
       const finalResult = buildWebFetchResult(bodyText.slice(0, MAX_RAW_BYTES));
 

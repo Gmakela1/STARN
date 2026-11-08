@@ -178,7 +178,9 @@ export async function applyAnswer(
   // gate writes for an auto-applied answer, so a user-confirmed proposal gets
   // the same UNDO window (undoAutoApplied refuses items without it). The
   // proposal's critic verdict supplies confidence/sources/rationale.
-  if (appendedText && options?.provenance === 'user-confirmed-research') {
+  // Stamped even when nothing was appended (empty/missing doc): undo then has
+  // no bytes to strip, but the proposal restore still works.
+  if (options?.provenance === 'user-confirmed-research') {
     const fresh = stateManager.getState();
     const stored = (fresh.portalItems || []).find(i => i.id === itemId);
     if (stored) {
@@ -192,7 +194,8 @@ export async function applyAnswer(
           offset: appendedOffset,
           confidence: proposal?.confidence ?? 0,
           sources: proposal?.sources ?? [],
-          rationale: proposal?.rationale ?? ''
+          rationale: proposal?.rationale ?? '',
+          confirmed: true
         }
       };
       stateManager.saveState(fresh);

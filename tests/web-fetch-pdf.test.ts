@@ -114,6 +114,33 @@ describe('web_fetch PDF handling', () => {
     expect(res.error).toBe(PDF_REFUSAL);
   });
 
+  it('decodes an iso-8859-1 page with its declared charset (not utf-8 mojibake)', async () => {
+    const latin1 = Buffer.from(
+      '<html><body><h1>Kühler 25 °C</h1><p>Drehmoment: 12 Nm · 40 µF</p></body></html>',
+      'latin1'
+    );
+    stubFetch(new Uint8Array(latin1), 'text/html; charset=iso-8859-1');
+
+    const res = await registry.execute('web_fetch', { url: 'https://example.com/de/manual' }, context, ['web_fetch']);
+
+    expect(res.success).toBe(true);
+    expect(res.result).toContain('Kühler 25 °C');
+    expect(res.result).toContain('40 µF');
+    expect(res.result).not.toContain('\uFFFD');
+  });
+
+  it('refuses a PDF body larger than the raw-byte cap before parsing', async () => {
+    const huge = Buffer.alloc(2 * 1024 * 1024 + 1, 0x20);
+    huge.write('%PDF-1.4\n', 0, 'latin1');
+    stubFetch(new Uint8Array(huge), 'application/pdf');
+
+    const res = await registry.execute('web_fetch', { url: 'https://example.com/huge.pdf' }, context, ['web_fetch']);
+
+    expect(res.success).toBe(false);
+    expect(res.error).toBe(PDF_REFUSAL);
+    expect(extractMock).not.toHaveBeenCalled();
+  });
+
   it('keeps the HTML extraction path unchanged for text/html responses', async () => {
     stubFetch(
       htmlBytes(

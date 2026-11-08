@@ -287,6 +287,11 @@ export interface AutoAppliedAnswer {
   confidence: number;
   sources: ResearchSource[];
   rationale: string;
+  /**
+   * Set when the answer came from a USER-CONFIRMED research proposal (the
+   * confirm route) instead of the gate's auto-apply.
+   */
+  confirmed?: true;
   /** In-memory list decoration (portal GET): pending block already incorporated → no UNDO. */
   incorporated?: boolean;
 }

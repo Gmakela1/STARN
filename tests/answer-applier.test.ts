@@ -741,4 +741,47 @@ describe('applyAnswer', () => {
     expect(reopened.status).toBe('open');
     expect(stateMgr.getState().portalItems!.find(i => i.id === item.id)?.meta?.autoApplied).toBeUndefined();
   });
+
+  it('(m) confirm path on an empty/missing doc: stamps meta.autoApplied anyway so undo still has a target', async () => {
+    // A second open question on the same doc keeps the incorporation trigger
+    // from firing; docs/ICD.md is never written, so nothing is appended.
+    addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/ICD.md',
+      title: 'What connector?',
+      source: 'autopilot'
+    });
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/ICD.md',
+      title: 'What is the bus voltage?',
+      source: 'autopilot'
+    });
+    const seeded = stateMgr.getState();
+    const storedSeed = seeded.portalItems!.find(i => i.id === item.id)!;
+    storedSeed.meta = {
+      ...(storedSeed.meta || {}),
+      proposedAnswer: { answer: '48V per datasheet', sources: [{ title: 'Vendor ds' }], confidence: 0.7, rationale: 'Vendor spec.' }
+    };
+    stateMgr.saveState(seeded);
+
+    const result = await applyAnswer(deps, item.id, '48V nominal', { provenance: 'user-confirmed-research' });
+
+    expect(result.appendedText).toBeUndefined();
+    const after = stateMgr.getState().portalItems!.find(i => i.id === item.id)!;
+    expect(after.meta?.autoApplied).toMatchObject({
+      answer: '48V nominal',
+      confidence: 0.7,
+      confirmed: true
+    });
+    expect(after.meta?.autoApplied?.appendedText).toBeUndefined();
+
+    // Undo has nothing to strip but still restores the proposal card.
+    const reopened = await undoAutoApplied({ stateManager: stateMgr, projectPath: tmpDir }, item.id);
+    expect(reopened.status).toBe('open');
+    expect(reopened.meta?.autoApplied).toBeUndefined();
+    expect(reopened.meta?.proposedAnswer?.answer).toBe('48V nominal');
+  });
 });

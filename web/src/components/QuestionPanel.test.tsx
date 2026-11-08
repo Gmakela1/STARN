@@ -962,6 +962,32 @@ describe('QuestionPanel research gate', () => {
     expect(screen.getByText(/Auto-applied from research \(96% confidence\)/)).toBeTruthy();
   });
 
+  it('confirmed banner: research-proposal copy with NO percentage, undo label matches intent', async () => {
+    const item = makeItem({
+      status: 'answered',
+      answer: '48V nominal',
+      meta: {
+        autoApplied: {
+          answer: '48V nominal',
+          appendedText: '\n\n## User Answers (Pending Incorporation)\n\n**Q**\nAnswer: 48V nominal\n',
+          confidence: 0.7,
+          sources: [],
+          rationale: 'Vendor spec.',
+          confirmed: true,
+        },
+      },
+    });
+    const props = baseProps({ items: [item], onUndoAuto: vi.fn(async () => {}) });
+    const { user } = renderWithUser(<QuestionPanel {...props} />);
+
+    expect(screen.getByText('Confirmed from research proposal — pending incorporation')).toBeTruthy();
+    expect(screen.queryByText(/confidence/)).toBeNull();
+    expect(screen.queryByText(/%/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Undo auto-applied answer' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Undo confirmed answer' }));
+    expect(props.onUndoAuto).toHaveBeenCalledWith(item.id);
+  });
+
   // ————— F2: topic grouping header shows a real group when meta.topic exists —————
   it('topic grouping: items with meta.topic land under their real group header', () => {
     const a = makeItem({ title: 'Bus voltage', meta: { topic: 'electrical' } });

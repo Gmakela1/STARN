@@ -164,6 +164,12 @@ export interface AutoAppliedAnswer {
   confidence: number;
   sources: ResearchSource[];
   rationale: string;
+  /**
+   * Set when the answer came from a USER-CONFIRMED research proposal (the
+   * confirm route) instead of the gate's auto-apply. UNDO then restores the
+   * proposal card instead of leaving a bare question.
+   */
+  confirmed?: true;
   /** In-memory list decoration (portal GET): pending block already incorporated → no UNDO. */
   incorporated?: boolean;
 }

@@ -998,14 +998,16 @@ export default function QuestionPanel({
             <div className="flex flex-wrap items-center gap-2">
               <Check className="h-4 w-4" aria-hidden />
               <span>
-                Auto-applied from research ({Math.round(auto.confidence * 100)}% confidence) — pending incorporation
+                {auto.confirmed
+                  ? 'Confirmed from research proposal — pending incorporation'
+                  : `Auto-applied from research (${Math.round(auto.confidence * 100)}% confidence) — pending incorporation`}
               </span>
               {!auto.incorporated && (
                 <button
                   type="button"
                   onClick={() => undoAuto(item.id)}
                   disabled={gateActionId === item.id}
-                  aria-label="Undo auto-applied answer"
+                  aria-label={auto.confirmed ? 'Undo confirmed answer' : 'Undo auto-applied answer'}
                   className="min-h-[32px] rounded-lg border border-[#3b4658] bg-[#0d1017] px-2.5 text-[11px] font-semibold text-[#a8b3c4] transition hover:bg-[#11151d] hover:text-[#e8edf5] focus:ring-2 focus:ring-[#ff2a3c]/60 disabled:opacity-40"
                 >
                   Undo

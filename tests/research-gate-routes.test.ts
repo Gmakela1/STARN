@@ -213,6 +213,67 @@ describe('research gate portal routes', () => {
     expect(stored.meta?.autoApplied).toBeUndefined();
   });
 
+  it('undo-auto: confirmed answer restores the proposal card and keeps the user text', async () => {
+    const item = seedItem({
+      status: 'answered',
+      answer: 'Edited: 48V nominal',
+      meta: {
+        answerHistory: [{ text: 'Edited: 48V nominal', at: '2026-11-07T00:00:00.000Z', source: 'user-confirmed-research' }],
+        autoApplied: {
+          answer: 'Edited: 48V nominal',
+          appendedText: APPENDED,
+          docPath: 'docs/CONOPS.md',
+          offset: BASELINE.trimEnd().length,
+          confidence: 0.7,
+          sources: [{ title: 'Vendor ds' }],
+          rationale: 'Vendor spec.',
+          confirmed: true
+        }
+      }
+    });
+    fs.writeFileSync(path.join(tempDir, 'docs', 'CONOPS.md'), BASELINE.trimEnd() + APPENDED, 'utf-8');
+
+    const res = await request(server, 'POST', `/api/portal/${item.id}/undo-auto`);
+    expect(res.status).toBe(200);
+    expect(fs.readFileSync(path.join(tempDir, 'docs', 'CONOPS.md'), 'utf-8')).toBe(BASELINE.trimEnd());
+
+    const stored = (stateManager.getState().portalItems || []).find((i: any) => i.id === item.id)!;
+    expect(stored.status).toBe('open');
+    expect(stored.meta?.autoApplied).toBeUndefined();
+    // The YES/NO/EDIT card comes back, carrying the user's confirmed text.
+    expect(stored.meta?.proposedAnswer).toEqual({
+      answer: 'Edited: 48V nominal',
+      sources: [{ title: 'Vendor ds' }],
+      confidence: 0.7,
+      rationale: 'Vendor spec.'
+    });
+    // Second layer of recoverability: the saved history keeps the answer text.
+    expect(stored.meta?.answerHistory?.[0]?.text).toBe('Edited: 48V nominal');
+  });
+
+  it('undo-auto: confirmed answer with no appended bytes (empty doc) is still undoable', async () => {
+    const item = seedItem({
+      status: 'answered',
+      answer: '48V nominal',
+      meta: {
+        autoApplied: {
+          answer: '48V nominal',
+          confidence: 0.6,
+          sources: [],
+          rationale: '',
+          confirmed: true
+        }
+      }
+    });
+
+    const res = await request(server, 'POST', `/api/portal/${item.id}/undo-auto`);
+    expect(res.status).toBe(200);
+    const stored = (stateManager.getState().portalItems || []).find((i: any) => i.id === item.id)!;
+    expect(stored.status).toBe('open');
+    expect(stored.meta?.proposedAnswer?.answer).toBe('48V nominal');
+    expect(stored.meta?.autoApplied).toBeUndefined();
+  });
+
   it('undo-auto: two identical blocks — undoing the second removes the second, the first survives', async () => {
     // Byte-identical appends (same displayTitle, same answer) on one doc, with
     // a third, different block between them so the removal position is
