@@ -583,6 +583,8 @@ export function axisFrameBox(paths: DrawingPath[], pageBox: BBox): AxisFrame | n
 interface Anchor {
   coord: number;
   value: number;
+  /** Position across the label band: label y for x anchors, label x for y anchors. */
+  cross?: number;
 }
 
 const NUMBER_PREFIX = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/;
@@ -685,6 +687,47 @@ function describeRange(map: AxisMap): string {
   return `${map.valueMin}–${map.valueMax}`;
 }
 
+/** Numeric tick labels split by the plot edge they sit against. */
+interface AxisAnchorGroups {
+  /** Labels below the plot: x anchors. */
+  x: Anchor[];
+  /** Labels left of the plot: left y anchors. */
+  left: Anchor[];
+  /** Labels right of the plot: right y anchors. */
+  right: Anchor[];
+}
+
+/**
+ * Sorts numeric text items into the axis they label: below the plot is x, left of
+ * it is left-y, right of it is right-y. Shared by `calibrateAxes` and
+ * `collectAxisCandidates` so both read the page the same way.
+ *
+ * @param textItems Page text items (chart space).
+ * @param plotBox Plot extent the labels are measured against.
+ * @returns One anchor list per plot edge; empty when no label fits that edge.
+ */
+function groupAxisAnchors(textItems: TextItemLike[], plotBox: BBox): AxisAnchorGroups {
+  const groups: AxisAnchorGroups = { x: [], left: [], right: [] };
+
+  for (const item of textItems) {
+    const value = parseLeadingNumber(item.str);
+    if (value === null) continue;
+    const cx = item.x + item.width / 2;
+    const cy = item.y + item.height / 2;
+    const withinX = cx >= plotBox.x0 - 2 && cx <= plotBox.x1 + 2;
+    const withinY = cy >= plotBox.y0 - 2 && cy <= plotBox.y1 + 2;
+
+    if (cy < plotBox.y0 + 1 && withinX) {
+      groups.x.push({ coord: cx, value, cross: cy });
+    } else if (cx < plotBox.x0 + 1 && withinY) {
+      groups.left.push({ coord: cy, value, cross: cx });
+    } else if (cx > plotBox.x1 - 1 && withinY) {
+      groups.right.push({ coord: cy, value, cross: cx });
+    }
+  }
+  return groups;
+}
+
 /**
  * Stage 2. Fits axis maps from numeric tick labels around the plot frame.
  *
@@ -705,26 +748,7 @@ export function calibrateAxes(
   const plotBox = pathsBounds(framePaths) ?? pathsBounds(dataPaths);
   if (!plotBox) return { ok: false, reason: 'no drawing paths to calibrate against' };
 
-  const xAnchors: Anchor[] = [];
-  const leftAnchors: Anchor[] = [];
-  const rightAnchors: Anchor[] = [];
-
-  for (const item of textItems) {
-    const value = parseLeadingNumber(item.str);
-    if (value === null) continue;
-    const cx = item.x + item.width / 2;
-    const cy = item.y + item.height / 2;
-    const withinX = cx >= plotBox.x0 - 2 && cx <= plotBox.x1 + 2;
-    const withinY = cy >= plotBox.y0 - 2 && cy <= plotBox.y1 + 2;
-
-    if (cy < plotBox.y0 + 1 && withinX) {
-      xAnchors.push({ coord: cx, value });
-    } else if (cx < plotBox.x0 + 1 && withinY) {
-      leftAnchors.push({ coord: cy, value });
-    } else if (cx > plotBox.x1 - 1 && withinY) {
-      rightAnchors.push({ coord: cy, value });
-    }
-  }
+  const { x: xAnchors, left: leftAnchors, right: rightAnchors } = groupAxisAnchors(textItems, plotBox);
 
   const xFit = fitAxis(xAnchors, 'x', 'x');
   if (!xFit.map) return { ok: false, reason: xFit.error ?? 'x axis not calibratable' };
@@ -747,6 +771,119 @@ export function calibrateAxes(
     return { ok: false, reason: preferred.error ?? 'y axis not calibratable' };
   }
   return { ok: true, xAxis: xFit.map, yAxes: [yMap] };
+}
+
+/** One axis printed on the page, recovered from its tick labels. */
+export interface AxisCandidate {
+  axis: 'x' | 'y';
+  min: number;
+  max: number;
+  /** Axis title nearest the label band, when the page prints one. */
+  unit?: string;
+  /** Distinct tick labels that defined the range. */
+  labelCount: number;
+}
+
+/** Max gap, in points, between tick labels of one column: right-aligned ticks shift a few points. */
+const COLUMN_GAP = 12;
+/** Max cost, in points, between a label column and the axis title that names it. */
+const TITLE_MATCH_RADIUS = 60;
+
+/** @returns The anchors split into label columns along their cross coordinate. */
+function splitColumns(anchors: Anchor[]): Anchor[][] {
+  const sorted = [...anchors].sort((a, b) => (a.cross ?? 0) - (b.cross ?? 0));
+  const columns: Anchor[][] = [];
+  let current: Anchor[] = [];
+  let last = -Infinity;
+  for (const anchor of sorted) {
+    const cross = anchor.cross ?? 0;
+    if (current.length > 0 && cross - last > COLUMN_GAP) {
+      columns.push(current);
+      current = [];
+    }
+    current.push(anchor);
+    last = cross;
+  }
+  if (current.length > 0) columns.push(current);
+  return columns;
+}
+
+/**
+ * @returns The axis title naming one label column, when the page prints one.
+ *   The title is the nearest letter-bearing text item on the same side of the plot;
+ *   titles are weighted by how far they sit outside the plot, so a page stamp in the
+ *   same column as a title loses. Only items with a letter count, so tick glyphs and
+ *   spacer runs are ignored.
+ */
+function bandUnit(
+  textItems: TextItemLike[],
+  plotBox: BBox,
+  side: 'below' | 'left' | 'right',
+  columnCross: number,
+): string | undefined {
+  let best: { unit: string; cost: number } | undefined;
+  for (const item of textItems) {
+    const unit = item.str.trim();
+    if (!/[A-Za-z]/.test(unit) || parseLeadingNumber(unit) !== null) continue;
+    const cx = item.x + item.width / 2;
+    const cy = item.y + item.height / 2;
+    let onSide: boolean;
+    if (side === 'below') onSide = cy <= plotBox.y0 + 2;
+    else if (side === 'left') onSide = cx <= plotBox.x0 + 2;
+    else onSide = cx >= plotBox.x1 - 2;
+    if (!onSide) continue;
+    const alongGap = Math.max(0, plotBox.y0 - cy, cy - plotBox.y1);
+    const cost = Math.abs(cx - columnCross) + 2 * alongGap;
+    if (cost > TITLE_MATCH_RADIUS) continue;
+    if (!best || cost < best.cost) best = { unit, cost };
+  }
+  return best?.unit;
+}
+
+/**
+ * Lists the axes actually printed around the plot, one candidate per label band.
+ *
+ * A candidate needs ≥ 2 distinct numeric labels that step monotonically along one
+ * axis. The unit is the nearest axis-title text on that edge, kept verbatim so the
+ * caller can see what the page prints (e.g. `Amps`, `Watts Out`, `Eff.`).
+ *
+ * @param textItems Page text items (chart space).
+ * @param plotBox Plot extent the labels are measured against.
+ * @returns Candidates in x, left-y, right-y order; [] when the labels are unparseable.
+ */
+export function collectAxisCandidates(textItems: TextItemLike[], plotBox: BBox): AxisCandidate[] {
+  const groups = groupAxisAnchors(textItems, plotBox);
+  const candidates: AxisCandidate[] = [];
+
+  const add = (axis: 'x' | 'y', anchors: Anchor[], side: 'below' | 'left' | 'right'): void => {
+    // A multi-scale sheet prints several y scales side by side: one candidate per column.
+    for (const column of splitColumns(anchors)) {
+      const unique = dedupeByCoord(column);
+      if (unique.length < 2) continue;
+      const sorted = [...unique].sort((a, b) => a.coord - b.coord);
+      const increasing = sorted.every((anchor, i) => i === 0 || anchor.value > sorted[i - 1].value);
+      const decreasing = sorted.every((anchor, i) => i === 0 || anchor.value < sorted[i - 1].value);
+      if (!increasing && !decreasing) continue;
+      const values = sorted.map((anchor) => anchor.value);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      if (!(max > min)) continue;
+      // Title matching compares label x: the along coordinate for x bands, the cross for y bands.
+      const columnX = mean(column.map((anchor) => (side === 'below' ? anchor.coord : anchor.cross ?? 0)));
+      candidates.push({
+        axis,
+        min,
+        max,
+        unit: bandUnit(textItems, plotBox, side, columnX),
+        labelCount: unique.length,
+      });
+    }
+  };
+
+  add('x', groups.x, 'below');
+  add('y', groups.left, 'left');
+  add('y', groups.right, 'right');
+  return candidates;
 }
 
 /** @returns The data value at a page coordinate under an axis map. */
@@ -819,6 +956,70 @@ export function calibrateAxesDeclared(xDecl: AxisDecl, yDecl: AxisDecl, plotBox:
   if (!y.map) return { ok: false, reason: y.error ?? 'declared y axis unusable' };
   const yMap: AxisMap = { ...y.map, side: 'left' };
   return { ok: true, declared: true, xAxis: x.map, yAxes: [yMap] };
+}
+
+/** A declared range matches a printed range within this fraction of the printed span. */
+const AXIS_MATCH_TOLERANCE = 0.02;
+
+/**
+ * @returns True when a declared unit names the printed axis title: equal, or one is a
+ *   prefix of the other (`Watts` / `Watts Out`), ignoring case and trailing punctuation.
+ */
+function unitsAgree(declared: string, printed: string): boolean {
+  const normalise = (text: string): string => text.trim().toLowerCase().replace(/[.\s]+$/, '');
+  const a = normalise(declared);
+  const b = normalise(printed);
+  return a === b || a.startsWith(b) || b.startsWith(a);
+}
+
+/**
+ * @returns `Amps 0–200, RPM 0–5000` — busiest bands first, one entry per range, capped at 6.
+ *   One range can be printed on both axes; the entry carrying the unit is kept.
+ */
+function describeCandidates(candidates: AxisCandidate[]): string {
+  const byRange = new Map<string, AxisCandidate>();
+  for (const candidate of [...candidates].sort((a, b) => b.labelCount - a.labelCount)) {
+    const key = `${candidate.min}|${candidate.max}`;
+    const seen = byRange.get(key);
+    if (!seen || (!seen.unit && candidate.unit)) byRange.set(key, candidate);
+  }
+  return [...byRange.values()]
+    .slice(0, 6)
+    .map((candidate) =>
+      candidate.unit ? `${candidate.unit} ${candidate.min}–${candidate.max}` : `${candidate.min}–${candidate.max}`,
+    )
+    .join(', ');
+}
+
+/**
+ * Stage 2b guard. A declared range must be one the page actually prints, else the
+ * plot box is scaled to the wrong axis and every read value is wrong.
+ *
+ * @param axis Orientation being declared.
+ * @param decl The caller's declared range (and optional unit).
+ * @param candidates Axes recovered from the page labels.
+ * @returns The refusal text, or null when the declaration matches (or nothing was derivable).
+ */
+function declaredAxisMismatch(axis: 'x' | 'y', decl: AxisDecl, candidates: AxisCandidate[]): string | null {
+  const oriented = candidates.filter((candidate) => candidate.axis === axis);
+  // No printable evidence for this orientation: the declaration stands, as before.
+  if (oriented.length === 0) return null;
+
+  const declaredUnit = decl.unit?.trim().toLowerCase();
+  const matches = oriented.some((candidate) => {
+    const span = candidate.max - candidate.min || Math.abs(decl.max - decl.min) || 1;
+    const close =
+      Math.abs(candidate.min - decl.min) <= AXIS_MATCH_TOLERANCE * span &&
+      Math.abs(candidate.max - decl.max) <= AXIS_MATCH_TOLERANCE * span;
+    const unitOk = !candidate.unit || !declaredUnit || unitsAgree(declaredUnit, candidate.unit);
+    return close && unitOk;
+  });
+  if (matches) return null;
+  return (
+    `declared ${axis} ${decl.min}–${decl.max} matches no axis printed on this page. ` +
+    `Found: ${describeCandidates(candidates)}. ` +
+    'Declare the axis you actually want (use unit to disambiguate).'
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1275,9 +1476,21 @@ export async function extractChartData(
         : `plot box ${boxRange} from ${dataBox ? 'data paths' : 'all page paths'}: no axis frame found`,
     );
 
-    const calibration: AxisCalibration = opts.axes
-      ? calibrateAxesDeclared(opts.axes.x, opts.axes.y, plotBox)
-      : calibrateAxes(drawing.chartTextItems, classes.frame, classes.data);
+    let calibration: AxisCalibration;
+    if (opts.axes) {
+      const candidates = collectAxisCandidates(drawing.chartTextItems, plotBox);
+      if (candidates.length === 0) notes.push('axis candidates not derivable from page labels');
+      const mismatch =
+        declaredAxisMismatch('x', opts.axes.x, candidates) ??
+        declaredAxisMismatch('y', opts.axes.y, candidates);
+      if (mismatch) {
+        refusals.push(mismatch);
+        return failed({ ok: false, reason: mismatch });
+      }
+      calibration = calibrateAxesDeclared(opts.axes.x, opts.axes.y, plotBox);
+    } else {
+      calibration = calibrateAxes(drawing.chartTextItems, classes.frame, classes.data);
+    }
     if (!calibration.ok) {
       refusals.push(calibration.reason ?? 'axis calibration refused');
       // Without declared axes there is no scale: return the refusal and no series.

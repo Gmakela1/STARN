@@ -10,6 +10,7 @@ import {
   chartSpaceMatrix,
   classifyPaths,
   clusterSeries,
+  collectAxisCandidates,
   extractChartData,
   mapLegend,
   sampleSeries,
@@ -17,6 +18,7 @@ import {
   withoutLegendBand,
 } from '../src/tools/document-extractors/chart-vector-extractor.js';
 import type {
+  AxisDecl,
   BBox,
   ChartExtraction,
   DrawingPath,
@@ -460,6 +462,11 @@ function vectorPdf(content: string, rotate = 0): Buffer {
     `<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]${rotation}/Resources<<>>/Contents 4 0 R>>`,
     `<</Length ${content.length}>>stream\n${content}\nendstream`,
   ];
+  return buildPdf(objects);
+}
+
+/** @returns A one-page PDF from its object bodies (1-based, catalog first). */
+function buildPdf(objects: string[]): Buffer {
   let pdf = '%PDF-1.4\n';
   const offsets: number[] = [];
   objects.forEach((body, index) => {
@@ -694,5 +701,159 @@ describe('legend band exclusion', () => {
 
     expect(kept).toEqual([curve]);
     expect(withoutLegendBand([...paths, curve], null)).toHaveLength(6);
+  });
+});
+
+// --- declared axes must match an axis printed on the page --------------------
+// The live failure: x 0-100 (the VOLTS scale) declared on a sheet whose x axis is
+// Amps 0-200. 72 V became 72 % of the plot width = 144 A on the real axis, so the
+// watts curve was read 1 500 W too high. The page prints the truth; the declaration
+// is checked against it.
+//
+// Fixture geometry, from the gridlines below: plot rectangle x 100-350, y 100-250.
+// x tick centres 150/225/300 (below the plot), y tick centres left of it.
+const LABEL_PLOT: BBox = { x0: 100, y0: 100, x1: 350, y1: 250 };
+
+/** @returns A text item centred on (cx, cy). */
+function labelItem(str: string, cx: number, cy: number): TextItemLike {
+  return { str, x: cx - 5, y: cy - 4, width: 10, height: 8 };
+}
+
+/** @returns A PDF text-showing op with its baseline at (x, y). */
+function textOp(str: string, x: number, y: number): string {
+  return `BT /F1 8 Tf ${x} ${y} Td (${str}) Tj ET`;
+}
+
+/**
+ * @param xLabels Tick labels under the plot, left to right (values ascending).
+ * @param xUnit Axis title under the x labels.
+ * @param yLabels Tick labels left of the plot, bottom to top (values ascending).
+ * @param yUnit Axis title left of the y labels.
+ * @returns A one-page PDF: the fixture gridlines, two curves, and those labels.
+ */
+function labeledChartPdf(xLabels: string[], xUnit: string, yLabels: string[], yUnit: string): Buffer {
+  const lines = ['0 0 0 RG 1 w'];
+  for (const y of [150, 200]) lines.push(`100 ${y} m 500 ${y} l S`);
+  for (const x of [150, 200, 250, 300]) lines.push(`${x} 100 m ${x} 400 l S`);
+  lines.push('1 0 0 RG 2 w', '100 120 m 200 200 l 300 280 l 400 340 l S');
+  lines.push('0 0 1 RG 2 w', '100 140 m 200 220 l 300 300 l 400 380 l S');
+  xLabels.forEach((label, index) => {
+    lines.push(textOp(label, 145 + (index * 150) / Math.max(xLabels.length - 1, 1), 84));
+  });
+  lines.push(textOp(xUnit, 220, 70));
+  yLabels.forEach((label, index) => {
+    lines.push(textOp(label, 80, 101 + (index * 144) / Math.max(yLabels.length - 1, 1)));
+  });
+  lines.push(textOp(yUnit, 70, 171));
+  const content = lines.join('\n');
+  return buildPdf([
+    '<</Type/Catalog/Pages 2 0 R>>',
+    '<</Type/Pages/Kids[3 0 R]/Count 1>>',
+    '<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1 5 0 R>>>>/Contents 4 0 R>>',
+    `<</Length ${content.length}>>stream\n${content}\nendstream`,
+    '<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>',
+  ]);
+}
+
+/** @returns `extractChartData` on the labeled fixture; the temp PDF is removed afterwards. */
+async function extractLabeled(
+  xLabels: string[],
+  xUnit: string,
+  yLabels: string[],
+  yUnit: string,
+  axes: { x: AxisDecl; y: AxisDecl },
+): Promise<ChartExtraction> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'starn-chart-axes-'));
+  const file = path.join(dir, 'labeled.pdf');
+  fs.writeFileSync(file, labeledChartPdf(xLabels, xUnit, yLabels, yUnit));
+  try {
+    return await extractChartData(file, { axes });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const AMPS_200 = ['0', '100', '200'];
+const VOLTS_100 = ['0', '25', '50', '75', '100'];
+
+describe('collectAxisCandidates — the axes a page actually prints', () => {
+  it('returns both orientations with their axis titles', () => {
+    const items: TextItemLike[] = [
+      ...AMPS_200.map((label, index) => labelItem(label, 150 + index * 75, 88)),
+      labelItem('Amps', 225, 74),
+      ...VOLTS_100.map((label, index) => labelItem(label, 90, 105 + index * 36)),
+      labelItem('Volts', 75, 177),
+    ];
+
+    const candidates = collectAxisCandidates(items, LABEL_PLOT);
+
+    expect(candidates).toHaveLength(2);
+    expect(candidates.find((entry) => entry.axis === 'x')).toEqual({
+      axis: 'x',
+      min: 0,
+      max: 200,
+      unit: 'Amps',
+      labelCount: 3,
+    });
+    expect(candidates.find((entry) => entry.axis === 'y')).toEqual({
+      axis: 'y',
+      min: 0,
+      max: 100,
+      unit: 'Volts',
+      labelCount: 5,
+    });
+  });
+});
+
+describe('declared axes must match an axis printed on the page', () => {
+  it('refuses the volts scale declared as x and names the axes the page prints', async () => {
+    const result = await extractLabeled(AMPS_200, 'Amps', VOLTS_100, 'Volts', {
+      x: { min: 0, max: 100, unit: 'Volts' },
+      y: { min: 0, max: 100 },
+    });
+
+    expect(result.calibration.ok).toBe(false);
+    expect(result.series).toEqual([]);
+    const refusal = result.refusals.join(' ');
+    expect(refusal).toMatch(/declared x 0–100 matches no axis printed on this page/);
+    expect(refusal).toMatch(/Amps 0–200/);
+    expect(refusal).toMatch(/Volts 0–100/);
+    expect(refusal).toMatch(/use unit to disambiguate/);
+  });
+
+  it('accepts the declared x range when the page prints it with the same unit', async () => {
+    const result = await extractLabeled(AMPS_200, 'Amps', VOLTS_100, 'Volts', {
+      x: { min: 0, max: 200, unit: 'Amps' },
+      y: { min: 0, max: 100, unit: 'volts' },
+    });
+
+    expect(result.calibration.ok).toBe(true);
+    expect(result.series).toHaveLength(2);
+    expect(result.notes.join(' ')).not.toMatch(/axis candidates not derivable/);
+  });
+
+  it('accepts a y range only one axis prints, with no declared unit', async () => {
+    const result = await extractLabeled(AMPS_200, 'Amps', ['0', '0.5', '1'], 'Eff.', {
+      x: { min: 0, max: 200 },
+      y: { min: 0, max: 1 },
+    });
+
+    expect(result.calibration.ok).toBe(true);
+    expect(result.calibration.yAxes![0].valueMax).toBe(1);
+  });
+
+  it('accepts the declaration when the page labels yield no candidate', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'starn-chart-axes-'));
+    const file = path.join(dir, 'chart.pdf');
+    fs.writeFileSync(file, vectorPdf(VECTOR_CONTENT));
+    try {
+      const result = await extractChartData(file, { axes: { x: { min: 0, max: 300 }, y: { min: 0, max: 2000 } } });
+
+      expect(result.calibration.ok).toBe(true);
+      expect(result.series).toHaveLength(2);
+      expect(result.notes.join(' ')).toMatch(/axis candidates not derivable from page labels/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
