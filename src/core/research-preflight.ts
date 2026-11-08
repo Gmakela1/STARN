@@ -37,7 +37,7 @@ import { PENDING_INCORPORATION_MARKER } from './incorporation-prompt.js';
 /** Scoping turn allow-list: reads only — fs_write/fs_edit/state_update/web_search are structurally impossible. */
 export const SCOPING_ALLOWED_TOOLS = ['fs_read', 'fs_list', 'state_read'] as const;
 /** Preflight allow-list: adds web research. Still no write tools. */
-export const PREFLIGHT_ALLOWED_TOOLS = ['fs_read', 'fs_list', 'state_read', 'web_search'] as const;
+export const PREFLIGHT_ALLOWED_TOOLS = ['fs_read', 'fs_list', 'state_read', 'web_search', 'read_chart_data'] as const;
 
 export const SCOPING_MAX_TURNS = 4;
 export const PREFLIGHT_MAX_TURNS = 8;

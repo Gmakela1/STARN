@@ -65,6 +65,8 @@ export interface AxisMap {
   valueMax: number;
   /** Number of tick-label anchors used for the fit. */
   anchors: number;
+  /** Unit token when the axis was declared explicitly (spec §6 stage 2b). */
+  unit?: string;
 }
 
 /** Result of stage 2. `ok: false` carries a specific reason; values are never guessed. */
@@ -73,6 +75,16 @@ export interface AxisCalibration {
   reason?: string;
   xAxis?: AxisMap;
   yAxes?: AxisMap[];
+  /** True when the calibration came from caller-declared axes, not the tick labels. */
+  declared?: boolean;
+}
+
+/** Caller-declared axis range, used to bypass automatic calibration (spec §6 stage 2b). */
+export interface AxisDecl {
+  min: number;
+  max: number;
+  unit?: string;
+  log?: boolean;
 }
 
 /** One series recovered by stage 3. */
@@ -83,6 +95,10 @@ export interface SeriesCluster {
   style: PathStyle;
   /** Indices into the dataPaths array handed to clusterSeries. */
   pathIds: number[];
+  /** Legend name from stage 3b; absent until `mapLegend` runs. */
+  name?: string;
+  /** True when stage 3b could not match the cluster to a legend key. */
+  unnamed?: boolean;
 }
 
 /** Sampled rows for one series (stage 4). */
@@ -104,12 +120,38 @@ export interface ChartProbe {
   reliable: boolean;
 }
 
+/** One named, sampled series as returned by `extractChartData`. */
+export interface ChartSeries {
+  name: string;
+  axis: 'left' | 'right';
+  samples: { x: number; y: number }[];
+  style: PathStyle;
+  unnamed?: boolean;
+  /** Indices of the data paths this series came from (provenance). */
+  pathIds: number[];
+}
+
 /** Everything a chart read produces for one page. */
 export interface ChartExtraction {
+  /** Base name of the source file. */
+  file: string;
   page: number;
   calibration: AxisCalibration;
-  series: SeriesCluster[];
-  samples: SeriesSamples[];
+  series: ChartSeries[];
+  /** Non-fatal failures, e.g. a refused calibration or a raster page. */
+  refusals: string[];
   /** Disclosures, e.g. "dashed series", "N curves share a style; samples are the median". */
   notes: string[];
+}
+
+/** Options accepted by `extractChartData`. */
+export interface ChartExtractionOptions {
+  /** 1-based page number; defaults to 1. */
+  page?: number;
+  /** Explicit calibration that bypasses the automatic refusal rules. */
+  axes?: { x: AxisDecl; y: AxisDecl };
+  /** Output-side series→axis labels; does not change the numerical map. */
+  seriesAxes?: Record<string, 'left' | 'right'>;
+  /** Sample count per series, clamped to 1..200; defaults to 40. */
+  maxSamples?: number;
 }

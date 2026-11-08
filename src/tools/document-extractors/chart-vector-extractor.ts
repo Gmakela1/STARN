@@ -8,10 +8,16 @@
  *
  * Coordinate convention: page space, PDF units, y-up.
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import type {
   AxisCalibration,
+  AxisDecl,
   AxisMap,
   BBox,
+  ChartExtraction,
+  ChartExtractionOptions,
+  ChartSeries,
   DrawingPath,
   PathStyle,
   Point,
@@ -57,6 +63,10 @@ export const DEFAULT_OPS: OpsMap = {
 export interface PageDrawing {
   paths: DrawingPath[];
   textItems: TextItemLike[];
+  /** Page extent from pdfjs `page.view`, used to locate the legend band. */
+  pageBox: BBox;
+  /** `constructPath` ops replayed (before any cap); 0 for hand-built fixtures. */
+  constructPathOps: number;
 }
 
 /** DrawOPS stream codes inside `OPS.constructPath`. */
@@ -91,10 +101,12 @@ export async function loadPdfOps(): Promise<OpsMap> {
 /**
  * Stage 0 for a live pdfjs page: operator list → paths + text items.
  * @param page A pdfjs `PDFPageProxy`.
+ * @param maxConstructPaths Optional replay cap; the operator list is truncated at
+ *   the N-th `constructPath` so a pathological page cannot blow the probe budget.
  * @returns Paths in page space and text items with their transforms.
  * @throws When pdfjs page access fails.
  */
-export async function collectDrawing(page: any): Promise<PageDrawing> {
+export async function collectDrawing(page: any, maxConstructPaths = Infinity): Promise<PageDrawing> {
   const ops = await loadPdfOps();
   const opList = await page.getOperatorList();
   const content = await page.getTextContent();
@@ -105,7 +117,35 @@ export async function collectDrawing(page: any): Promise<PageDrawing> {
     width: item.width ?? 0,
     height: item.height ?? 0,
   }));
-  return { paths: walkOperatorList(opList.fnArray, opList.argsArray, textItems, ops), textItems };
+  const bounds = truncateAtConstructPaths(opList.fnArray, opList.argsArray, ops, maxConstructPaths);
+  const view = Array.isArray(page.view) && page.view.length === 4 ? page.view : [0, 0, 0, 0];
+  return {
+    paths: walkOperatorList(opList.fnArray, opList.argsArray, textItems, ops, bounds.end),
+    textItems,
+    pageBox: { x0: view[0], y0: view[1], x1: view[2], y1: view[3] },
+    constructPathOps: bounds.count,
+  };
+}
+
+/**
+ * Finds where an operator list must stop so that at most `limit` `constructPath`
+ * ops are replayed.
+ * @returns `count` = observed constructPath ops (capped), `end` = slice end index.
+ */
+function truncateAtConstructPaths(
+  fnArray: ArrayLike<number>,
+  argsArray: ArrayLike<unknown>,
+  ops: OpsMap,
+  limit: number,
+): { count: number; end: number } {
+  void argsArray;
+  let count = 0;
+  for (let i = 0; i < fnArray.length; i++) {
+    if (fnArray[i] !== ops.constructPath) continue;
+    count++;
+    if (count >= limit) return { count, end: i + 1 };
+  }
+  return { count, end: fnArray.length };
 }
 
 /** @returns The painted path points, one array per subpath. */
@@ -264,6 +304,7 @@ function constructPathBuffer(args: unknown[]): ArrayLike<number> | null {
  * @param argsArray pdfjs `opList.argsArray`; `argsArray[i]` is the arg array of op i.
  * @param textItems Accepted for stage-0 symmetry with `collectDrawing`; the walk reads geometry only.
  * @param ops Opcode map; defaults to {@link DEFAULT_OPS} so tests need no pdfjs.
+ * @param end Exclusive replay end index; defaults to the whole operator list.
  * @returns One DrawingPath per subpath, in paint order, with style and bbox.
  */
 export function walkOperatorList(
@@ -271,6 +312,7 @@ export function walkOperatorList(
   argsArray: ArrayLike<unknown>,
   textItems: TextItemLike[] = [],
   ops: OpsMap = DEFAULT_OPS,
+  end = fnArray.length,
 ): DrawingPath[] {
   void textItems;
   const stroking = strokePaintOps(ops);
@@ -280,7 +322,7 @@ export function walkOperatorList(
   let ctm: Matrix = [1, 0, 0, 1, 0, 0];
   let style: PathStyle = { dash: [], lineWidth: 1 };
 
-  for (let i = 0; i < fnArray.length; i++) {
+  for (let i = 0; i < end; i++) {
     const fn = fnArray[i];
     const args = ((argsArray[i] as unknown[]) ?? []) as unknown[];
 
@@ -575,6 +617,72 @@ export function axisToValue(map: AxisMap, coord: number): number {
 }
 
 // ---------------------------------------------------------------------------
+// Stage 2b — declared calibration
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds one axis map from a declared range over a page-coordinate span.
+ * @returns The map, or `{ error }` when the declaration is unusable.
+ */
+function declaredMap(
+  axis: 'x' | 'y',
+  decl: AxisDecl,
+  coordMin: number,
+  coordMax: number,
+): { map?: AxisMap; error?: string } {
+  if (!(decl.max > decl.min)) {
+    return { error: `declared ${axis} axis range is empty: max (${decl.max}) must exceed min (${decl.min})` };
+  }
+  if (!(coordMax > coordMin)) {
+    return { error: `plot box has no ${axis} extent to map the declared axis onto` };
+  }
+  if (decl.log && decl.min <= 0) {
+    return { error: `declared ${axis} axis is logarithmic but min (${decl.min}) is not positive` };
+  }
+  const log = decl.log === true;
+  const valueMin = log ? Math.log10(decl.min) : decl.min;
+  const valueMax = log ? Math.log10(decl.max) : decl.max;
+  const a = (valueMax - valueMin) / (coordMax - coordMin);
+  const b = valueMin - a * coordMin;
+  return {
+    map: {
+      axis,
+      a,
+      b,
+      log,
+      coordMin,
+      coordMax,
+      valueMin: decl.min,
+      valueMax: decl.max,
+      anchors: 2,
+      unit: decl.unit,
+    },
+  };
+}
+
+/**
+ * Stage 2b. Calibration from caller-declared axes; the automatic refusal rules
+ * (anchor count, multi-scale ambiguity, monotonicity) are skipped.
+ *
+ * Declared min maps to the plot box's low coordinate and max to its high
+ * coordinate, per axis. One y declaration serves every series; `seriesAxes`
+ * only labels output columns.
+ *
+ * @param xDecl Declared x range.
+ * @param yDecl Declared y range.
+ * @param plotBox Plot extent in page space.
+ * @returns `{ ok: true, declared: true, xAxis, yAxes }`, or a refusal naming the bad declaration.
+ */
+export function calibrateAxesDeclared(xDecl: AxisDecl, yDecl: AxisDecl, plotBox: BBox): AxisCalibration {
+  const x = declaredMap('x', xDecl, plotBox.x0, plotBox.x1);
+  if (!x.map) return { ok: false, reason: x.error ?? 'declared x axis unusable' };
+  const y = declaredMap('y', yDecl, plotBox.y0, plotBox.y1);
+  if (!y.map) return { ok: false, reason: y.error ?? 'declared y axis unusable' };
+  const yMap: AxisMap = { ...y.map, side: 'left' };
+  return { ok: true, declared: true, xAxis: x.map, yAxes: [yMap] };
+}
+
+// ---------------------------------------------------------------------------
 // Stage 3 — cluster
 // ---------------------------------------------------------------------------
 
@@ -644,6 +752,125 @@ export function clusterSeries(dataPaths: DrawingPath[], plotBox: BBox): SeriesCl
     flush();
   }
   return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// Stage 3b — legend mapping
+// ---------------------------------------------------------------------------
+
+/** Swatch bbox limits from spec §6 stage 3b. */
+const SWATCH_MAX_HEIGHT = 12;
+const SWATCH_MAX_WIDTH = 14;
+/** Legend label vertical centre tolerance, in points. */
+const LEGEND_BAND = 20;
+/** Legend band depth below the plot, as a fraction of page height. */
+const LEGEND_BAND_FRACTION = 0.25;
+
+/** @returns True when a path is short enough to be a legend swatch. */
+function isSwatchCandidate(candidate: DrawingPath): boolean {
+  return (
+    candidate.bbox.y1 - candidate.bbox.y0 < SWATCH_MAX_HEIGHT &&
+    candidate.bbox.x1 - candidate.bbox.x0 < SWATCH_MAX_WIDTH
+  );
+}
+
+/** @returns The stroke colour key of a style, lowercased; 'none' when unset. */
+function colourKey(style: PathStyle): string {
+  return (style.stroke ?? 'none').toLowerCase();
+}
+
+/**
+ * Stage 3b. Names clusters from legend swatches and their labels.
+ *
+ * Swatches are short paths in the band below the plot (within 25 % of page
+ * height). A cluster is matched by stroke colour; when several clusters share a
+ * colour the swatches are handed out left-to-right in cluster order. The label
+ * is the text item with a vertical centre within 20 pt of the swatch band whose
+ * horizontal centre is nearest, preferring text to the right of the swatch so an
+ * axis title on the left is not taken for a legend key.
+ *
+ * Best-effort: clusters with no swatch keep `series N` and are marked
+ * `unnamed`. Never throws, never blocks extraction.
+ *
+ * @param paths Every path of the page (stage 0 output, all classes).
+ * @param textItems Page text items.
+ * @param clusters Clusters from stage 3, in extraction order.
+ * @param pageBox Page extent; the band depth falls back to twice the plot height.
+ * @returns Copies of the clusters with `name` (and `unnamed` when unmatched) set.
+ */
+export function mapLegend(
+  paths: DrawingPath[],
+  textItems: TextItemLike[],
+  clusters: SeriesCluster[],
+  pageBox?: BBox,
+): SeriesCluster[] {
+  const geometry = paths.filter((candidate) => !isSwatchCandidate(candidate));
+  const plotBox = pathsBounds(geometry.length > 0 ? geometry : paths);
+  const plotHeight = plotBox ? plotBox.y1 - plotBox.y0 : 0;
+  const pageHeight = pageBox ? pageBox.y1 - pageBox.y0 : 2 * plotHeight;
+  const bandBottom = plotBox ? plotBox.y0 - Math.abs(pageHeight) * LEGEND_BAND_FRACTION : -Infinity;
+  // When the input holds swatches only there is no plot to sit below: accept any band.
+  const hasPlot = geometry.length > 0 && plotBox !== null;
+
+  const swatches = paths
+    .filter((candidate) => {
+      if (!isSwatchCandidate(candidate)) return false;
+      const inBand = hasPlot ? candidate.bbox.y0 >= bandBottom && candidate.bbox.y1 <= plotBox!.y0 + 1 : true;
+      return inBand && colourKey(candidate.style) !== 'none';
+    })
+    .sort((a, b) => a.bbox.x0 - b.bbox.x0);
+
+  // Greedy label assignment: each label names at most one swatch.
+  const usedLabels = new Set<TextItemLike>();
+  const labels: (string | undefined)[] = swatches.map((swatch) => {
+    const swatchCx = (swatch.bbox.x0 + swatch.bbox.x1) / 2;
+    const swatchCy = (swatch.bbox.y0 + swatch.bbox.y1) / 2;
+    let best: TextItemLike | undefined;
+    let bestScore = Infinity;
+    for (const item of textItems) {
+      if (usedLabels.has(item)) continue;
+      const text = item.str.trim();
+      if (!text) continue;
+      const cx = item.x + item.width / 2;
+      const cy = item.y + item.height / 2;
+      if (Math.abs(cy - swatchCy) > LEGEND_BAND) continue;
+      // Legend labels sit to the right of their swatch; a label whose centre is
+      // not past the swatch's right edge is a poorer candidate (axis titles).
+      const leftPenalty = cx < swatch.bbox.x1 ? LEGEND_BAND : 0;
+      const score = Math.abs(cx - swatchCx) + leftPenalty;
+      if (score < bestScore) {
+        bestScore = score;
+        best = item;
+      }
+    }
+    if (!best) return undefined;
+    usedLabels.add(best);
+    return best.str.trim();
+  });
+
+  const assigned = new Map<number, string>();
+  const taken = new Set<number>();
+  for (let i = 0; i < clusters.length; i++) {
+    const key = colourKey(clusters[i].style);
+    const index = swatches.findIndex((swatch, swatchIndex) => !taken.has(swatchIndex) && colourKey(swatch.style) === key);
+    if (index < 0) continue;
+    taken.add(index);
+    const label = labels[index];
+    if (label) assigned.set(i, label);
+  }
+
+  const result: SeriesCluster[] = [];
+  for (let i = 0; i < clusters.length; i++) {
+    const cluster = clusters[i];
+    let name = assigned.get(i);
+    let unnamed = false;
+    if (!name) {
+      name = `series ${i + 1}`;
+      unnamed = true;
+    }
+    result.push({ ...cluster, name, unnamed });
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -730,4 +957,130 @@ export function sampleSeries(
     if (samples.length > 0) result.push({ series: cluster.key, axis, samples });
   }
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Orchestrator — one page, all stages
+// ---------------------------------------------------------------------------
+
+const DEFAULT_MAX_SAMPLES = 40;
+const MAX_SAMPLES = 200;
+/** Per-page extraction budget (spec §9). */
+const PAGE_TIMEOUT_MS = 20000;
+
+/** @returns `task` or rejects with a timeout error after `ms` milliseconds. */
+function withTimeout<T>(task: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms} ms`)), ms);
+    task.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
+ * Extracts one page of a PDF chart: collect → classify → calibrate → cluster →
+ * map legend → sample.
+ *
+ * Automatic calibration refuses multi-scale pages; passing `opts.axes` bypasses
+ * those refusal rules (spec §6 stage 2b). Failures are non-fatal: they land in
+ * `refusals` and the call still resolves.
+ *
+ * @param filePath Absolute path to a PDF file.
+ * @param opts Page (1-based, default 1), declared axes, series→axis labels, sample cap.
+ * @returns The page's calibration, named series with samples, refusals and notes.
+ * @throws Never: read, parse, timeout and calibration failures are reported in `refusals`.
+ */
+export async function extractChartData(
+  filePath: string,
+  opts: ChartExtractionOptions = {},
+): Promise<ChartExtraction> {
+  const file = path.basename(filePath);
+  const page = Math.max(1, Math.round(opts.page ?? 1));
+  const maxSamples = Math.min(MAX_SAMPLES, Math.max(1, Math.round(opts.maxSamples ?? DEFAULT_MAX_SAMPLES)));
+  const refusals: string[] = [];
+  const notes: string[] = [];
+
+  const failed = (calibration: AxisCalibration, series: ChartSeries[] = []): ChartExtraction => ({
+    file,
+    page,
+    calibration,
+    series,
+    refusals,
+    notes,
+  });
+
+  try {
+    const lib: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const data = new Uint8Array(fs.readFileSync(filePath));
+    const doc = await lib.getDocument({ data }).promise;
+    if (page > doc.numPages) {
+      refusals.push(`page ${page} does not exist: the document has ${doc.numPages} page(s)`);
+      return failed({ ok: false, reason: refusals[0] });
+    }
+    const pageProxy = await doc.getPage(page);
+    const drawing = await withTimeout(collectDrawing(pageProxy), PAGE_TIMEOUT_MS, 'chart drawing collection');
+
+    const plotBox = pathsBounds(drawing.paths);
+    if (!plotBox) {
+      refusals.push('no vector paths on this page — raster page; vision transcription applies');
+      return failed({ ok: false, reason: refusals[0] });
+    }
+    const classes = classifyPaths(drawing.paths, plotBox);
+    if (classes.data.length < 2) {
+      refusals.push(
+        `no vector chart found on this page (${drawing.paths.length} paths, ${classes.data.length} data paths)` +
+          ' — raster page; vision transcription applies',
+      );
+      return failed({ ok: false, reason: refusals[0] });
+    }
+
+    const calibration: AxisCalibration = opts.axes
+      ? calibrateAxesDeclared(opts.axes.x, opts.axes.y, plotBox)
+      : calibrateAxes(drawing.textItems, classes.frame, classes.data);
+    if (!calibration.ok) refusals.push(calibration.reason ?? 'axis calibration refused');
+
+    const clusters = clusterSeries(classes.data, plotBox);
+    const mapped = mapLegend(drawing.paths, drawing.textItems, clusters, drawing.pageBox);
+    if (mapped.length === 0) refusals.push(`no series survived clustering (${classes.data.length} data paths)`);
+
+    if (mapped.some((cluster) => (cluster.style.dash?.length ?? 0) > 0)) {
+      notes.push('dashed series: dash segments merged by x-continuity');
+    }
+    if (calibration.xAxis?.log || calibration.yAxes?.some((map) => map.log)) notes.push('log axis');
+    const styleCounts = new Map<string, number>();
+    for (const cluster of mapped) {
+      const key = colourKey(cluster.style);
+      styleCounts.set(key, (styleCounts.get(key) ?? 0) + 1);
+    }
+    for (const count of styleCounts.values()) {
+      if (count > 1) notes.push(`${count} curves share a style; samples are the median`);
+    }
+
+    const ySide = calibration.yAxes?.[0]?.side === 'right' ? 'right' : 'left';
+    const series: ChartSeries[] = mapped.map((cluster, index) => {
+      const name = cluster.name ?? `series ${index + 1}`;
+      const samples = calibration.ok ? (sampleSeries([cluster], calibration, maxSamples)[0]?.samples ?? []) : [];
+      return {
+        name,
+        axis: opts.seriesAxes?.[name] ?? ySide,
+        samples,
+        style: cluster.style,
+        unnamed: cluster.unnamed,
+        pathIds: cluster.pathIds,
+      };
+    });
+
+    return { file, page, calibration, series, refusals, notes };
+  } catch (error: any) {
+    refusals.push(`chart extraction failed: ${error?.message ?? String(error)}`);
+    return failed({ ok: false, reason: refusals[refusals.length - 1] });
+  }
 }

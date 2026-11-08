@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   axisToValue,
   calibrateAxes,
+  calibrateAxesDeclared,
   classifyPaths,
   clusterSeries,
+  mapLegend,
   sampleSeries,
   walkOperatorList,
 } from '../src/tools/document-extractors/chart-vector-extractor.js';
@@ -304,5 +306,93 @@ describe('stage 4 — sampleSeries', () => {
     const { classes } = classifyPlot();
     const calibration = calibrateAxes([xLabel(0)], classes.frame, classes.data);
     expect(sampleSeries(clusterSeries(classes.data, PLOT), calibration)).toEqual([]);
+  });
+});
+
+// --- stage 3b fixtures: a legend band below the plot -------------------------
+const PAGE_BOX: BBox = { x0: 0, y0: 0, x1: 612, y1: 792 };
+
+/** Short horizontal legend key at page y 60-62 (inside the band below PLOT). */
+function swatchPath(x: number, stroke: string): DrawingPath {
+  return {
+    points: [{ x, y: 60 }, { x: x + 10, y: 60 }],
+    closed: false,
+    style: { stroke, dash: [], lineWidth: 1 },
+    bbox: { x0: x, y0: 60, x1: x + 10, y1: 62 },
+  };
+}
+
+/** Legend label sitting just above the swatch row. */
+function legendLabel(str: string, x: number): TextItemLike {
+  return { str, x, y: 64, width: 20, height: 8 };
+}
+
+function curveCluster(stroke: string, x0 = 100): SeriesCluster {
+  return {
+    key: `${stroke}|solid|2`,
+    points: [{ x: x0, y: 100 }, { x: 300, y: 250 }, { x: 500, y: 400 }],
+    style: { stroke, dash: [], lineWidth: 2 },
+    pathIds: [0],
+  };
+}
+
+describe('stage 3b — mapLegend', () => {
+  it('pairs each cluster style with its swatch label and flags unmatched clusters', () => {
+    const paths: DrawingPath[] = [swatchPath(110, '#ff0000'), swatchPath(130, '#0000ff')];
+    const textItems: TextItemLike[] = [legendLabel('Amps', 123), legendLabel('Volts', 143)];
+    const clusters: SeriesCluster[] = [curveCluster('#ff0000'), curveCluster('#0000ff'), curveCluster('#00aa00')];
+
+    const mapped = mapLegend(paths, textItems, clusters, PAGE_BOX);
+
+    expect(mapped).toHaveLength(3);
+    expect(mapped[0].name).toBe('Amps');
+    expect(mapped[0].unnamed).toBe(false);
+    expect(mapped[1].name).toBe('Volts');
+    expect(mapped[1].unnamed).toBe(false);
+    expect(mapped[2].name).toBe('series 3');
+    expect(mapped[2].unnamed).toBe(true);
+    expect(mapped[2].style.stroke).toBe('#00aa00');
+  });
+
+  it('does not take a left-hand axis title for the first legend label', () => {
+    // Measured layout: axis title RPM at x138, swatch #ff0000 at x149, label Amps at x157.
+    const paths: DrawingPath[] = [swatchPath(149, '#ff0000'), swatchPath(170, '#006500')];
+    const textItems: TextItemLike[] = [legendLabel('RPM', 138), legendLabel('Amps', 157), legendLabel('Volts', 176)];
+    const mapped = mapLegend(
+      paths,
+      textItems,
+      [curveCluster('#ff0000'), curveCluster('#006500')],
+      PAGE_BOX,
+    );
+    expect(mapped.map((cluster) => cluster.name)).toEqual(['Amps', 'Volts']);
+  });
+});
+
+describe('stage 2b — declared axes', () => {
+  it('bypasses the automatic multi-scale refusal', () => {
+    const { classes } = classifyPlot();
+    const ambiguous: TextItemLike[] = [...LABELS, yLabelRight(0, PLOT.y0), yLabelRight(1, PLOT.y1)];
+    expect(calibrateAxes(ambiguous, classes.frame, classes.data).ok).toBe(false);
+
+    const declared = calibrateAxesDeclared({ min: 0, max: 300 }, { min: 0, max: 2000, unit: 'rpm' }, PLOT);
+    expect(declared.ok).toBe(true);
+    expect(declared.declared).toBe(true);
+    expect(declared.reason).toBeUndefined();
+    expect(declared.xAxis!.anchors).toBe(2);
+    expect(declared.yAxes![0].unit).toBe('rpm');
+    expect(axisToValue(declared.xAxis!, PLOT.x0)).toBe(0);
+    expect(axisToValue(declared.xAxis!, PLOT.x1)).toBe(300);
+    expect(axisToValue(declared.yAxes![0], PLOT.y0)).toBe(0);
+    expect(axisToValue(declared.yAxes![0], PLOT.y1)).toBeCloseTo(2000, 6);
+
+    const sampled = sampleSeries(clusterSeries(classes.data, PLOT), declared, 40);
+    expect(sampled).toHaveLength(2);
+    expect(sampled.find((entry) => entry.series.includes('#ff0000'))!.samples).toHaveLength(40);
+  });
+
+  it('refuses an empty declared range', () => {
+    const declared = calibrateAxesDeclared({ min: 5, max: 5 }, { min: 0, max: 1 }, PLOT);
+    expect(declared.ok).toBe(false);
+    expect(declared.reason).toMatch(/declared x axis range is empty/);
   });
 });

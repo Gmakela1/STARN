@@ -10,6 +10,7 @@ import { exampleReaderHandler } from './handlers/example-reader.js';
 import { webSearchHandler } from './handlers/web-search.js';
 import { webFetchHandler } from './handlers/web-fetch.js';
 import { docTranscribeHandler } from './handlers/doc-transcribe.js';
+import { chartReadHandler } from './handlers/chart-read.js';
 
 export interface ToolRegistryOptions {
   /** When false, document transcription tools are not registered at all. */
@@ -29,6 +30,7 @@ export class ToolRegistry {
     this.register(exampleReaderHandler);
     this.register(webSearchHandler);
     this.register(webFetchHandler);
+    this.register(chartReadHandler);
     if (options.transcriptionEnabled !== false) {
       this.register(docTranscribeHandler);
     }

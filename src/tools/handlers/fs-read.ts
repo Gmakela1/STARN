@@ -1,10 +1,37 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ToolHandler, ToolExecutionContext, ToolExecutionResponse } from '../types.js';
-import { extractTextFromPdf } from './pdf-extractor.js';
+import { extractTextFromPdf, probeCharts } from './pdf-extractor.js';
 import { extractTextFromScannedPdf } from '../document-extractors/vision-extractor.js';
 import { extractTextFromDocx } from '../document-extractors/docx-extractor.js';
 import { formatCsvAsTable } from '../document-extractors/csv-extractor.js';
+
+/**
+ * Builds the spec §5 chart banner for a PDF.
+ * @param filePath Absolute path to the PDF.
+ * @returns Banner text wrapped in blank lines, or '' when there is no chart or the probe fails.
+ * @throws Never: the probe is wrapped so a banner failure cannot fail the read.
+ */
+async function chartBanner(filePath: string): Promise<string> {
+  try {
+    const probes = await probeCharts(filePath);
+    if (probes.length === 0) return '';
+    const lines = probes.map((probe) => {
+      const named = probe.series.length > 0;
+      if (!probe.reliable) {
+        const count = named ? `${probe.series.length} series` : `${probe.dataPaths} plotted paths`;
+        return `[Charts detected: page ${probe.page} — ${count}, axis assignment ambiguous.\n read_chart_data will require an explicit series→axis mapping.]`;
+      }
+      const count = named
+        ? `${probe.series.length} series (${probe.series.join(', ')})`
+        : `${probe.dataPaths} plotted paths`;
+      return `[Charts detected: page ${probe.page} — ${count}.\n Call read_chart_data(path, page) to read numeric values.]`;
+    });
+    return `\n${lines.join('\n')}\n`;
+  } catch {
+    return '';
+  }
+}
 
 export const fsReadHandler: ToolHandler = {
   name: 'fs_read',
@@ -60,9 +87,10 @@ export const fsReadHandler: ToolHandler = {
             };
           }
         }
+        const banner = await chartBanner(target);
         return {
           success: true,
-          result: `[PDF Text Extraction: ${fileName}]\n${'='.repeat(60)}\n${text}\n${'='.repeat(60)}\n`
+          result: `[PDF Text Extraction: ${fileName}]\n${'='.repeat(60)}\n${text}\n${'='.repeat(60)}\n${banner}`
         };
       } catch (err: any) {
         return {
