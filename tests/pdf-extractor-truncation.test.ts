@@ -118,13 +118,30 @@ describe('extractTextFromPdfBuffer page cap', () => {
     expect(doc.destroy).toHaveBeenCalledTimes(1);
   });
 
-  // fs_read/project-files contract: the tail notice still names the real page coverage.
-  it('keeps the tail page notice in the wrapper when the text budget stopped early', async () => {
+  // Round-4 blocking fix: a char-budget cut must say so. The old notice claimed page
+  // truncation, so a ≤40-page PDF looked like a complete read of a page-capped document.
+  it('announces the text budget honestly when it stops a short document early', async () => {
+    const doc = fakeDenseDoc(12, 'a'.repeat(30000));
+    serveDoc(doc);
+
+    const text = await extractTextFromPdfBuffer(bytes);
+
+    expect(text).toContain(
+      '\n\n[Truncated: text budget of 60,000 characters reached at page 2 of 12 — use read_chart_data or split the PDF]'
+    );
+    expect(text).not.toContain('first 2 of 12 pages');
+    expect(doc.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  // fs_read/project-files contract: a text-budget cut still names the real page coverage.
+  it('keeps a tail notice in the wrapper when the text budget stopped early', async () => {
     const doc = fakeDenseDoc(120, 'a'.repeat(30000));
     serveDoc(doc);
 
     const text = await extractTextFromPdfBuffer(bytes);
 
-    expect(text).toContain(`\n\n[Truncated: first 2 of 120 pages — use read_chart_data or split the PDF]`);
+    expect(text).toContain(
+      '\n\n[Truncated: text budget of 60,000 characters reached at page 2 of 120 — use read_chart_data or split the PDF]'
+    );
   });
 });

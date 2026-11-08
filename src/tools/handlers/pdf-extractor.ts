@@ -108,19 +108,23 @@ export async function extractPdfTextWithMeta(data: Uint8Array): Promise<PdfTextM
 }
 
 /**
- * Extracts the text layer of an in-memory PDF and announces any missing pages at the tail.
+ * Extracts the text layer of an in-memory PDF and announces any missing text at the tail.
  * Thin wrapper over {@link extractPdfTextWithMeta}; `fs_read` and project-files rely on this
  * exact string contract.
  *
  * @param data Raw PDF bytes.
- * @returns Page text joined by `--- Page Break ---`, followed by a truncation notice when
- *   pages were not read; `NO_PDF_TEXT_MARKER` when no page has text.
+ * @returns Page text joined by `--- Page Break ---`, followed by a truncation notice naming
+ *   the budget that stopped the read; `NO_PDF_TEXT_MARKER` when no page has text.
  * @throws Whatever pdfjs throws for a corrupt/encrypted document.
  */
 export async function extractTextFromPdfBuffer(data: Uint8Array): Promise<string> {
-  const { text, numPages, pagesRead } = await extractPdfTextWithMeta(data);
+  const { text, numPages, pagesRead, textTruncated } = await extractPdfTextWithMeta(data);
   if (!text) return NO_PDF_TEXT_MARKER;
-  // A silent cut would read as a complete document; announce the missing pages.
+  // A silent cut would read as a complete document; name the budget that actually stopped us.
+  if (textTruncated) {
+    const budget = MAX_TEXT_CHARS.toLocaleString('en-US');
+    return `${text}\n\n[Truncated: text budget of ${budget} characters reached at page ${pagesRead} of ${numPages} — use read_chart_data or split the PDF]`;
+  }
   if (numPages > pagesRead) {
     return `${text}\n\n[Truncated: first ${pagesRead} of ${numPages} pages — use read_chart_data or split the PDF]`;
   }

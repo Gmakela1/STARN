@@ -73,12 +73,14 @@ interface StreamCounters {
  * @param contentType Raw `content-type` header value.
  * @param extraHeaders Additional response headers (e.g. `content-length`).
  * @param counters Optional counters recording `read()` calls and `cancel()` calls.
+ * @param cancelThrows When true the underlying `cancel()` rejects (a broken stream).
  */
 function stubStreamFetch(
   chunks: Uint8Array[],
   contentType: string | null,
   extraHeaders: Record<string, string> = {},
-  counters: StreamCounters = { reads: 0, cancelled: false }
+  counters: StreamCounters = { reads: 0, cancelled: false },
+  cancelThrows = false
 ): StreamCounters {
   const headers = new Headers();
   if (contentType) headers.set('content-type', contentType);
@@ -98,6 +100,8 @@ function stubStreamFetch(
     },
     cancel() {
       counters.cancelled = true;
+      if (cancelThrows) return Promise.reject(new Error('cancel failed'));
+      return undefined;
     }
   }, { highWaterMark: 0 });
 
@@ -119,6 +123,19 @@ function pdfChunk(size = 4 * 1024 * 1024): Uint8Array {
   const chunk = Buffer.alloc(size, 0x20);
   chunk.write('%PDF-1.4\n', 0, 'latin1');
   return new Uint8Array(chunk);
+}
+
+/** Byte cap the handler applies to HTML bodies. */
+const HTML_CAP = 2 * 1024 * 1024;
+
+/** ASCII filler: letters survive HTML cleaning, so they reach the cleaner as text. */
+function fillerBytes(size: number, char: string): Buffer {
+  return Buffer.alloc(size, char, 'latin1');
+}
+
+/** Product JSON-LD block used as a byte-offset landmark inside a streamed body. */
+function productLd(name: string): string {
+  return `<script type="application/ld+json">{"@type":"Product","name":"${name}","offers":{"price":"1.00","priceCurrency":"USD"}}</script>`;
 }
 
 describe('web_fetch PDF handling', () => {
@@ -384,6 +401,92 @@ describe('web_fetch PDF handling', () => {
     expect(extractMock).toHaveBeenCalledOnce();
     expect(res.success).toBe(true);
     expect(res.result).toContain('Peak Current: 450A');
+  });
+
+  // Round-4 blocking fix: the chunk that crosses the cap must be KEPT and sliced. Dropping
+  // it returned 0 bytes ("page was empty") when a single chunk carried the whole body.
+  it('truncates a single 3 MB HTML chunk to 2 MB instead of returning nothing', async () => {
+    const body = fillerBytes(3 * 1024 * 1024, 'A');
+    body.write('<html><body><p>Visible text at the head</p>', 0, 'latin1');
+    stubStreamFetch([new Uint8Array(body)], 'text/html');
+
+    const res = await registry.execute('web_fetch', { url: 'https://example.com/one-chunk' }, context, ['web_fetch']);
+
+    expect(res.success).toBe(true);
+    expect(res.result).not.toContain('Web page was empty or contained no readable text.');
+    expect(res.result).toContain('Visible text at the head');
+  });
+
+  // Round-4 note: every HTML cap test used the arrayBuffer fallback, so the streaming cut was
+  // untested. Here the crossing chunk (1.5 MB) carries the bytes between 1 MB and 2 MB.
+  it('keeps the part of the crossing chunk that fits under the 2 MB cap', async () => {
+    const ld = productLd('EdgeMarker');
+    const chunk1 = fillerBytes(1024 * 1024, 'A');
+    chunk1.write('<html><head>', 0, 'latin1');
+    // Chunk 2 is 1.5 MB; its JSON-LD ends exactly at byte 2 MB.
+    const chunk2 = Buffer.concat([
+      fillerBytes(1024 * 1024 - ld.length, 'B'),
+      Buffer.from(ld, 'latin1'),
+      fillerBytes(512 * 1024, 'C')
+    ]);
+    expect(chunk1.byteLength + 1024 * 1024).toBe(HTML_CAP);
+    stubStreamFetch([new Uint8Array(chunk1), new Uint8Array(chunk2)], 'text/html; charset=utf-8');
+
+    const res = await registry.execute('web_fetch', { url: 'https://example.com/crossing' }, context, ['web_fetch']);
+
+    expect(res.success).toBe(true);
+    // Survives only when the crossing chunk's first 1 MB reaches the cleaner.
+    expect(res.result).toContain('name: EdgeMarker');
+  });
+
+  it('cuts a three-chunk 3 MB HTML stream at exactly 2 MB', async () => {
+    const ld = productLd('AtCap');
+    // Chunk 2 ends exactly at 2 MB with the landmark; chunk 3 is entirely beyond the cap.
+    const chunk1 = new Uint8Array(fillerBytes(1024 * 1024, 'A'));
+    const chunk2 = new Uint8Array(Buffer.concat([
+      fillerBytes(1024 * 1024 - ld.length, 'B'),
+      Buffer.from(ld, 'latin1')
+    ]));
+    const beyond = '<p>BeyondMarker</p>';
+    const chunk3 = new Uint8Array(Buffer.concat([
+      Buffer.from(beyond, 'latin1'),
+      fillerBytes(1024 * 1024 - beyond.length, 'C')
+    ]));
+    stubStreamFetch([chunk1, chunk2, chunk3], 'text/html');
+
+    const res = await registry.execute('web_fetch', { url: 'https://example.com/three-chunks' }, context, ['web_fetch']);
+
+    expect(res.success).toBe(true);
+    expect(res.result).toContain('name: AtCap');
+    expect(res.result).not.toContain('BeyondMarker');
+  });
+
+  // Round-4 note: the magic probe must see the first 1024 bytes, not just chunk 1. A PDF with
+  // a junk preamble split across chunks was HTML-capped at 2 MB, then falsely refused.
+  it('detects a PDF whose %PDF- magic is split across chunks', async () => {
+    const preamble = new Uint8Array(fillerBytes(600, ' '));
+    const pdfBody = pdfChunk(3 * 1024 * 1024);
+    extractMock.mockResolvedValue(meta('Peak Current: 450A'));
+    stubStreamFetch([preamble, pdfBody], 'application/octet-stream');
+
+    const res = await registry.execute('web_fetch', { url: 'https://example.com/preamble.pdf' }, context, ['web_fetch']);
+
+    expect(res.success).toBe(true);
+    const received = extractMock.mock.calls[0][0] as Uint8Array;
+    // Whole 3 MB body handed over: the 15 MB PDF cap applied, not the 2 MB HTML cap.
+    expect(received.byteLength).toBe(preamble.byteLength + pdfBody.byteLength);
+  });
+
+  // Round-4 note: a throwing cancel() must not be reported as "Failed to fetch URL".
+  it('returns the truncated body when the stream cancel throws', async () => {
+    const body = fillerBytes(3 * 1024 * 1024, 'A');
+    body.write('<p>Visible text at the head</p>', 0, 'latin1');
+    stubStreamFetch([new Uint8Array(body)], 'text/html', {}, undefined, true);
+
+    const res = await registry.execute('web_fetch', { url: 'https://example.com/broken-cancel' }, context, ['web_fetch']);
+
+    expect(res.success).toBe(true);
+    expect(res.result).toContain('Visible text at the head');
   });
 
   it('keeps the HTML extraction path unchanged for text/html responses', async () => {

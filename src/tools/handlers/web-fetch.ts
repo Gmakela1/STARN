@@ -17,6 +17,11 @@ const MAX_RAW_BYTES = 2 * 1024 * 1024;
  * inside the range while capping peak RSS growth from a hostile body.
  */
 const MAX_PDF_BYTES = 15 * 1024 * 1024;
+/**
+ * Bytes examined for the PDF magic. `%PDF-` may sit behind a BOM or junk preamble that a
+ * server can split across chunks, so the probe accumulates up to this many bytes.
+ */
+const PDF_PROBE_BYTES = 1024;
 /** Maximum characters of cleaned text returned to the model. */
 const MAX_OUTPUT_CHARS = 20000;
 const TRUNCATION_NOTICE = '\n\n[Content truncated at 20,000 characters]';
@@ -36,7 +41,7 @@ const PDF_REFUSAL =
  */
 export function looksLikePdf(contentType: string | null, bytes: Uint8Array): boolean {
   if ((contentType ?? '').toLowerCase().includes('application/pdf')) return true;
-  return Buffer.from(bytes.subarray(0, 1024)).toString('latin1').includes('%PDF-');
+  return Buffer.from(bytes.subarray(0, PDF_PROBE_BYTES)).toString('latin1').includes('%PDF-');
 }
 
 /**
@@ -90,6 +95,21 @@ function pdfOversizeResponse(byteLength: number): ToolExecutionResponse {
 /** Result of {@link readBodyBounded}: the usable bytes, or the oversize refusal facts. */
 type BodyRead = { kind: 'bytes'; bytes: Uint8Array } | { kind: 'oversize'; byteLength: number };
 
+/**
+ * Cancels a body reader without letting a broken stream mask the caller's result: the read
+ * path has already decided what to return, and a cancel failure is not a fetch failure.
+ *
+ * @param reader Reader for the response body being abandoned.
+ * @returns Nothing; a rejected `cancel()` is swallowed.
+ */
+async function cancelQuietly(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+  try {
+    await reader.cancel();
+  } catch {
+    // The stream is already broken; the bounded result still stands.
+  }
+}
+
 /** True when a `content-type` header declares a PDF (the pre-read limit selector). */
 function declaresPdf(contentType: string | null): boolean {
   return (contentType ?? '').toLowerCase().includes('application/pdf');
@@ -107,7 +127,7 @@ function declaresPdf(contentType: string | null): boolean {
  * @param res Fetch response (its `body` stream is consumed when present).
  * @param contentType Raw `content-type` header value (may be null).
  * @returns `{ kind: 'bytes' }` with ≤ the applicable limit, or `{ kind: 'oversize' }`.
- * @throws Whatever the stream throws (network/abort errors reach the caller unchanged).
+ * @throws Whatever `reader.read()` throws (network/abort errors reach the caller unchanged).
  */
 async function readBodyBounded(res: Response, contentType: string | null): Promise<BodyRead> {
   const declaredHeader = res.headers.get('content-length');
@@ -133,6 +153,8 @@ async function readBodyBounded(res: Response, contentType: string | null): Promi
   let isPdf = declaresPdf(contentType);
   let limit = isPdf ? MAX_PDF_BYTES : MAX_RAW_BYTES;
   let total = 0;
+  // Probe window: the magic may be split across chunks, so accumulate before deciding.
+  let probe: Uint8Array = new Uint8Array(0);
 
   for (;;) {
     const { done, value } = await reader.read();
@@ -140,16 +162,20 @@ async function readBodyBounded(res: Response, contentType: string | null): Promi
     if (!value || value.byteLength === 0) continue;
 
     // A PDF served without a pdf content-type only shows its magic in the first bytes.
-    if (chunks.length === 0 && !isPdf) {
-      isPdf = looksLikePdf(contentType, value);
+    if (!isPdf && probe.byteLength < PDF_PROBE_BYTES) {
+      const needed = PDF_PROBE_BYTES - probe.byteLength;
+      probe = Buffer.concat([probe, value.subarray(0, needed)]);
+      isPdf = looksLikePdf(contentType, probe);
       limit = isPdf ? MAX_PDF_BYTES : MAX_RAW_BYTES;
     }
 
     total += value.byteLength;
     if (total > limit) {
-      await reader.cancel();
+      await cancelQuietly(reader);
       if (isPdf) return { kind: 'oversize', byteLength: total };
-      return { kind: 'bytes', bytes: Buffer.concat(chunks).subarray(0, MAX_RAW_BYTES) };
+      // Keep the crossing chunk: it may be the only chunk, and it holds the bytes between the
+      // last kept chunk and the cap. Slicing after the concat yields exactly MAX_RAW_BYTES.
+      return { kind: 'bytes', bytes: Buffer.concat([...chunks, value]).subarray(0, MAX_RAW_BYTES) };
     }
     chunks.push(value);
   }
