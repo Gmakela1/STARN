@@ -6,7 +6,11 @@
  * - Stages 1-4 (`classifyPaths`, `calibrateAxes`, `clusterSeries`, `sampleSeries`)
  *   are pure functions over plain data: no pdfjs import is executed for them.
  *
- * Coordinate convention: page space, PDF units, y-up.
+ * Coordinate conventions: page space is unrotated PDF space, units pt, y-up.
+ * Stages 1-4 run in chart space — page space with the page rotation applied,
+ * still y-up — so a `/Rotate 90` sheet calibrates like an upright one. Stage 0
+ * keeps both; the legend rule reads page space, because a legend layout is a
+ * page artefact (its row of keys turns into a column when the page rotates).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -61,10 +65,20 @@ export const DEFAULT_OPS: OpsMap = {
 
 /** Drawing data of one page: paths plus the text items needed by stage 2. */
 export interface PageDrawing {
+  /** Paths in page space (unrotated, y up). The legend rule reads these. */
   paths: DrawingPath[];
+  /** Text items in page space. */
   textItems: TextItemLike[];
-  /** Page extent from pdfjs `page.view`, used to locate the legend band. */
+  /** Paths in chart space (page rotation applied, y up): stages 1-4 geometry. */
+  chartPaths: DrawingPath[];
+  /** Text items in chart space: the axis calibration anchors. */
+  chartTextItems: TextItemLike[];
+  /** Page extent from pdfjs `page.view`, in page space. */
   pageBox: BBox;
+  /** Page extent in chart space. */
+  chartBox: BBox;
+  /** Chart-space box around the legend swatch row; null when the page has no row. */
+  chartLegendBand: BBox | null;
   /** `constructPath` ops replayed (before any cap); 0 for hand-built fixtures. */
   constructPathOps: number;
 }
@@ -110,6 +124,10 @@ export async function collectDrawing(page: any, maxConstructPaths = Infinity): P
   const ops = await loadPdfOps();
   const opList = await page.getOperatorList();
   const content = await page.getTextContent();
+  const bounds = truncateAtConstructPaths(opList.fnArray, opList.argsArray, ops, maxConstructPaths);
+  const view = Array.isArray(page.view) && page.view.length === 4 ? page.view : [0, 0, 0, 0];
+  const viewport = page.getViewport({ scale: 1 });
+  const chartMatrix = chartSpaceMatrix(viewport.transform, viewport.height);
   const textItems: TextItemLike[] = content.items.map((item: any) => ({
     str: item.str ?? '',
     x: item.transform?.[4] ?? 0,
@@ -117,12 +135,17 @@ export async function collectDrawing(page: any, maxConstructPaths = Infinity): P
     width: item.width ?? 0,
     height: item.height ?? 0,
   }));
-  const bounds = truncateAtConstructPaths(opList.fnArray, opList.argsArray, ops, maxConstructPaths);
-  const view = Array.isArray(page.view) && page.view.length === 4 ? page.view : [0, 0, 0, 0];
+  const paths = walkOperatorList(opList.fnArray, opList.argsArray, textItems, ops, bounds.end);
+  const pageBox = { x0: view[0], y0: view[1], x1: view[2], y1: view[3] };
+  const band = legendBand(paths);
   return {
-    paths: walkOperatorList(opList.fnArray, opList.argsArray, textItems, ops, bounds.end),
+    paths,
     textItems,
-    pageBox: { x0: view[0], y0: view[1], x1: view[2], y1: view[3] },
+    chartPaths: paths.map((path) => transformPath(path, chartMatrix)),
+    chartTextItems: textItems.map((item) => transformTextItem(item, chartMatrix)),
+    pageBox,
+    chartBox: transformBox(pageBox, chartMatrix),
+    chartLegendBand: band ? transformBox(bandBox(band, pageBox), chartMatrix) : null,
     constructPathOps: bounds.count,
   };
 }
@@ -240,6 +263,45 @@ function bboxOf(points: Point[]): BBox {
     if (p.y > y1) y1 = p.y;
   }
   return { x0, y0, x1, y1 };
+}
+
+/**
+ * Builds the page→chart-space matrix from a pdfjs viewport.
+ *
+ * Page space is unrotated and y-up; chart space is y-up with the page rotation
+ * applied, so stages 1-4 always see x to the right and y up. Convention:
+ * `x' = a*x + c*y + e`, `y' = b*x + d*y + f` (see `applyMatrix`).
+ *
+ * @param transform pdfjs viewport transform (page → rendered, y down).
+ * @param renderedHeight Viewport height in points.
+ * @returns The page→chart-space matrix; identity for an unrotated page.
+ */
+export function chartSpaceMatrix(transform: ArrayLike<number>, renderedHeight: number): Matrix {
+  const [a, b, c, d, e, f] = [transform[0], transform[1], transform[2], transform[3], transform[4], transform[5]];
+  const negate = (value: number): number => (value === 0 ? 0 : -value);
+  return [a, negate(b), c, negate(d), e, renderedHeight - f];
+}
+
+/** @returns `path` mapped through `m`: every point and the bbox. */
+function transformPath(path: DrawingPath, m: Matrix): DrawingPath {
+  const points = path.points.map((point) => applyMatrix(m, point.x, point.y));
+  return { ...path, points, bbox: bboxOf(points) };
+}
+
+/** @returns `item` with its baseline origin mapped through `m`; rotation leaves width and height unchanged. */
+function transformTextItem(item: TextItemLike, m: Matrix): TextItemLike {
+  const origin = applyMatrix(m, item.x, item.y);
+  return { ...item, x: origin.x, y: origin.y };
+}
+
+/** @returns The bbox of a box mapped through `m`, taken over its four corners. */
+function transformBox(box: BBox, m: Matrix): BBox {
+  return bboxOf([
+    applyMatrix(m, box.x0, box.y0),
+    applyMatrix(m, box.x1, box.y0),
+    applyMatrix(m, box.x0, box.y1),
+    applyMatrix(m, box.x1, box.y1),
+  ]);
 }
 
 /** Paint opcodes that actually stroke; anything else paints fill only and is skipped. */
@@ -435,6 +497,83 @@ export function classifyPaths(paths: DrawingPath[], plotBox: BBox): PathClassifi
     if (path.points.length >= 3) result.data.push(path);
   }
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Stage 1b — plot box from the axis frame
+// ---------------------------------------------------------------------------
+
+/** A frame line is thinner than this, in points. */
+const FRAME_LINE_THICKNESS = 1.5;
+/** A horizontal frame line is wider than this fraction of the page width. */
+const FRAME_HORIZONTAL_MIN_WIDTH = 0.4;
+/** A vertical frame line is taller than this fraction of the page height. */
+const FRAME_VERTICAL_MIN_HEIGHT = 0.25;
+
+/** The plot rectangle recovered from the axis frame, with one gridline spacing. */
+export interface AxisFrame {
+  box: BBox;
+  spacingX: number;
+  spacingY: number;
+}
+
+/** @returns The distinct positions, rounded to 0.01 pt so a doubly painted gridline counts once. */
+function uniquePositions(values: number[]): number[] {
+  return [...new Set(values.map((value) => Math.round(value * 100) / 100))].sort((a, b) => a - b);
+}
+
+/** @returns The median gap between consecutive sorted positions. */
+function medianStep(positions: number[]): number {
+  const gaps: number[] = [];
+  for (let i = 1; i < positions.length; i++) gaps.push(positions[i] - positions[i - 1]);
+  return median(gaps);
+}
+
+/**
+ * Stage 1b. Recovers the plot rectangle from the long axis-aligned gridlines.
+ *
+ * A frame line is a path thinner than 1.5 pt that spans more than 40 % of the
+ * page width (horizontal) or 25 % of the page height (vertical). The rectangle
+ * is the min/max of those line positions, pushed out by one gridline spacing on
+ * each axis so the outermost gridlines are interior. This is the axis extent the
+ * page furniture declares: title blocks, legends and annotations are excluded by
+ * the span test, so they cannot stretch the box the way all-path bounds do.
+ *
+ * @param paths Every path on the page (stage 0 output, chart space).
+ * @param pageBox Page extent in chart space.
+ * @returns The frame box and its grid spacing, or null when either axis has fewer
+ *   than two long lines.
+ */
+export function axisFrameBox(paths: DrawingPath[], pageBox: BBox): AxisFrame | null {
+  const pageWidth = pageBox.x1 - pageBox.x0;
+  const pageHeight = pageBox.y1 - pageBox.y0;
+  const horizontals = paths.filter((p) => {
+    const width = p.bbox.x1 - p.bbox.x0;
+    const height = p.bbox.y1 - p.bbox.y0;
+    return height < FRAME_LINE_THICKNESS && width > FRAME_HORIZONTAL_MIN_WIDTH * pageWidth;
+  });
+  const verticals = paths.filter((p) => {
+    const width = p.bbox.x1 - p.bbox.x0;
+    const height = p.bbox.y1 - p.bbox.y0;
+    return width < FRAME_LINE_THICKNESS && height > FRAME_VERTICAL_MIN_HEIGHT * pageHeight;
+  });
+
+  const xs = uniquePositions(verticals.map((p) => p.bbox.x0));
+  const ys = uniquePositions(horizontals.map((p) => p.bbox.y0));
+  if (xs.length < 2 || ys.length < 2) return null;
+
+  const spacingX = medianStep(xs);
+  const spacingY = medianStep(ys);
+  return {
+    box: {
+      x0: xs[0] - spacingX,
+      y0: ys[0] - spacingY,
+      x1: xs[xs.length - 1] + spacingX,
+      y1: ys[ys.length - 1] + spacingY,
+    },
+    spacingX,
+    spacingY,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -761,8 +900,8 @@ export function clusterSeries(dataPaths: DrawingPath[], plotBox: BBox): SeriesCl
 /** Swatch bbox limits from spec §6 stage 3b: vertical strips and horizontal dashes. */
 const SWATCH_MAX_THICKNESS = 12;
 const SWATCH_MIN_LENGTH = 20;
-/** Height of the y-row band that holds one legend row, in points. */
-const LEGEND_ROW_HEIGHT = 60;
+/** A key is short: without this cap a gridline or an axis rule reads as a swatch. */
+const SWATCH_MAX_LENGTH = 60;
 /** A row needs at least this many swatches to count as the legend band. */
 const LEGEND_ROW_MIN_SWATCHES = 3;
 /** Legend labels sit at most this far from their swatch row, in points. */
@@ -782,31 +921,67 @@ function hasVisibleStroke(style: PathStyle): boolean {
   return !/^#f{3}$|^#f{6}$/.test(key);
 }
 
-/** @returns True when a path is a legend swatch: a vertical strip or a horizontal dash. */
+/** @returns True when a path is a legend swatch: a short vertical strip or a short horizontal dash. */
 function isLegendSwatch(candidate: DrawingPath): boolean {
   const width = candidate.bbox.x1 - candidate.bbox.x0;
   const height = candidate.bbox.y1 - candidate.bbox.y0;
-  const vertical = width <= SWATCH_MAX_THICKNESS && height >= SWATCH_MIN_LENGTH;
-  const horizontal = width >= SWATCH_MIN_LENGTH && height <= SWATCH_MAX_THICKNESS;
+  const vertical =
+    width <= SWATCH_MAX_THICKNESS && height >= SWATCH_MIN_LENGTH && height <= SWATCH_MAX_LENGTH;
+  const horizontal =
+    height <= SWATCH_MAX_THICKNESS && width >= SWATCH_MIN_LENGTH && width <= SWATCH_MAX_LENGTH;
   return (vertical || horizontal) && hasVisibleStroke(candidate.style);
 }
 
-/** @returns The y centre of the swatch row holding the most swatches, or null below 3. */
-function legendRowCentre(swatches: DrawingPath[]): number | null {
-  let bestCentre: number | null = null;
-  let bestCount = 0;
-  for (const swatch of swatches) {
-    const centre = (swatch.bbox.y0 + swatch.bbox.y1) / 2;
-    let count = 0;
-    for (const other of swatches) {
-      if (Math.abs((other.bbox.y0 + other.bbox.y1) / 2 - centre) <= LEGEND_ROW_HEIGHT / 2) count++;
-    }
-    if (count > bestCount) {
-      bestCount = count;
-      bestCentre = centre;
-    }
-  }
-  return bestCount >= LEGEND_ROW_MIN_SWATCHES ? bestCentre : null;
+/** The strip of page space that holds the legend keys: their extent along their long axis. */
+export interface LegendBand {
+  /** Long axis of the keys: 'x' for horizontal dashes, 'y' for vertical strips. */
+  axis: 'x' | 'y';
+  min: number;
+  max: number;
+}
+
+/**
+ * Finds the legend key row: the keys share one long-axis orientation, and the band
+ * is their extent along it. Both orientations are covered, so the rule survives a
+ * rotated page, where a row of strips becomes a column of dashes.
+ *
+ * @param paths Every path on the page.
+ * @returns The band, or null when fewer than 3 keys share one orientation.
+ */
+export function legendBand(paths: DrawingPath[]): LegendBand | null {
+  const swatches = paths.filter(isLegendSwatch);
+  if (swatches.length < LEGEND_ROW_MIN_SWATCHES) return null;
+  const wide = swatches.filter((s) => s.bbox.x1 - s.bbox.x0 >= s.bbox.y1 - s.bbox.y0);
+  const tall = swatches.filter((s) => s.bbox.x1 - s.bbox.x0 < s.bbox.y1 - s.bbox.y0);
+  const row = wide.length >= tall.length ? wide : tall;
+  if (row.length < LEGEND_ROW_MIN_SWATCHES) return null;
+  const axis: 'x' | 'y' = wide.length >= tall.length ? 'x' : 'y';
+  const low = (s: DrawingPath): number => (axis === 'x' ? s.bbox.x0 : s.bbox.y0);
+  const high = (s: DrawingPath): number => (axis === 'x' ? s.bbox.x1 : s.bbox.y1);
+  return { axis, min: Math.min(...row.map(low)), max: Math.max(...row.map(high)) };
+}
+
+/** @returns The band as a full-page-thick box, so a page rotation maps it onto the other axis. */
+function bandBox(band: LegendBand, pageBox: BBox): BBox {
+  return band.axis === 'x'
+    ? { x0: band.min, y0: pageBox.y0, x1: band.max, y1: pageBox.y1 }
+    : { x0: pageBox.x0, y0: band.min, x1: pageBox.x1, y1: band.max };
+}
+
+/**
+ * Drops the legend swatch row so its swatches can neither widen the plot box nor
+ * join a series.
+ *
+ * @param paths Paths to filter, in the same space as `band`.
+ * @param band Box around the legend swatch row, or null when the page has none.
+ * @returns The paths whose bbox does not sit wholly inside the band.
+ */
+export function withoutLegendBand(paths: DrawingPath[], band: BBox | null): DrawingPath[] {
+  if (!band) return paths;
+  return paths.filter(
+    (path) =>
+      !(path.bbox.x0 >= band.x0 && path.bbox.x1 <= band.x1 && path.bbox.y0 >= band.y0 && path.bbox.y1 <= band.y1),
+  );
 }
 
 /**
@@ -859,9 +1034,11 @@ function matchLegendLabel(
 /**
  * Stage 3b. Names clusters from legend swatches and their labels.
  *
- * A swatch is a vertical strip (width ≤ 12 pt, height ≥ 20 pt) or a horizontal
- * dash (width ≥ 20 pt, height ≤ 12 pt) with a non-white stroke. The legend band
- * is the 60 pt y-row holding the most swatches, when it holds at least 3.
+ * A swatch is a short key with a non-white stroke: a vertical strip (width ≤ 12 pt,
+ * 20 ≤ height ≤ 60 pt) or a horizontal dash (height ≤ 12 pt, 20 ≤ width ≤ 60 pt).
+ * The length cap keeps gridlines and axis rules out of the swatch set. The legend
+ * band is the extent of the keys along their long axis, when at least 3 keys share
+ * one orientation.
  * Labels are matched left-to-right: the label whose x0 sits 0-20 pt right of the
  * swatch x0 wins (labels on the reference sheet sit ~72 pt above their swatch,
  * so a vertical-proximity rule cannot match), with the nearest label by centre
@@ -886,9 +1063,13 @@ export function mapLegend(
   pageBox?: BBox,
 ): SeriesCluster[] {
   const swatches = paths.filter(isLegendSwatch);
-  const rowCentre = legendRowCentre(swatches);
-  const inRow = (swatch: DrawingPath): boolean =>
-    rowCentre !== null && Math.abs((swatch.bbox.y0 + swatch.bbox.y1) / 2 - rowCentre) <= LEGEND_ROW_HEIGHT / 2;
+  const band = legendBand(paths);
+  const inRow = (swatch: DrawingPath): boolean => {
+    if (!band) return false;
+    const centre =
+      band.axis === 'x' ? (swatch.bbox.x0 + swatch.bbox.x1) / 2 : (swatch.bbox.y0 + swatch.bbox.y1) / 2;
+    return centre >= band.min && centre <= band.max;
+  };
 
   // Each label names at most one swatch; band swatches claim labels first.
   const usedLabels = new Set<TextItemLike>();
@@ -1067,23 +1248,36 @@ export async function extractChartData(
     const pageProxy = await doc.getPage(page);
     const drawing = await withTimeout(collectDrawing(pageProxy), PAGE_TIMEOUT_MS, 'chart drawing collection');
 
-    const plotBox = pathsBounds(drawing.paths);
-    if (!plotBox) {
+    const frame = axisFrameBox(drawing.chartPaths, drawing.chartBox);
+    const allBox = pathsBounds(drawing.chartPaths);
+    if (!allBox) {
       refusals.push('no vector paths on this page — raster page; vision transcription applies');
       return failed({ ok: false, reason: refusals[0] });
     }
-    const classes = classifyPaths(drawing.paths, plotBox);
+    const classes = classifyPaths(drawing.chartPaths, frame?.box ?? allBox);
     if (classes.data.length < 2) {
       refusals.push(
-        `no vector chart found on this page (${drawing.paths.length} paths, ${classes.data.length} data paths)` +
+        `no vector chart found on this page (${drawing.chartPaths.length} paths, ${classes.data.length} data paths)` +
           ' — raster page; vision transcription applies',
       );
       return failed({ ok: false, reason: refusals[0] });
     }
 
+    // Box provenance: axis frame → data paths without the legend band → all page paths.
+    const dataPaths = withoutLegendBand(classes.data, drawing.chartLegendBand);
+    const dataBox = pathsBounds(dataPaths);
+    const plotBox = frame?.box ?? dataBox ?? allBox;
+    const boxRange =
+      `x ${plotBox.x0.toFixed(1)}–${plotBox.x1.toFixed(1)} pt, y ${plotBox.y0.toFixed(1)}–${plotBox.y1.toFixed(1)} pt`;
+    notes.push(
+      frame
+        ? `plot box ${boxRange} from the axis frame; grid spacing ${frame.spacingX.toFixed(2)} × ${frame.spacingY.toFixed(2)} pt`
+        : `plot box ${boxRange} from ${dataBox ? 'data paths' : 'all page paths'}: no axis frame found`,
+    );
+
     const calibration: AxisCalibration = opts.axes
       ? calibrateAxesDeclared(opts.axes.x, opts.axes.y, plotBox)
-      : calibrateAxes(drawing.textItems, classes.frame, classes.data);
+      : calibrateAxes(drawing.chartTextItems, classes.frame, classes.data);
     if (!calibration.ok) {
       refusals.push(calibration.reason ?? 'axis calibration refused');
       // Without declared axes there is no scale: return the refusal and no series.
@@ -1091,9 +1285,9 @@ export async function extractChartData(
       return failed(calibration);
     }
 
-    const clusters = clusterSeries(classes.data, plotBox);
+    const clusters = clusterSeries(dataPaths, plotBox);
     const mapped = mapLegend(drawing.paths, drawing.textItems, clusters, drawing.pageBox);
-    if (mapped.length === 0) refusals.push(`no series survived clustering (${classes.data.length} data paths)`);
+    if (mapped.length === 0) refusals.push(`no series survived clustering (${dataPaths.length} data paths)`);
 
     if (mapped.some((cluster) => (cluster.style.dash?.length ?? 0) > 0)) {
       notes.push('dashed series: dash segments merged by x-continuity');

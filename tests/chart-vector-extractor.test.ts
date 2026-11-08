@@ -3,17 +3,26 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  axisFrameBox,
   axisToValue,
   calibrateAxes,
   calibrateAxesDeclared,
+  chartSpaceMatrix,
   classifyPaths,
   clusterSeries,
   extractChartData,
   mapLegend,
   sampleSeries,
   walkOperatorList,
+  withoutLegendBand,
 } from '../src/tools/document-extractors/chart-vector-extractor.js';
-import type { BBox, DrawingPath, SeriesCluster, TextItemLike } from '../src/tools/document-extractors/chart-types.js';
+import type {
+  BBox,
+  ChartExtraction,
+  DrawingPath,
+  SeriesCluster,
+  TextItemLike,
+} from '../src/tools/document-extractors/chart-types.js';
 
 // Synthetic fixtures only: no PDF file, no network, no pdfjs import.
 // Plot frame occupies page space (100,100)-(500,400), y-up.
@@ -443,11 +452,12 @@ const VECTOR_CONTENT = [
 ].join('\n');
 
 /** @returns A one-page PDF whose content stream is `content`, with no text items. */
-function vectorPdf(content: string): Buffer {
+function vectorPdf(content: string, rotate = 0): Buffer {
+  const rotation = rotate === 0 ? '' : `/Rotate ${rotate}`;
   const objects = [
     '<</Type/Catalog/Pages 2 0 R>>',
     '<</Type/Pages/Kids[3 0 R]/Count 1>>',
-    '<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<<>>/Contents 4 0 R>>',
+    `<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]${rotation}/Resources<<>>/Contents 4 0 R>>`,
     `<</Length ${content.length}>>stream\n${content}\nendstream`,
   ];
   let pdf = '%PDF-1.4\n';
@@ -509,5 +519,180 @@ describe('stage 2b — declared axes', () => {
     const declared = calibrateAxesDeclared({ min: 5, max: 5 }, { min: 0, max: 1 }, PLOT);
     expect(declared.ok).toBe(false);
     expect(declared.reason).toMatch(/declared x axis range is empty/);
+  });
+});
+
+// --- plot box fixtures: a chart whose plot rectangle is known in chart space --
+// The frame is implied by four/six interior gridlines, one spacing inside it, as
+// on the measured sheet. Chart space is x right, y up (stage 0 output).
+const CHART: BBox = { x0: 100, y0: 100, x1: 500, y1: 400 };
+const CHART_GRID_X = [160, 220, 280, 340, 400, 440];
+const CHART_GRID_Y = [160, 220, 280, 340];
+const CHART_SPACING = 60;
+const CHART_PEAK_Y = 376; // 0.92 of the 100..400 y span
+const MEDIA_WIDTH = 612;
+
+/** One colour's polylines, in chart space. */
+interface StrokeSpec {
+  colour: string;
+  polylines: [number, number][][];
+}
+
+/** @returns `#rrggbb` as PDF `RG` operands. */
+function rgbOperands(colour: string): string {
+  const hex = colour.slice(1);
+  return [0, 2, 4].map((index) => (parseInt(hex.slice(index, index + 2), 16) / 255).toFixed(3)).join(' ');
+}
+
+/**
+ * @param strokes Polylines in chart space.
+ * @param rotate Emit for a `/Rotate 90` page: chart x becomes page y, chart y becomes `MEDIA_WIDTH - page x`.
+ * @returns A PDF content stream that draws the strokes.
+ */
+function chartStream(strokes: StrokeSpec[], rotate = false): string {
+  const toPage = (x: number, y: number): [number, number] => (rotate ? [MEDIA_WIDTH - y, x] : [x, y]);
+  const lines: string[] = [];
+  for (const stroke of strokes) {
+    lines.push(`${rgbOperands(stroke.colour)} RG 1 w`);
+    for (const polyline of stroke.polylines) {
+      const ops = polyline.map(([x, y], index) => {
+        const [px, py] = toPage(x, y);
+        return `${px} ${py} ${index === 0 ? 'm' : 'l'}`;
+      });
+      lines.push(`${ops.join(' ')} S`);
+    }
+  }
+  return lines.join('\n');
+}
+
+/** Interior gridlines, a title block far above the plot, a legend row and one 0.92 curve. */
+function plotChartStrokes(): StrokeSpec[] {
+  const gridlines: [number, number][][] = [
+    ...CHART_GRID_Y.map((y): [number, number][] => [[CHART.x0, y], [CHART.x1, y]]),
+    ...CHART_GRID_X.map((x): [number, number][] => [[x, CHART.y0], [x, CHART.y1]]),
+  ];
+  // Title block corner, 120 pt across and 60 pt tall: short on both axes.
+  const titleBlock: [number, number][][] = [[[100, 640], [220, 640], [220, 700]]];
+  // Legend row: 50 pt zigzag strips (no axis-aligned segment, so they classify as data).
+  const legendColours = ['#000000', '#ff0000', '#006500', '#00ffff', '#0000ff'];
+  const legend = legendColours.map((_, index): StrokeSpec => {
+    const x = 120 + index * 21;
+    return {
+      colour: legendColours[index],
+      polylines: [[[x, 560], [x + 6, 570], [x, 580], [x + 6, 590], [x, 600], [x + 6, 610]]],
+    };
+  });
+  // No axis-aligned segment, so the curve classifies as data, not as frame.
+  const curve: StrokeSpec = {
+    colour: '#0000ff',
+    polylines: [[[CHART.x0, 127], [200, 300], [300, CHART_PEAK_Y], [400, 375], [CHART.x1, 374]]],
+  };
+  return [
+    { colour: '#000000', polylines: gridlines },
+    { colour: '#000000', polylines: titleBlock },
+    ...legend,
+    curve,
+  ];
+}
+
+/** @returns `extractChartData` on the plot fixture with a declared 0-400 x and 0-1 y axis. */
+async function extractPlotChart(rotate = false): Promise<ChartExtraction> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'starn-chart-box-'));
+  const file = path.join(dir, 'plot.pdf');
+  fs.writeFileSync(file, vectorPdf(chartStream(plotChartStrokes(), rotate), rotate ? 90 : 0));
+  try {
+    return await extractChartData(file, { axes: { x: { min: 0, max: 400 }, y: { min: 0, max: 1 } } });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** @returns A 2-point path spanning the given bbox. */
+function segment(x0: number, y0: number, x1: number, y1: number): DrawingPath {
+  return {
+    points: [{ x: x0, y: y0 }, { x: x1, y: y1 }],
+    closed: false,
+    style: { stroke: '#000000', dash: [], lineWidth: 0.06 },
+    bbox: { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) },
+  };
+}
+
+describe('plot box — the axis frame, not the page paths', () => {
+  it('measures the frame one gridline spacing outside the gridlines', () => {
+    // Measured sheet: 9 horizontals (y 294-601, 279 pt wide) and 9 verticals (x 153-376, 382 pt tall).
+    const horizontals = [294.35, 332.39, 371.45, 409.49, 447.53, 485.57, 523.61, 562.61, 600.65];
+    const verticals = [152.94, 180.96, 208.98, 236.94, 264.96, 291.96, 319.98, 347.94, 375.96];
+    const paths = [
+      ...horizontals.map((y) => segment(124.98, y, 403.98, y)),
+      ...verticals.map((x) => segment(x, 256.31, x, 638.75)),
+      ...horizontals.map((y) => segment(124.98, y, 403.98, y)), // each gridline is painted twice
+    ];
+
+    const frame = axisFrameBox(paths, { x0: 0, y0: 0, x1: 595, y1: 842 });
+
+    expect(frame).not.toBeNull();
+    expect(frame!.box.x0).toBeCloseTo(124.98, 0);
+    expect(frame!.box.x1).toBeCloseTo(403.98, 0);
+    expect(frame!.box.y0).toBeCloseTo(256.31, 0);
+    expect(frame!.box.y1).toBeCloseTo(638.75, 0);
+    expect(frame!.spacingX).toBeCloseTo(28.02, 1);
+    expect(frame!.spacingY).toBeCloseTo(38.04, 1);
+  });
+
+  it('returns null when the page has no long lines', () => {
+    expect(axisFrameBox([segment(0, 0, 10, 0)], { x0: 0, y0: 0, x1: 612, y1: 792 })).toBeNull();
+  });
+
+  it('keeps the plot rectangle when a title block sits far above the plot', async () => {
+    const result = await extractPlotChart();
+
+    expect(result.calibration.ok).toBe(true);
+    expect(result.calibration.yAxes![0].coordMin).toBe(CHART.y0);
+    expect(result.calibration.yAxes![0].coordMax).toBe(CHART.y1);
+    // Only the curve survives: gridlines and title block are frame, legend strips are excluded.
+    expect(result.series).toHaveLength(1);
+    const ys = result.series[0].samples.map((sample) => sample.y);
+    expect(Math.max(...ys)).toBeCloseTo(0.92, 2);
+    expect(Math.min(...ys)).toBeGreaterThanOrEqual(0.08);
+    expect(result.notes.join(' ')).toMatch(/axis frame/);
+    expect(result.notes.join(' ')).toMatch(/grid spacing/);
+  });
+
+  it('applies the page rotation before measuring the frame', async () => {
+    const result = await extractPlotChart(true);
+
+    expect(result.calibration.yAxes![0].coordMin).toBe(CHART.y0);
+    expect(result.calibration.yAxes![0].coordMax).toBe(CHART.y1);
+    expect(result.series).toHaveLength(1);
+    expect(Math.max(...result.series[0].samples.map((sample) => sample.y))).toBeCloseTo(0.92, 2);
+  });
+});
+
+describe('chart space — page rotation', () => {
+  it('turns a /Rotate 90 page into x right, y up', () => {
+    // Measured on the reference sheet: viewport transform [0,1,1,0,0,0], height 595.
+    const matrix = chartSpaceMatrix([0, 1, 1, 0, 0, 0], 595);
+    const toChart = (x: number, y: number): { x: number; y: number } => ({
+      x: matrix[0] * x + matrix[2] * y + matrix[4],
+      y: matrix[1] * x + matrix[3] * y + matrix[5],
+    });
+
+    expect(toChart(404, 300)).toEqual({ x: 300, y: 191 });
+    expect(toChart(125, 256)).toEqual({ x: 256, y: 470 });
+    // An unrotated page keeps page space as it is.
+    expect(chartSpaceMatrix([1, 0, 0, -1, 0, 792], 792)).toEqual([1, 0, 0, 1, 0, 0]);
+  });
+});
+
+describe('legend band exclusion', () => {
+  it('drops the swatch row and keeps the curves', () => {
+    const { paths } = legendRow();
+    const curve = segment(100, 100, 500, 400);
+    const band: BBox = { x0: 0, y0: SWATCH_Y0 - 5, x1: 612, y1: SWATCH_Y0 + 55 };
+
+    const kept = withoutLegendBand([...paths, curve], band);
+
+    expect(kept).toEqual([curve]);
+    expect(withoutLegendBand([...paths, curve], null)).toHaveLength(6);
   });
 });
