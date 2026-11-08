@@ -21,6 +21,8 @@ import {
   ResearchStageDeps
 } from './research-preflight.js';
 import { maybeCompact } from './compaction.js';
+import { parseInformationPlan } from './information-plan.js';
+import type { AutopilotEvent } from './autopilot.js';
 import {
   runResearchDelegationWithTimeout,
   ResearchDelegationDeps,
@@ -123,6 +125,11 @@ export interface TurnOptions {
    * a fake; production leaves it unset so the handler lazily builds one).
    */
   searchClient?: SearchClient;
+  /**
+   * Structured event sink (the autopilot stream). The runner publishes the
+   * information-plan event here; CLI/headless callers leave it unset.
+   */
+  onEvent?: (ev: AutopilotEvent) => void;
 }
 
 export interface TurnResult {
@@ -511,8 +518,12 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
         ? { client: options.transcriberClient!, model: options.transcriberModel ?? '' }
         : undefined
     };
+    // request_research delegations made during this turn (spec §8 check).
+    let researchCallCount = 0;
     // Draft/resume the agent tool loop with a given user message. The drafting
     // call and each critic-triggered revision differ only in the user message.
+    // `request_research` calls are counted from the loop's own tool-call
+    // notification for the post-turn information-plan check.
     const runAgentTurn = (userMessage: string) => runAgentToolLoop({
       client,
       model,
@@ -528,7 +539,10 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
       logger: options.logger,
       docId: specialist.id,
       priorMessages: sessionMessages,
-      onToolCall,
+      onToolCall: (tool: string, args: any) => {
+        if (tool === 'request_research') researchCallCount++;
+        onToolCall?.(tool, args);
+      },
       signal
     });
     // Snapshot the target doc's mtime before the agent loop runs, so we can detect
@@ -557,6 +571,23 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
     // User pressed ESC — abort the turn, discard partial work.
     if (agentResult.aborted) {
       return buildAbortedTurnResult(specialist.id, specialist.name, autoRevisionsRun, sessionMessages);
+    }
+
+    // Information plan (spec §7–§8): publish what the specialist knows and does
+    // not know. Research without a plan is a visible contract violation, never
+    // a failed turn — blocking a finished document would be worse.
+    const informationPlan = parseInformationPlan(agentResult.finalResponse);
+    if (informationPlan) {
+      options.onEvent?.({
+        kind: 'plan',
+        specialist: specialist.id,
+        docId: specialist.id.toUpperCase(),
+        order: informationPlan.order,
+        claims: informationPlan.claims
+      });
+    } else if (researchCallCount > 0) {
+      options.logger?.warn('Plan missing: research was requested without an information plan.');
+      onStatusUpdate?.('Plan missing: research was requested without an information plan.');
     }
 
     // If the LLM wrote the file to disk but responded with commentary, recover the on-disk document for the critic;

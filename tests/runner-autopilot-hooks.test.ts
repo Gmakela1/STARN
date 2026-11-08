@@ -724,4 +724,126 @@ describe('Core Runner autopilot hooks', () => {
     const infoMsgs = logger.info.mock.calls.map((c: any[]) => String(c[0]));
     expect(infoMsgs.some((m: string) => m.includes('Critic verdict for bom') && m.includes('pass'))).toBe(true);
   });
+
+  // ── Information plan (spec §7–§8) ───────────────────────
+
+  it('emits exactly one plan event with the claims when the drafting reply carries an information plan', async () => {
+    approveRequirements(stateMgr, tempDir);
+    const docsDir = path.join(tempDir, 'docs');
+    fs.mkdirSync(docsDir, { recursive: true });
+    const planReply = [
+      'INFORMATION PLAN (MANDATORY, part of the running plan):',
+      '1. Master ledger',
+      '- Motor continuous rating — KNOWN: docs/REQUIREMENTS.md §3',
+      '- Enclosure ingress protection — UNKNOWN: what IP rating is required? → likely in reference/ME1115 Rev A.pdf'
+    ].join('\n');
+    vi.spyOn(mockClient, 'chatCompletion').mockImplementation(async (o: any) => {
+      const content = typeof o.messages[0].content === 'string' ? o.messages[0].content : '';
+      if (content.includes('Harsh Critic')) {
+        return {
+          content: JSON.stringify({ passed: true, score: 9.0, summary: 'ok', strengths: [], weaknesses: [], actionableGuidance: '' }),
+          raw: {}
+        };
+      }
+      if (content.includes('Bill of Materials (BOM) Specialist') || content.includes('EXISTING BASELINE')) {
+        fs.writeFileSync(path.join(docsDir, 'BOM.md'), bomDocWithOpenQuestions([]), 'utf-8');
+        return { content: planReply, raw: {} };
+      }
+      return { content: '', raw: {} };
+    });
+    const events: any[] = [];
+
+    const result = await CoreRunner.executeTurn({
+      userPrompt: 'Draft the BOM',
+      projectPath: tempDir,
+      stateManager: stateMgr,
+      client: mockClient,
+      model: 'test-model',
+      toolRegistry,
+      specialistRegistry,
+      forceSpecialistId: 'bom',
+      onEvent: (ev) => events.push(ev),
+      sessionMessages: []
+    });
+
+    expect(result.error).toBeFalsy();
+    const planEvents = events.filter(e => e.kind === 'plan');
+    expect(planEvents).toHaveLength(1);
+    expect(planEvents[0]).toMatchObject({ kind: 'plan', specialist: 'bom', docId: 'BOM', order: ['Master ledger'] });
+    expect(planEvents[0].claims).toHaveLength(2);
+    expect(planEvents[0].claims[0]).toMatchObject({ claim: 'Motor continuous rating', status: 'known', source: 'docs/REQUIREMENTS.md §3' });
+    expect(planEvents[0].claims[1]).toMatchObject({
+      claim: 'Enclosure ingress protection',
+      status: 'unknown',
+      question: 'what IP rating is required?',
+      likelyAt: 'reference/ME1115 Rev A.pdf'
+    });
+  });
+
+  it('warns "Plan missing" (status, no plan event) when a turn requests research without a plan', async () => {
+    approveRequirements(stateMgr, tempDir);
+    const docsDir = path.join(tempDir, 'docs');
+    fs.mkdirSync(docsDir, { recursive: true });
+    // Stub handler: the runner-owned research capability never runs; the turn
+    // only needs the tool call to happen (that is what the §8 check counts).
+    toolRegistry.register({
+      name: 'request_research',
+      definition: {
+        type: 'function',
+        function: { name: 'request_research', description: 'stub', parameters: { type: 'object', properties: {} } }
+      },
+      execute: async () => ({ success: true, result: 'stub findings' })
+    });
+    let draftingCalls = 0;
+    vi.spyOn(mockClient, 'chatCompletion').mockImplementation(async (o: any) => {
+      const content = typeof o.messages[0].content === 'string' ? o.messages[0].content : '';
+      if (content.includes('Harsh Critic')) {
+        return {
+          content: JSON.stringify({ passed: true, score: 9.0, summary: 'ok', strengths: [], weaknesses: [], actionableGuidance: '' }),
+          raw: {}
+        };
+      }
+      if (content.includes('Bill of Materials (BOM) Specialist') || content.includes('EXISTING BASELINE')) {
+        draftingCalls++;
+        if (draftingCalls === 1) {
+          return {
+            content: '',
+            toolCalls: [{
+              id: 'r1',
+              type: 'function',
+              function: { name: 'request_research', arguments: JSON.stringify({ question: 'what IP rating is required?' }) }
+            }],
+            raw: {}
+          };
+        }
+        fs.writeFileSync(path.join(docsDir, 'BOM.md'), bomDocWithOpenQuestions([]), 'utf-8');
+        return { content: 'I drafted the BOM.', raw: {} };
+      }
+      return { content: '', raw: {} };
+    });
+    const statusUpdates: string[] = [];
+    const events: any[] = [];
+    const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() } as any;
+
+    await CoreRunner.executeTurn({
+      userPrompt: 'Draft the BOM',
+      projectPath: tempDir,
+      stateManager: stateMgr,
+      client: mockClient,
+      model: 'test-model',
+      toolRegistry,
+      specialistRegistry,
+      forceSpecialistId: 'bom',
+      onStatusUpdate: (msg: string) => statusUpdates.push(msg),
+      onEvent: (ev) => events.push(ev),
+      logger,
+      sessionMessages: []
+    });
+
+    expect(draftingCalls).toBe(2);
+    expect(statusUpdates).toContain('Plan missing: research was requested without an information plan.');
+    expect(events.filter(e => e.kind === 'plan')).toHaveLength(0);
+    const warnMsgs = logger.warn.mock.calls.map((c: any[]) => String(c[0]));
+    expect(warnMsgs).toContain('Plan missing: research was requested without an information plan.');
+  });
 });

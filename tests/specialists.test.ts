@@ -208,4 +208,26 @@ describe('Specialist Packages & RTM', () => {
       expect(pkg!.systemPrompt).toContain('running plan');
     }
   });
+
+  it('appends the information-plan rule to all 15 packages (plan variant for drafting, needed-only for conops/general/change-impact)', () => {
+    const withWorkflow = ['architecture', 'icd', 'capabilities', 'requirements', 'bom', 'rtm', 'milestones', 'risk-register', 'build-sequence', 'work-instructions', 'testplans', 'sow'];
+    const informationOnly = ['conops', 'general', 'change-impact'];
+    expect(registry.listSpecialists()).toHaveLength(withWorkflow.length + informationOnly.length);
+
+    for (const id of withWorkflow) {
+      const prompt = registry.get(id)!.systemPrompt;
+      expect(prompt).toContain('INFORMATION PLAN (MANDATORY, part of the running plan):');
+      expect(prompt).toContain('request_research once per UNKNOWN');
+      // The existing workflow step is appended to, never rewritten.
+      expect(prompt).toContain('DISCOVERY, PLANNING & EXECUTION WORKFLOW');
+    }
+
+    for (const id of informationOnly) {
+      const prompt = registry.get(id)!.systemPrompt;
+      expect(prompt).toContain('INFORMATION NEEDED (MANDATORY):');
+      expect(prompt).toContain('request_research once per UNKNOWN');
+      expect(prompt).not.toContain('DISCOVERY, PLANNING & EXECUTION WORKFLOW');
+      expect(prompt).not.toContain('part of the running plan');
+    }
+  });
 });

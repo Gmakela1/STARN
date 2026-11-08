@@ -28,7 +28,13 @@ export type AutopilotEvent =
   | { kind: 'answer_queued'; itemId: string; title: string }
   | { kind: 'answer_applying'; itemId: string }
   | { kind: 'answer_applied'; itemId: string; item: PortalItem; affectedDocs: string[] }
-  | { kind: 'answer_failed'; itemId: string; error: string };
+  | { kind: 'answer_failed'; itemId: string; error: string }
+  // Information plan (spec §7): the specialist stated, before drafting, which
+  // claims it knows and which it must research. Emitted once per drafting turn
+  // that carried a plan; it never merges into autopilot doc status.
+  | { kind: 'plan'; specialist: string; docId?: string; itemId?: string;
+      order: string[]; claims: { claim: string; status: 'known' | 'unknown';
+      source?: string; question?: string; likelyAt?: string }[] };
 
 export interface AutopilotDeps {
   stateManager: ProjectStateManager;
@@ -63,6 +69,8 @@ export interface AutopilotDeps {
     onStatusUpdate?: (status: string) => void;
     /** Live tool call notifications from the runner. */
     onToolCall?: (tool: string, args: unknown) => void;
+    /** Structured runner events (information plan) forwarded to the stream. */
+    onEvent?: (ev: AutopilotEvent) => void;
   }) => Promise<TurnResult>;
   /**
    * Optional settlement hook fired exactly once whenever the chain ends, on
@@ -341,7 +349,8 @@ export class AutopilotDriver {
           signal,
           onQuestions: (items) => this.recordTurnQuestions(items),
           onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
-          onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args })
+          onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args }),
+          onEvent: (ev) => this.emit(ev)
         });
 
         // Check abort after turn (in case signal fired mid-turn)
@@ -383,7 +392,8 @@ export class AutopilotDriver {
             signal,
             onQuestions: (items) => this.recordTurnQuestions(items),
             onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
-            onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args })
+            onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args }),
+            onEvent: (ev) => this.emit(ev)
           });
           // Use the retry result instead of the original; if it still errors,
           // fall through to the normal error/park handling below.
@@ -628,7 +638,8 @@ export class AutopilotDriver {
         signal,
         onQuestions: (items) => this.recordTurnQuestions(items),
         onStatusUpdate: (msg) => this.emit({ kind: 'status', message: msg }),
-        onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args })
+        onToolCall: (tool, args) => this.emit({ kind: 'tool_call', tool, args }),
+        onEvent: (ev) => this.emit(ev)
       });
       // The pending block is the only record of the user's answers. Strip a
       // block the specialist left behind ONLY when the turn succeeded (no

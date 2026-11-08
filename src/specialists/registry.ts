@@ -38,6 +38,33 @@ export class SpecialistRegistry {
     this.applyOpenQuestionsRules();
     this.applyReferenceInspectionRules();
     this.applyDocumentOutputRules();
+    this.applyInformationPlanRule();
+  }
+
+  /**
+   * Appends the information-plan rule: before drafting, the specialist must
+   * state which claims it knows (and from where) and which it does not, so the
+   * unknown ones can be delegated with request_research instead of invented.
+   *
+   * Drafting packages already carry the `DISCOVERY, PLANNING & EXECUTION
+   * WORKFLOW` step; the rule extends that running plan. Packages without the
+   * workflow (conops, general, change-impact) get the information-only variant.
+   * Appends only — the existing workflow text is asserted by tests with
+   * `toContain`, so it is never rewritten.
+   */
+  private applyInformationPlanRule(): void {
+    const BODY = `Before the first write, extend your plan with the information it depends on:
+  - <claim> — KNOWN: <doc> §<section>
+  - <claim> — UNKNOWN: <the exact question> → likely in <file path | vendor page | standard>
+Every UNKNOWN line must be resolved before you draft: call request_research once per UNKNOWN, in the order written, up to three calls. Batch related gaps into ONE question rather than spending a call each. A claim you cannot verify and did not research must be written as provisional, not stated as fact.`;
+    const PLAN_HEADING = 'INFORMATION PLAN (MANDATORY, part of the running plan):';
+    const NEEDED_HEADING = 'INFORMATION NEEDED (MANDATORY):';
+    for (const pkg of this.specialists.values()) {
+      const hasWorkflow = pkg.systemPrompt.includes('DISCOVERY, PLANNING & EXECUTION WORKFLOW');
+      const heading = hasWorkflow ? PLAN_HEADING : NEEDED_HEADING;
+      if (pkg.systemPrompt.includes(heading)) continue;
+      pkg.systemPrompt = `${pkg.systemPrompt}\n\n${heading}\n${BODY}`;
+    }
   }
 
   /**
