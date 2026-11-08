@@ -1,6 +1,10 @@
-// pdf-extractor page-cap tests: the TEXT_MAX_PAGES cut is announced and the pdfjs document is always destroyed.
+// pdf-extractor page/text-cap tests: both cuts are announced and the pdfjs document is always destroyed.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { extractTextFromPdfBuffer } from '../src/tools/handlers/pdf-extractor.js';
+import {
+  MAX_TEXT_CHARS,
+  extractPdfTextWithMeta,
+  extractTextFromPdfBuffer,
+} from '../src/tools/handlers/pdf-extractor.js';
 
 /** pdfjs is mocked: these tests assert the extractor's own contract, not pdfjs parsing. */
 vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({ getDocument: vi.fn() }));
@@ -19,7 +23,16 @@ function fakeDoc(numPages: number, getPage?: (index: number) => Promise<any>) {
   };
 }
 
-function serveDoc(doc: ReturnType<typeof fakeDoc>): void {
+/** Fake pdfjs document whose every page carries the same `pageText` (for the char budget). */
+function fakeDenseDoc(numPages: number, pageText: string) {
+  return {
+    numPages,
+    getPage: vi.fn(async () => ({ getTextContent: async () => ({ items: [{ str: pageText }] }) })),
+    destroy: vi.fn(async () => {}),
+  };
+}
+
+function serveDoc(doc: { destroy: unknown }): void {
   getDocumentMock.mockReturnValue({ promise: Promise.resolve(doc) } as any);
 }
 
@@ -73,5 +86,45 @@ describe('extractTextFromPdfBuffer page cap', () => {
 
     await expect(extractTextFromPdfBuffer(bytes)).rejects.toThrow('page decode failed');
     expect(doc.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  // Round-3 blocking fix: the character cap must bound the WORK, not just the output.
+  it('stops accumulating at MAX_TEXT_CHARS and never parses the remaining pages', async () => {
+    const doc = fakeDenseDoc(120, 'a'.repeat(30000));
+    serveDoc(doc);
+
+    const result = await extractPdfTextWithMeta(bytes);
+
+    expect(result.textTruncated).toBe(true);
+    expect(result.pagesRead).toBe(2);
+    expect(result.numPages).toBe(120);
+    expect(doc.getPage).toHaveBeenCalledTimes(2);
+    // Two 30,000-char pages plus one page break: nothing beyond the budget was accumulated.
+    expect(result.text.length).toBeLessThan(MAX_TEXT_CHARS + 30000);
+    expect(doc.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports textTruncated=false when the document fits the budget', async () => {
+    const doc = fakeDenseDoc(3, 'Torque: 12 Nm');
+    serveDoc(doc);
+
+    const result = await extractPdfTextWithMeta(bytes);
+
+    expect(result.textTruncated).toBe(false);
+    expect(result.pagesRead).toBe(3);
+    expect(result.text).toBe(
+      ['Torque: 12 Nm', '--- Page Break ---', 'Torque: 12 Nm', '--- Page Break ---', 'Torque: 12 Nm'].join('\n\n')
+    );
+    expect(doc.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  // fs_read/project-files contract: the tail notice still names the real page coverage.
+  it('keeps the tail page notice in the wrapper when the text budget stopped early', async () => {
+    const doc = fakeDenseDoc(120, 'a'.repeat(30000));
+    serveDoc(doc);
+
+    const text = await extractTextFromPdfBuffer(bytes);
+
+    expect(text).toContain(`\n\n[Truncated: first 2 of 120 pages — use read_chart_data or split the PDF]`);
   });
 });

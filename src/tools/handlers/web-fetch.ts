@@ -2,7 +2,7 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import { ToolHandler, ToolExecutionContext, ToolExecutionResponse } from '../types.js';
-import { NO_PDF_TEXT_MARKER, extractTextFromPdfBuffer } from './pdf-extractor.js';
+import { extractPdfTextWithMeta, type PdfTextMeta } from './pdf-extractor.js';
 
 /**
  * Maximum raw HTML body bytes considered for cleaning (raised from 50 KB). HTML is cut
@@ -11,11 +11,12 @@ import { NO_PDF_TEXT_MARKER, extractTextFromPdfBuffer } from './pdf-extractor.js
 const MAX_RAW_BYTES = 2 * 1024 * 1024;
 /**
  * Maximum raw PDF body bytes accepted for text extraction. Deliberately asymmetric with
- * {@link MAX_RAW_BYTES}: HTML text beyond 2 MB is worthless, but a real manufacturer
- * datasheet with plotted curves is 3-10 MB, and the 40-page extraction cap already
- * bounds the parsing work.
+ * {@link MAX_RAW_BYTES}: HTML text beyond 2 MB is worthless, while a real manufacturer
+ * datasheet with plotted curves is 3-10 MB. Budget reasoning: pdfjs clones the buffer it is
+ * handed, so peak memory is several times the file size — 15 MB keeps a datasheet well
+ * inside the range while capping peak RSS growth from a hostile body.
  */
-const MAX_PDF_BYTES = 25 * 1024 * 1024;
+const MAX_PDF_BYTES = 15 * 1024 * 1024;
 /** Maximum characters of cleaned text returned to the model. */
 const MAX_OUTPUT_CHARS = 20000;
 const TRUNCATION_NOTICE = '\n\n[Content truncated at 20,000 characters]';
@@ -71,46 +72,125 @@ export function decodeBody(bytes: Uint8Array, contentType: string | null): strin
 }
 
 /**
+ * Honest oversize refusal. A too-large body is NOT a parse failure, so it never claims the
+ * text layer was unreadable.
+ *
+ * @param byteLength Body size in bytes (declared or accumulated).
+ * @returns `success:false` response naming the size, the limit, and the fallback route.
+ */
+function pdfOversizeResponse(byteLength: number): ToolExecutionResponse {
+  const mb = (byteLength / (1024 * 1024)).toFixed(1);
+  const limitMb = MAX_PDF_BYTES / (1024 * 1024);
+  return {
+    success: false,
+    error: `This PDF is ${mb} MB, over the ${limitMb} MB limit. Download it into reference/ and read it with fs_read.`
+  };
+}
+
+/** Result of {@link readBodyBounded}: the usable bytes, or the oversize refusal facts. */
+type BodyRead = { kind: 'bytes'; bytes: Uint8Array } | { kind: 'oversize'; byteLength: number };
+
+/** True when a `content-type` header declares a PDF (the pre-read limit selector). */
+function declaresPdf(contentType: string | null): boolean {
+  return (contentType ?? '').toLowerCase().includes('application/pdf');
+}
+
+/**
+ * Reads a response body while enforcing the applicable cap, so neither cap only bounds
+ * parsing after the whole body landed in RAM.
+ *
+ * PDF bodies over {@link MAX_PDF_BYTES} are refused (by `content-length` before any byte is
+ * read, or mid-stream with `reader.cancel()`). Non-PDF bodies over {@link MAX_RAW_BYTES} are
+ * truncated to that many bytes and the read is cancelled — the historical HTML behaviour,
+ * now with bounded memory.
+ *
+ * @param res Fetch response (its `body` stream is consumed when present).
+ * @param contentType Raw `content-type` header value (may be null).
+ * @returns `{ kind: 'bytes' }` with ≤ the applicable limit, or `{ kind: 'oversize' }`.
+ * @throws Whatever the stream throws (network/abort errors reach the caller unchanged).
+ */
+async function readBodyBounded(res: Response, contentType: string | null): Promise<BodyRead> {
+  const declaredHeader = res.headers.get('content-length');
+  const declared = declaredHeader === null ? NaN : Number(declaredHeader);
+  if (declaresPdf(contentType) && Number.isFinite(declared) && declared > MAX_PDF_BYTES) {
+    return { kind: 'oversize', byteLength: declared };
+  }
+
+  const body = res.body;
+  if (!body || typeof body.getReader !== 'function') {
+    // No stream body (older runtimes, test doubles): same bytes, one buffer, then cap.
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (looksLikePdf(contentType, bytes)) {
+      return bytes.byteLength > MAX_PDF_BYTES
+        ? { kind: 'oversize', byteLength: bytes.byteLength }
+        : { kind: 'bytes', bytes };
+    }
+    return { kind: 'bytes', bytes: bytes.byteLength > MAX_RAW_BYTES ? bytes.subarray(0, MAX_RAW_BYTES) : bytes };
+  }
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let isPdf = declaresPdf(contentType);
+  let limit = isPdf ? MAX_PDF_BYTES : MAX_RAW_BYTES;
+  let total = 0;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return { kind: 'bytes', bytes: Buffer.concat(chunks, total) };
+    if (!value || value.byteLength === 0) continue;
+
+    // A PDF served without a pdf content-type only shows its magic in the first bytes.
+    if (chunks.length === 0 && !isPdf) {
+      isPdf = looksLikePdf(contentType, value);
+      limit = isPdf ? MAX_PDF_BYTES : MAX_RAW_BYTES;
+    }
+
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      if (isPdf) return { kind: 'oversize', byteLength: total };
+      return { kind: 'bytes', bytes: Buffer.concat(chunks).subarray(0, MAX_RAW_BYTES) };
+    }
+    chunks.push(value);
+  }
+}
+
+/**
  * Builds the tool response for a PDF URL by extracting its text layer.
  *
- * @param bytes Raw PDF bytes.
+ * @param bytes Raw PDF bytes (already within {@link MAX_PDF_BYTES}).
  * @param url Source URL echoed in the result header.
- * @returns `success:true` with capped extracted text; `success:false` with an oversize
- * message when the body exceeds {@link MAX_PDF_BYTES}; `success:false` with
- * `PDF_REFUSAL` when the text layer is genuinely unreadable.
+ * @returns `success:true` with capped extracted text whose header names the page coverage;
+ * `success:false` with an oversize message or `PDF_REFUSAL` when the text layer is unreadable.
  * @throws Never: extraction errors are converted to the refusal response.
  */
 async function buildPdfFetchResult(bytes: Uint8Array, url: string): Promise<ToolExecutionResponse> {
-  // Remote PDFs are parsed in-process: refuse absurd bodies before pdfjs sees
-  // them instead of buffering/parsing an unbounded document. This is NOT a parse
-  // failure, so it gets its own honest message instead of PDF_REFUSAL.
-  if (bytes.byteLength > MAX_PDF_BYTES) {
-    const mb = (bytes.byteLength / (1024 * 1024)).toFixed(1);
-    const limitMb = MAX_PDF_BYTES / (1024 * 1024);
-    return {
-      success: false,
-      error: `This PDF is ${mb} MB, over the ${limitMb} MB limit. Download it into reference/ and read it with fs_read.`
-    };
-  }
+  // Defence in depth: the read path already refuses oversize bodies.
+  if (bytes.byteLength > MAX_PDF_BYTES) return pdfOversizeResponse(bytes.byteLength);
+
   // pdfjs refuses a Node Buffer ("Please provide binary data as 'Uint8Array', rather than
   // 'Buffer'."), so hand it a Uint8Array view. Required, not an optimisation: same memory,
   // no copy.
   const data = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  let text: string;
+  let meta: PdfTextMeta;
   try {
-    text = await extractTextFromPdfBuffer(data);
+    meta = await extractPdfTextWithMeta(data);
   } catch {
     return { success: false, error: PDF_REFUSAL };
   }
 
-  if (!text || text === NO_PDF_TEXT_MARKER) {
+  if (!meta.text) {
     return { success: false, error: PDF_REFUSAL };
   }
 
-  const capped = text.length > MAX_OUTPUT_CHARS
-    ? text.slice(0, MAX_OUTPUT_CHARS) + TRUNCATION_NOTICE
-    : text;
-  return { success: true, result: `${PDF_HEADER} ${url}\n\n${capped}` };
+  const capped = meta.text.length > MAX_OUTPUT_CHARS
+    ? meta.text.slice(0, MAX_OUTPUT_CHARS) + TRUNCATION_NOTICE
+    : meta.text;
+  // Page coverage rides in the HEADER: a tail notice would be sliced off by the char cap.
+  const coverage = meta.pagesRead < meta.numPages
+    ? ` — pages 1-${meta.pagesRead} of ${meta.numPages}`
+    : '';
+  return { success: true, result: `${PDF_HEADER} ${url}${coverage}\n\n${capped}` };
 }
 
 /** Product fields recovered from JSON-LD / Open Graph metadata. All fields optional. */
@@ -449,16 +529,17 @@ export const webFetchHandler: ToolHandler = {
       }
 
       const bodyContentType = res.headers.get('content-type');
-      // Read the body once: the same bytes feed the PDF probe, PDF extraction, and HTML decoding.
-      const bytes = Buffer.from(await res.arrayBuffer());
+      // Read the body once, bounded: the same bytes feed the PDF probe, PDF extraction, and
+      // HTML decoding.
+      const read = await readBodyBounded(res, bodyContentType);
+      if (read.kind === 'oversize') return pdfOversizeResponse(read.byteLength);
+      const bytes = read.bytes;
       if (looksLikePdf(bodyContentType, bytes)) {
         return await buildPdfFetchResult(bytes, parsed.toString());
       }
 
-      // Cap the buffered HTML body by BYTES before decoding, then clean the whole
-      // capped document.
-      const cappedBytes = bytes.byteLength > MAX_RAW_BYTES ? bytes.subarray(0, MAX_RAW_BYTES) : bytes;
-      const bodyText = decodeBody(cappedBytes, bodyContentType);
+      // Non-PDF bytes arrive already capped at MAX_RAW_BYTES by readBodyBounded.
+      const bodyText = decodeBody(bytes, bodyContentType);
       const finalResult = buildWebFetchResult(bodyText);
 
       return {

@@ -32,41 +32,71 @@ const PROBE_MAX_PATH_OPS = 2000;
 /** Text-extraction page budget: web_fetch feeds arbitrary remote PDFs in here. */
 const TEXT_MAX_PAGES = 40;
 
+/**
+ * Character budget on accumulated text. This bounds the WORK, not just the output: a dense
+ * PDF would otherwise build tens of MB of UTF-16 before any caller-side slice.
+ */
+export const MAX_TEXT_CHARS = 60000;
+
+/** Page separator, kept identical to the historical join so callers see unchanged text. */
+const PAGE_BREAK = '\n\n--- Page Break ---\n\n';
+
 /** Returned when a PDF carries no text layer (scanned or image-only). Callers detect this exact string. */
 export const NO_PDF_TEXT_MARKER =
   '(No extractable text found in this PDF. It may be a scanned document or image-based PDF.)';
 
+/** Text-layer extraction result with the coverage facts the caller must report. */
+export interface PdfTextMeta {
+  /** Accumulated page text; `''` when no page carried text. Capped at {@link MAX_TEXT_CHARS}. */
+  text: string;
+  /** Pages the document declares. */
+  numPages: number;
+  /** Pages actually parsed (≤ {@link TEXT_MAX_PAGES}); 0 when the text cap stopped page 1. */
+  pagesRead: number;
+  /** `true` when {@link MAX_TEXT_CHARS} stopped accumulation early. */
+  textTruncated: boolean;
+}
+
 /**
- * Extracts the text layer of an in-memory PDF (first TEXT_MAX_PAGES pages).
+ * Extracts the text layer of an in-memory PDF (first {@link TEXT_MAX_PAGES} pages, at most
+ * {@link MAX_TEXT_CHARS} characters).
  *
- * @param data Raw PDF bytes.
- * @returns Page text joined by `--- Page Break ---`, followed by a truncation notice when
- *   `doc.numPages` exceeds {@link TEXT_MAX_PAGES}; `NO_PDF_TEXT_MARKER` when no page has text.
+ * @param data Raw PDF bytes (a Uint8Array — pdfjs rejects a Node Buffer).
+ * @returns Text plus the page-coverage facts; page text is joined by `--- Page Break ---`.
  * @throws Whatever pdfjs throws for a corrupt/encrypted document.
  */
-export async function extractTextFromPdfBuffer(data: Uint8Array): Promise<string> {
+export async function extractPdfTextWithMeta(data: Uint8Array): Promise<PdfTextMeta> {
   const lib = await getPdfJsLib();
   const doc = await lib.getDocument({ data }).promise;
   try {
     const pages: string[] = [];
     const pageCount = Math.min(doc.numPages, TEXT_MAX_PAGES);
+    let length = 0;
+    let pagesRead = 0;
+    let textTruncated = false;
 
     for (let i = 1; i <= pageCount; i++) {
+      // Stop before parsing page i once the budget is spent: the cap must bound the work.
+      if (length >= MAX_TEXT_CHARS) {
+        textTruncated = true;
+        break;
+      }
       const page = await doc.getPage(i);
       const content = await page.getTextContent();
       const text = content.items.map((item: any) => item.str).join(' ');
-      if (text.trim()) {
-        pages.push(text.trim());
-      }
+      pagesRead = i;
+      const trimmed = text.trim();
+      if (!trimmed) continue;
+      pages.push(trimmed);
+      length += trimmed.length + PAGE_BREAK.length;
     }
 
-    const result = pages.join('\n\n--- Page Break ---\n\n');
-    if (!result) return NO_PDF_TEXT_MARKER;
-    // A silent cut would read as a complete document; announce the missing pages.
-    if (doc.numPages > TEXT_MAX_PAGES) {
-      return `${result}\n\n[Truncated: first ${TEXT_MAX_PAGES} of ${doc.numPages} pages — use read_chart_data or split the PDF]`;
-    }
-    return result;
+    return {
+      text: pages.join(PAGE_BREAK),
+      numPages: doc.numPages,
+      pagesRead,
+      textTruncated,
+    };
   } finally {
     // Release the worker-held document (web_fetch parses remote bytes).
     try {
@@ -75,6 +105,26 @@ export async function extractTextFromPdfBuffer(data: Uint8Array): Promise<string
       // Best effort: a failed teardown must not mask the extraction result.
     }
   }
+}
+
+/**
+ * Extracts the text layer of an in-memory PDF and announces any missing pages at the tail.
+ * Thin wrapper over {@link extractPdfTextWithMeta}; `fs_read` and project-files rely on this
+ * exact string contract.
+ *
+ * @param data Raw PDF bytes.
+ * @returns Page text joined by `--- Page Break ---`, followed by a truncation notice when
+ *   pages were not read; `NO_PDF_TEXT_MARKER` when no page has text.
+ * @throws Whatever pdfjs throws for a corrupt/encrypted document.
+ */
+export async function extractTextFromPdfBuffer(data: Uint8Array): Promise<string> {
+  const { text, numPages, pagesRead } = await extractPdfTextWithMeta(data);
+  if (!text) return NO_PDF_TEXT_MARKER;
+  // A silent cut would read as a complete document; announce the missing pages.
+  if (numPages > pagesRead) {
+    return `${text}\n\n[Truncated: first ${pagesRead} of ${numPages} pages — use read_chart_data or split the PDF]`;
+  }
+  return text;
 }
 
 /**
