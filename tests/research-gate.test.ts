@@ -17,6 +17,7 @@ import {
   enrichItem,
   ensureItemTopic,
   assessResearch,
+  verifySources,
   confidenceFloorForEvidence,
   applyAutoAnswer,
   undoAutoApplied,
@@ -532,6 +533,149 @@ describe('research gate wiring', () => {
       expect(stored.status).toBe('open');
       expect(stored.meta?.proposedAnswer!.confidence).toBeLessThanOrEqual(0.85);
       expect(stored.meta?.autoApplied).toBeUndefined();
+    });
+  });
+
+  describe('multi-source verification (blocker: one dead link capped a multi-source answer)', () => {
+    const THREE_SOURCES = [
+      { title: 'Vendor datasheet', url: 'https://vendor.example/ds.pdf' },
+      { title: 'Vendor application note', url: 'https://vendor.example/an.pdf' },
+      { title: 'Distributor page', url: 'https://dist.example/part' }
+    ];
+    const RESEARCH = { answer: 'The contactor is rated 48V.', sources: THREE_SOURCES, reasoning: 'Datasheet.' };
+
+    it('first fetch fails, second succeeds → ok true, one excerpt, confidence NOT capped', async () => {
+      gateDeps.verifySource = async (url: string) => {
+        if (url.endsWith('ds.pdf') || url.startsWith('https://dist.')) throw new Error('404');
+        return { ok: true, excerpt: 'Coil rated 48V DC continuous duty.' };
+      };
+      const verification = await verifySources(gateDeps, RESEARCH);
+      expect(verification.ok).toBe(true);
+      expect(verification.excerpts).toEqual([
+        { url: 'https://vendor.example/an.pdf', excerpt: 'Coil rated 48V DC continuous duty.' }
+      ]);
+
+      // End to end: a 0.9 critic verdict on the surviving excerpt is not capped.
+      researchClient.chatCompletion = vi.fn(async () =>
+        chat(JSON.stringify({
+          answer: 'The contactor is rated 48V.',
+          sources: THREE_SOURCES,
+          reasoning: 'Datasheet.'
+        }))
+      );
+      criticClient.chatCompletion = vi.fn(async () =>
+        chat(JSON.stringify({ confidence: 0.9, corroborated: true, verdict: 'propose', rationale: 'Datasheet states it.' }))
+      );
+      await runResearchGate(gateDeps, item);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
+      expect(stored.meta?.proposedAnswer!.confidence).toBe(0.9);
+    });
+
+    it('all fetches fail → ok false, confidence capped at 0.85', async () => {
+      gateDeps.verifySource = async () => {
+        throw new Error('connect ECONNREFUSED');
+      };
+      const verification = await verifySources(gateDeps, RESEARCH);
+      expect(verification.ok).toBe(false);
+      expect(verification.excerpts).toEqual([]);
+
+      researchClient.chatCompletion = vi.fn(async () =>
+        chat(JSON.stringify({
+          answer: 'The contactor is rated 48V.',
+          sources: THREE_SOURCES,
+          reasoning: 'Datasheet.'
+        }))
+      );
+      criticClient.chatCompletion = vi.fn(async () =>
+        chat(JSON.stringify({ confidence: 0.99, corroborated: true, verdict: 'auto', rationale: 'x' }))
+      );
+      await runResearchGate(gateDeps, item);
+      const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
+      expect(stored.status).toBe('open');
+      expect(stored.meta?.proposedAnswer!.confidence).toBe(0.85);
+      expect(stored.meta?.autoApplied).toBeUndefined();
+    });
+
+    it('more than 3 cited URLs → only 3 fetched', async () => {
+      const fetched: string[] = [];
+      gateDeps.verifySource = async (url: string) => {
+        fetched.push(url);
+        return { ok: true, excerpt: `excerpt for ${url}` };
+      };
+      await verifySources(gateDeps, {
+        answer: 'a',
+        reasoning: '',
+        sources: [1, 2, 3, 4, 5].map(n => ({ title: `s${n}`, url: `https://src.example/${n}` }))
+      });
+      expect(fetched).toEqual(['https://src.example/1', 'https://src.example/2', 'https://src.example/3']);
+    });
+
+    it('duplicate URLs are fetched once', async () => {
+      const fetched: string[] = [];
+      gateDeps.verifySource = async (url: string) => {
+        fetched.push(url);
+        return { ok: true, excerpt: `excerpt for ${url}` };
+      };
+      const verification = await verifySources(gateDeps, {
+        answer: 'a',
+        reasoning: '',
+        sources: [
+          { title: 'one', url: 'https://dup.example/page' },
+          { title: 'again', url: 'https://dup.example/page' },
+          { title: 'two', url: 'https://other.example/page' }
+        ]
+      });
+      expect(fetched).toEqual(['https://dup.example/page', 'https://other.example/page']);
+      expect(verification.excerpts).toHaveLength(2);
+    });
+
+    it('critic message carries one UNTRUSTED block per excerpt, total ≤ 4500 chars', async () => {
+      const longExcerpt = 'A'.repeat(1300);
+      const verification = {
+        ok: true,
+        excerpts: [
+          { url: 'https://a.example/1', excerpt: longExcerpt },
+          { url: 'https://b.example/2', excerpt: longExcerpt },
+          { url: 'https://c.example/3', excerpt: longExcerpt }
+        ]
+      };
+      await assessResearch(gateDeps, item, RESEARCH, verification);
+      const prompt = String(criticClient.chatCompletion.mock.calls[0][0].messages[0].content);
+      expect(prompt.match(/<<<UNTRUSTED WEB CONTENT #\d+/g)).toHaveLength(3);
+      expect(prompt.match(/<<<END UNTRUSTED WEB CONTENT #\d+>>>/g)).toHaveLength(3);
+      expect(prompt).toContain('<<<UNTRUSTED WEB CONTENT #2 — https://b.example/2>>>');
+      const section = prompt.slice(
+        prompt.lastIndexOf('VERIFIED SOURCE EVIDENCE'),
+        prompt.indexOf('RESEARCHER REASONING')
+      ).trim();
+      expect(section.length).toBeLessThanOrEqual(4500);
+    });
+
+    it('oversized excerpts are capped: total evidence block stays ≤ 4500 chars', async () => {
+      const huge = 'B'.repeat(3000);
+      await assessResearch(gateDeps, item, RESEARCH, {
+        ok: true,
+        excerpts: [
+          { url: 'https://a.example/1', excerpt: huge },
+          { url: 'https://b.example/2', excerpt: huge },
+          { url: 'https://c.example/3', excerpt: huge }
+        ]
+      });
+      const prompt = String(criticClient.chatCompletion.mock.calls[0][0].messages[0].content);
+      const section = prompt.slice(
+        prompt.lastIndexOf('VERIFIED SOURCE EVIDENCE'),
+        prompt.indexOf('RESEARCHER REASONING')
+      ).trim();
+      expect(section.length).toBeLessThanOrEqual(4500);
+      expect(prompt).not.toContain('B'.repeat(1501));
+    });
+
+    it('AbortError from a fetch re-throws', async () => {
+      const abort = Object.assign(new Error('aborted'), { name: 'AbortError' });
+      gateDeps.verifySource = async () => {
+        throw abort;
+      };
+      await expect(verifySources(gateDeps, RESEARCH)).rejects.toThrow('aborted');
     });
   });
 
