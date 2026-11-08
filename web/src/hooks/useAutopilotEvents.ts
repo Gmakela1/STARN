@@ -1,3 +1,5 @@
+// Autopilot SSE hook: run status, portal items and information plans (spec §7).
+// Plan frames are collected and forwarded, never merged into the status object.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { AutopilotStatusResponse, PortalItem } from '../types/api';
@@ -5,6 +7,8 @@ import { AutopilotStatusResponse, PortalItem } from '../types/api';
 export interface AutopilotEventsState {
   status: AutopilotStatusResponse | null;
   portalItems: PortalItem[];
+  /** Information plans (spec §7), oldest first, capped at `PLAN_CAP`. */
+  plans: AutopilotPlanEvent[];
   connected: boolean;
   start: () => Promise<void>;
   stop: () => Promise<void>;
@@ -12,6 +16,21 @@ export interface AutopilotEventsState {
   submitAnswer: (id: string, answer: string) => Promise<void>;
   dismissItem: (id: string) => Promise<void>;
 }
+
+/** One information-plan claim (spec §7.4): a claim and whether it is known. */
+export interface PlanClaim {
+  claim: string;
+  status: 'known' | 'unknown';
+  /** `status === 'known'` only — where it is known from. */
+  source?: string;
+  /** `status === 'unknown'` only — the question the researcher must answer. */
+  question?: string;
+  /** `status === 'unknown'` only — where the answer is likely to be found. */
+  likelyAt?: string;
+}
+
+/** Plans kept in state — newest last, older ones dropped. */
+const PLAN_CAP = 20;
 
 /** Raw events from the /api/autopilot/events SSE stream, for live chat updates. */
 export type AutopilotLiveEvent =
@@ -27,15 +46,30 @@ export type AutopilotLiveEvent =
   | { kind: 'answer_queued'; itemId: string; title: string }
   | { kind: 'answer_applying'; itemId: string }
   | { kind: 'answer_applied'; itemId: string; item: PortalItem; affectedDocs: string[] }
-  | { kind: 'answer_failed'; itemId: string; error: string };
+  | { kind: 'answer_failed'; itemId: string; error: string }
+  // Information plan (spec §7) — forwarded to `onPlan` and `plans`, never merged
+  // into `status`: its `claims[]` is not autopilot doc status.
+  | { kind: 'plan'; specialist: string; docId?: string; itemId?: string;
+      order: string[]; claims: PlanClaim[] };
+
+/** The `plan` member of `AutopilotLiveEvent`. */
+export type AutopilotPlanEvent = Extract<AutopilotLiveEvent, { kind: 'plan' }>;
 
 /**
  * Creates a useAutopilotEvents hook. Pass an optional onEvent callback to
- * receive raw SSE events for live UI updates (e.g. appending chat entries).
+ * receive raw SSE events for live UI updates (e.g. appending chat entries),
+ * and an optional onPlan callback for information-plan frames.
+ * Inputs: two optional subscribers. Outputs: status, portal items, plans,
+ * connection flag and the control actions. Throws: never — transport failures
+ * schedule a reconnect instead.
  */
-export function useAutopilotEvents(onEvent?: (ev: AutopilotLiveEvent) => void): AutopilotEventsState {
+export function useAutopilotEvents(
+  onEvent?: (ev: AutopilotLiveEvent) => void,
+  onPlan?: (ev: AutopilotPlanEvent) => void
+): AutopilotEventsState {
   const [status, setStatus] = useState<AutopilotStatusResponse | null>(null);
   const [portalItems, setPortalItems] = useState<PortalItem[]>([]);
+  const [plans, setPlans] = useState<AutopilotPlanEvent[]>([]);
 
   const DEFAULT_STATUS: AutopilotStatusResponse = {
     enabled: false,
@@ -102,6 +136,15 @@ export function useAutopilotEvents(onEvent?: (ev: AutopilotLiveEvent) => void): 
                         typeof st?.itemId === 'string' &&
                         ['answer_queued', 'answer_applying', 'answer_applied', 'answer_failed'].includes(st.kind);
                       if (isAnswerFrame) { onEvent?.(st); break; } // answer frames: forward only, never merge into status
+                      // Plan frames (spec §7): `claims[]` is not doc status — collect,
+                      // notify, forward, and never merge (spec §12.6).
+                      if (st?.kind === 'plan') {
+                        const plan = st as AutopilotPlanEvent;
+                        setPlans(prev => [...prev, plan].slice(-PLAN_CAP));
+                        onPlan?.(plan);
+                        onEvent?.(plan);
+                        break;
+                      }
                       setStatus(prev => {
                         // 'complete' and 'error' events mean the run finished
                         if (st.kind === 'complete' || st.kind === 'error') {
@@ -201,5 +244,5 @@ export function useAutopilotEvents(onEvent?: (ev: AutopilotLiveEvent) => void): 
     setPortalItems(prev => prev.filter(i => i.id !== id));
   }, []);
 
-  return { status, portalItems, connected, start, stop, resume, submitAnswer, dismissItem };
+  return { status, portalItems, plans, connected, start, stop, resume, submitAnswer, dismissItem };
 }

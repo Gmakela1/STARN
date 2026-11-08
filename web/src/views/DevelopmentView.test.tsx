@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { useCallback, useState } from 'react';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { renderWithUser, cleanup } from '../test/render';
 import DevelopmentView from './DevelopmentView';
 import { useAutopilotEvents } from '../hooks/useAutopilotEvents';
+import type { AutopilotPlanEvent, PlanClaim } from '../hooks/useAutopilotEvents';
 import { api } from '../api/client';
 import type { ChatEntry, ActivityMeta } from '../api/useTurnStream';
 import type { ProjectInfo, PortalItem } from '../types/api';
@@ -36,21 +38,30 @@ vi.mock('../api/client', () => ({
 // Controllable autopilot status / portal items (SSE stream is not available in jsdom).
 const autopilotState = {
   status: null as ReturnType<typeof useAutopilotEvents>['status'],
-  portalItems: [] as PortalItem[]
+  portalItems: [] as PortalItem[],
+  /** The view's `onEvent` subscriber, captured so a test can push a frame. */
+  onEvent: undefined as ((ev: unknown) => void) | undefined,
+  /** The view's `onPlan` subscriber (spec §7.5). */
+  onPlan: undefined as ((ev: unknown) => void) | undefined
 };
 
 vi.mock('../hooks/useAutopilotEvents', () => ({
-  useAutopilotEvents: (onEvent?: unknown) => ({
-    status: autopilotState.status,
-    portalItems: autopilotState.portalItems,
-    connected: true,
-    start: vi.fn(),
-    stop: vi.fn(),
-    resume: vi.fn(),
-    submitAnswer: vi.fn(),
-    dismissItem: vi.fn(),
-    __onEvent: onEvent
-  })
+  useAutopilotEvents: (onEvent?: unknown, onPlan?: unknown) => {
+    autopilotState.onEvent = onEvent as ((ev: unknown) => void) | undefined;
+    autopilotState.onPlan = onPlan as ((ev: unknown) => void) | undefined;
+    return {
+      status: autopilotState.status,
+      portalItems: autopilotState.portalItems,
+      plans: [],
+      connected: true,
+      start: vi.fn(),
+      stop: vi.fn(),
+      resume: vi.fn(),
+      submitAnswer: vi.fn(),
+      dismissItem: vi.fn(),
+      __onEvent: onEvent
+    };
+  }
 }));
 
 // Voice recorder is stubbed (jsdom has no MediaRecorder/getUserMedia).
@@ -76,6 +87,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
   autopilotState.status = null;
   autopilotState.portalItems = [];
+  autopilotState.onEvent = undefined;
+  autopilotState.onPlan = undefined;
   voiceMock.recording = false;
   voiceMock.error = null;
   vi.clearAllMocks();
@@ -875,5 +888,64 @@ describe('DevelopmentView document section strip and measure', () => {
     expect(screen.getByRole('region', { name: 'Document workspace' }).style.flex).toBe('1 1 0%');
     // No second maximize control was added anywhere.
     expect(screen.queryAllByRole('button', { name: 'Focus document pane' })).toHaveLength(0);
+  });
+});
+
+// ————— Information plan in the activity stream (spec §7.5) —————
+/**
+ * Live entries harness: `appendEntry` really appends and re-renders, so the
+ * plan lines reach the activity feed instead of a spy.
+ */
+function PlanHarness() {
+  const [entries, setEntries] = useState<ChatEntry[]>([]);
+  const appendEntry = useCallback((entry: Omit<ChatEntry, 'id'>) => {
+    setEntries(prev => [...prev, { ...entry, id: `e${prev.length}` }]);
+  }, []);
+  return (
+    <DevelopmentView
+      turnStream={{ ...makeTurnStream(), entries, appendEntry }}
+      project={makeProject()}
+      onProjectChanged={vi.fn()}
+    />
+  );
+}
+
+/** Plan event fixture: `unknown` claims ask a question, `known` claims do not. */
+function planEvent(known: number, unknown: number): AutopilotPlanEvent {
+  const claims: PlanClaim[] = [];
+  for (let i = 0; i < known; i += 1) {
+    claims.push({ claim: `Known ${i}`, status: 'known', source: 'requirements.md §3' });
+  }
+  for (let i = 0; i < unknown; i += 1) {
+    claims.push({
+      claim: `Unknown ${i}`,
+      status: 'unknown',
+      question: `Question ${i}?`,
+      likelyAt: `reference/doc-${i}.pdf`
+    });
+  }
+  return { kind: 'plan', specialist: 'systems-engineer', docId: 'p1', itemId: 'q1', order: [], claims };
+}
+
+describe('DevelopmentView information plan stream lines', () => {
+  it('renders one line per unknown claim and skips the known ones', () => {
+    renderWithUser(<PlanHarness />);
+    act(() => autopilotState.onPlan?.(planEvent(1, 2)));
+
+    // `selector: 'p'` skips the sr-only live region, which repeats the newest line.
+    const lines = screen.getAllByText(/^Researching: /, { selector: 'p' });
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toHaveTextContent('Researching: Question 0? — expected in reference/doc-0.pdf');
+    expect(lines[1]).toHaveTextContent('Researching: Question 1? — expected in reference/doc-1.pdf');
+    // Known claims are not actions, so they never reach the stream.
+    expect(screen.queryByText(/Known 0/)).toBeNull();
+  });
+
+  it('caps the lines at five and appends +N more', () => {
+    renderWithUser(<PlanHarness />);
+    act(() => autopilotState.onPlan?.(planEvent(0, 8)));
+
+    expect(screen.getAllByText(/^Researching: /, { selector: 'p' })).toHaveLength(5);
+    expect(screen.getByText('+3 more', { selector: 'p' })).toBeInTheDocument();
   });
 });

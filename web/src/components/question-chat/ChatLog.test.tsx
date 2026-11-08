@@ -15,6 +15,22 @@ const recorded: PortalThreadMessage = {
   intent: 'answer',
   kind: 'recorded'
 };
+/** §9 researcher row: question as text, band word + sources in `research`. */
+const research: PortalThreadMessage = {
+  role: 'specialist',
+  text: 'What is the continuous rating of the ME1115 motor?',
+  ts: 5,
+  kind: 'research',
+  research: {
+    confidence: 0.62,
+    band: 'medium',
+    sources: [
+      { title: 'ME1115 datasheet', url: 'https://vendor.example/me1115.pdf' },
+      { title: 'Reference folder' }
+    ]
+  }
+};
+
 const superseded: PortalThreadMessage = {
   role: 'user',
   text: '',
@@ -153,6 +169,50 @@ describe('ChatLog — row variants', () => {
     expect(screen.getByRole('group', { name: 'Proposed answer' })).toBeInTheDocument();
     expect(screen.getByText('Based on 4 messages')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Use proposal' })).toBeInTheDocument();
+  });
+
+  it('renders a research row with the question, the band word and every source title', () => {
+    const { container } = renderWithUser(<ChatLog {...baseProps({ messages: [research] })} />);
+    const row = container.querySelector('[data-kind="research"]');
+    expect(row).not.toBeNull();
+    expect(row).toHaveTextContent('Researcher');
+    expect(row).toHaveTextContent('What is the continuous rating of the ME1115 motor?');
+    // The band is a WORD, never a bare number and never colour alone.
+    expect(row).toHaveTextContent('medium');
+    expect(row).not.toHaveTextContent('0.62');
+    expect(row).toHaveTextContent('ME1115 datasheet');
+    expect(row).toHaveTextContent('Reference folder');
+    // Violet left rule + 44 px minimum (§9).
+    expect(row?.className).toMatch(/border-l-2/);
+    expect(row?.className).toMatch(/min-h-\[44px\]/);
+  });
+
+  it('links a source that has a url and leaves a url-less source as text', () => {
+    const { container } = renderWithUser(<ChatLog {...baseProps({ messages: [research] })} />);
+    const links = container.querySelectorAll('[data-kind="research"] a');
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveTextContent('ME1115 datasheet');
+    expect(links[0]).toHaveAttribute('href', 'https://vendor.example/me1115.pdf');
+    expect(links[0]).toHaveAttribute('rel', 'noreferrer');
+  });
+
+  it('renders no emoji in a research row', () => {
+    const { container } = renderWithUser(<ChatLog {...baseProps({ messages: [research] })} />);
+    const text = container.querySelector('[data-kind="research"]')?.textContent ?? '';
+    expect(text.length).toBeGreaterThan(0);
+    expect(text).not.toMatch(/\p{Extended_Pictographic}/u);
+  });
+
+  it('does not render a research row as a specialist message', () => {
+    const { container } = renderWithUser(
+      <ChatLog {...baseProps({ messages: [research, reply] })} />
+    );
+    // Only the real reply carries the specialist label/body.
+    expect(container.querySelectorAll('.qchat-specialist-label')).toHaveLength(1);
+    expect(container.querySelectorAll('.qchat-specialist-body')).toHaveLength(1);
+    expect(container.querySelector('[data-kind="research"]')).toHaveTextContent(
+      'What is the continuous rating of the ME1115 motor?'
+    );
   });
 
   it('collapses a superseded proposal to one muted line', () => {

@@ -49,7 +49,7 @@ import {
 } from '../types/api';
 import type { PromptBarSource } from '../components/reactbits/PromptBar/PromptBar';
 import { useTurnStream, ChatEntry, ActivityMeta } from '../api/useTurnStream';
-import { useAutopilotEvents, AutopilotLiveEvent } from '../hooks/useAutopilotEvents';
+import { useAutopilotEvents, AutopilotLiveEvent, AutopilotPlanEvent } from '../hooks/useAutopilotEvents';
 import Markdown, { slugifyHeading } from '../components/Markdown';
 import DocDiff from '../components/DocDiff';
 import { docNeedsApproval } from '../lib/workflowState';
@@ -309,8 +309,30 @@ function summaryLine(ev: AutopilotLiveEvent & { kind: 'complete' }): string {
   return m > 0 ? `All done — ${n} documents finalized, ${m} on hold for review` : `All done — ${n} documents finalized`;
 }
 
+/** §7.5 — plan lines shown per event; the rest collapse to one `+N more` line. */
+const PLAN_LINE_CAP = 5;
+
+/**
+ * Information-plan stream lines (spec §7.5): one per UNKNOWN claim, in the
+ * specialist's written order. KNOWN claims are not actions and are never
+ * shown. Inputs: a `plan` event. Outputs: at most `PLAN_LINE_CAP` lines plus a
+ * trailing `+N more` when unknowns were dropped. Throws: never.
+ */
+export function planLines(ev: AutopilotPlanEvent): string[] {
+  const unknown = ev.claims.filter(c => c.status === 'unknown');
+  const lines = unknown.slice(0, PLAN_LINE_CAP).map(c => {
+    const question = c.question ?? c.claim;
+    return c.likelyAt ? `Researching: ${question} — expected in ${c.likelyAt}` : `Researching: ${question}`;
+  });
+  const hidden = unknown.length - PLAN_LINE_CAP;
+  if (hidden > 0) lines.push(`+${hidden} more`);
+  return lines;
+}
+
 /** §3.1 — lucide icon for a feed line; per-tool icons win for tool events. */
 function feedIconFor(m: ActivityMeta, text: string): LucideIcon {
+  // §7.5 — a research line reads as a search, not as a generic activity.
+  if (text.startsWith('Researching:')) return Search;
   if (m.kind === 'tool') {
     return TOOL_ICON_BY_NAME[m.tool ?? ''] ?? Wrench;
   }
@@ -530,12 +552,29 @@ export default function DevelopmentView({
           text: `Couldn't apply your answer to "${title}" — ${(ev.error ?? '').slice(0, 200)}. Retry from the question panel.`
         });
       }
+      case 'plan':
+        // §7.5 — rendered by `handlePlan` (the hook's onPlan subscriber) so a
+        // plan never merges into autopilot status; nothing to append here.
+        return;
       default:
         return; // question/parked surface via portal + right-pane panel
     }
   }, [appendEntry]);
 
-  const { status: autopilotStatus, portalItems } = useAutopilotEvents(handleAutopilotEvent);
+  /** §7.5 — one stream line per UNKNOWN plan claim; KNOWN claims are silent. */
+  const handlePlan = useCallback(
+    (ev: AutopilotPlanEvent) => {
+      for (const text of planLines(ev)) {
+        appendEntry({ role: 'system', text, activity: { kind: 'live' } });
+      }
+    },
+    [appendEntry]
+  );
+
+  const { status: autopilotStatus, portalItems } = useAutopilotEvents(
+    handleAutopilotEvent,
+    handlePlan
+  );
 
   // --- React Bits LatticeLoader (chat footer) ---
   // Shows while agents are working: `busy` covers critic/specialist turns

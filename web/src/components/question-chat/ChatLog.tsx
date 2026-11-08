@@ -1,12 +1,12 @@
 // The conversation log (design 2026-11-03 §3c.1–§3c.3): the only scroller in
 // the left pane, filling all height the context header and composer leave. A
-// role=log list of ask / specialist / recorded / proposal rows inside ONE
+// role=log list of ask / specialist / recorded / research / proposal rows inside ONE
 // width-capped reading column (`.qchat-col`), plus the "Jump to latest" pill.
 // New rows follow the reader only when they are already at the bottom; a
 // reader who scrolled up into history is never yanked by a poll (§3c.3).
 import { useEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { ArrowDown, Check, Clock3, Loader2, Lock, TriangleAlert } from 'lucide-react';
+import { ArrowDown, Check, Clock3, Loader2, Lock, Search, TriangleAlert } from 'lucide-react';
 import ProposalCard from './ProposalCard';
 import type { PortalThreadMessage } from '../../types/api';
 
@@ -88,6 +88,62 @@ function RecordedRow({
           />
           {state.label}
         </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Researcher delegation row (spec §9): violet left rule, the `Researcher`
+ * label, the confidence band as a WORD (never colour alone), the question that
+ * was asked, and its sources — each title linked when the source has a `url`.
+ * Inputs: `message` — a `kind === 'research'` row; `research` may be absent on
+ * legacy rows, which still render the question.
+ * Outputs: one row, at least 44 px tall, marked `data-kind="research"`.
+ * Throws: never.
+ */
+function ResearchRow({ message }: { message: PortalThreadMessage }) {
+  const research = message.research;
+  const sources = research?.sources ?? [];
+  return (
+    <div
+      data-kind="research"
+      className="min-h-[44px] border-l-2 border-[var(--sf-review)] pl-2.5"
+    >
+      <p className="flex items-center gap-1.5">
+        <Search className="h-3 w-3 shrink-0 text-violet-300" aria-hidden />
+        <span className="text-[10px] font-bold uppercase tracking-[0.07em] text-violet-200">
+          Researcher
+        </span>
+        {research && (
+          <span className="rounded-full border border-[var(--sf-review)]/55 bg-[var(--sf-review-fill)]/50 px-1.5 py-px text-[9.5px] font-bold uppercase tracking-[0.07em] text-violet-200">
+            {research.band}
+          </span>
+        )}
+      </p>
+      <p className="mt-0.5 whitespace-pre-line text-[12px] italic text-[var(--sf-text-mut)]">
+        {message.text}
+      </p>
+      {sources.length > 0 && (
+        <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--sf-text-2)]">
+          {sources.map((s, i) => (
+            <span key={`${s.title}-${i}`}>
+              {i > 0 && ', '}
+              {s.url ? (
+                <a
+                  href={s.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline hover:text-[var(--sf-text)]"
+                >
+                  {s.title}
+                </a>
+              ) : (
+                s.title
+              )}
+            </span>
+          ))}
+        </p>
       )}
     </div>
   );
@@ -229,6 +285,10 @@ export default function ChatLog({
             }
             if (m.kind === 'recorded') {
               return <RecordedRow key={key} text={m.text} state={recordedState} />;
+            }
+            if (m.kind === 'research') {
+              // Never the plain specialist row — the question is not a reply (§9).
+              return <ResearchRow key={key} message={m} />;
             }
             if (m.role === 'user') {
               // Ask rows never carry a "Recorded" marker (§8 DO-NOT 5).
