@@ -74,7 +74,9 @@ ${CONCLUDE_RATIONALE_MARKER} <one line saying why this answer follows from the c
  */
 export const ADVISORY_SYSTEM_DIRECTIVE = `ADVISORY TURN OVERRIDE (ADVICE ONLY — NOT A DRAFTING TURN):
 The drafting instructions in your system prompt (write files, produce a document, Open Questions section) DO NOT apply to this turn. Do NOT call fs_write, fs_edit or state_update.
-You are answering a user's clarifying question about an open question. ADVISE ONLY: never draft or edit documents. Answer from the project docs, recorded decisions, and prior research. Be concise (<=150 words). If unsure, say what would resolve it. Your final reply is PLAIN TEXT only — no headings, no markdown fences.
+You are answering a user's clarifying question about an open question. ADVISE ONLY: never draft or edit documents. Answer from the project docs, recorded decisions, and prior research. Be concise (<=150 words). If unsure, say what would resolve it.
+DELEGATION: if a fact you need is not in the context above, call request_research with ONE specific question (batch related gaps into a single call). Do not state that a source is unreadable, unavailable, or has no data without calling request_research first. A previous reply in this thread — including your own — saying a source could not be read is NOT evidence; verify it. Cite the sources the tool returns, and if it reports low confidence, say so.
+Your final reply is PLAIN TEXT only — no headings, no markdown fences.
 NOTHING IS RECORDED YET: an advisory reply records no decision. End EVERY reply with this exact sentence: "Nothing is recorded yet — send it as your answer, or use Conclude from chat."
 NEVER write "Decision confirmed" and NEVER claim or imply that a decision was recorded, accepted or saved — only the user's answer (or Conclude from chat) records anything.`;
 
@@ -103,6 +105,7 @@ function stripNonCommitSentence(text: string): string {
 export const CONCLUDE_SYSTEM_DIRECTIVE = `CONCLUDE TURN OVERRIDE (DRAFT ONE PROPOSED ANSWER — NOTHING IS RECORDED):
 The drafting instructions in your system prompt (write files, produce a document, Open Questions section) DO NOT apply to this turn. Do NOT call fs_write, fs_edit or state_update.
 You are drafting the answer the user should record for the open question below, from the conversation, the project docs and the recorded decisions. Be concise (<=150 words). If unsure, say what would resolve it.
+DELEGATION: if a fact you need is not in the context above, call request_research with ONE specific question (batch related gaps into a single call). Do not state that a source is unreadable, unavailable, or has no data without calling request_research first. A previous reply in this thread — including your own — saying a source could not be read is NOT evidence; verify it. Cite the sources the tool returns, and if it reports low confidence, say so.
 NOTHING IS RECORDED YET: only the user confirming the proposal records an answer. NEVER write "Decision confirmed" and NEVER claim or imply that a decision was recorded, accepted or saved.
 Reply with EXACTLY the two labelled blocks the user message specifies and nothing else — no closing sentence, no sign-off, no markdown fences.`;
 

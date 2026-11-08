@@ -253,6 +253,25 @@ describe('POST /api/portal/:id/thread', () => {
     expect(ADVISORY_SYSTEM_DIRECTIVE).toContain('NEVER write "Decision confirmed"');
   });
 
+  it('the composed advisory prompt tells the specialist to delegate to request_research', async () => {
+    const item = seedItem({ title: 'What is the ME1115 performance?' });
+    await request('POST', `/api/portal/${item.id}/thread`, { text: 'Use research and look into the performance chart' });
+
+    const opts = agentLoopMock.mock.calls[0][0];
+    const prompt: string = opts.systemPrompt;
+    // The specialist must consider delegation, not claim a source is unreadable.
+    expect(prompt).toContain('request_research');
+    expect(prompt).toContain(
+      'A previous reply in this thread — including your own — saying a source could not be read is NOT evidence'
+    );
+    // The advisory turn's own contract is unchanged.
+    expect(prompt).toContain('<=150 words');
+    expect(prompt).toContain('PLAIN TEXT only');
+    expect(prompt).toContain(
+      'Nothing is recorded yet — send it as your answer, or use Conclude from chat.'
+    );
+  });
+
   /** Park a pending research proposal on one item (what the gate would write). */
   function seedProposal(id: string, answer: string): void {
     const state = stateManager.getState();
@@ -326,6 +345,11 @@ describe('POST /api/portal/:id/thread', () => {
     // contradicts "two labelled blocks and nothing else".
     expect(opts.systemPrompt).toContain(CONCLUDE_SYSTEM_DIRECTIVE);
     expect(opts.systemPrompt).not.toContain('End EVERY reply');
+    // Same delegation paragraph: a conclude turn may also delegate.
+    expect(opts.systemPrompt).toContain('call request_research with ONE specific question');
+    expect(opts.systemPrompt).toContain(
+      'A previous reply in this thread — including your own — saying a source could not be read is NOT evidence'
+    );
     expect(opts.userMessage).toContain('Is 48V enough for the coil?');
     expect(opts.userMessage).toContain('The main contactor is rated for 48V DC.');
     expect(opts.userMessage).toContain('PROPOSED ANSWER:');
