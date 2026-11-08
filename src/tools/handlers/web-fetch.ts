@@ -1,6 +1,25 @@
+// web_fetch tool handler: SSRF-guarded page fetch, structured-data harvest, readable-text extraction.
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import { ToolHandler, ToolExecutionContext, ToolExecutionResponse } from '../types.js';
+
+/** Maximum raw HTML bytes considered for cleaning (raised from 50 KB). */
+const MAX_RAW_BYTES = 2 * 1024 * 1024;
+/** Maximum characters of cleaned text returned to the model. */
+const MAX_OUTPUT_CHARS = 20000;
+const TRUNCATION_NOTICE = '\n\n[Content truncated at 20,000 characters]';
+const EMPTY_PAGE_NOTICE = 'Web page was empty or contained no readable text.';
+
+/** Product fields recovered from JSON-LD / Open Graph metadata. All fields optional. */
+export interface StructuredData {
+  name?: string;
+  sku?: string;
+  brand?: string;
+  price?: string;
+  currency?: string;
+  availability?: string;
+  description?: string;
+}
 
 export function isPrivateOrRestrictedIp(ip: string): boolean {
   if (!net.isIP(ip)) return false;
@@ -40,14 +59,36 @@ export function isPrivateOrRestrictedIp(ip: string): boolean {
   return false;
 }
 
+/**
+ * Decodes the small set of HTML entities that matter for readable text.
+ * @param text Raw text possibly containing entities.
+ * @returns Text with `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&#39;`, `&nbsp;` decoded.
+ */
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+}
+
+/**
+ * Converts raw HTML into readable plain text.
+ * Removes element *content* (script/style/svg/noscript/comments) before stripping tags,
+ * so inline CSS never survives as text.
+ * @param html Raw HTML fragment (already size-capped by the caller).
+ * @returns Trimmed readable text; empty string when nothing readable remains.
+ */
 export function cleanHtmlText(html: string): string {
   let text = html;
 
-  // Remove scripts, styles, svg, noscript, comments
-  text = text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-  text = text.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
-  text = text.replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, '');
-  text = text.replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, '');
+  // Remove element content (never leaves the payload behind)
+  text = text.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+  text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '');
+  text = text.replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, '');
+  text = text.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '');
   text = text.replace(/<!--[\s\S]*?-->/g, '');
 
   // Convert headings
@@ -63,13 +104,7 @@ export function cleanHtmlText(html: string): string {
   text = text.replace(/<[^>]+>/g, '');
 
   // Decode common HTML entities
-  text = text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ');
+  text = decodeHtmlEntities(text);
 
   // Collapse multiple blank lines
   text = text
@@ -79,6 +114,165 @@ export function cleanHtmlText(html: string): string {
     .join('\n');
 
   return text.trim();
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asText(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim().length > 0) return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
+/** Keys whose nested objects never describe the product itself (offers, brand, ratings, media). */
+const SKIP_KEYS = new Set([
+  'offers', 'brand', 'aggregateRating', 'review', 'address', 'image',
+  'publisher', 'author', 'potentialAction', 'mainEntityOfPage'
+]);
+
+/** Depth-first collection of JSON-LD nodes; `@graph` arrays are traversed like any array. */
+function collectNodes(value: unknown, out: Record<string, unknown>[], depth = 0): void {
+  if (depth > 8) return;
+  if (Array.isArray(value)) {
+    for (const item of value) collectNodes(item, out, depth + 1);
+    return;
+  }
+  const node = asRecord(value);
+  if (!node) return;
+  out.push(node);
+  for (const [key, child] of Object.entries(node)) {
+    if (SKIP_KEYS.has(key)) continue;
+    if (child && typeof child === 'object') collectNodes(child, out, depth + 1);
+  }
+}
+
+function offersOf(node: Record<string, unknown>): Record<string, unknown>[] {
+  const raw = node.offers;
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list.map(asRecord).filter((entry): entry is Record<string, unknown> => entry !== null);
+}
+
+function nodeHasPriceOrSku(node: Record<string, unknown>): boolean {
+  if (asText(node.sku)) return true;
+  return offersOf(node).some(offer => asText(offer.price) !== undefined);
+}
+
+function normalizeAvailability(value: unknown): string | undefined {
+  const text = asText(value);
+  return text ? text.replace(/^https?:\/\/schema\.org\//i, '') : undefined;
+}
+
+function brandName(value: unknown): string | undefined {
+  return asText(value) ?? asText(asRecord(value)?.name);
+}
+
+/** Parses every JSON-LD block; a malformed block is skipped, never thrown. */
+function parseJsonLdBlocks(html: string): unknown[] {
+  const blocks: unknown[] = [];
+  const re = /<script\b[^>]*type\s*=\s*["']?application\/ld\+json["']?[^>]*>([\s\S]*?)<\/script>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(html)) !== null) {
+    try {
+      blocks.push(JSON.parse(match[1].trim()));
+    } catch {
+      // Malformed JSON-LD block: ignore and keep scanning.
+    }
+  }
+  return blocks;
+}
+
+const META_KEYS = ['og:title', 'og:description', 'product:price:amount', 'product:price:currency'] as const;
+
+/** Reads the handful of meta tags used as structured-data fallbacks. */
+function readMetaTags(html: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const tagRe = /<meta\b[^>]*>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = tagRe.exec(html)) !== null) {
+    const key = /(?:property|name)\s*=\s*["']([^"']+)["']/i.exec(match[0])?.[1]?.toLowerCase();
+    if (!key || !META_KEYS.includes(key as typeof META_KEYS[number])) continue;
+    if (out[key] !== undefined) continue;
+    const content = /content\s*=\s*["']([^"']*)["']/i.exec(match[0])?.[1];
+    if (content !== undefined) out[key] = decodeHtmlEntities(content).trim();
+  }
+  return out;
+}
+
+/**
+ * Harvests product fields from JSON-LD and Open Graph metadata, before any tag stripping.
+ * Never throws: any parse failure degrades to the fields found so far (possibly none).
+ * @param html Raw HTML.
+ * @returns Fields that were actually found; absent keys mean "not present".
+ */
+export function extractStructuredData(html: string): StructuredData {
+  const data: StructuredData = {};
+
+  try {
+    const nodes: Record<string, unknown>[] = [];
+    for (const block of parseJsonLdBlocks(html)) collectNodes(block, nodes);
+    const product = nodes.find(nodeHasPriceOrSku);
+    if (product) {
+      const offer = offersOf(product).find(entry => asText(entry.price) !== undefined) ?? offersOf(product)[0];
+      data.name = asText(product.name);
+      data.sku = asText(product.sku);
+      data.brand = brandName(product.brand);
+      data.price = asText(offer?.price);
+      data.currency = asText(offer?.priceCurrency);
+      data.availability = normalizeAvailability(offer?.availability);
+      data.description = asText(product.description);
+    }
+  } catch {
+    // Extraction must never fail a fetch; fall back to meta tags below.
+  }
+
+  try {
+    const meta = readMetaTags(html);
+    data.name ??= meta['og:title'];
+    data.description ??= meta['og:description'];
+    data.price ??= meta['product:price:amount'];
+    data.currency ??= meta['product:price:currency'];
+  } catch {
+    // Meta fallback is optional.
+  }
+
+  return data;
+}
+
+/**
+ * Renders found fields as a `[structured data]` block of `label: value` lines.
+ * @param data Result of {@link extractStructuredData}.
+ * @returns Block text, or empty string when no field was found.
+ */
+export function formatStructuredData(data: StructuredData): string {
+  const lines: string[] = [];
+  const push = (label: string, value: string | undefined): void => {
+    if (value) lines.push(`${label}: ${value}`);
+  };
+  push('name', data.name);
+  push('sku', data.sku);
+  push('brand', data.brand);
+  push('price', [data.price, data.currency].filter(Boolean).join(' ') || undefined);
+  push('availability', data.availability);
+  push('description', data.description);
+  return lines.length > 0 ? `[structured data]\n${lines.join('\n')}` : '';
+}
+
+/**
+ * Full extraction pipeline: structured data first, then clean the whole document, then cap.
+ * @param html Raw HTML body (caller caps bytes at {@link MAX_RAW_BYTES}).
+ * @returns Final tool result: optional `[structured data]` block followed by readable text.
+ */
+export function buildWebFetchResult(html: string): string {
+  const structured = formatStructuredData(extractStructuredData(html));
+  const cleaned = cleanHtmlText(html);
+  const capped = cleaned.length > MAX_OUTPUT_CHARS
+    ? cleaned.slice(0, MAX_OUTPUT_CHARS) + TRUNCATION_NOTICE
+    : cleaned;
+  const body = capped || EMPTY_PAGE_NOTICE;
+  return structured ? `${structured}\n\n${body}` : body;
 }
 
 export const webFetchHandler: ToolHandler = {
@@ -152,16 +346,12 @@ export const webFetchHandler: ToolHandler = {
       }
 
       const bodyText = await res.text();
-      // Cap fetched raw body to 50KB
-      const truncatedRaw = bodyText.slice(0, 50 * 1024);
-      const cleaned = cleanHtmlText(truncatedRaw);
-
-      // Return max 20,000 characters
-      const finalResult = cleaned.length > 20000 ? cleaned.slice(0, 20000) + '\n\n[Content truncated at 20,000 characters]' : cleaned;
+      // Clean the whole (capped) document, then cap the cleaned text.
+      const finalResult = buildWebFetchResult(bodyText.slice(0, MAX_RAW_BYTES));
 
       return {
         success: true,
-        result: finalResult || 'Web page was empty or contained no readable text.'
+        result: finalResult
       };
     } catch (err: any) {
       return {
