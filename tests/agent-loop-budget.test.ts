@@ -24,6 +24,127 @@ function toolCallTurn(id: string) {
   };
 }
 
+/** Default research-path convergence directive text used by the tests below. */
+const CONVERGENCE_MESSAGE = 'Turn budget nearly exhausted. Stop searching now.';
+
+/** Snapshot of one call's message list (the loop mutates `messages` in place). */
+function snapshot(o: any): Array<{ role: string; content: string }> {
+  return o.messages.map((m: any) => ({ role: String(m.role), content: String(m.content) }));
+}
+
+function countDirective(msgs: Array<{ role: string; content: string }>): number {
+  return msgs.filter(m => m.content === CONVERGENCE_MESSAGE).length;
+}
+
+describe('runAgentToolLoop convergence directive', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = path.join(os.tmpdir(), 'starn-loop-converge-' + Date.now());
+    fs.mkdirSync(tempDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('injects the directive exactly once, first visible at turn 7 of 10 (not 6, not 8)', async () => {
+    const ctx = makeCtx(tempDir);
+    const seen: Array<Array<{ role: string; content: string }>> = [];
+    const mockClient = {
+      chatCompletion: vi.fn(async (o: any) => {
+        seen.push(snapshot(o));
+        // Turns 1..8 keep tool-calling; turn 9 replies in plain text.
+        if (seen.length <= 8) return toolCallTurn('t' + seen.length);
+        return { content: '# Answer\n\nDone.', toolCalls: [] };
+      })
+    } as any;
+
+    await runAgentToolLoop({
+      client: mockClient,
+      model: 'test',
+      systemPrompt: 'sys',
+      userMessage: 'hi',
+      toolRegistry: new ToolRegistry(),
+      allowedTools: [],
+      context: ctx,
+      maxTurns: 10,
+      convergenceDirective: { atTurnFraction: 0.7, message: CONVERGENCE_MESSAGE }
+    });
+
+    expect(seen).toHaveLength(9);
+    // Turn 6 (index 5): not yet. Turn 7 (index 6): injected. Turn 8 (index 7): still one only.
+    expect(countDirective(seen[5])).toBe(0);
+    expect(countDirective(seen[6])).toBe(1);
+    expect(countDirective(seen[7])).toBe(1);
+    // Injected ONCE per loop: never present twice in any single request.
+    for (const msgs of seen) expect(countDirective(msgs)).toBeLessThanOrEqual(1);
+    // It is a user-role message, and it is not the initial user message.
+    const injected = seen[6].filter(m => m.content === CONVERGENCE_MESSAGE);
+    expect(injected[0].role).toBe('user');
+    expect(seen[6].filter(m => m.role === 'user')).toHaveLength(2);
+  });
+
+  it('injects nothing when no directive is configured (drafting loops)', async () => {
+    const ctx = makeCtx(tempDir);
+    const seen: Array<Array<{ role: string; content: string }>> = [];
+    const mockClient = {
+      chatCompletion: vi.fn(async (o: any) => {
+        seen.push(snapshot(o));
+        if (seen.length <= 8) return toolCallTurn('t' + seen.length);
+        return { content: '# Draft\n\nDone.', toolCalls: [] };
+      })
+    } as any;
+
+    await runAgentToolLoop({
+      client: mockClient,
+      model: 'test',
+      systemPrompt: 'sys',
+      userMessage: 'hi',
+      toolRegistry: new ToolRegistry(),
+      allowedTools: [],
+      context: ctx,
+      maxTurns: 10
+    });
+
+    expect(seen).toHaveLength(9);
+    for (const msgs of seen) {
+      expect(countDirective(msgs)).toBe(0);
+      // Only the initial user message ever appears in that role.
+      expect(msgs.filter(m => m.role === 'user')).toHaveLength(1);
+    }
+  });
+
+  it('never injects the directive when the loop ends before the threshold', async () => {
+    const ctx = makeCtx(tempDir);
+    const seen: Array<Array<{ role: string; content: string }>> = [];
+    const mockClient = {
+      chatCompletion: vi.fn(async (o: any) => {
+        seen.push(snapshot(o));
+        // Turn 1 tool-calls, turn 2 replies in plain text — well before turn 7.
+        if (seen.length === 1) return toolCallTurn('t1');
+        return { content: '# Early\n\nDone.', toolCalls: [] };
+      })
+    } as any;
+
+    const result = await runAgentToolLoop({
+      client: mockClient,
+      model: 'test',
+      systemPrompt: 'sys',
+      userMessage: 'hi',
+      toolRegistry: new ToolRegistry(),
+      allowedTools: [],
+      context: ctx,
+      maxTurns: 10,
+      convergenceDirective: { atTurnFraction: 0.7, message: CONVERGENCE_MESSAGE }
+    });
+
+    expect(result.finalResponse).toBe('# Early\n\nDone.');
+    expect(seen).toHaveLength(2);
+    for (const msgs of seen) expect(countDirective(msgs)).toBe(0);
+  });
+});
+
 describe('runAgentToolLoop budget and forced final write', () => {
   let tempDir: string;
 

@@ -11,6 +11,11 @@
  * `request_research` is additionally capped at MAX_RESEARCH_CALLS_PER_TURN per
  * invocation: calls past the cap return a success result carrying the limit
  * message and never reach the registry. All other counters are unchanged.
+ *
+ * `convergenceDirective` (optional) injects ONE `role:'user'` message into the
+ * transcript once the loop reaches `ceil(maxTurns * atTurnFraction)` turns, so a
+ * searching loop is told to stop and write before its budget dies. Loops that
+ * omit it (drafting) never receive an extra message.
  */
 import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { ToolRegistry } from '../tools/registry.js';
@@ -39,6 +44,12 @@ export interface AgentLoopOptions {
   logger?: Logger;
   /** Doc id used in budget-exhaustion log lines (e.g. 'bom'). */
   docId?: string;
+  /**
+   * Optional mid-loop convergence nudge: at turn `ceil(maxTurns * atTurnFraction)`
+   * the loop appends one `role:'user'` message carrying `message`. Injected once
+   * per loop invocation; loops that finish earlier never see it.
+   */
+  convergenceDirective?: { atTurnFraction: number; message: string };
   /**
    * True when the loop's final reply is a JSON OBJECT (research gate) rather
    * than a document. The budget-exhaustion rescue then accepts a reply that
@@ -88,12 +99,24 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
   // True when the most recent model response issued tool calls (i.e. the loop
   // has not yet seen a plain-text reply). Reset to false on a normal break.
   let endedWithToolCalls = false;
+  // Turn at which the convergence directive is injected (Infinity = never).
+  const convergenceTurn = options.convergenceDirective
+    ? Math.ceil(maxTurns * options.convergenceDirective.atTurnFraction)
+    : Infinity;
+  // True once the directive has been appended — it is injected ONCE per loop.
+  let convergenceInjected = false;
 
   while (turn < maxTurns) {
     turn++;
     // Pre-flight: if the user aborted (ESC), stop immediately without calling the model.
     if (signal?.aborted) {
       return { finalResponse: '', messages, aborted: true };
+    }
+    // Convergence nudge: once the threshold turn is reached, tell the model to
+    // stop searching and write with what it already has.
+    if (convergenceTurn !== Infinity && !convergenceInjected && turn >= convergenceTurn) {
+      messages.push({ role: 'user', content: options.convergenceDirective!.message });
+      convergenceInjected = true;
     }
     let response;
     try {

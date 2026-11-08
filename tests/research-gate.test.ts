@@ -29,6 +29,7 @@ import {
   QuestionResearch
 } from '../src/core/research-gate.js';
 import { ChatCompletionResult } from '../src/openrouter/types.js';
+import * as agentLoopModule from '../src/core/agent-loop.js';
 import { PortalItem } from '../src/workspace/types.js';
 
 function chat(content: string): ChatCompletionResult {
@@ -191,6 +192,17 @@ describe('research gate wiring', () => {
     for (const tool of passed) {
       expect(['fs_read', 'fs_list', 'state_read', 'web_search', 'web_fetch', 'read_chart_data']).toContain(tool);
     }
+  });
+
+  it('research loop is invoked with a convergence directive at 70% of the budget', async () => {
+    const spy = vi.spyOn(agentLoopModule, 'runAgentToolLoop');
+    const research = await runQuestionResearch(gateDeps, item);
+    expect(research).not.toBeNull();
+    expect(spy).toHaveBeenCalledTimes(1);
+    const opts = spy.mock.calls[0][0] as any;
+    expect(opts.convergenceDirective).toBeTruthy();
+    expect(opts.convergenceDirective.atTurnFraction).toBe(0.7);
+    expect(opts.convergenceDirective.message).toContain('Stop searching now');
   });
 
   it('budget-exhausted loop: the forced write is retried ONCE as JSON and the answer parses', async () => {

@@ -329,7 +329,16 @@ If the question is a judgment call, opinion, or cannot be verified from a source
       docId: 'research-gate',
       // The reply is a JSON object, not a document: a budget-exhausted loop
       // gets one explicit JSON-only retry instead of a heading write.
-      jsonFinalReply: true
+      jsonFinalReply: true,
+      // Research tends to search until the loop is killed; at 70% of the budget
+      // the model is told to converge on what it already has.
+      convergenceDirective: {
+        atTurnFraction: 0.7,
+        message:
+          'Turn budget nearly exhausted. Stop searching now. Write the final JSON answer with the ' +
+          'sources you already have, and mark anything you could not verify as unverified in the ' +
+          'reasoning field.'
+      }
     });
     return parseResearchReply(result.finalResponse || '');
   } catch (err: any) {
