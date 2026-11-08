@@ -56,6 +56,55 @@ describe('Agent Tool Loop', () => {
     expect(result.finalResponse).toBe('Finalized physical project analysis.');
     expect(callCount).toBe(2);
   });
+
+  it('executes at most 3 request_research calls per invocation and reports the limit on the 4th', async () => {
+    const calls = ['r1', 'r2', 'r3', 'r4'].map(id => ({
+      id,
+      type: 'function' as const,
+      function: { name: 'request_research', arguments: JSON.stringify({ question: `q-${id}` }) }
+    }));
+    let turnCount = 0;
+    vi.spyOn(mockClient, 'chatCompletion').mockImplementation(async () => {
+      turnCount++;
+      if (turnCount === 1) {
+        return { content: null, toolCalls: calls, raw: {} };
+      }
+      return { content: 'Answering with what I have.', raw: {} };
+    });
+
+    let capabilityRuns = 0;
+    const context = {
+      projectPath: '.',
+      stateManager: { getState: () => ({ name: 'Test' }) } as any,
+      requestResearch: async () => {
+        capabilityRuns++;
+        return {
+          ok: true as const,
+          answer: 'Rating is 12 kW.',
+          sources: [],
+          confidence: 0.62,
+          band: 'medium' as const,
+          reasoning: 'datasheet'
+        };
+      }
+    };
+
+    const result = await runAgentToolLoop({
+      client: mockClient,
+      model: 'test-model',
+      systemPrompt: 'System instructions',
+      userMessage: 'Research the rating',
+      toolRegistry,
+      allowedTools: ['request_research'],
+      context
+    });
+
+    expect(capabilityRuns).toBe(3);
+    const toolMessages = result.messages.filter(m => m.role === 'tool');
+    expect(toolMessages).toHaveLength(4);
+    expect(toolMessages[3].content).toContain('Research call limit reached');
+    expect(result.finalResponse).toBe('Answering with what I have.');
+  });
 });
 
 describe('Critic Evaluator', () => {

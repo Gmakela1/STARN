@@ -7,11 +7,21 @@
  * context). Output: AgentLoopResult (finalResponse, messages, turn and
  * tool-call counts, aborted flag). Throws only a non-abort client/tool error;
  * an ESC abort returns `aborted: true` instead.
+ *
+ * `request_research` is additionally capped at MAX_RESEARCH_CALLS_PER_TURN per
+ * invocation: calls past the cap return a success result carrying the limit
+ * message and never reach the registry. All other counters are unchanged.
  */
 import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { ToolRegistry } from '../tools/registry.js';
-import { ToolExecutionContext } from '../tools/types.js';
+import { ToolExecutionContext, ToolExecutionResponse } from '../tools/types.js';
 import { Logger } from '../util/logger.js';
+
+/** Max `request_research` delegations per loop invocation (spec §5.3). */
+const MAX_RESEARCH_CALLS_PER_TURN = 3;
+/** Tool result returned instead of researching once the cap is reached. */
+const RESEARCH_CALL_LIMIT_MESSAGE =
+  'Research call limit reached (3 per turn). Answer with what you have and name the remaining gaps.';
 
 export interface AgentLoopOptions {
   client: ChatClient;
@@ -72,6 +82,9 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
   let turn = 0;
   let finalResponse = '';
   let toolCallCount = 0;
+  // Research delegations issued in THIS loop invocation (spec §5.3). A sibling
+  // of toolCallCount, never merged into it: the cap bounds one outer turn.
+  let researchCallCount = 0;
   // True when the most recent model response issued tool calls (i.e. the loop
   // has not yet seen a plain-text reply). Reset to false on a normal break.
   let endedWithToolCalls = false;
@@ -119,7 +132,15 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
           options.onToolCall(call.function.name, parsedArgs);
         }
 
-        const toolRes = await toolRegistry.execute(call.function.name, parsedArgs, context, allowedTools);
+        let toolRes: ToolExecutionResponse;
+        if (call.function.name === 'request_research') {
+          researchCallCount++;
+          toolRes = researchCallCount > MAX_RESEARCH_CALLS_PER_TURN
+            ? { success: true, result: RESEARCH_CALL_LIMIT_MESSAGE }
+            : await toolRegistry.execute(call.function.name, parsedArgs, context, allowedTools);
+        } else {
+          toolRes = await toolRegistry.execute(call.function.name, parsedArgs, context, allowedTools);
+        }
         messages.push({
           role: 'tool',
           tool_call_id: call.id,
