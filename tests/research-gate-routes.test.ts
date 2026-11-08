@@ -213,6 +213,118 @@ describe('research gate portal routes', () => {
     expect(stored.meta?.autoApplied).toBeUndefined();
   });
 
+  it('undo-auto: two identical blocks — undoing the second removes the second, the first survives', async () => {
+    // Byte-identical appends (same displayTitle, same answer) on one doc, with
+    // a third, different block between them so the removal position is
+    // observable (identical bytes alone cannot tell first from second).
+    const OTHER = '\n\n## User Answers (Pending Incorporation)\n\n**Fuse rating**\nAnswer: 40A\n';
+    const first = seedItem({
+      status: 'answered',
+      answer: '48V',
+      meta: {
+        autoApplied: {
+          answer: '48V',
+          appendedText: APPENDED,
+          docPath: 'docs/CONOPS.md',
+          offset: BASELINE.trimEnd().length,
+          confidence: 0.97,
+          sources: [],
+          rationale: ''
+        }
+      }
+    });
+    const second = seedItem({
+      status: 'answered',
+      answer: '48V',
+      meta: {
+        autoApplied: {
+          answer: '48V',
+          appendedText: APPENDED,
+          docPath: 'docs/CONOPS.md',
+          offset: BASELINE.trimEnd().length + APPENDED.length + OTHER.length,
+          confidence: 0.97,
+          sources: [],
+          rationale: ''
+        }
+      }
+    });
+    const docFile = path.join(tempDir, 'docs', 'CONOPS.md');
+    fs.writeFileSync(docFile, BASELINE.trimEnd() + APPENDED + OTHER + APPENDED, 'utf-8');
+
+    // Every block still present → neither item is incorporated.
+    const before = await request(server, 'GET', '/api/portal');
+    expect(before.json?.data?.items.find((i: any) => i.id === second.id)?.meta?.autoApplied?.incorporated).toBeUndefined();
+
+    const res = await request(server, 'POST', `/api/portal/${second.id}/undo-auto`);
+    expect(res.status).toBe(200);
+    expect(fs.readFileSync(docFile, 'utf-8')).toBe(BASELINE.trimEnd() + APPENDED + OTHER);
+
+    // The first item's block is untouched and still undoable at its own offset.
+    const firstAfter = (stateManager.getState().portalItems || []).find((i: any) => i.id === first.id)!;
+    expect(firstAfter.status).toBe('answered');
+    const firstUndo = await request(server, 'POST', `/api/portal/${first.id}/undo-auto`);
+    expect(firstUndo.status).toBe(200);
+    expect(fs.readFileSync(docFile, 'utf-8')).toBe(BASELINE.trimEnd() + OTHER);
+  });
+
+  it('undo-auto: legacy meta.autoApplied without offset still undoes (first-occurrence fallback)', async () => {
+    const legacy = seedItem({
+      status: 'answered',
+      answer: '48V',
+      meta: {
+        autoApplied: { answer: '48V', appendedText: APPENDED, confidence: 0.97, sources: [], rationale: '' }
+      }
+    });
+    const docFile = path.join(tempDir, 'docs', 'CONOPS.md');
+    fs.writeFileSync(docFile, BASELINE.trimEnd() + APPENDED + APPENDED, 'utf-8');
+
+    const res = await request(server, 'POST', `/api/portal/${legacy.id}/undo-auto`);
+    expect(res.status).toBe(200);
+    expect(fs.readFileSync(docFile, 'utf-8')).toBe(BASELINE.trimEnd() + APPENDED);
+    const stored = (stateManager.getState().portalItems || []).find((i: any) => i.id === legacy.id)!;
+    expect(stored.status).toBe('open');
+  });
+
+  it('GET /api/portal: an identical surviving block does not mask incorporation of the removed one', async () => {
+    const first = seedItem({
+      status: 'answered',
+      answer: '48V',
+      meta: {
+        autoApplied: {
+          answer: '48V',
+          appendedText: APPENDED,
+          docPath: 'docs/CONOPS.md',
+          offset: BASELINE.trimEnd().length,
+          confidence: 0.97,
+          sources: [],
+          rationale: ''
+        }
+      }
+    });
+    const second = seedItem({
+      status: 'answered',
+      answer: '48V',
+      meta: {
+        autoApplied: {
+          answer: '48V',
+          appendedText: APPENDED,
+          docPath: 'docs/CONOPS.md',
+          offset: BASELINE.trimEnd().length + APPENDED.length,
+          confidence: 0.97,
+          sources: [],
+          rationale: ''
+        }
+      }
+    });
+    // Only the SECOND block was incorporated away; the first copy survives.
+    fs.writeFileSync(path.join(tempDir, 'docs', 'CONOPS.md'), BASELINE.trimEnd() + APPENDED, 'utf-8');
+
+    const res = await request(server, 'GET', '/api/portal');
+    const items = res.json?.data?.items ?? [];
+    expect(items.find((i: any) => i.id === second.id)?.meta?.autoApplied?.incorporated).toBe(true);
+    expect(items.find((i: any) => i.id === first.id)?.meta?.autoApplied?.incorporated).toBeUndefined();
+  });
+
   it('undo-auto: already incorporated → 409, item untouched', async () => {
     const item = seedItem({
       status: 'answered',

@@ -775,7 +775,12 @@ export class ServerSessionManager {
       emitStatus: (message) => this.publish({ kind: 'status', message }),
       applyAnswer: async (itemId, answer) => {
         const result = await applyAnswer(this.answerApplierDeps(), itemId, answer, { provenance: 'research-gate' });
-        return { updatedItem: result.updatedItem, appendedText: result.appendedText };
+        return {
+          updatedItem: result.updatedItem,
+          appendedText: result.appendedText,
+          appendedOffset: result.appendedOffset,
+          appendedDocPath: result.appendedDocPath
+        };
       },
       // Verified-source corroboration: fetch the top cited URL with the
       // web_fetch handler (SSRF-guarded) so the critic grades real content.

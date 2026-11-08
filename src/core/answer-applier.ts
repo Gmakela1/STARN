@@ -8,6 +8,7 @@ import { PENDING_INCORPORATION_MARKER, stripPendingBlock, INCORPORATION_CRITIC_F
 import type { QuestionSections } from './open-questions-parser.js';
 import { runRippleScan, summarizeDiff, RippleDeps } from './ripple.js';
 import type { AutopilotEvent, AutopilotDocStatus } from './autopilot.js';
+import { createVersionBackup } from '../util/version-backup.js';
 
 export interface AnswerApplierDeps {
   stateManager: ProjectStateManager;
@@ -110,6 +111,10 @@ export async function applyAnswer(
   counterQuestions: PortalItem[];
   /** Exact bytes appended to the doc's pending-answers block (undefined when the doc was empty). */
   appendedText?: string;
+  /** Offset of appendedText in the doc at apply time (the pre-write trimmed length). */
+  appendedOffset?: number;
+  /** Project-relative doc path appendedText was written to. */
+  appendedDocPath?: string;
 }> {
   const { stateManager, projectPath } = deps;
 
@@ -150,14 +155,49 @@ export async function applyAnswer(
   // appendedText is the exact bytes added after the pre-existing content —
   // returned so the research gate can remove it verbatim on UNDO.
   let appendedText: string | undefined;
+  let appendedOffset: number | undefined;
+  let appendedDocPath: string | undefined;
   if (existingContent.trim()) {
     const displayTitle = item.title.replace(/^Q\d+[\.:\)]\s*/, '');
     appendedText = `\n\n${PENDING_INCORPORATION_MARKER}\n\n**${displayTitle}**\nAnswer: ${answerText}\n`;
-    fs.writeFileSync(docFilePath, existingContent.trimEnd() + appendedText, 'utf-8');
+    // Offset of the appended bytes in the written doc — undo removes exactly
+    // this slice (two identical blocks on one doc never remove each other's).
+    const base = existingContent.trimEnd();
+    appendedOffset = base.length;
+    appendedDocPath = `docs/${phaseId.toUpperCase()}.md`;
+    // Back up the prior doc before appending (fs_write precedent): the pending
+    // block is the only record of the answer once incorporation strips it.
+    createVersionBackup(projectPath, docFilePath);
+    fs.writeFileSync(docFilePath, base + appendedText, 'utf-8');
   }
 
   // 4. Mark the item answered.
   const updatedItem = answerPortalItem(stateManager, itemId, answerText, options?.provenance);
+
+  // 4b. CONFIRM PATH — stamp the same meta.autoApplied snapshot the research
+  // gate writes for an auto-applied answer, so a user-confirmed proposal gets
+  // the same UNDO window (undoAutoApplied refuses items without it). The
+  // proposal's critic verdict supplies confidence/sources/rationale.
+  if (appendedText && options?.provenance === 'user-confirmed-research') {
+    const fresh = stateManager.getState();
+    const stored = (fresh.portalItems || []).find(i => i.id === itemId);
+    if (stored) {
+      const proposal = stored.meta?.proposedAnswer;
+      stored.meta = {
+        ...(stored.meta || {}),
+        autoApplied: {
+          answer: answerText,
+          appendedText,
+          docPath: appendedDocPath,
+          offset: appendedOffset,
+          confidence: proposal?.confidence ?? 0,
+          sources: proposal?.sources ?? [],
+          rationale: proposal?.rationale ?? ''
+        }
+      };
+      stateManager.saveState(fresh);
+    }
+  }
 
   // 5. Incorporation trigger: when the LAST open question for this docPath is
   // answered (recounted AFTER this answer landed — the answered item does not
@@ -333,5 +373,5 @@ export async function applyAnswer(
     }
   }
 
-  return { updatedItem, affectedDocs: [], counterQuestions, appendedText };
+  return { updatedItem, affectedDocs: [], counterQuestions, appendedText, appendedOffset, appendedDocPath };
 }

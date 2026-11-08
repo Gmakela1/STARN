@@ -149,6 +149,18 @@ export interface AutoAppliedAnswer {
   answer: string;
   /** Exact text appended to the doc's pending-answers block; removed verbatim on undo. */
   appendedText?: string;
+  /**
+   * Project-relative doc the appendedText was written to. Absent on state files
+   * written before this field existed — undo then falls back to `item.docPath`.
+   */
+  docPath?: string;
+  /**
+   * Byte offset of appendedText in the doc at apply time (the pre-write trimmed
+   * length). Undo and the incorporated check target only this slice, so two
+   * byte-identical blocks on one doc never remove each other's text. Absent on
+   * state files written before this field existed — verbatim search fallback.
+   */
+  offset?: number;
   confidence: number;
   sources: ResearchSource[];
   rationale: string;

@@ -5,6 +5,7 @@ import os from 'node:os';
 import { ProjectStateManager } from '../src/workspace/state.js';
 import { addPortalItem, answerPortalItem, dismissPortalItem } from '../src/core/question-portal.js';
 import { applyAnswer, AnswerApplierDeps } from '../src/core/answer-applier.js';
+import { undoAutoApplied } from '../src/core/research-gate.js';
 import { INCORPORATION_CRITIC_FOCUS } from '../src/core/incorporation-prompt.js';
 import { PortalItem } from '../src/workspace/types.js';
 import { TurnResult } from '../src/core/runner.js';
@@ -92,6 +93,8 @@ describe('applyAnswer', () => {
     expect(doc).toContain('**What is the max voltage?**');
     expect(doc).toContain('Answer: 12V nominal');
     expect(stateMgr.getState().portalItems!.find(i => i.id === other.id)?.status).toBe('open');
+    // A plain user answer stamps no autoApplied snapshot (nothing to undo).
+    expect(result.updatedItem.meta?.autoApplied).toBeUndefined();
   });
 
   it('(b) idle + LAST open question answered: exactly one incorporation turn, block stripped, status revised', async () => {
@@ -658,5 +661,84 @@ describe('applyAnswer', () => {
       { text: '12V nominal', at: expect.any(String) }
     ]);
     expect(byTitle.get('Unrelated doc follow-up?')?.meta?.answerHistory).toBeUndefined();
+  });
+
+  it('(k) confirm path: backs up the prior doc and stamps meta.autoApplied with the append offset', async () => {
+    // A second open question keeps the incorporation trigger from firing, so
+    // the pending block stays on disk for the offset assertions.
+    addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What gauge wire?',
+      source: 'autopilot'
+    });
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What is the max voltage?',
+      source: 'autopilot'
+    });
+    const seeded = stateMgr.getState();
+    const storedSeed = seeded.portalItems!.find(i => i.id === item.id)!;
+    storedSeed.meta = {
+      ...(storedSeed.meta || {}),
+      proposedAnswer: { answer: '48V per datasheet', sources: [{ title: 'Vendor ds' }], confidence: 0.7, rationale: 'Vendor spec.' }
+    };
+    stateMgr.saveState(seeded);
+
+    const docFile = path.join(tmpDir, 'docs', 'CONOPS.md');
+    const baseline = fs.readFileSync(docFile, 'utf-8');
+    const expectedOffset = baseline.trimEnd().length;
+
+    const result = await applyAnswer(deps, item.id, '48V nominal', { provenance: 'user-confirmed-research' });
+
+    // 1. Prior doc backed up before the append (createVersionBackup).
+    const versionsDir = path.join(tmpDir, '.starn', 'versions');
+    const backups = fs.readdirSync(versionsDir).filter(f => f.startsWith('CONOPS-') && f.endsWith('.md'));
+    expect(backups).toHaveLength(1);
+    expect(fs.readFileSync(path.join(versionsDir, backups[0]), 'utf-8')).toBe(baseline);
+
+    // 2. The appended bytes start exactly at the recorded offset.
+    const doc = fs.readFileSync(docFile, 'utf-8');
+    expect(result.appendedOffset).toBe(expectedOffset);
+    expect(doc.slice(expectedOffset, expectedOffset + result.appendedText!.length)).toBe(result.appendedText);
+
+    // 3. meta.autoApplied stamped so the confirm path is undoable.
+    const after = stateMgr.getState().portalItems!.find(i => i.id === item.id)!;
+    expect(after.meta?.autoApplied).toMatchObject({
+      answer: '48V nominal',
+      appendedText: result.appendedText,
+      docPath: 'docs/CONOPS.md',
+      offset: expectedOffset,
+      confidence: 0.7
+    });
+  });
+
+  it('(l) confirm path: undoAutoApplied removes the confirmed answer and re-opens the item', async () => {
+    addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What gauge wire?',
+      source: 'autopilot'
+    });
+    const item = addPortalItem(stateMgr, {
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What is the max voltage?',
+      source: 'autopilot'
+    });
+    const docFile = path.join(tmpDir, 'docs', 'CONOPS.md');
+    const baseline = fs.readFileSync(docFile, 'utf-8');
+
+    await applyAnswer(deps, item.id, '48V nominal', { provenance: 'user-confirmed-research' });
+    const reopened = await undoAutoApplied({ stateManager: stateMgr, projectPath: tmpDir }, item.id);
+
+    expect(fs.readFileSync(docFile, 'utf-8')).toBe(baseline.trimEnd());
+    expect(reopened.status).toBe('open');
+    expect(stateMgr.getState().portalItems!.find(i => i.id === item.id)?.meta?.autoApplied).toBeUndefined();
   });
 });

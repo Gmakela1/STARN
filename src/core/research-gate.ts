@@ -158,6 +158,10 @@ export interface ResearchGateDeps {
   applyAnswer: (itemId: string, answer: string) => Promise<{
     updatedItem: PortalItem;
     appendedText?: string;
+    /** Offset of appendedText in the doc at apply time (undo targets this slice). */
+    appendedOffset?: number;
+    /** Project-relative doc path appendedText was written to. */
+    appendedDocPath?: string;
   }>;
   /** Optional status-event sink (SSE). */
   emitStatus?: (message: string) => void;
@@ -736,6 +740,8 @@ export async function applyAutoAnswer(
     autoApplied: {
       answer: research.answer,
       appendedText: result.appendedText,
+      docPath: result.appendedDocPath,
+      offset: result.appendedOffset,
       confidence: assessment.confidence,
       sources: research.sources,
       rationale: assessment.rationale
@@ -746,32 +752,61 @@ export async function applyAutoAnswer(
 }
 
 /**
+ * True when the exact appended bytes are still in `content`. With a recorded
+ * offset only that slice counts (two identical blocks on one doc must not
+ * vouch for each other); without one the whole doc is searched — legacy state
+ * files keep working.
+ */
+function containsAppendedText(content: string, appendedText: string, offset?: number): boolean {
+  if (typeof offset === 'number') {
+    return content.slice(offset, offset + appendedText.length) === appendedText;
+  }
+  return content.includes(appendedText);
+}
+
+/**
+ * Remove exactly the bytes one apply appended. With a recorded offset the
+ * slice at that offset is removed only while it still matches; anything else
+ * (no offset, or the doc was edited there since) falls back to the legacy
+ * first-occurrence string replace.
+ */
+function removeAppendedText(content: string, appendedText: string, offset?: number): string {
+  if (typeof offset === 'number' && content.slice(offset, offset + appendedText.length) === appendedText) {
+    return content.slice(0, offset) + content.slice(offset + appendedText.length);
+  }
+  return content.replace(appendedText, '');
+}
+
+/**
  * Reliable "already incorporated" signal, shared by the GET /api/portal
  * decoration (routes/portal.ts) and undoAutoApplied so UNDO refusal and the
  * panel's UNDO-offered state cannot drift. An auto-applied answer is still
  * undoable only when its exact appended bytes are still verbatim in the doc —
  * which requires the pending-answers block to be present. Anything else
  * (block consumed by incorporation, text rewritten into normative text,
- * nothing was appended, doc unreadable) = incorporated.
+ * nothing was appended, doc unreadable) = incorporated. Offset-aware: when
+ * the apply recorded an offset only that slice counts.
  */
 export function isAutoAppliedIncorporated(projectPath: string, item: PortalItem): boolean {
   const auto = item.meta?.autoApplied;
   if (!auto || item.status !== 'answered') return false;
-  if (!item.docPath || !auto.appendedText) return true;
+  const docPath = auto.docPath ?? item.docPath;
+  if (!docPath || !auto.appendedText) return true;
   let content: string | null = null;
   try {
-    content = fs.readFileSync(path.join(projectPath, item.docPath), 'utf-8');
+    content = fs.readFileSync(path.join(projectPath, docPath), 'utf-8');
   } catch {
     return true;
   }
   if (!content.includes(PENDING_INCORPORATION_MARKER)) return true;
-  return !content.includes(auto.appendedText);
+  return !containsAppendedText(content, auto.appendedText, auto.offset);
 }
 
 /**
  * UNDO executor: removes the stored appendedText EXACTLY from the doc's
- * pending-answers block (string replace; when the removal empties the block —
- * i.e. this apply created it — the marker goes with it), re-opens the item,
+ * pending-answers block (at the recorded offset when it still matches, else by
+ * first-occurrence string replace; when the removal empties the block — i.e.
+ * this apply created it — the marker goes with it), re-opens the item,
  * and clears meta.autoApplied. Throws (route maps to an error) when the item
  * was never auto-applied or the pending block is already incorporated.
  */
@@ -789,8 +824,9 @@ export async function undoAutoApplied(deps: UndoAutoDeps, itemId: string): Promi
     throw new Error(`Portal item ${itemId} is not answered (${item.status})`);
   }
 
-  if (auto.appendedText && item.docPath) {
-    const docFilePath = path.join(deps.projectPath, item.docPath);
+  const autoDocPath = auto.docPath ?? item.docPath;
+  if (auto.appendedText && autoDocPath) {
+    const docFilePath = path.join(deps.projectPath, autoDocPath);
     let content: string | null = null;
     try {
       content = fs.readFileSync(docFilePath, 'utf-8');
@@ -798,7 +834,7 @@ export async function undoAutoApplied(deps: UndoAutoDeps, itemId: string): Promi
       content = null;
     }
     if (content === null) {
-      throw new Error(`Document not found for ${item.docPath} — cannot undo`);
+      throw new Error(`Document not found for ${autoDocPath} — cannot undo`);
     }
     // Same signal the GET decoration uses (isAutoAppliedIncorporated): refuse
     // when incorporation consumed the pending block, even if the answer text
@@ -806,7 +842,7 @@ export async function undoAutoApplied(deps: UndoAutoDeps, itemId: string): Promi
     if (isAutoAppliedIncorporated(deps.projectPath, item)) {
       throw new Error('Auto-applied answer already incorporated — undo no longer available');
     }
-    const updated = content.replace(auto.appendedText, '');
+    const updated = removeAppendedText(content, auto.appendedText, auto.offset);
     fs.writeFileSync(docFilePath, updated, 'utf-8');
   } else if (isAutoAppliedIncorporated(deps.projectPath, item)) {
     throw new Error('Auto-applied answer already incorporated — undo no longer available');
