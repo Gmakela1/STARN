@@ -12,8 +12,11 @@
  *   2. assessResearch — dedicated research critic (same evaluate-client
  *      pattern as the document critic): source authority tiering, evidence
  *      directness, consistency with recorded user answers / approved baseline
- *      (conflict = fail), assumption count. Emits { confidence, verdict,
- *      rationale }. The researcher does NOT self-grade.
+ *      (conflict = fail), assumption count, plotted-data evidence class. Emits
+ *      { confidence, verdict, rationale }. The researcher does NOT self-grade.
+ *      A chart-derived reading (confidenceFloorForEvidence) is floored at 0.6
+ *      — a datasheet curve is a primary source for its own values — and stays
+ *      in the propose tier.
  *   3. verdict routing:
  *      - confidence >= AUTO_APPLY_CONFIDENCE → applyAutoAnswer: the answer
  *        flows through the SAME answer-applier path a user answer takes
@@ -65,6 +68,41 @@ export const AUTO_APPLY_CONFIDENCE = 0.95;
 export const PROPOSE_CONFIDENCE_FLOOR = 0.3;
 /** Confidence ceiling for unverified/unfetchable sources: propose tier, never auto. */
 export const UNVERIFIED_CONFIDENCE_CAP = 0.85;
+/**
+ * Confidence floor for a reading taken off a plotted curve in a datasheet or
+ * project reference document: the drawing IS the primary source for its own
+ * values, so "no second source repeats the number" cannot score it 0. Below
+ * UNVERIFIED_CONFIDENCE_CAP, so a chart read is proposed, never auto-applied.
+ */
+export const PLOTTED_EVIDENCE_CONFIDENCE_FLOOR = 0.6;
+/** Answer language that marks a reading off a plotted curve / chart. */
+const CURVE_READING_RE = /\b(plot|plotted|plotting|curve|curves|chart|charts|graphed|graph|nomograph)\b/i;
+/** Source language that marks a datasheet, performance sheet, reference doc or PDF. */
+const DATASHEET_SOURCE_RE = /(datasheet|data sheet|performance sheet|spec sheet|specification sheet|reference document|\.pdf\b)/i;
+
+/**
+ * Confidence floor for chart-derived answers. A value read off a curve that is
+ * PART of a manufacturer datasheet (or a project reference document) is
+ * evidence of what that document says — reading it with declared axes is
+ * verification of the document, not an unverified claim.
+ *
+ * Pure: no I/O, no model call — testable in isolation.
+ *
+ * @param answer - the candidate answer text (looked for curve/chart language)
+ * @param sources - the cited sources (title, optional url)
+ * @returns PLOTTED_EVIDENCE_CONFIDENCE_FLOOR when the answer reads a plotted
+ *   curve/chart AND at least one source is datasheet-like; otherwise 0
+ */
+export function confidenceFloorForEvidence(
+  answer: string,
+  sources: { title: string; url?: string }[]
+): number {
+  if (!CURVE_READING_RE.test(answer)) return 0;
+  const datasheetLike = sources.some(s =>
+    DATASHEET_SOURCE_RE.test(`${s.title || ''} ${s.url || ''}`)
+  );
+  return datasheetLike ? PLOTTED_EVIDENCE_CONFIDENCE_FLOOR : 0;
+}
 /** Hard character caps for model-supplied fields. */
 const ANSWER_CHAR_CAP = 4000;
 const REASONING_CHAR_CAP = 1000;
@@ -361,6 +399,7 @@ export const RESEARCH_CRITIC_RUBRIC = `RESEARCH ASSESSMENT RUBRIC (grade the can
 2. EVIDENCE DIRECTNESS: a source that STATES the answer verbatim is strong; an answer INFERRED or extrapolated from related specs loses one tier.
 3. CONSISTENCY (automatic fail): if the candidate answer conflicts with any recorded user answer or approved project baseline listed below, confidence MUST be <= 0.30 regardless of source quality.
 4. ASSUMPTION COUNT: each unstated assumption the answer relies on deducts ~0.10.
+5. Evidence class — plotted data: when the answer is read from a vector chart that is part of a manufacturer datasheet or a project reference document, and the reading states the declared axes and the sampling tolerance, treat it as evidence OF THE DRAWING. Floor the confidence at 0.6 (medium) and require the answer to carry the disclosure "read from the plotted curve, not a spec table". Do not score it 0 merely because no second source repeats the number — a datasheet curve is a primary source for its own values. Still cap at 0.85 unless a second independent source corroborates it.
 
 Respond ONLY with valid JSON in this exact structure:
 {"confidence": <number 0.00-1.00>, "corroborated": <true|false — verified evidence states the candidate answer>, "verdict": "auto" | "propose" | "none", "rationale": "<one short paragraph: which sources drove the confidence and any conflicts found>"}`;
@@ -421,16 +460,32 @@ export async function assessResearch(
     const cappedConfidence = !verification?.ok || obj.corroborated === false
       ? Math.min(confidence, UNVERIFIED_CONFIDENCE_CAP)
       : confidence;
-    const rationale = typeof obj.rationale === 'string' ? sanitizeField(obj.rationale, REASONING_CHAR_CAP) : '';
+    // Chart-derived readings: a curve that is PART of a datasheet is a primary
+    // source for its own values, so the floor only ever RAISES confidence (a
+    // chart read lands at 0.6 = propose tier, never auto).
+    const evidenceFloor = confidenceFloorForEvidence(research.answer, research.sources);
+    const flooredConfidence = Math.max(cappedConfidence, evidenceFloor);
+    const rationaleParts = [
+      typeof obj.rationale === 'string' ? sanitizeField(obj.rationale, REASONING_CHAR_CAP) : ''
+    ];
+    // Disclosure discipline: the floor is only honest when the answer says it
+    // was read off a curve. Model output is never rewritten — a missing
+    // disclosure is recorded as a reasoning note instead.
+    if (evidenceFloor > 0 && !/curve/i.test(research.answer)) {
+      rationaleParts.push('chart-derived: floor 0.6 applied');
+    }
+    const rationale = rationaleParts.filter(Boolean).join(' — ');
     const rawVerdict = obj.verdict;
     // Verdict is DERIVED from the clamped confidence (critic text is advisory):
     // auto >= AUTO_APPLY_CONFIDENCE; propose >= PROPOSE_CONFIDENCE_FLOOR; else none.
     let verdict: ResearchVerdict;
-    if (cappedConfidence >= AUTO_APPLY_CONFIDENCE) verdict = 'auto';
-    else if (cappedConfidence >= PROPOSE_CONFIDENCE_FLOOR) verdict = 'propose';
+    if (flooredConfidence >= AUTO_APPLY_CONFIDENCE) verdict = 'auto';
+    else if (flooredConfidence >= PROPOSE_CONFIDENCE_FLOOR) verdict = 'propose';
     else verdict = 'none';
-    if (rawVerdict === 'none') verdict = 'none';
-    return { confidence: cappedConfidence, verdict, rationale };
+    // A critic "none" cannot discard a chart-derived floor: 0.6 IS a usable
+    // candidate. Without the floor, critic text stays decisive (unchanged).
+    if (rawVerdict === 'none' && evidenceFloor === 0) verdict = 'none';
+    return { confidence: flooredConfidence, verdict, rationale };
   } catch (err: any) {
     if (err?.name === 'AbortError' || deps.signal?.aborted) {
       throw err;

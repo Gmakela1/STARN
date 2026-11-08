@@ -17,6 +17,7 @@ import {
   enrichItem,
   ensureItemTopic,
   assessResearch,
+  confidenceFloorForEvidence,
   applyAutoAnswer,
   undoAutoApplied,
   recoverStaleResearchingItems,
@@ -28,6 +29,7 @@ import {
   ResearchAssessment,
   QuestionResearch
 } from '../src/core/research-gate.js';
+import { toBand } from '../src/core/research-delegation.js';
 import { ChatCompletionResult } from '../src/openrouter/types.js';
 import * as agentLoopModule from '../src/core/agent-loop.js';
 import { PortalItem } from '../src/workspace/types.js';
@@ -377,6 +379,92 @@ describe('research gate wiring', () => {
     expect(stored.meta?.researching).toBe(false);
     expect(stored.meta?.autoApplied).toBeUndefined();
     expect(emitStatus.mock.calls.some(c => String(c[0]).includes('Research failed for:'))).toBe(true);
+  });
+
+  describe('chart-derived confidence floor (blocker: a datasheet curve scored 0.00)', () => {
+    const CHART_ANSWER =
+      'At 125 A the curve reads 6,000 W (endpoint 182 A / 8,650 W); Volts 72.4 flat. ' +
+      'Read from the plotted curve, not a spec table (axes: current A vs power W, tolerance ±2%).';
+    const CHART_SOURCES = [{ title: 'ME1115-performance sheet.pdf', url: 'reference/ME1115-performance sheet.pdf' }];
+
+    it('helper: plotted-curve answer + performance-sheet source → 0.6', () => {
+      expect(confidenceFloorForEvidence(CHART_ANSWER, CHART_SOURCES)).toBe(0.6);
+    });
+
+    it('helper: "read from the chart" + .pdf url → 0.6', () => {
+      expect(confidenceFloorForEvidence('Value read from the chart at 125 A.', [{ title: 'Source', url: 'https://vendor.example/curve.pdf' }])).toBe(0.6);
+    });
+
+    it('helper: chart answer with no datasheet-like source → 0', () => {
+      expect(confidenceFloorForEvidence(CHART_ANSWER, [{ title: 'Forum thread', url: 'https://forum.example/thread' }])).toBe(0);
+      expect(confidenceFloorForEvidence(CHART_ANSWER, [])).toBe(0);
+    });
+
+    it('helper: datasheet source with no curve language in the answer → 0', () => {
+      expect(confidenceFloorForEvidence('The contactor is rated 48V DC.', CHART_SOURCES)).toBe(0);
+    });
+
+    it('assessment: critic 0.0 + chart evidence → 0.6, band medium (propose, never auto)', async () => {
+      criticClient.chatCompletion = vi.fn(async () =>
+        chat(JSON.stringify({ confidence: 0, corroborated: false, verdict: 'none', rationale: 'No second source repeats the number.' }))
+      );
+      const assessment = await assessResearch(gateDeps, item, {
+        answer: CHART_ANSWER,
+        sources: CHART_SOURCES,
+        reasoning: 'Read off the drawn curve with declared axes.'
+      }, { ok: true, excerpt: 'Performance curve: current (A) vs power (W).' });
+      expect(assessment.confidence).toBe(0.6);
+      expect(toBand(assessment.confidence)).toBe('medium');
+      expect(assessment.verdict).toBe('propose');
+    });
+
+    it('assessment: critic 0.9 + chart evidence stays 0.9 (floor never lowers)', async () => {
+      criticClient.chatCompletion = vi.fn(async () =>
+        chat(JSON.stringify({ confidence: 0.9, corroborated: true, verdict: 'propose', rationale: 'Datasheet curve.' }))
+      );
+      const assessment = await assessResearch(
+        gateDeps,
+        item,
+        { answer: CHART_ANSWER, sources: CHART_SOURCES, reasoning: '' },
+        { ok: true, excerpt: 'Performance curve: current (A) vs power (W).' }
+      );
+      expect(assessment.confidence).toBe(0.9);
+    });
+
+    it('assessment: critic 0.0 with no chart evidence stays 0.0 (none tier)', async () => {
+      criticClient.chatCompletion = vi.fn(async () =>
+        chat(JSON.stringify({ confidence: 0, corroborated: false, verdict: 'none', rationale: 'Nothing states it.' }))
+      );
+      const assessment = await assessResearch(gateDeps, item, {
+        answer: 'The contactor is rated 48V DC.',
+        sources: CHART_SOURCES,
+        reasoning: ''
+      });
+      expect(assessment.confidence).toBe(0);
+      expect(assessment.verdict).toBe('none');
+    });
+
+    it('assessment: floor applies without a curve disclosure → reasoning note, answer untouched', async () => {
+      criticClient.chatCompletion = vi.fn(async () =>
+        chat(JSON.stringify({ confidence: 0, corroborated: false, verdict: 'none', rationale: 'Interpolated.' }))
+      );
+      const research = {
+        answer: 'At 125 A the chart reads 6,000 W; endpoint 182 A / 8,650 W.',
+        sources: CHART_SOURCES,
+        reasoning: ''
+      };
+      const assessment = await assessResearch(gateDeps, item, research);
+      expect(assessment.confidence).toBe(0.6);
+      expect(assessment.rationale).toContain('chart-derived: floor 0.6 applied');
+      expect(research.answer).toBe('At 125 A the chart reads 6,000 W; endpoint 182 A / 8,650 W.');
+    });
+
+    it('critic prompt carries the plotted-data evidence class clause', async () => {
+      await assessResearch(gateDeps, item, { answer: CHART_ANSWER, sources: CHART_SOURCES, reasoning: '' });
+      const prompt = String(criticClient.chatCompletion.mock.calls[0][0].messages[0].content);
+      expect(prompt).toContain('Evidence class — plotted data');
+      expect(prompt).toContain('read from the plotted curve, not a spec table');
+    });
   });
 
   describe('source verification (blocker: asserted titles are not authority)', () => {
