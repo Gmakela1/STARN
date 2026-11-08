@@ -94,11 +94,44 @@ function dedupeKey(item: Pick<PortalItem, 'type' | 'docPath' | 'title'> & { meta
 }
 
 /**
- * Pure: marks later open duplicates (same type + docPath + normalized title)
- * `meta.archived = true`, keeping the OLDEST of each group. Answered,
- * dismissed, resolved and already-archived items are never touched.
- * Returns true when at least one item was changed (idempotent: a second call
- * returns false).
+ * True when the item carries answer text: `PortalItem.answer` (written by
+ * answerPortalItem) or at least one non-empty `meta.answerHistory` entry.
+ *
+ * @param item Any portal item (no throw on missing/odd fields).
+ * @returns true only for a non-empty (trimmed) answer string.
+ */
+function hasAnswer(item: PortalItem): boolean {
+  if (typeof item.answer === 'string' && item.answer.trim() !== '') {
+    return true;
+  }
+  const history = item.meta?.answerHistory;
+  return Array.isArray(history) && history.some(entry => typeof entry?.text === 'string' && entry.text.trim() !== '');
+}
+
+/**
+ * When a closed item's answer landed: `updatedAt` (answerPortalItem stamps it)
+ * falls back to `createdAt` for legacy rows without one.
+ */
+function answerTime(item: PortalItem): string {
+  return item.updatedAt || item.createdAt;
+}
+
+/**
+ * Pure: marks open duplicates `meta.archived = true` in two passes.
+ *
+ * Pass 1 — open vs open: same type + docPath + normalized title, the OLDEST of
+ * each group wins.
+ * Pass 2 — open vs ALREADY CLOSED: an open item is a stale twin when a
+ * non-open item (answered/resolved/dismissed) with the same dedupeKey carries
+ * a non-empty answer written strictly AFTER the open item's createdAt. When the
+ * open item was created after the answer it may be a genuine re-open and is
+ * left alone.
+ *
+ * Nothing is ever deleted, already-archived items are never touched.
+ *
+ * @param items Portal items, mutated in place (only `meta.archived`).
+ * @returns true when at least one item was changed (idempotent: a second call
+ *   returns false).
  */
 export function dedupeOpenPortalItems(items: PortalItem[]): boolean {
   const open = items
@@ -110,6 +143,33 @@ export function dedupeOpenPortalItems(items: PortalItem[]): boolean {
     const key = dedupeKey(item);
     if (!seen.has(key)) {
       seen.add(key);
+      continue;
+    }
+    item.meta = { ...(item.meta || {}), archived: true };
+    changed = true;
+  }
+
+  // Pass 2 — latest answer time per dedupe identity among closed items.
+  const answeredAt = new Map<string, string>();
+  for (const item of items) {
+    if (item.status === 'open' || !hasAnswer(item)) {
+      continue;
+    }
+    const key = dedupeKey(item);
+    const at = answerTime(item);
+    const prior = answeredAt.get(key);
+    if (prior === undefined || prior.localeCompare(at) < 0) {
+      answeredAt.set(key, at);
+    }
+  }
+  for (const item of items) {
+    if (item.status !== 'open' || item.meta?.archived === true) {
+      continue;
+    }
+    const at = answeredAt.get(dedupeKey(item));
+    // `<= 0` = the open item was created at/after the answer → plausible
+    // genuine re-open, never archived.
+    if (at === undefined || at.localeCompare(item.createdAt) <= 0) {
       continue;
     }
     item.meta = { ...(item.meta || {}), archived: true };

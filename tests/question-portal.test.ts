@@ -947,3 +947,94 @@ describe('appendThreadMessage', () => {
     expect(result.every(m => m !== null)).toBe(true);
   });
 });
+
+describe('dedupeOpenPortalItems — open twins of an ALREADY-ANSWERED item (issue #144)', () => {
+  function item(over: Partial<PortalItem>): PortalItem {
+    return {
+      id: 'x',
+      type: 'question',
+      severity: 'normal',
+      docPath: 'docs/CONOPS.md',
+      title: 'What max voltage?',
+      status: 'open',
+      source: 'autopilot',
+      createdAt: '2026-10-30T00:00:00.000Z',
+      updatedAt: '2026-10-30T00:00:00.000Z',
+      ...over
+    };
+  }
+
+  it('archives an open twin created BEFORE the answered twin', () => {
+    const openTwin = item({ id: 'open-twin', createdAt: '2026-10-30T00:00:00.000Z', updatedAt: '2026-10-30T00:00:00.000Z' });
+    const answered = item({
+      id: 'answered',
+      status: 'answered',
+      answer: '48V nominal',
+      createdAt: '2026-10-31T00:00:00.000Z',
+      updatedAt: '2026-11-07T00:00:00.000Z'
+    });
+
+    expect(dedupeOpenPortalItems([openTwin, answered])).toBe(true);
+    expect(openTwin.meta?.archived).toBe(true);
+    expect(answered.meta?.archived).toBeUndefined();
+    expect(answered.status).toBe('answered');
+  });
+
+  it('does NOT archive an open item created AFTER the answer (genuine re-open)', () => {
+    const answered = item({
+      id: 'answered',
+      status: 'answered',
+      answer: '48V nominal',
+      createdAt: '2026-10-30T00:00:00.000Z',
+      updatedAt: '2026-11-01T00:00:00.000Z'
+    });
+    const reopened = item({ id: 'reopened', createdAt: '2026-11-05T00:00:00.000Z', updatedAt: '2026-11-05T00:00:00.000Z' });
+
+    expect(dedupeOpenPortalItems([answered, reopened])).toBe(false);
+    expect(reopened.meta?.archived).toBeUndefined();
+  });
+
+  it('does NOT archive when the answered twin has an EMPTY answer', () => {
+    const openTwin = item({ id: 'open-twin' });
+    const answered = item({ id: 'answered', status: 'answered', answer: '   ', createdAt: '2026-10-31T00:00:00.000Z', updatedAt: '2026-11-07T00:00:00.000Z' });
+
+    expect(dedupeOpenPortalItems([openTwin, answered])).toBe(false);
+    expect(openTwin.meta?.archived).toBeUndefined();
+  });
+
+  it('does NOT archive the same title in a DIFFERENT docPath (dedupeKey includes docPath)', () => {
+    const openTwin = item({ id: 'open-twin', docPath: 'docs/ICD.md' });
+    const answered = item({ id: 'answered', status: 'answered', answer: '48V nominal', docPath: 'docs/CONOPS.md', createdAt: '2026-10-31T00:00:00.000Z', updatedAt: '2026-11-07T00:00:00.000Z' });
+
+    expect(dedupeOpenPortalItems([openTwin, answered])).toBe(false);
+    expect(openTwin.meta?.archived).toBeUndefined();
+  });
+
+  it('keeps the oldest open twin and archives the later one (open-vs-open pass unchanged)', () => {
+    const old = item({ id: 'old', createdAt: '2026-10-30T00:00:00.000Z', updatedAt: '2026-10-30T00:00:00.000Z' });
+    const newer = item({ id: 'newer', createdAt: '2026-10-31T00:00:00.000Z', updatedAt: '2026-10-31T00:00:00.000Z' });
+
+    expect(dedupeOpenPortalItems([newer, old])).toBe(true);
+    expect(old.meta?.archived).toBeUndefined();
+    expect(newer.meta?.archived).toBe(true);
+  });
+
+  it('3-item mix: one answered + two open twins → both twins archived, answered untouched', () => {
+    const answered = item({
+      id: 'answered',
+      status: 'answered',
+      answer: '48V nominal',
+      createdAt: '2026-10-29T00:00:00.000Z',
+      updatedAt: '2026-11-07T00:00:00.000Z'
+    });
+    const twinA = item({ id: 'twin-a', createdAt: '2026-10-30T00:00:00.000Z', updatedAt: '2026-10-30T00:00:00.000Z' });
+    const twinB = item({ id: 'twin-b', createdAt: '2026-10-31T00:00:00.000Z', updatedAt: '2026-10-31T00:00:00.000Z' });
+
+    expect(dedupeOpenPortalItems([answered, twinA, twinB])).toBe(true);
+    expect(twinA.meta?.archived).toBe(true);
+    expect(twinB.meta?.archived).toBe(true);
+    expect(answered.meta?.archived).toBeUndefined();
+    expect(answered.answer).toBe('48V nominal');
+    expect(dedupeOpenPortalItems([answered, twinA, twinB])).toBe(false);
+  });
+});
