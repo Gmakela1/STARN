@@ -988,6 +988,32 @@ describe('QuestionPanel research gate', () => {
     expect(props.onUndoAuto).toHaveBeenCalledWith(item.id);
   });
 
+  it('confirmed banner: no appended pending block → applied-on-next-turn copy, not pending incorporation', async () => {
+    const item = makeItem({
+      status: 'answered',
+      answer: '48V nominal',
+      meta: {
+        autoApplied: {
+          answer: '48V nominal',
+          confidence: 0.7,
+          sources: [],
+          rationale: 'Vendor spec.',
+          confirmed: true,
+        },
+      },
+    });
+    const props = baseProps({ items: [item], onUndoAuto: vi.fn(async () => {}) });
+    const { user } = renderWithUser(<QuestionPanel {...props} />);
+
+    expect(
+      screen.getByText('Confirmed from research proposal — applied to the document on the next turn')
+    ).toBeTruthy();
+    expect(screen.queryByText(/pending incorporation/)).toBeNull();
+    expect(screen.queryByText(/%/)).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Undo confirmed answer' }));
+    expect(props.onUndoAuto).toHaveBeenCalledWith(item.id);
+  });
+
   // ————— F2: topic grouping header shows a real group when meta.topic exists —————
   it('topic grouping: items with meta.topic land under their real group header', () => {
     const a = makeItem({ title: 'Bus voltage', meta: { topic: 'electrical' } });

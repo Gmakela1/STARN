@@ -4,7 +4,10 @@ import net from 'node:net';
 import { ToolHandler, ToolExecutionContext, ToolExecutionResponse } from '../types.js';
 import { NO_PDF_TEXT_MARKER, extractTextFromPdfBuffer } from './pdf-extractor.js';
 
-/** Maximum raw HTML bytes considered for cleaning (raised from 50 KB). */
+/**
+ * Maximum raw BODY bytes considered for cleaning (raised from 50 KB). HTML is cut to
+ * this many bytes before decoding; a larger PDF body is refused instead.
+ */
 const MAX_RAW_BYTES = 2 * 1024 * 1024;
 /** Maximum characters of cleaned text returned to the model. */
 const MAX_OUTPUT_CHARS = 20000;
@@ -30,14 +33,16 @@ export function looksLikePdf(contentType: string | null, bytes: Uint8Array): boo
 
 /**
  * Charset label declared by a `content-type` header (e.g. `text/html;
- * charset=iso-8859-1`).
+ * charset=iso-8859-1`), with surrounding single or double quotes stripped —
+ * TextDecoder rejects a quoted label and would fall back to utf-8.
  *
  * @param contentType Raw header value (may be null).
  * @returns Lowercased label, or undefined when the header declares none.
  */
 function charsetFrom(contentType: string | null): string | undefined {
-  const match = /charset="?([^";\s]+)/i.exec(contentType ?? '');
-  return match?.[1]?.toLowerCase();
+  const match = /charset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^";\s]+))/i.exec(contentType ?? '');
+  const label = match?.[1] ?? match?.[2] ?? match?.[3];
+  return label ? label.toLowerCase() : undefined;
 }
 
 /**
@@ -431,9 +436,11 @@ export const webFetchHandler: ToolHandler = {
         return await buildPdfFetchResult(bytes, parsed.toString());
       }
 
-      const bodyText = decodeBody(bytes, bodyContentType);
-      // Clean the whole (capped) document, then cap the cleaned text.
-      const finalResult = buildWebFetchResult(bodyText.slice(0, MAX_RAW_BYTES));
+      // Cap the buffered body by BYTES before decoding (same budget the PDF branch
+      // enforces), then clean the whole capped document.
+      const cappedBytes = bytes.byteLength > MAX_RAW_BYTES ? bytes.subarray(0, MAX_RAW_BYTES) : bytes;
+      const bodyText = decodeBody(cappedBytes, bodyContentType);
+      const finalResult = buildWebFetchResult(bodyText);
 
       return {
         success: true,

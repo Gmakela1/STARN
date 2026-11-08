@@ -884,6 +884,10 @@ export default function QuestionPanel({
     // Research gate states: auto-applied (answered + snapshot) / proposed / researching.
     const auto = item.status === 'answered' ? item.meta?.autoApplied : undefined;
     const autoAppliedActive = auto !== undefined;
+    /** Confirmed stamps carry no percentage; with no appended block nothing is pending. */
+    const confirmedBannerLabel = auto?.appendedText
+      ? 'Confirmed from research proposal — pending incorporation'
+      : 'Confirmed from research proposal — applied to the document on the next turn';
     const proposal = item.status === 'open' ? item.meta?.proposedAnswer : undefined;
     const researching = item.status === 'open' && item.meta?.researching === true;
     // Answer-thread state (§4.5–§4.7): one log, one draft, one mode per item.
@@ -999,7 +1003,7 @@ export default function QuestionPanel({
               <Check className="h-4 w-4" aria-hidden />
               <span>
                 {auto.confirmed
-                  ? 'Confirmed from research proposal — pending incorporation'
+                  ? confirmedBannerLabel
                   : `Auto-applied from research (${Math.round(auto.confidence * 100)}% confidence) — pending incorporation`}
               </span>
               {!auto.incorporated && (

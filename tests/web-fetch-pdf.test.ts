@@ -129,6 +129,37 @@ describe('web_fetch PDF handling', () => {
     expect(res.result).not.toContain('\uFFFD');
   });
 
+  it('decodes a single-quoted charset label (quotes stripped, not fed to TextDecoder)', async () => {
+    const latin1 = Buffer.from('<html><body><h1>Kühler 25 °C</h1></body></html>', 'latin1');
+    stubFetch(new Uint8Array(latin1), "text/html; charset='iso-8859-1'");
+
+    const res = await registry.execute('web_fetch', { url: 'https://example.com/de/quoted' }, context, ['web_fetch']);
+
+    expect(res.success).toBe(true);
+    expect(res.result).toContain('Kühler 25 °C');
+    expect(res.result).not.toContain('\uFFFD');
+  });
+
+  it('caps the buffered HTML body by BYTES before decoding', async () => {
+    // 'é' is 2 bytes in utf-8: the body exceeds the 2 MB byte cap while staying
+    // under 2 MB characters, so a character-based slice would keep the JSON-LD.
+    const filler = 'é'.repeat(1_100_000);
+    const html =
+      '<html><head>' +
+      filler +
+      '<script type="application/ld+json">{"@type":"Product","name":"BeyondCap","offers":{"price":"1234.00","priceCurrency":"USD"}}</script>' +
+      '</head><body><p>Visible body text</p></body></html>';
+    const body = Buffer.from(html, 'utf8');
+    expect(body.byteLength).toBeGreaterThan(2 * 1024 * 1024);
+    expect(html.length).toBeLessThan(2 * 1024 * 1024);
+    stubFetch(new Uint8Array(body), 'text/html; charset=utf-8');
+
+    const res = await registry.execute('web_fetch', { url: 'https://example.com/wide-chars' }, context, ['web_fetch']);
+
+    expect(res.success).toBe(true);
+    expect(res.result).not.toContain('1234.00');
+  });
+
   it('refuses a PDF body larger than the raw-byte cap before parsing', async () => {
     const huge = Buffer.alloc(2 * 1024 * 1024 + 1, 0x20);
     huge.write('%PDF-1.4\n', 0, 'latin1');

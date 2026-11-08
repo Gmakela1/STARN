@@ -40,7 +40,8 @@ export const NO_PDF_TEXT_MARKER =
  * Extracts the text layer of an in-memory PDF (first TEXT_MAX_PAGES pages).
  *
  * @param data Raw PDF bytes.
- * @returns Page text joined by `--- Page Break ---`, or `NO_PDF_TEXT_MARKER` when no page has text.
+ * @returns Page text joined by `--- Page Break ---`, followed by a truncation notice when
+ *   `doc.numPages` exceeds {@link TEXT_MAX_PAGES}; `NO_PDF_TEXT_MARKER` when no page has text.
  * @throws Whatever pdfjs throws for a corrupt/encrypted document.
  */
 export async function extractTextFromPdfBuffer(data: Uint8Array): Promise<string> {
@@ -60,7 +61,12 @@ export async function extractTextFromPdfBuffer(data: Uint8Array): Promise<string
     }
 
     const result = pages.join('\n\n--- Page Break ---\n\n');
-    return result || NO_PDF_TEXT_MARKER;
+    if (!result) return NO_PDF_TEXT_MARKER;
+    // A silent cut would read as a complete document; announce the missing pages.
+    if (doc.numPages > TEXT_MAX_PAGES) {
+      return `${result}\n\n[Truncated: first ${TEXT_MAX_PAGES} of ${doc.numPages} pages — use read_chart_data or split the PDF]`;
+    }
+    return result;
   } finally {
     // Release the worker-held document (web_fetch parses remote bytes).
     try {
