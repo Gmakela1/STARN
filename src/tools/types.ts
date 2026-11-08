@@ -21,6 +21,12 @@ export interface ToolExecutionContext {
    * The injected wrapper owns the 240 s budget (the core runner arms no timer).
    */
   requestResearch?: (req: { question: string; focus?: string[] }) => Promise<ResearchDelegationResult>;
+  /**
+   * Structured log sink for tool-level diagnostics (one line per chart read).
+   * Structurally satisfied by `Logger`. Absent when the caller built no logger;
+   * handlers then stay silent instead of writing to the console.
+   */
+  logger?: { info(message: string): void; warn(message: string): void };
 }
 
 export interface ToolExecutionResponse {

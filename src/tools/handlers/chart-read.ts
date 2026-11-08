@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ToolHandler, ToolExecutionContext, ToolExecutionResponse } from '../types.js';
 import { extractChartData } from '../document-extractors/chart-vector-extractor.js';
-import type { AxisDecl, ChartExtraction, ChartSeries } from '../document-extractors/chart-types.js';
+import type { AxisDecl, AxisMap, ChartExtraction, ChartSeries } from '../document-extractors/chart-types.js';
 
 /** Hard caps from spec §7. */
 const MAX_OUTPUT_CHARS = 12000;
@@ -60,6 +60,49 @@ function disclosure(extraction: ChartExtraction, series: ChartSeries[]): string 
     `Source: ${extraction.file} p.${extraction.page}, ${idsPart}${anchors}. ` +
     'Verify against the figure before use in a BOM or ICD.'
   );
+}
+
+/** Collapses whitespace so one log value can never break the single-line format. */
+function flat(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * @param decl The caller's declared axis, when supplied.
+ * @param map The axis actually used for sampling, when calibration succeeded.
+ * @returns `min–max unit|none`, or `-` when neither exists.
+ */
+function axisSpan(decl: AxisDecl | undefined, map: AxisMap | undefined): string {
+  if (decl) return `${decl.min}–${decl.max} ${flat(decl.unit ?? '') || 'none'}`;
+  if (map) return `${map.valueMin}–${map.valueMax} ${flat(map.unit ?? '') || 'none'}`;
+  return '-';
+}
+
+/**
+ * Builds the one-line `chart_read` log record. Refusals are logged so a refused
+ * axis declaration stays visible after the fact: whether the researcher retried
+ * with corrected axes or gave up is traceable from the log alone.
+ *
+ * Never carries the absolute path (base name only) and never file contents.
+ *
+ * @param args Tool arguments; only `axes` is read (declared ranges win over fitted ones).
+ * @param extraction Output of `extractChartData`.
+ * @returns A single line with no embedded newlines.
+ */
+export function chartReadLogLine(args: ChartReadArgs, extraction: ChartExtraction): string {
+  const refusals = [...extraction.refusals];
+  const reason = extraction.calibration.reason;
+  if (!extraction.calibration.ok && reason && !refusals.includes(reason)) refusals.push(reason);
+  const series = extraction.series.map((entry) => entry.name).join(',') || '-';
+  return [
+    `chart_read path=${path.basename(extraction.file)}`,
+    `page=${extraction.page}`,
+    `x=${axisSpan(args.axes?.x, extraction.calibration.xAxis)}`,
+    `y=${axisSpan(args.axes?.y, extraction.calibration.yAxes?.[0])}`,
+    `result=${refusals.length > 0 ? 'refused' : 'accepted'}`,
+    `series=${flat(series)}`,
+    `reason=${refusals.length > 0 ? flat(refusals.join('; ')) : '-'}`
+  ].join(' ');
 }
 
 /** @returns `markdown`, truncated at the 12000-character cap with an explicit note. */
@@ -198,6 +241,9 @@ export const chartReadHandler: ToolHandler = {
       seriesAxes: args.seriesAxes,
       maxSamples
     });
+    const logLine = chartReadLogLine(args, extraction);
+    if (extraction.refusals.length > 0 || !extraction.calibration.ok) context.logger?.warn(logLine);
+    else context.logger?.info(logLine);
     return { success: true, result: renderChartMarkdown(extraction, { series: args.series, maxSamples }) };
   }
 };

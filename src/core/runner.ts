@@ -513,6 +513,7 @@ Please complete and approve these before proceeding to ${specialist.name}.`;
       stateManager,
       editLog: [] as EditEntry[],
       signal: options.signal,
+      logger: options.logger,
       requestResearch,
       transcriber: transcriberGated
         ? { client: options.transcriberClient!, model: options.transcriberModel ?? '' }

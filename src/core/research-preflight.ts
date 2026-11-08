@@ -296,7 +296,8 @@ function buildStageContext(deps: ResearchStageDeps, withSearchClient: boolean): 
   const context: ToolExecutionContext = {
     projectPath: deps.projectPath,
     stateManager: deps.stateManager,
-    signal: deps.signal
+    signal: deps.signal,
+    logger: deps.logger
   };
   if (withSearchClient && deps.searchClient) {
     context.searchClient = deps.searchClient;

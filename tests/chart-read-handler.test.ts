@@ -7,6 +7,38 @@ import type { AxisCalibration, AxisMap, ChartExtraction, ChartSeries } from '../
 
 const BLANK_PDF = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n190\n%%EOF\n');
 
+/**
+ * @param stream Content stream body (PDF operators, one per line).
+ * @returns A complete one-page PDF wrapping `stream`.
+ */
+function makePdf(stream: string): Buffer {
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+  ];
+  let out = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objects.forEach((body, index) => {
+    offsets.push(out.length);
+    out += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) out += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, 'latin1');
+}
+
+/** Two coloured polylines: enough vector data for the extractor to cluster two series. */
+const CHART_PDF = makePdf(
+  [
+    '1 0 0 RG', '2 w', '100 100 m', '150 200 l', '250 300 l', '350 350 l', '450 400 l', 'S',
+    '0 0 1 RG', '2 w', '100 120 m', '150 190 l', '250 280 l', '350 340 l', '450 380 l', 'S',
+  ].join('\n'),
+);
+
 const X_MAP: AxisMap = {
   axis: 'x', a: 1 / 500, b: 0, log: false, coordMin: 0, coordMax: 500, valueMin: 0, valueMax: 5000, anchors: 2,
 };
@@ -49,6 +81,16 @@ function tempProject(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'starn-chart-read-'));
 }
 
+/** Capturing log sink: keeps every line plus the level it was written at. */
+function fakeLogger(): { lines: string[]; info(message: string): void; warn(message: string): void } {
+  const lines: string[] = [];
+  return {
+    lines,
+    info: (message: string) => lines.push(`INFO ${message}`),
+    warn: (message: string) => lines.push(`WARN ${message}`),
+  };
+}
+
 describe('read_chart_data handler', () => {
   it('refuses path traversal outside the project root', async () => {
     const dir = tempProject();
@@ -74,6 +116,41 @@ describe('read_chart_data handler', () => {
     expect(res.result).toMatch(/raster/i);
     expect(res.result).toMatch(/vision transcription applies/i);
     expect(res.result).not.toContain('| # | Series |');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('read_chart_data logging', () => {
+  it('logs one line per read: result=refused when it refuses, result=accepted when it calibrates', async () => {
+    const dir = tempProject();
+    fs.writeFileSync(path.join(dir, 'scan.pdf'), BLANK_PDF);
+    fs.writeFileSync(path.join(dir, 'chart.pdf'), CHART_PDF);
+    const logger = fakeLogger();
+
+    await chartReadHandler.execute(
+      { path: 'scan.pdf' },
+      { projectPath: dir, stateManager: {} as any, logger },
+    );
+    const accepted = await chartReadHandler.execute(
+      { path: 'chart.pdf', axes: { x: { min: 0, max: 100 }, y: { min: 0, max: 10000 } } },
+      { projectPath: dir, stateManager: {} as any, logger },
+    );
+
+    expect(accepted.success).toBe(true);
+    expect(logger.lines).toHaveLength(2);
+    expect(logger.lines[0]).toContain('result=refused');
+    expect(logger.lines[0]).toContain('path=scan.pdf');
+    expect(logger.lines[1]).toContain('result=accepted');
+    expect(logger.lines[1]).toContain('path=chart.pdf');
+    expect(logger.lines[1]).toContain('x=0–100 none');
+    expect(logger.lines[1]).toContain('y=0–10000 none');
+    expect(logger.lines[1]).toContain('series=series 1,series 2');
+    expect(logger.lines[1]).toContain('reason=-');
+    // One line per read, base name only, never the absolute path.
+    for (const line of logger.lines) {
+      expect(line).not.toContain('\n');
+      expect(line).not.toContain(dir);
+    }
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });

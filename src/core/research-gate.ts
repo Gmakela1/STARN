@@ -348,7 +348,8 @@ If the question is a judgment call, opinion, or cannot be verified from a source
     projectPath: deps.projectPath,
     stateManager: deps.stateManager,
     signal: deps.signal,
-    searchClient: deps.searchClient
+    searchClient: deps.searchClient,
+    logger: deps.logger
   };
 
   try {

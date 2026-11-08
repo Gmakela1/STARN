@@ -953,6 +953,7 @@ export class ServerSessionManager {
         context: {
           projectPath: this.deps.projectPath,
           stateManager: this.deps.stateManager,
+          logger: this.deps.logger,
           requestResearch: this.buildRequestResearch(item.id)
         },
         maxTurns: THREAD_MAX_TURNS,
@@ -1046,6 +1047,7 @@ export class ServerSessionManager {
         context: {
           projectPath: this.deps.projectPath,
           stateManager: this.deps.stateManager,
+          logger: this.deps.logger,
           requestResearch: this.buildRequestResearch(item.id)
         },
         maxTurns: THREAD_MAX_TURNS,
