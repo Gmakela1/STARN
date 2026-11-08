@@ -94,6 +94,29 @@ function dedupeKey(item: Pick<PortalItem, 'type' | 'docPath' | 'title'> & { meta
 }
 
 /**
+ * Pure: candidate identity keys for the pass-2 (open vs closed) comparison
+ * only. Pass 1 keeps the single `dedupeKey` identity.
+ *
+ * Both the current title and `meta.originalTitle` (the pre-short-title-rewrite
+ * wording) are offered, because only ONE side of a twin pair is retitled: the
+ * answered side slugs its original long title, the open side slugs the short
+ * one, and the single `dedupeKey` string never matches.
+ *
+ * @param item Any item shaped like PortalItem's type/title/meta.
+ * @returns A set of 1-2 keys `[type, slug]` — never throws on odd fields.
+ */
+function dedupeCandidateKeys(
+  item: Pick<PortalItem, 'type' | 'title'> & { meta?: { originalTitle?: string } }
+): Set<string> {
+  const keys = new Set<string>([JSON.stringify([item.type, questionSlug(item.title)])]);
+  const original = item.meta?.originalTitle;
+  if (typeof original === 'string' && original.trim() !== '') {
+    keys.add(JSON.stringify([item.type, questionSlug(original)]));
+  }
+  return keys;
+}
+
+/**
  * True when the item carries answer text: `PortalItem.answer` (written by
  * answerPortalItem) or at least one non-empty `meta.answerHistory` entry.
  *
@@ -122,10 +145,10 @@ function answerTime(item: PortalItem): string {
  * Pass 1 — open vs open: same type + docPath + normalized title, the OLDEST of
  * each group wins.
  * Pass 2 — open vs ALREADY CLOSED: an open item is a stale twin when a
- * non-open item (answered/resolved/dismissed) with the same dedupeKey carries
- * a non-empty answer written strictly AFTER the open item's createdAt. When the
- * open item was created after the answer it may be a genuine re-open and is
- * left alone.
+ * non-open item (answered/resolved/dismissed) whose candidate key set
+ * intersects the open item's carries a non-empty answer written strictly AFTER
+ * the open item's createdAt. When the open item was created after the answer it
+ * may be a genuine re-open and is left alone.
  *
  * Nothing is ever deleted, already-archived items are never touched.
  *
@@ -149,24 +172,34 @@ export function dedupeOpenPortalItems(items: PortalItem[]): boolean {
     changed = true;
   }
 
-  // Pass 2 — latest answer time per dedupe identity among closed items.
+  // Pass 2 — latest answer time per candidate key among closed items.
+  // DocPath is deliberately IGNORED here: the same question answered from a
+  // different document (docs/RTM.md open, docs/REQUIREMENTS.md answered) is
+  // still stale, so only the type + title identity is compared.
   const answeredAt = new Map<string, string>();
   for (const item of items) {
     if (item.status === 'open' || !hasAnswer(item)) {
       continue;
     }
-    const key = dedupeKey(item);
     const at = answerTime(item);
-    const prior = answeredAt.get(key);
-    if (prior === undefined || prior.localeCompare(at) < 0) {
-      answeredAt.set(key, at);
+    for (const key of dedupeCandidateKeys(item)) {
+      const prior = answeredAt.get(key);
+      if (prior === undefined || prior.localeCompare(at) < 0) {
+        answeredAt.set(key, at);
+      }
     }
   }
   for (const item of items) {
     if (item.status !== 'open' || item.meta?.archived === true) {
       continue;
     }
-    const at = answeredAt.get(dedupeKey(item));
+    let at: string | undefined;
+    for (const key of dedupeCandidateKeys(item)) {
+      const answerAt = answeredAt.get(key);
+      if (answerAt !== undefined && (at === undefined || at.localeCompare(answerAt) < 0)) {
+        at = answerAt;
+      }
+    }
     // `<= 0` = the open item was created at/after the answer → plausible
     // genuine re-open, never archived.
     if (at === undefined || at.localeCompare(item.createdAt) <= 0) {
