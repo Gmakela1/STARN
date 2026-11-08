@@ -7,7 +7,7 @@
  *   deliverable. No web access, no write access (allow-list enforced twice:
  *   registry.getDefinitions + registry.execute gate).
  * - runResearchPreflight: read-only agent loop (fs/fs_list/state_read/
- *   web_search) that researches the scoping info needs and returns a bounded
+ *   web_search/web_fetch) that researches the scoping info needs and returns a bounded
  *   dossier string for prompt injection: settled decisions (deterministic),
  *   already-open questions (deterministic), researched candidate answers with
  *   sources (model), unresolved user-decision items (model).
@@ -36,8 +36,13 @@ import { PENDING_INCORPORATION_MARKER } from './incorporation-prompt.js';
 
 /** Scoping turn allow-list: reads only — fs_write/fs_edit/state_update/web_search are structurally impossible. */
 export const SCOPING_ALLOWED_TOOLS = ['fs_read', 'fs_list', 'state_read'] as const;
-/** Preflight allow-list: adds web research. Still no write tools. */
-export const PREFLIGHT_ALLOWED_TOOLS = ['fs_read', 'fs_list', 'state_read', 'web_search', 'read_chart_data'] as const;
+/**
+ * Preflight allow-list: adds web research. The loop may search AND open the
+ * pages it finds with web_fetch (SSRF-guarded, read-only, untrusted content) —
+ * a search snippet is not evidence, so the loop must read the page before
+ * citing it. Still no write tools.
+ */
+export const PREFLIGHT_ALLOWED_TOOLS = ['fs_read', 'fs_list', 'state_read', 'web_search', 'web_fetch', 'read_chart_data'] as const;
 
 export const SCOPING_MAX_TURNS = 4;
 export const PREFLIGHT_MAX_TURNS = 8;

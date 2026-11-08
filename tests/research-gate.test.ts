@@ -189,7 +189,7 @@ describe('research gate wiring', () => {
     expect(spy).toHaveBeenCalled();
     const passed = spy.mock.calls.flatMap(c => c[0] as string[]);
     for (const tool of passed) {
-      expect(['fs_read', 'fs_list', 'state_read', 'web_search', 'read_chart_data']).toContain(tool);
+      expect(['fs_read', 'fs_list', 'state_read', 'web_search', 'web_fetch', 'read_chart_data']).toContain(tool);
     }
   });
 

@@ -287,6 +287,7 @@ export async function runQuestionResearch(deps: ResearchGateDeps, item: PortalIt
 Your ONLY job is to research ONE open question so the user may not have to answer it manually.
 You are read-only: never write or edit files. Use web_search for external facts (manufacturer spec sheets, datasheets, official documentation, standards), and fs_read/fs_list for project documents, reference materials and recorded answers.
 Exhaust, in priority order: manufacturer/datasheet sources, official documentation, the project's own docs and recorded answers, reputable engineering publications.
+Open the pages you find with web_fetch before citing them — a search snippet is not evidence.
 When a reference PDF contains plotted curves (fs_read returns a '[Charts detected: ...]' banner), read the axis titles and tick ranges from the extracted text, then call read_chart_data with an explicit axes declaration for the scale you need (e.g. x Amps 0-200, y Watts Out 0-10000) and cite the sampled values. Curves are vector paths, not images — never report a chart as unreadable, and never guess an axis pairing: the tool refuses when the page has multiple scales and you omit the declaration.
 Your final reply must contain ONLY a JSON object (no markdown fence, no commentary) in this exact shape:
 {"answer": "<direct factual answer, one concise paragraph>", "sources": [{"title": "<source name>", "url": "<URL if web, omit if project doc>"}], "reasoning": "<how the sources support the answer; note any assumptions>"}

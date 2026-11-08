@@ -8,6 +8,7 @@ import {
   buildAlreadyOpenQuestionsSection,
   formatScopingPlanForPrompt,
   PREFLIGHT_ALLOWED_TOOLS,
+  SCOPING_ALLOWED_TOOLS,
   DOSSIER_CHAR_CAP,
   sanitizeResearchLine,
   RESEARCH_FENCE_BEGIN,
@@ -19,6 +20,7 @@ import {
   ResearchStageDeps
 } from '../src/core/research-preflight.js';
 import { ToolRegistry } from '../src/tools/registry.js';
+import { RESEARCH_GATE_ALLOWED_TOOLS } from '../src/core/research-gate.js';
 import { ProjectStateManager } from '../src/workspace/state.js';
 import { addPortalItem, answerPortalItem } from '../src/core/question-portal.js';
 import { CriticEvaluator } from '../src/core/critic.js';
@@ -188,6 +190,20 @@ describe('untrusted research fence', () => {
     expect(DOSSIER_PROMPT_HEADER).toContain('UNTRUSTED');
     expect(DOSSIER_PROMPT_HEADER).not.toMatch(/researched[\s\S]*user-confirmed/i);
     expect(DOSSIER_PROMPT_HEADER).toMatch(/SETTLED[\s\S]*user-confirmed/i);
+  });
+});
+
+describe('research allow-lists', () => {
+  it('preflight may open pages it finds (web_fetch) while scoping stays files-only', () => {
+    // The researcher must be able to open a result, not just search for it.
+    expect(PREFLIGHT_ALLOWED_TOOLS).toContain('web_search');
+    expect(PREFLIGHT_ALLOWED_TOOLS).toContain('web_fetch');
+    // The scoping turn stays files-only.
+    expect(SCOPING_ALLOWED_TOOLS).not.toContain('web_search');
+    expect(SCOPING_ALLOWED_TOOLS).not.toContain('web_fetch');
+    // The research gate inherits web_fetch from the preflight list.
+    expect(RESEARCH_GATE_ALLOWED_TOOLS).toContain('web_fetch');
+    expect(RESEARCH_GATE_ALLOWED_TOOLS).toEqual([...PREFLIGHT_ALLOWED_TOOLS]);
   });
 });
 
