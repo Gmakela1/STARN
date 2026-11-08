@@ -5,10 +5,17 @@ import { ToolHandler, ToolExecutionContext, ToolExecutionResponse } from '../typ
 import { NO_PDF_TEXT_MARKER, extractTextFromPdfBuffer } from './pdf-extractor.js';
 
 /**
- * Maximum raw BODY bytes considered for cleaning (raised from 50 KB). HTML is cut to
- * this many bytes before decoding; a larger PDF body is refused instead.
+ * Maximum raw HTML body bytes considered for cleaning (raised from 50 KB). HTML is cut
+ * to this many bytes before decoding. HTML only: see {@link MAX_PDF_BYTES} for PDFs.
  */
 const MAX_RAW_BYTES = 2 * 1024 * 1024;
+/**
+ * Maximum raw PDF body bytes accepted for text extraction. Deliberately asymmetric with
+ * {@link MAX_RAW_BYTES}: HTML text beyond 2 MB is worthless, but a real manufacturer
+ * datasheet with plotted curves is 3-10 MB, and the 40-page extraction cap already
+ * bounds the parsing work.
+ */
+const MAX_PDF_BYTES = 25 * 1024 * 1024;
 /** Maximum characters of cleaned text returned to the model. */
 const MAX_OUTPUT_CHARS = 20000;
 const TRUNCATION_NOTICE = '\n\n[Content truncated at 20,000 characters]';
@@ -68,14 +75,22 @@ export function decodeBody(bytes: Uint8Array, contentType: string | null): strin
  *
  * @param bytes Raw PDF bytes.
  * @param url Source URL echoed in the result header.
- * @returns `success:true` with capped extracted text, or `success:false` with `PDF_REFUSAL`.
+ * @returns `success:true` with capped extracted text; `success:false` with an oversize
+ * message when the body exceeds {@link MAX_PDF_BYTES}; `success:false` with
+ * `PDF_REFUSAL` when the text layer is genuinely unreadable.
  * @throws Never: extraction errors are converted to the refusal response.
  */
 async function buildPdfFetchResult(bytes: Uint8Array, url: string): Promise<ToolExecutionResponse> {
   // Remote PDFs are parsed in-process: refuse absurd bodies before pdfjs sees
-  // them instead of buffering/parsing an unbounded document.
-  if (bytes.byteLength > MAX_RAW_BYTES) {
-    return { success: false, error: PDF_REFUSAL };
+  // them instead of buffering/parsing an unbounded document. This is NOT a parse
+  // failure, so it gets its own honest message instead of PDF_REFUSAL.
+  if (bytes.byteLength > MAX_PDF_BYTES) {
+    const mb = (bytes.byteLength / (1024 * 1024)).toFixed(1);
+    const limitMb = MAX_PDF_BYTES / (1024 * 1024);
+    return {
+      success: false,
+      error: `This PDF is ${mb} MB, over the ${limitMb} MB limit. Download it into reference/ and read it with fs_read.`
+    };
   }
   // pdfjs refuses a Node Buffer ("Please provide binary data as 'Uint8Array', rather than
   // 'Buffer'."), so hand it a Uint8Array view. Required, not an optimisation: same memory,
@@ -440,8 +455,8 @@ export const webFetchHandler: ToolHandler = {
         return await buildPdfFetchResult(bytes, parsed.toString());
       }
 
-      // Cap the buffered body by BYTES before decoding (same budget the PDF branch
-      // enforces), then clean the whole capped document.
+      // Cap the buffered HTML body by BYTES before decoding, then clean the whole
+      // capped document.
       const cappedBytes = bytes.byteLength > MAX_RAW_BYTES ? bytes.subarray(0, MAX_RAW_BYTES) : bytes;
       const bodyText = decodeBody(cappedBytes, bodyContentType);
       const finalResult = buildWebFetchResult(bodyText);

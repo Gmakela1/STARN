@@ -203,16 +203,34 @@ describe('web_fetch PDF handling', () => {
     expect(res.result).not.toContain('1234.00');
   });
 
-  it('refuses a PDF body larger than the raw-byte cap before parsing', async () => {
-    const huge = Buffer.alloc(2 * 1024 * 1024 + 1, 0x20);
+  // The PDF cap is 25 MB, NOT the 2 MB HTML cap: arxiv.org/pdf/1706.03762 is 2.11 MB and
+  // must extract. Oversize is a size refusal, not a parse failure, so it must not claim
+  // the text layer was unreadable.
+  it('refuses a PDF body over the 25 MB cap with an honest size message', async () => {
+    const huge = Buffer.alloc(26 * 1024 * 1024, 0x20);
     huge.write('%PDF-1.4\n', 0, 'latin1');
     stubFetch(new Uint8Array(huge), 'application/pdf');
 
     const res = await registry.execute('web_fetch', { url: 'https://example.com/huge.pdf' }, context, ['web_fetch']);
 
     expect(res.success).toBe(false);
-    expect(res.error).toBe(PDF_REFUSAL);
+    expect(res.error).toContain('26.0 MB');
+    expect(res.error).toContain('25 MB limit');
+    expect(res.error).not.toContain('text layer could not be read');
     expect(extractMock).not.toHaveBeenCalled();
+  });
+
+  it('extracts a 3 MB PDF body (real datasheet size) instead of refusing it', async () => {
+    const datasheet = Buffer.alloc(3 * 1024 * 1024, 0x20);
+    datasheet.write('%PDF-1.4\n', 0, 'latin1');
+    extractMock.mockResolvedValue('Peak Current: 450A\nNominal Voltage: 72V');
+    stubFetch(new Uint8Array(datasheet), 'application/pdf');
+
+    const res = await registry.execute('web_fetch', { url: 'https://example.com/3mb-datasheet.pdf' }, context, ['web_fetch']);
+
+    expect(extractMock).toHaveBeenCalledOnce();
+    expect(res.success).toBe(true);
+    expect(res.result).toContain('Peak Current: 450A');
   });
 
   it('keeps the HTML extraction path unchanged for text/html responses', async () => {
