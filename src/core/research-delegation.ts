@@ -82,6 +82,13 @@ export type ResearchDelegationResult =
 
 /** Line-anchored `Alternatives:` label a research answer may end with. */
 const ALTERNATIVES_LABEL_RE = /^[ \t]*(?:\*\*)?[ \t]*Alternatives[ \t]*:[ \t]*/im;
+/**
+ * A section that must NOT be part of the decision block: an implications line or
+ * any markdown heading placed after the option list. Implications belong BEFORE
+ * the decision block (the prompt says so); when a model appends one anyway the
+ * option parse stops there instead of swallowing it.
+ */
+const TRAILING_SECTION_RE = /^[ \t]*(?:#{1,6}[ \t]*|Implications\b)/im;
 
 /**
  * Maps a critic confidence to its band (spec §6).
@@ -97,7 +104,9 @@ export function toBand(confidence: number): ResearchBand {
 
 /**
  * Trailing decision block of an answer: everything after the line-anchored
- * `Alternatives:` label, through the end of the text.
+ * `Alternatives:` label, up to the end of the text — or up to a trailing
+ * `Implications:` line / markdown heading when the model put a section after
+ * the option list anyway.
  *
  * @param answer - the researched answer
  * @returns the block, or undefined when the answer has no block or it says `none`
@@ -105,7 +114,9 @@ export function toBand(confidence: number): ResearchBand {
 function extractOptions(answer: string): string | undefined {
   const match = answer.match(ALTERNATIVES_LABEL_RE);
   if (!match || match.index === undefined) return undefined;
-  const block = answer.slice(match.index + match[0].length).trim();
+  const tail = answer.slice(match.index + match[0].length);
+  const trailing = tail.search(TRAILING_SECTION_RE);
+  const block = (trailing >= 0 ? tail.slice(0, trailing) : tail).trim();
   if (!block || /^none\b/i.test(block)) return undefined;
   return block;
 }
@@ -260,10 +271,20 @@ export async function runResearchDelegationWithTimeout(
     // yields nothing and the bare timeout value stands.
     const settled = await Promise.race([run, settleGrace()]);
     if (settled && settled.ok) return settled;
-    if (settled && settled.ok === false && settled.partial) {
-      return settled.findings
-        ? { ok: false, reason: 'timeout', detail: timedOut.detail, partial: true, findings: settled.findings }
-        : { ok: false, reason: 'timeout', detail: timedOut.detail, partial: true };
+    if (settled && settled.ok === false) {
+      if (settled.reason === 'timeout') {
+        // The budget is what ended the run: report the budget, keeping any
+        // salvaged tool output.
+        return settled.partial
+          ? settled.findings
+            ? { ok: false, reason: 'timeout', detail: timedOut.detail, partial: true, findings: settled.findings }
+            : { ok: false, reason: 'timeout', detail: timedOut.detail, partial: true }
+          : timedOut;
+      }
+      // The run settled inside the grace window with its OWN reason (e.g.
+      // 'unverified'): that is the real outcome and must not be overwritten by
+      // a bare timeout value.
+      return settled;
     }
     return timedOut;
   } finally {

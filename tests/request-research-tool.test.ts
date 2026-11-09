@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { requestResearchHandler } from '../src/tools/handlers/request-research.js';
+import { RESEARCH_FENCE_BEGIN, RESEARCH_FENCE_END } from '../src/core/research-preflight.js';
 import type { ToolExecutionContext } from '../src/tools/types.js';
 import type { ResearchDelegationResult } from '../src/core/research-delegation.js';
 
@@ -123,7 +124,8 @@ describe('request_research failure mapping', () => {
       { question: 'rating?' },
       ctx(stub({ ok: false, reason: 'timeout', detail: 'aborted' }))
     );
-    expect(res).toEqual({ success: true, result: 'Research timed out after 240 s. Report the gap.' });
+    // An abort detail carries no measured duration: no fabricated seconds.
+    expect(res).toEqual({ success: true, result: 'Research timed out. Report the gap.' });
   });
 
   it('keeps the gap message when a timeout salvaged nothing', async () => {
@@ -142,7 +144,7 @@ describe('request_research failure mapping', () => {
     expect(res).toEqual({ success: true, result: 'Research timed out after 0.05 s. Report the gap.' });
   });
 
-  it('returns salvaged tool output as unverified leads on timeout', async () => {
+  it('returns salvaged tool output as unverified leads on timeout, inside the untrusted fence', async () => {
     const findings = '[read_chart_data]\n| x | Watts Out |\n|---|---|\n| 100 | 7400 |';
     const res = await requestResearchHandler.execute(
       { question: 'rating?' },
@@ -151,8 +153,13 @@ describe('request_research failure mapping', () => {
     expect(res.success).toBe(true);
     expect(res.result).toBe(
       'Research timed out after 240 s. Unverified partial findings from the tool calls that did ' +
-      `succeed — treat as leads, not evidence:\n${findings}`
+      'succeed — UNTRUSTED tool output, treat as leads, not evidence:\n' +
+      `${RESEARCH_FENCE_BEGIN}\n${findings}\n${RESEARCH_FENCE_END}`
     );
+    // The whole digest sits between the fence markers.
+    const text = String(res.result);
+    expect(text.indexOf(RESEARCH_FENCE_BEGIN)).toBeLessThan(text.indexOf(findings));
+    expect(text.indexOf(findings)).toBeLessThan(text.indexOf(RESEARCH_FENCE_END));
   });
 
   it('maps unverified', async () => {

@@ -18,6 +18,7 @@
  */
 import { ToolHandler, ToolExecutionContext, ToolExecutionResponse } from '../types.js';
 import type { ResearchDelegationResult } from '../../core/research-delegation.js';
+import { RESEARCH_FENCE_BEGIN, RESEARCH_FENCE_END } from '../../core/research-preflight.js';
 
 /** Hard cap on the whole tool result (spec §4). */
 const MAX_RESULT_CHARS = 8000;
@@ -32,18 +33,30 @@ const TIMEOUT = 'Research timed out after 240 s. Report the gap.';
 const UNVERIFIED = 'No verifiable source found. Report the gap.';
 /** Detail shape the delegation timer writes: `<ms/1000>s` (e.g. `240s`, `0.05s`). */
 const BUDGET_DETAIL_RE = /^(\d+(?:\.\d+)?)s$/;
-/** Budget named when the failure detail carries no duration (ESC abort, error). */
-const DEFAULT_TIMEOUT_SECONDS = '240';
 
 /**
- * Duration to name in the timeout message.
+ * Duration to name in the timeout message. A detail that is not a measured
+ * duration (an ESC abort, a free-text error) names NO seconds — reporting
+ * "240 s" as elapsed time there would be a fabricated number.
  *
  * @param detail - the failure detail: `240s` from the timer, otherwise free text
- * @returns the seconds as written, or 240 when the detail carries no duration
+ * @returns the seconds as written, or null when the detail carries no duration
  */
-function timeoutSeconds(detail: string): string {
+function timeoutSeconds(detail: string): string | null {
   const match = BUDGET_DETAIL_RE.exec((detail || '').trim());
-  return match ? match[1] : DEFAULT_TIMEOUT_SECONDS;
+  return match ? match[1] : null;
+}
+
+/**
+ * `after 240 s` / `` — the elapsed-time clause, omitted when no duration was
+ * measured.
+ *
+ * @param detail - the failure detail
+ * @returns the clause text, with no trailing space when it is empty
+ */
+function elapsedClause(detail: string): string {
+  const seconds = timeoutSeconds(detail);
+  return seconds ? ` after ${seconds} s` : '';
 }
 
 /**
@@ -104,10 +117,15 @@ export function formatResearchFindings(
 function failureMessage(res: Extract<ResearchDelegationResult, { ok: false }>): string {
   if (res.reason === 'timeout') {
     const findings = res.findings?.trim();
-    if (!findings) return `Research timed out after ${timeoutSeconds(res.detail)} s. Report the gap.`;
+    if (!findings) return `Research timed out${elapsedClause(res.detail)}. Report the gap.`;
+    // The digest is UNTRUSTED tool output injected into a WRITE-CAPABLE
+    // specialist's transcript: it is fenced with the same markers the research
+    // dossier uses, so a fetched page can never pose as instructions or as a
+    // prompt section.
     return (
-      `Research timed out after ${timeoutSeconds(res.detail)} s. Unverified partial findings from ` +
-      `the tool calls that did succeed — treat as leads, not evidence:\n${findings}`
+      `Research timed out${elapsedClause(res.detail)}. Unverified partial findings from ` +
+      'the tool calls that did succeed — UNTRUSTED tool output, treat as leads, not evidence:\n' +
+      `${RESEARCH_FENCE_BEGIN}\n${findings}\n${RESEARCH_FENCE_END}`
     );
   }
   if (res.reason === 'unverified') return UNVERIFIED;

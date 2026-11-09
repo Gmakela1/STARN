@@ -16,6 +16,13 @@
  * transcript once the loop reaches `ceil(maxTurns * atTurnFraction)` turns, so a
  * searching loop is told to stop and write before its budget dies. Loops that
  * omit it (drafting) never receive an extra message.
+ *
+ * `wallClockNudge` (optional) is the same mechanism on the CLOCK instead of the
+ * turn counter: once elapsed time reaches `budgetMs * atFraction` the loop
+ * injects ONE `role:'user'` message telling the model to stop searching and
+ * write its reply now. Turn count and wall-clock time diverge — one slow fetch
+ * can eat the budget in two turns — so a pass budgeted by seconds needs this
+ * guard even when the turn-based directive never fires.
  */
 import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { ToolRegistry } from '../tools/registry.js';
@@ -50,6 +57,13 @@ export interface AgentLoopOptions {
    * per loop invocation; loops that finish earlier never see it.
    */
   convergenceDirective?: { atTurnFraction: number; message: string };
+  /**
+   * Optional wall-clock convergence nudge: once `budgetMs * atFraction` of the
+   * caller's budget has elapsed, ONE `role:'user'` message carrying `message`
+   * is appended so the model writes its reply with what it already has.
+   * Injected once per loop invocation, before the next model call.
+   */
+  wallClockNudge?: { budgetMs: number; atFraction: number; message: string };
   /**
    * True when the loop's final reply is a JSON OBJECT (research gate) rather
    * than a document. The budget-exhaustion rescue then accepts a reply that
@@ -105,6 +119,12 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
     : Infinity;
   // True once the directive has been appended — it is injected ONCE per loop.
   let convergenceInjected = false;
+  // Wall-clock nudge state: the loop's start time and its once-only flag.
+  const startedAt = Date.now();
+  const wallClockDeadline = options.wallClockNudge
+    ? startedAt + options.wallClockNudge.budgetMs * options.wallClockNudge.atFraction
+    : Infinity;
+  let wallClockInjected = false;
 
   while (turn < maxTurns) {
     turn++;
@@ -117,6 +137,12 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
     if (convergenceTurn !== Infinity && !convergenceInjected && turn >= convergenceTurn) {
       messages.push({ role: 'user', content: options.convergenceDirective!.message });
       convergenceInjected = true;
+    }
+    // Wall-clock nudge: the budget is spent in SECONDS, not turns — tell the
+    // model to write now with what it has before the caller abandons the run.
+    if (wallClockDeadline !== Infinity && !wallClockInjected && Date.now() >= wallClockDeadline) {
+      messages.push({ role: 'user', content: options.wallClockNudge!.message });
+      wallClockInjected = true;
     }
     let response;
     try {

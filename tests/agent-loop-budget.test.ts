@@ -145,6 +145,78 @@ describe('runAgentToolLoop convergence directive', () => {
   });
 });
 
+describe('runAgentToolLoop wall-clock nudge', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = path.join(os.tmpdir(), 'starn-loop-wallclock-' + Date.now());
+    fs.mkdirSync(tempDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const NUDGE = 'Wall-clock budget nearly spent. Stop searching NOW.';
+
+  it('injects the nudge exactly once once the clock fraction is spent', async () => {
+    const ctx = makeCtx(tempDir);
+    const seen: Array<Array<{ role: string; content: string }>> = [];
+    const mockClient = {
+      chatCompletion: vi.fn(async (o: any) => {
+        seen.push(snapshot(o));
+        if (seen.length === 1) return toolCallTurn('t1');
+        return { content: '# Done\n\nReply.', toolCalls: [] };
+      })
+    } as any;
+
+    await runAgentToolLoop({
+      client: mockClient,
+      model: 'test',
+      systemPrompt: 'sys',
+      userMessage: 'hi',
+      toolRegistry: new ToolRegistry(),
+      allowedTools: [],
+      context: ctx,
+      maxTurns: 10,
+      // atFraction 0 = the deadline has already passed on turn 1.
+      wallClockNudge: { budgetMs: 1000, atFraction: 0, message: NUDGE }
+    });
+
+    const count = (msgs: Array<{ role: string; content: string }>) => msgs.filter(m => m.content === NUDGE).length;
+    expect(seen).toHaveLength(2);
+    expect(count(seen[0])).toBe(1);
+    // Injected ONCE per loop, not once per turn.
+    expect(count(seen[1])).toBe(1);
+  });
+
+  it('never injects the nudge while the clock budget is intact', async () => {
+    const ctx = makeCtx(tempDir);
+    const seen: Array<Array<{ role: string; content: string }>> = [];
+    const mockClient = {
+      chatCompletion: vi.fn(async (o: any) => {
+        seen.push(snapshot(o));
+        if (seen.length === 1) return toolCallTurn('t1');
+        return { content: '# Done\n\nReply.', toolCalls: [] };
+      })
+    } as any;
+
+    await runAgentToolLoop({
+      client: mockClient,
+      model: 'test',
+      systemPrompt: 'sys',
+      userMessage: 'hi',
+      toolRegistry: new ToolRegistry(),
+      allowedTools: [],
+      context: ctx,
+      maxTurns: 10,
+      wallClockNudge: { budgetMs: 10_000_000, atFraction: 0.65, message: NUDGE }
+    });
+
+    for (const msgs of seen) expect(msgs.some(m => m.content === NUDGE)).toBe(false);
+  });
+});
+
 describe('runAgentToolLoop budget and forced final write', () => {
   let tempDir: string;
 

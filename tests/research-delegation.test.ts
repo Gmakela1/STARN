@@ -195,6 +195,32 @@ describe('research delegation', () => {
     expect(noneOptions.options).toBeUndefined();
   });
 
+  it('options stops at a trailing Implications: line instead of swallowing it', async () => {
+    const answer = `${PLAIN_ANSWER}\n\nAlternatives:\nA) 48V — stock item\nB) 24V — cheaper\nRecommended: A\n\nImplications: the 48 V harness stays as baselined.`;
+    const result = await runResearchDelegation(
+      makeDeps({ client: { chatCompletion: vi.fn(async () => chat(researchReply(answer))) } as any }),
+      { question: 'Which contactor?' }
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.options).toContain('A) 48V');
+    expect(result.options).toContain('Recommended: A');
+    expect(result.options).not.toContain('Implications');
+  });
+
+  it('options stops at a trailing markdown heading after the option list', async () => {
+    const answer = `${PLAIN_ANSWER}\n\nAlternatives:\nA) 48V — stock item\nB) 24V — cheaper\nRecommended: A\n\n## Implications for the baseline\nThe 48 V harness stays.`;
+    const result = await runResearchDelegation(
+      makeDeps({ client: { chatCompletion: vi.fn(async () => chat(researchReply(answer))) } as any }),
+      { question: 'Which contactor?' }
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.options).toBe('A) 48V — stock item\nB) 24V — cheaper\nRecommended: A');
+  });
+
   it('focus prefixes the question with one Focus files: line', async () => {
     const deps = makeDeps();
     await runResearchDelegation(deps, {
@@ -355,6 +381,25 @@ describe('research delegation', () => {
     expect(result.detail).toBe('0.02s');
     expect(result.partial).toBe(true);
     expect(result.findings).toContain('| 100 | 7400 |');
+  });
+
+  it('runResearchDelegationWithTimeout keeps a grace-window run\'s OWN reason instead of a bare timeout', async () => {
+    // The client ignores the abort signal and settles ~40 ms into the grace
+    // window with no usable answer: the real reason ('unverified') must survive.
+    const deps = makeDeps({
+      client: {
+        chatCompletion: vi.fn(
+          () => new Promise<ChatCompletionResult>(resolve => setTimeout(() => resolve(chat('I found nothing usable.')), 60))
+        )
+      } as any
+    });
+
+    const result = await runResearchDelegationWithTimeout(deps, { question: 'What is the contactor rating?' }, 20);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('unverified');
+    expect(result.detail).not.toBe('0.02s');
   });
 
   it('runResearchDelegationWithTimeout: a run that never settles hits the budget and aborts the signal', async () => {

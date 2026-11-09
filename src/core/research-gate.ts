@@ -150,12 +150,16 @@ const PARTIAL_FINDINGS_RANK: Record<string, number> = { read_chart_data: 0, web_
  * `Error: <message>` for a failed call, and a chart read that refused every
  * series renders `Refusal: ...` with no value table.
  *
+ * A real chart refusal is HEADER-FIRST (chart-read renderChartMarkdown pushes
+ * `**Charts — file, page N**` before the `Refusal: ...` line), so the refusal
+ * is matched at the start of ANY line, not only the first one.
+ *
  * @param text - trimmed tool row content
  * @returns true when the row must be left out of the digest
  */
 function isFailedToolRow(text: string): boolean {
   if (/^error:/i.test(text)) return true;
-  return /^refusal:/i.test(text) && !text.includes('|');
+  return /^refusal:/im.test(text) && !text.includes('|');
 }
 
 /**
@@ -167,7 +171,10 @@ function isFailedToolRow(text: string): boolean {
  * Chart rows come first — they carry sampled values — then fetched pages, then
  * everything else. Identical repeats of the same tool+text are dropped, and
  * the digest is capped at PARTIAL_FINDINGS_CHAR_CAP with each row capped at
- * PARTIAL_FINDINGS_ROW_CHAR_CAP. Never throws on odd message shapes.
+ * PARTIAL_FINDINGS_ROW_CHAR_CAP. Every row is UNTRUSTED tool output: each line
+ * goes through the shared research-preflight sanitizer (sanitizeResearchLine),
+ * so a fetched page cannot forge a prompt section heading or a fence marker.
+ * Never throws on odd message shapes.
  *
  * @param messages - the aborted loop transcript
  * @returns the digest, or '' when no row carries usable output
@@ -178,7 +185,7 @@ export function buildAbortedFindingsDigest(messages: ChatMessage[]): string {
   const seen = new Set<string>();
   messages.forEach((message, order) => {
     if (!message || message.role !== 'tool') return;
-    const text = typeof message.content === 'string' ? message.content.trim() : '';
+    const text = typeof message.content === 'string' ? sanitizeLines(message.content.trim()) : '';
     if (!text || isFailedToolRow(text)) return;
     const name = typeof message.name === 'string' && message.name ? message.name : 'tool';
     const key = `${name}\u0000${text}`;
@@ -366,12 +373,20 @@ export function repairTitle(title: string): string {
  * neutralization from research-preflight), then char-capped.
  */
 function sanitizeField(text: string, cap: number): string {
-  const sanitized = (text || '')
-    .split('\n')
-    .map(sanitizeResearchLine)
-    .join('\n')
-    .trim();
+  const sanitized = sanitizeLines(text).trim();
   return sanitized.length > cap ? sanitized.slice(0, cap) : sanitized;
+}
+
+/**
+ * Runs EVERY line of an untrusted text block through sanitizeResearchLine
+ * (the research-preflight neutralizer: heading forgery, setext underline,
+ * fence markers). The ONE line sanitizer for model- and tool-supplied text.
+ *
+ * @param text - untrusted multi-line text
+ * @returns the same lines, neutralized
+ */
+function sanitizeLines(text: string): string {
+  return (text || '').split('\n').map(sanitizeResearchLine).join('\n');
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -436,14 +451,16 @@ SOURCE FLOOR: for any number that decides a purchase, a safety margin or a compa
 VERIFY THE VENDOR'S CLAIM: a marketing label is not a spec. Where a label and the underlying spec can disagree (a "72 V" pack is 22S = 70.4 V, or 24S = 76.8 V), resolve which it is from the datasheet; if no datasheet settles it, say the label is unresolved.
 SHOW THE ARITHMETIC: for any derived value (voltage, current, C-rate, margin, runtime), show the numbers and the operation, never the result alone.
 NOT STATED: when a field the question depends on is absent from every source, write "not stated" for that field. Never fill the gap by inference or by a similar product.
-IMPLICATIONS: end by naming what the finding implies for the project baseline, and when it contradicts an approved document, name that document.
+IMPLICATIONS: state what the finding implies for the project baseline, and when it contradicts an approved document, name that document — but ONLY a document you actually opened in this run. Never name an approved document you did not read.
+ORDER OF THE ANSWER: the implications come BEFORE the decision block. The decision block is the LAST thing in the answer, so no section (no implications, no heading) may follow it.
 Your final reply must contain ONLY a JSON object (no markdown fence, no commentary) in this exact shape:
 {"answer": "<one short lead sentence, then the findings list / arithmetic block / decision table described below>", "sources": [{"title": "<source name>", "url": "<URL if web, omit if project doc>"}], "reasoning": "<how the sources support the answer; note any assumptions>"}
 The "answer" string OPENS with one short lead sentence stating the finding, then carries — in this order — whichever of these the research actually produced (use \n escapes for the line breaks inside the JSON string):
 - FINDINGS LIST: one line per finding, each item carrying its value AND the source it came from.
 - ARITHMETIC BLOCK: one line per derived number, showing the operands and the operation (e.g. "24S x 3.0 V = 72.0 V nominal") — never a bare result.
 - DECISION TABLE (decision questions only): a compact markdown table of the options against the stated criteria, one row per option (e.g. "| Option | Voltage | Weight | Cost |"). The table SUPPLEMENTS the Alternatives block below — it never replaces it.
-The "answer" string must END with a decision block (use \n escapes for the line breaks inside the JSON string):
+- IMPLICATIONS LINE(S): what the finding implies for the project baseline — placed BEFORE the decision block, never after it.
+The "answer" string must END with a decision block (use \n escapes for the line breaks inside the JSON string). Nothing follows the decision block — the implications above it are the last prose the answer carries:
 - DECISION QUESTION (the user must choose between options): end the answer with
   Alternatives:\nA) <option and its trade-off>\nB) <option and its trade-off>\nC) <option and its trade-off>\nRecommended: <letter>
   Use 2 or 3 labelled options (A, B and optionally C) and EXACTLY one final "Recommended: <letter>" line naming the best option. Ground every option in the sources — never invent an option you cannot support.
@@ -491,6 +508,18 @@ If the question is a judgment call, opinion, or cannot be verified from a source
           'Turn budget nearly exhausted. Stop searching now. Write the final JSON answer with the ' +
           'sources you already have, and mark anything you could not verify as unverified in the ' +
           'reasoning field.'
+      },
+      // Convergence is turn-based (0.7 × 10 turns); a pass killed by the CLOCK
+      // never reaches that turn. At 65% of the item budget the model is told to
+      // stop searching and write the JSON now — the final JSON write is exactly
+      // the step a 240 s cap used to cut.
+      wallClockNudge: {
+        budgetMs: RESEARCH_GATE_ITEM_TIMEOUT_MS,
+        atFraction: 0.65,
+        message:
+          'Wall-clock budget nearly spent. Stop searching NOW and reply with the final JSON object ' +
+          'using the sources you already have; mark anything you could not verify as unverified in ' +
+          'the reasoning field.'
       }
     });
     const reply = parseResearchReply(result.finalResponse || '');
@@ -514,21 +543,29 @@ If the question is a judgment call, opinion, or cannot be verified from a source
 }
 
 /**
- * Deduction per missing completeness behaviour (see answerCompleteness) in an
- * answer that derives a value or chooses between options. Two gaps take a
- * 0.97-critic answer below UNVERIFIED_CONFIDENCE_CAP (0.83) — a well-sourced
- * but incomplete answer must not reach the auto tier; three gaps take it into
- * the propose tier.
+ * Deduction per missing MECHANICAL completeness behaviour (see
+ * answerCompleteness) in an answer that derives a value or chooses between
+ * options. Two gaps take a 0.97-critic answer below UNVERIFIED_CONFIDENCE_CAP
+ * (0.83) — a well-sourced but incomplete answer must not reach the auto tier.
+ *
+ * ONE OWNER PER DEFECT — which behaviours are mechanical and which are rubric-owned:
+ * - MECHANICAL (this deduction; regex-checkable and objective): `arithmetic`
+ *   (a derived value with no shown equality/operation) and `comparison` (a
+ *   decision block whose options are listed with no criteria comparison).
+ * - RUBRIC-OWNED (the research critic's judgment; never deducted here):
+ *   QUESTION FIT (f), INTERNAL CONSISTENCY (g) and GAPS (j) — whether a
+ *   missing field was declared "not stated", and whether the numbers agree,
+ *   are judgments a regex cannot make. Rubric criteria 9 and 10 (arithmetic,
+ *   option comparison) are context only and deduct nothing, so one defect can
+ *   never cost twice.
  */
 export const COMPLETENESS_PENALTY_PER_GAP = 0.07;
-/** Cues that mark an answer as DERIVING a value (so arithmetic and gaps are expected). */
+/** Cues that mark an answer as DERIVING a value (so arithmetic is expected). */
 const CONSEQUENTIAL_CUE_RE = /(therefore|hence|thus|implies|derived|calculated|convert(?:ed|s)?|margin|headroom|runtime|run time|c-rate|per cell)/i;
 /** A shown equality yielding a number ("... = 76.8 V"). */
 const EQUALITY_SHOWN_RE = /=\s*\d/;
 /** Two numbers with an operator between them ("24 x 3.2", "300 A / 2 h"). */
 const OPERATION_SHOWN_RE = /\d[\d.,]*\s*(?:[A-Za-z%°]{1,3}\s*)?[×x*÷/+-]\s*\d/;
-/** An explicit gap statement (the "not stated" rule). */
-const GAP_STATEMENT_RE = /(not stated|not specified|not documented|not reported|unresolved|unknown|no source states)/i;
 /** A criteria comparison: a markdown table row, or the word "criteria"/"compared". */
 const COMPARISON_SHOWN_RE = /\|[^|\n]+\|[^|\n]+\||\bcriteria\b|\bcompared\b/i;
 /** The decision block's own label line (NOT "Alternatives: none"). */
@@ -540,33 +577,37 @@ const OPTION_LINE_RE = /^[ \t]*[A-C]\)/gim;
 export interface AnswerCompleteness {
   /** True when the answer derives a value or chooses between options. */
   graded: boolean;
-  /** One short name per missing behaviour: 'arithmetic', 'gaps', 'comparison'. */
+  /** One short name per missing MECHANICAL behaviour: 'arithmetic', 'comparison'. */
   gaps: string[];
 }
 
 /**
  * Mechanical completeness of ONE candidate answer — the code-side checks
- * behind rubric criteria (h) arithmetic, (i) option comparison and (j) gaps.
+ * behind rubric criteria (h) arithmetic and (i) option comparison ONLY. The
+ * judgment behaviours (question fit, internal consistency, gaps) belong to the
+ * rubric, so this function never reports them: one defect, one owner.
  *
- * Only CONSEQUENTIAL answers are graded: one that derives a value (a cue word
- * plus a number) or presents a real decision block (2+ labelled options). A
- * single fact quoted verbatim from a datasheet has nothing to derive, compare
- * or leave out, so it is never penalised for showing no arithmetic.
+ * Only CONSEQUENTIAL answers are graded: one that derives a value (a cue word,
+ * or arithmetic it actually shows) or presents a real decision block (2+
+ * labelled options). An answer that shows its arithmetic IS consequential even
+ * without a cue word — a shown calculation is a derived claim. A single fact
+ * quoted verbatim from a datasheet has nothing to derive or compare, so it is
+ * never penalised for showing no arithmetic.
  *
  * Pure: no I/O, no model call.
  *
  * @param answer - the candidate answer text (already sanitized)
- * @returns `graded` plus `gaps`, one name per missing behaviour; empty when
- *   nothing is missing or the answer was not graded
+ * @returns `graded` plus `gaps`, one name per missing mechanical behaviour;
+ *   empty when nothing is missing or the answer was not graded
  */
 export function answerCompleteness(answer: string): AnswerCompleteness {
   const text = typeof answer === 'string' ? answer : '';
   const optionCount = (text.match(OPTION_LINE_RE) || []).length;
   const decides = ALTERNATIVES_LABEL_LINE_RE.test(text) && optionCount >= 2;
-  if (!decides && !CONSEQUENTIAL_CUE_RE.test(text)) return { graded: false, gaps: [] };
+  const showsArithmetic = EQUALITY_SHOWN_RE.test(text) || OPERATION_SHOWN_RE.test(text);
+  if (!decides && !showsArithmetic && !CONSEQUENTIAL_CUE_RE.test(text)) return { graded: false, gaps: [] };
   const gaps: string[] = [];
-  if (!EQUALITY_SHOWN_RE.test(text) && !OPERATION_SHOWN_RE.test(text)) gaps.push('arithmetic');
-  if (!GAP_STATEMENT_RE.test(text)) gaps.push('gaps');
+  if (!showsArithmetic) gaps.push('arithmetic');
   if (decides && !COMPARISON_SHOWN_RE.test(text)) gaps.push('comparison');
   return { graded: true, gaps };
 }
@@ -579,7 +620,7 @@ export const RESEARCH_CRITIC_RUBRIC = `RESEARCH ASSESSMENT RUBRIC (grade the can
    - Reputable engineering publication / textbook / established reference = 0.70-0.85.
    - Forum post, SEO article, vendor blog or marketing page = 0.30-0.50.
    - No source, or a source that does not actually state the answer = confidence 0.
-   - SCORING SHAPE: start from the source-authority tier, then grade criteria 7-11. Failing ONE of them caps confidence at 0.85; failing TWO OR MORE caps it at 0.60. Source authority never lifts an answer over a failed completeness criterion.
+   - SCORING SHAPE: start from the source-authority tier, then grade the RUBRIC-OWNED criteria 7, 8 and 11. Failing ONE of them caps confidence at 0.85; failing TWO OR MORE caps it at 0.60. Criteria 9 and 10 are MECHANICAL (see the MECHANICAL CHECKS line) and are already deducted by code — never deduct for them again. Source authority never lifts an answer over a failed criterion.
 2. EVIDENCE DIRECTNESS: a source that STATES the answer verbatim is strong; an answer INFERRED or extrapolated from related specs loses one tier.
 3. CONSISTENCY (automatic fail): if the candidate answer conflicts with any recorded user answer or approved project baseline listed below, confidence MUST be <= 0.30 regardless of source quality.
 4. ASSUMPTION COUNT: each unstated assumption the answer relies on deducts ~0.10.
@@ -587,12 +628,38 @@ export const RESEARCH_CRITIC_RUBRIC = `RESEARCH ASSESSMENT RUBRIC (grade the can
 6. CORROBORATION: two or more independent verified sources stating the same value is corroboration; set "corroborated": true only when at least two verified excerpts support the answer, or when the single source is the manufacturer's own datasheet for the item.
 7. QUESTION FIT (f): does the answer address the exact question asked, including its qualifiers (voltage AND cell count, continuous AND peak, the stated ambient or load)? An answer to a neighbouring question scores 0.30 or lower.
 8. INTERNAL CONSISTENCY (g): are the numbers mutually consistent — do the stated voltage, current, power and energy agree with each other (P = V x I, Wh = V x Ah, C-rate = A / Ah)? A contradiction between two numbers in the answer caps confidence at 0.30.
-9. ARITHMETIC CHECK (h): is every derived value accompanied by its operands and operation, and is the arithmetic correct? A derived result with no shown arithmetic, or with wrong arithmetic, deducts 0.15.
-10. OPTION COMPARISON (i): for a decision question, are the options compared against the STATED criteria (a compact table or explicit per-criterion lines) rather than merely listed? A bare list of options deducts 0.10.
-11. GAPS (j): is what is missing stated explicitly — "not stated" for a field no source carries — rather than glossed over or filled in from a similar product? A silent or inferred gap deducts 0.15.
+9. ARITHMETIC CHECK (h) — MECHANICAL, NOT YOURS: whether every derived value carries its operands and operation is checked by code (the MECHANICAL CHECKS line) and already deducted from the final confidence. Do NOT deduct for missing arithmetic; mention it in the rationale only when the arithmetic that IS shown looks wrong, and then say so as a CONSISTENCY observation (criterion 8).
+10. OPTION COMPARISON (i) — MECHANICAL, NOT YOURS: whether a decision question compares its options against the stated criteria is checked by code (the MECHANICAL CHECKS line) and already deducted. Do NOT deduct for a bare option list; note it in the rationale only.
+11. GAPS (j): is what is missing stated explicitly — "not stated" for a field no source carries — rather than glossed over or filled in from a similar product? A silent or inferred gap deducts 0.15. This is a JUDGMENT about the missing field's disclosure, not about whether the phrase "not stated" appears: an answer that names every open field in its own words has no gap.
 
 Respond ONLY with valid JSON in this exact structure:
 {"confidence": <number 0.00-1.00>, "corroborated": <true|false — verified evidence states the candidate answer>, "verdict": "auto" | "propose" | "none", "rationale": "<one short paragraph: which sources drove the confidence and any conflicts found>"}`;
+
+/**
+ * Renders the code-computed mechanical completeness result as CRITIC CONTEXT,
+ * so rubric criteria 9 and 10 reference the mechanical verdict instead of
+ * deducting a second time for the same defect.
+ *
+ * @param completeness - answerCompleteness() result for the candidate answer
+ * @returns one prompt line per mechanical behaviour, naming whether code
+ *   already deducted for it
+ */
+function buildMechanicalChecksLine(completeness: AnswerCompleteness): string {
+  if (!completeness.graded) {
+    return 'MECHANICAL CHECKS (computed by code): not graded — this answer neither derives a value nor presents a decision block, so criteria 9 and 10 deduct nothing.';
+  }
+  const arithmetic = completeness.gaps.includes('arithmetic')
+    ? 'MISSING — no operand/operation shown; ALREADY DEDUCTED by code'
+    : 'shown';
+  const comparison = completeness.gaps.includes('comparison')
+    ? 'MISSING — options listed without a criteria comparison; ALREADY DEDUCTED by code'
+    : 'no deduction (options compared against criteria, or not a decision question)';
+  return [
+    'MECHANICAL CHECKS (computed by code from the answer text; ALREADY DEDUCTED from the final confidence — criteria 9 and 10 must not deduct again):',
+    `- arithmetic (criterion 9): ${arithmetic}`,
+    `- option comparison (criterion 10): ${comparison}`
+  ].join('\n');
+}
 
 /**
  * Normalizes a verification result to its excerpt list. The legacy
@@ -661,9 +728,13 @@ export async function assessResearch(
 ): Promise<ResearchAssessment> {
   const fallback: ResearchAssessment = { confidence: 0, verdict: 'none', rationale: 'Research critic did not return a parseable verdict.' };
   try {
+    // Mechanical completeness is computed BEFORE the critic call: the rubric
+    // criteria 9/10 need the code's verdict as context (one owner per defect).
+    const completeness = answerCompleteness(research.answer);
     const prompt = [
       `You are the Research Critic for STARN. Judge ONE researched candidate answer for a portal question. You did NOT produce it — grade it independently.`,
       RESEARCH_CRITIC_RUBRIC,
+      buildMechanicalChecksLine(completeness),
       `QUESTION: ${item.title}`,
       `CANDIDATE ANSWER:\n${research.answer}`,
       research.sources.length > 0
@@ -707,12 +778,14 @@ export async function assessResearch(
     // chart read lands at 0.6 = propose tier, never auto).
     const evidenceFloor = confidenceFloorForEvidence(research.answer, research.sources);
     const flooredConfidence = Math.max(cappedConfidence, evidenceFloor);
-    // Completeness (rubric criteria 7-11): a well-sourced answer that DERIVES a
-    // value or CHOOSES between options loses confidence for each behaviour it
-    // does not show, so source authority alone can no longer lift an incomplete
-    // answer into the auto tier. The plotted-evidence floor still holds — the
-    // deduction never takes a chart-backed answer below its floor.
-    const completeness = answerCompleteness(research.answer);
+    // Completeness (MECHANICAL behaviours only — arithmetic, comparison): a
+    // well-sourced answer that DERIVES a value or CHOOSES between options loses
+    // confidence for each mechanical behaviour it does not show, so source
+    // authority alone can no longer lift an incomplete answer into the auto
+    // tier. The judgment behaviours (question fit, internal consistency, gaps)
+    // are rubric-owned and deducted by the critic, never here. The
+    // plotted-evidence floor still holds — the deduction never takes a
+    // chart-backed answer below its floor.
     const gapPenalty = completeness.gaps.length * COMPLETENESS_PENALTY_PER_GAP;
     const scoredConfidence = Math.max(evidenceFloor, Math.min(1, flooredConfidence - gapPenalty));
     const rationaleParts = [
