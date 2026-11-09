@@ -179,6 +179,22 @@ describe('research gate wiring', () => {
     expect(systemPrompt).toContain('Alternatives: none');
   });
 
+  it('research turn prompt carries the five required behaviours (source floor, vendor claim, arithmetic, not stated, implications)', async () => {
+    await runQuestionResearch(gateDeps, item);
+    const systemPrompt = (researchClient.chatCompletion.mock.calls[0][0] as any).messages[0].content as string;
+    expect(systemPrompt).toContain('SOURCE FLOOR');
+    expect(systemPrompt).toMatch(/at least two independent sources/i);
+    expect(systemPrompt).toContain("VERIFY THE VENDOR'S CLAIM");
+    // The 72 V label ambiguity (22S 70.4 V vs 24S 76.8 V) is the worked example.
+    expect(systemPrompt).toMatch(/22S = 70\.4 V/);
+    expect(systemPrompt).toMatch(/24S = 76\.8 V/);
+    expect(systemPrompt).toContain('SHOW THE ARITHMETIC');
+    expect(systemPrompt).toContain('NOT STATED');
+    expect(systemPrompt).toContain('write "not stated" for that field');
+    expect(systemPrompt).toContain('IMPLICATIONS');
+    expect(systemPrompt).toMatch(/name that document/);
+  });
+
   it('research turn prompt tells the gate to read charts with an explicit axes declaration', async () => {
     await runQuestionResearch(gateDeps, item);
     const systemPrompt = (researchClient.chatCompletion.mock.calls[0][0] as any).messages[0].content as string;
