@@ -9,6 +9,11 @@ import { applyAnswer, AnswerApplierDeps } from '../src/core/answer-applier.js';
 import {
   parseResearchReply,
   buildQuestionSections,
+  answerCompleteness,
+  RESEARCH_CRITIC_RUBRIC,
+  COMPLETENESS_PENALTY_PER_GAP,
+  AUTO_APPLY_CONFIDENCE,
+  UNVERIFIED_CONFIDENCE_CAP,
   runQuestionResearch,
   runResearchGate,
   runGateWithTimeout,
@@ -130,6 +135,37 @@ describe('parseResearchReply', () => {
     expect(sections.options?.map(o => o.id)).toEqual(['A', 'B']);
     expect(sections.recommendation).toBe('B');
     expect(sections.suggestion).toContain('= 76.8 V nominal');
+  });
+});
+
+describe('research rubric (completeness and internal consistency)', () => {
+  it('carries question fit, internal consistency, arithmetic, option comparison and gaps', () => {
+    expect(RESEARCH_CRITIC_RUBRIC).toContain('QUESTION FIT');
+    expect(RESEARCH_CRITIC_RUBRIC).toContain('INTERNAL CONSISTENCY');
+    expect(RESEARCH_CRITIC_RUBRIC).toContain('ARITHMETIC CHECK');
+    expect(RESEARCH_CRITIC_RUBRIC).toContain('OPTION COMPARISON');
+    expect(RESEARCH_CRITIC_RUBRIC).toContain('GAPS');
+  });
+
+  it('keeps source authority but stops it being the dominant factor', () => {
+    expect(RESEARCH_CRITIC_RUBRIC).toContain('SOURCE AUTHORITY');
+    expect(RESEARCH_CRITIC_RUBRIC).not.toContain('SOURCE AUTHORITY (dominant factor)');
+    expect(RESEARCH_CRITIC_RUBRIC).toMatch(/one factor among several/i);
+    expect(RESEARCH_CRITIC_RUBRIC).toMatch(/Failing ONE of them caps confidence at 0\.85/);
+  });
+
+  it('answerCompleteness: a single fact quoted verbatim is not graded', () => {
+    expect(answerCompleteness('The contactor is rated 48V DC.')).toEqual({ graded: false, gaps: [] });
+    expect(answerCompleteness('The contactor is rated 48V DC.\nAlternatives: none')).toEqual({ graded: false, gaps: [] });
+  });
+
+  it('answerCompleteness: names the arithmetic, gap and comparison behaviours an answer misses', () => {
+    expect(answerCompleteness('The run time is 1.33 h at the stated draw.').gaps).toEqual(['arithmetic', 'gaps']);
+    expect(
+      answerCompleteness('Particularly the run time is 1.33 h (28.8 kWh / 21.6 kW = 1.33 h); cycle life is not stated.').gaps
+    ).toEqual([]);
+    const decision = answerCompleteness('B is better.\nAlternatives:\nA) 22S\nB) 24S\nRecommended: B');
+    expect(decision.gaps).toContain('comparison');
   });
 });
 
@@ -542,6 +578,66 @@ describe('research gate wiring', () => {
       const prompt = String(criticClient.chatCompletion.mock.calls[0][0].messages[0].content);
       expect(prompt).toContain('Evidence class — plotted data');
       expect(prompt).toContain('read from the plotted curve, not a spec table');
+    });
+  });
+
+  describe('completeness scoring (blocker: a well-sourced but incomplete answer auto-applied)', () => {
+    const SOURCES = [{ title: 'ME1115 performance sheet', url: 'https://vendor.example/me1115.pdf' }];
+
+    it('scores a well-sourced but incomplete answer BELOW one that shows arithmetic and states its gaps', async () => {
+      criticClient.chatCompletion = vi.fn(async () =>
+        chat(JSON.stringify({ confidence: 0.9, corroborated: true, verdict: 'auto', rationale: 'Vendor datasheet, stated.' }))
+      );
+      const verification = { ok: true, excerpt: 'ME1115: 24S pack, 76.8 V nominal, 300 A continuous.' };
+
+      const incomplete = await assessResearch(gateDeps, item, {
+        answer: 'The pack should be 24S and the run time is 1.33 h at the stated draw.',
+        sources: SOURCES,
+        reasoning: ''
+      }, verification);
+      const complete = await assessResearch(gateDeps, item, {
+        answer:
+          'The pack should be 24S at 76.8 V nominal. ' +
+          'Arithmetic: 24 x 3.2 V = 76.8 V nominal; 28.8 kWh / 21.6 kW = 1.33 h run time. ' +
+          'Peak discharge current is not stated.',
+        sources: SOURCES,
+        reasoning: ''
+      }, verification);
+
+      expect(incomplete.confidence).toBeLessThan(complete.confidence);
+      expect(complete.confidence).toBe(0.9);
+      expect(incomplete.confidence).toBeLessThanOrEqual(UNVERIFIED_CONFIDENCE_CAP);
+      expect(incomplete.confidence).toBeCloseTo(0.9 - 2 * COMPLETENESS_PENALTY_PER_GAP);
+      expect(incomplete.rationale).toContain('completeness gaps: arithmetic, gaps');
+      expect(complete.confidence).toBeGreaterThan(incomplete.confidence);
+    });
+
+    it('a well-sourced decision answer that only lists options is not auto-applied', async () => {
+      criticClient.chatCompletion = vi.fn(async () =>
+        chat(JSON.stringify({ confidence: 0.97, corroborated: true, verdict: 'auto', rationale: 'Vendor datasheet.' }))
+      );
+      const assessment = await assessResearch(gateDeps, item, {
+        answer: 'Keep 48V.\nAlternatives:\nA) 48V - stock item\nB) 72V - lighter harness\nRecommended: A',
+        sources: SOURCES,
+        reasoning: ''
+      }, { ok: true, excerpt: 'Contactor rated 48V DC continuous duty.' });
+
+      expect(assessment.confidence).toBeLessThan(AUTO_APPLY_CONFIDENCE);
+      expect(assessment.verdict).not.toBe('auto');
+      expect(assessment.rationale).toContain('comparison');
+    });
+
+    it('a single fact quoted verbatim keeps its tier (nothing to derive or compare)', async () => {
+      criticClient.chatCompletion = vi.fn(async () =>
+        chat(JSON.stringify({ confidence: 0.97, corroborated: true, verdict: 'auto', rationale: 'Datasheet verbatim.' }))
+      );
+      const assessment = await assessResearch(gateDeps, item, {
+        answer: 'The contactor is rated 48V DC.',
+        sources: SOURCES,
+        reasoning: ''
+      }, { ok: true, excerpt: 'Coil rated 48V DC continuous duty.' });
+      expect(assessment.confidence).toBe(0.97);
+      expect(assessment.verdict).toBe('auto');
     });
   });
 

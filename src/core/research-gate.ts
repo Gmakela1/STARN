@@ -513,19 +513,83 @@ If the question is a judgment call, opinion, or cannot be verified from a source
   }
 }
 
+/**
+ * Deduction per missing completeness behaviour (see answerCompleteness) in an
+ * answer that derives a value or chooses between options. Two gaps take a
+ * 0.97-critic answer below UNVERIFIED_CONFIDENCE_CAP (0.83) — a well-sourced
+ * but incomplete answer must not reach the auto tier; three gaps take it into
+ * the propose tier.
+ */
+export const COMPLETENESS_PENALTY_PER_GAP = 0.07;
+/** Cues that mark an answer as DERIVING a value (so arithmetic and gaps are expected). */
+const CONSEQUENTIAL_CUE_RE = /(therefore|hence|thus|implies|derived|calculated|convert(?:ed|s)?|margin|headroom|runtime|run time|c-rate|per cell)/i;
+/** A shown equality yielding a number ("... = 76.8 V"). */
+const EQUALITY_SHOWN_RE = /=\s*\d/;
+/** Two numbers with an operator between them ("24 x 3.2", "300 A / 2 h"). */
+const OPERATION_SHOWN_RE = /\d[\d.,]*\s*(?:[A-Za-z%°]{1,3}\s*)?[×x*÷/+-]\s*\d/;
+/** An explicit gap statement (the "not stated" rule). */
+const GAP_STATEMENT_RE = /(not stated|not specified|not documented|not reported|unresolved|unknown|no source states)/i;
+/** A criteria comparison: a markdown table row, or the word "criteria"/"compared". */
+const COMPARISON_SHOWN_RE = /\|[^|\n]+\|[^|\n]+\||\bcriteria\b|\bcompared\b/i;
+/** The decision block's own label line (NOT "Alternatives: none"). */
+const ALTERNATIVES_LABEL_LINE_RE = /^[ \t]*Alternatives:[ \t]*$/im;
+/** Labelled option lines inside the decision block, counted for "2+ options". */
+const OPTION_LINE_RE = /^[ \t]*[A-C]\)/gim;
+
+/** What answerCompleteness found: whether the answer was graded, and what it lacks. */
+export interface AnswerCompleteness {
+  /** True when the answer derives a value or chooses between options. */
+  graded: boolean;
+  /** One short name per missing behaviour: 'arithmetic', 'gaps', 'comparison'. */
+  gaps: string[];
+}
+
+/**
+ * Mechanical completeness of ONE candidate answer — the code-side checks
+ * behind rubric criteria (h) arithmetic, (i) option comparison and (j) gaps.
+ *
+ * Only CONSEQUENTIAL answers are graded: one that derives a value (a cue word
+ * plus a number) or presents a real decision block (2+ labelled options). A
+ * single fact quoted verbatim from a datasheet has nothing to derive, compare
+ * or leave out, so it is never penalised for showing no arithmetic.
+ *
+ * Pure: no I/O, no model call.
+ *
+ * @param answer - the candidate answer text (already sanitized)
+ * @returns `graded` plus `gaps`, one name per missing behaviour; empty when
+ *   nothing is missing or the answer was not graded
+ */
+export function answerCompleteness(answer: string): AnswerCompleteness {
+  const text = typeof answer === 'string' ? answer : '';
+  const optionCount = (text.match(OPTION_LINE_RE) || []).length;
+  const decides = ALTERNATIVES_LABEL_LINE_RE.test(text) && optionCount >= 2;
+  if (!decides && !CONSEQUENTIAL_CUE_RE.test(text)) return { graded: false, gaps: [] };
+  const gaps: string[] = [];
+  if (!EQUALITY_SHOWN_RE.test(text) && !OPERATION_SHOWN_RE.test(text)) gaps.push('arithmetic');
+  if (!GAP_STATEMENT_RE.test(text)) gaps.push('gaps');
+  if (decides && !COMPARISON_SHOWN_RE.test(text)) gaps.push('comparison');
+  return { graded: true, gaps };
+}
+
 /** Research-critic rubric (dedicated — the judge, not the researcher's self-report). */
 export const RESEARCH_CRITIC_RUBRIC = `RESEARCH ASSESSMENT RUBRIC (grade the candidate answer AGAINST ITS SOURCES):
 0. VERIFIED CORROBORATION (hard rule): grade source authority ONLY from the VERIFIED SOURCE EVIDENCE (actual content fetched live from the cited URLs) — NEVER from the researcher's asserted source titles. When no verified evidence is present, or the verified evidence does not state the candidate answer, you MUST set "corroborated": false and confidence MUST be <= 0.85.
-1. SOURCE AUTHORITY (dominant factor):
+1. SOURCE AUTHORITY (one factor among several — no longer the dominant one; criteria 7-11 below can pull a well-sourced answer down below what its source tier alone would allow):
    - Manufacturer spec sheet / datasheet / official product documentation / adopted standard = 0.90-1.00 confidence.
    - Reputable engineering publication / textbook / established reference = 0.70-0.85.
    - Forum post, SEO article, vendor blog or marketing page = 0.30-0.50.
    - No source, or a source that does not actually state the answer = confidence 0.
+   - SCORING SHAPE: start from the source-authority tier, then grade criteria 7-11. Failing ONE of them caps confidence at 0.85; failing TWO OR MORE caps it at 0.60. Source authority never lifts an answer over a failed completeness criterion.
 2. EVIDENCE DIRECTNESS: a source that STATES the answer verbatim is strong; an answer INFERRED or extrapolated from related specs loses one tier.
 3. CONSISTENCY (automatic fail): if the candidate answer conflicts with any recorded user answer or approved project baseline listed below, confidence MUST be <= 0.30 regardless of source quality.
 4. ASSUMPTION COUNT: each unstated assumption the answer relies on deducts ~0.10.
 5. Evidence class — plotted data: when the answer is read from a vector chart that is part of a manufacturer datasheet or a project reference document, and the reading states the declared axes and the sampling tolerance, treat it as evidence OF THE DRAWING. Floor the confidence at 0.6 (medium) and require the answer to carry the disclosure "read from the plotted curve, not a spec table". Do not score it 0 merely because no second source repeats the number — a datasheet curve is a primary source for its own values. Still cap at 0.85 unless a second independent source corroborates it.
 6. CORROBORATION: two or more independent verified sources stating the same value is corroboration; set "corroborated": true only when at least two verified excerpts support the answer, or when the single source is the manufacturer's own datasheet for the item.
+7. QUESTION FIT (f): does the answer address the exact question asked, including its qualifiers (voltage AND cell count, continuous AND peak, the stated ambient or load)? An answer to a neighbouring question scores 0.30 or lower.
+8. INTERNAL CONSISTENCY (g): are the numbers mutually consistent — do the stated voltage, current, power and energy agree with each other (P = V x I, Wh = V x Ah, C-rate = A / Ah)? A contradiction between two numbers in the answer caps confidence at 0.30.
+9. ARITHMETIC CHECK (h): is every derived value accompanied by its operands and operation, and is the arithmetic correct? A derived result with no shown arithmetic, or with wrong arithmetic, deducts 0.15.
+10. OPTION COMPARISON (i): for a decision question, are the options compared against the STATED criteria (a compact table or explicit per-criterion lines) rather than merely listed? A bare list of options deducts 0.10.
+11. GAPS (j): is what is missing stated explicitly — "not stated" for a field no source carries — rather than glossed over or filled in from a similar product? A silent or inferred gap deducts 0.15.
 
 Respond ONLY with valid JSON in this exact structure:
 {"confidence": <number 0.00-1.00>, "corroborated": <true|false — verified evidence states the candidate answer>, "verdict": "auto" | "propose" | "none", "rationale": "<one short paragraph: which sources drove the confidence and any conflicts found>"}`;
@@ -576,8 +640,18 @@ function buildVerifiedEvidenceSection(verification?: SourceVerification): string
 /**
  * Research critic: dedicated rubric, same evaluate-client pattern as the
  * document critic (critic.ts) — raw client call, temperature 0.1, tolerant
- * JSON brace-extract with clamped confidence. Never throws: unparseable or
- * failed verdicts degrade to { confidence: 0, verdict: 'none' }.
+ * JSON brace-extract with clamped confidence. The critic's confidence is then
+ * deducted for each completeness behaviour the answer does not show
+ * (answerCompleteness), so an incomplete answer cannot ride its sources into
+ * the auto tier. Never throws: unparseable or failed verdicts degrade to
+ * { confidence: 0, verdict: 'none' }.
+ *
+ * @param deps - gate deps; criticClient/criticModel run the judge turn
+ * @param item - the portal question being answered
+ * @param research - the candidate answer to grade (never modified)
+ * @param verification - live-fetched source excerpts, when available
+ * @returns confidence (0-1, completeness-deducted), derived verdict, rationale
+ * @throws AbortError when the ESC signal fired
  */
 export async function assessResearch(
   deps: ResearchGateDeps,
@@ -633,9 +707,22 @@ export async function assessResearch(
     // chart read lands at 0.6 = propose tier, never auto).
     const evidenceFloor = confidenceFloorForEvidence(research.answer, research.sources);
     const flooredConfidence = Math.max(cappedConfidence, evidenceFloor);
+    // Completeness (rubric criteria 7-11): a well-sourced answer that DERIVES a
+    // value or CHOOSES between options loses confidence for each behaviour it
+    // does not show, so source authority alone can no longer lift an incomplete
+    // answer into the auto tier. The plotted-evidence floor still holds — the
+    // deduction never takes a chart-backed answer below its floor.
+    const completeness = answerCompleteness(research.answer);
+    const gapPenalty = completeness.gaps.length * COMPLETENESS_PENALTY_PER_GAP;
+    const scoredConfidence = Math.max(evidenceFloor, Math.min(1, flooredConfidence - gapPenalty));
     const rationaleParts = [
       typeof obj.rationale === 'string' ? sanitizeField(obj.rationale, REASONING_CHAR_CAP) : ''
     ];
+    if (completeness.gaps.length > 0) {
+      rationaleParts.push(
+        `completeness gaps: ${completeness.gaps.join(', ')} (-${gapPenalty.toFixed(2)})`
+      );
+    }
     // Disclosure discipline: the floor is only honest when the answer says it
     // was read off a curve. Model output is never rewritten — a missing
     // disclosure is recorded as a reasoning note instead.
@@ -647,13 +734,13 @@ export async function assessResearch(
     // Verdict is DERIVED from the clamped confidence (critic text is advisory):
     // auto >= AUTO_APPLY_CONFIDENCE; propose >= PROPOSE_CONFIDENCE_FLOOR; else none.
     let verdict: ResearchVerdict;
-    if (flooredConfidence >= AUTO_APPLY_CONFIDENCE) verdict = 'auto';
-    else if (flooredConfidence >= PROPOSE_CONFIDENCE_FLOOR) verdict = 'propose';
+    if (scoredConfidence >= AUTO_APPLY_CONFIDENCE) verdict = 'auto';
+    else if (scoredConfidence >= PROPOSE_CONFIDENCE_FLOOR) verdict = 'propose';
     else verdict = 'none';
     // A critic "none" cannot discard a chart-derived floor: 0.6 IS a usable
     // candidate. Without the floor, critic text stays decisive (unchanged).
     if (rawVerdict === 'none' && evidenceFloor === 0) verdict = 'none';
-    return { confidence: flooredConfidence, verdict, rationale };
+    return { confidence: scoredConfidence, verdict, rationale };
   } catch (err: any) {
     if (err?.name === 'AbortError' || deps.signal?.aborted) {
       throw err;
