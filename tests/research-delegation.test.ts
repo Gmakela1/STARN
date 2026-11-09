@@ -221,6 +221,21 @@ describe('research delegation', () => {
     expect(result.options).toBe('A) 48V — stock item\nB) 24V — cheaper\nRecommended: A');
   });
 
+  it('options keeps an option line that starts with a hash-digit, which is not a heading', async () => {
+    const answer = `${PLAIN_ANSWER}\n\nAlternatives:\nA) 48V — stock item\n  #1 priority: harness cost\nB) 24V — cheaper\nRecommended: A`;
+    const result = await runResearchDelegation(
+      makeDeps({ client: { chatCompletion: vi.fn(async () => chat(researchReply(answer))) } as any }),
+      { question: 'Which contactor?' }
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // `#1` needs no space after the hash, so it is text inside the block, not a
+    // section boundary — the block must run to the end of the answer.
+    expect(result.options).toContain('#1 priority: harness cost');
+    expect(result.options).toContain('Recommended: A');
+  });
+
   it('focus prefixes the question with one Focus files: line', async () => {
     const deps = makeDeps();
     await runResearchDelegation(deps, {

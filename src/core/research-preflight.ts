@@ -101,6 +101,17 @@ export function sanitizeResearchLine(line: string): string {
 }
 
 /**
+ * Runs EVERY line of an untrusted text block through sanitizeResearchLine —
+ * the ONE line-list sanitizer for model- and tool-supplied text.
+ *
+ * @param text - untrusted multi-line text
+ * @returns the same lines, neutralized
+ */
+export function sanitizeLines(text: string): string {
+  return (text || '').split('\n').map(sanitizeResearchLine).join('\n');
+}
+
+/**
  * Appended to the specialist's own system prompt for the scoping turn. The
  * specialist prompt contains drafting/file-writing mandates (Document Output
  * Format, Open Questions section); this directive explicitly overrides them
@@ -497,10 +508,7 @@ export async function runResearchPreflight(deps: ResearchStageDeps, scoping: Sco
     if (!researched) return '';
     // Fence the model-supplied sections: every line sanitized so it cannot
     // forge deterministic headings; deterministic sections stay outside.
-    const fenced = researched
-      .split('\n')
-      .map(sanitizeResearchLine)
-      .join('\n');
+    const fenced = sanitizeLines(researched);
     const dossier = `${settled}\n${alreadyOpen}\n${RESEARCH_FENCE_BEGIN}\n${fenced}\n${RESEARCH_FENCE_END}`;
     const capped = capWholeLines(dossier, DOSSIER_CHAR_CAP);
     // Whole-line capping drops lines from the end; if it removed the closing

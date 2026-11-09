@@ -140,6 +140,33 @@ describe('parseResearchReply', () => {
     expect(sections.recommendation).toBe('B');
     expect(sections.suggestion).toContain('= 76.8 V nominal');
   });
+
+  it('memo sections stop the decision block at a trailing Implications: line', () => {
+    const research: QuestionResearch = {
+      answer:
+        'The 48 V contactor stays.\n\nAlternatives:\nA) 48V - stock item\nB) 24V - cheaper\nRecommended: A\n\nImplications: the 48 V harness stays as baselined.',
+      sources: [],
+      reasoning: ''
+    };
+
+    const sections = buildQuestionSections(research);
+    expect(sections.alternatives).not.toContain('Implications');
+    expect(sections.alternatives).toContain('Recommended: A');
+    expect(sections.options?.map(o => o.id)).toEqual(['A', 'B']);
+  });
+
+  it('memo sections stop the decision block at a trailing markdown heading', () => {
+    const research: QuestionResearch = {
+      answer:
+        'The 48 V contactor stays.\n\nAlternatives:\nA) 48V - stock item\nB) 24V - cheaper\nRecommended: A\n\n## Implications for the baseline\nThe 48 V harness stays.',
+      sources: [],
+      reasoning: ''
+    };
+
+    const sections = buildQuestionSections(research);
+    expect(sections.alternatives).toBe('A) 48V - stock item\nB) 24V - cheaper\nRecommended: A');
+    expect(sections.options?.map(o => o.id)).toEqual(['A', 'B']);
+  });
 });
 
 describe('research rubric (completeness and internal consistency)', () => {
@@ -160,6 +187,11 @@ describe('research rubric (completeness and internal consistency)', () => {
     expect(RESEARCH_CRITIC_RUBRIC).toMatch(/RUBRIC-OWNED criteria 7, 8 and 11/);
   });
 
+  it('rubric: criterion 11 grades only the gaps the mechanical check cannot see', () => {
+    expect(RESEARCH_CRITIC_RUBRIC).toMatch(/Criterion 11 never deducts a defect the MECHANICAL CHECKS line already reports/);
+    expect(RESEARCH_CRITIC_RUBRIC).toMatch(/unshown arithmetic or an uncompared option list/);
+  });
+
   it('keeps source authority but stops it being the dominant factor', () => {
     expect(RESEARCH_CRITIC_RUBRIC).toContain('SOURCE AUTHORITY');
     expect(RESEARCH_CRITIC_RUBRIC).not.toContain('SOURCE AUTHORITY (dominant factor)');
@@ -172,8 +204,16 @@ describe('research rubric (completeness and internal consistency)', () => {
     expect(answerCompleteness('The contactor is rated 48V DC.\nAlternatives: none')).toEqual({ graded: false, gaps: [] });
   });
 
+  it('answerCompleteness: a bare noun is no cue - a quoted value is not graded, a derived one is', () => {
+    // "run time" is a noun, not an inference: a datasheet quote derives nothing,
+    // so grading it would penalise it for showing no arithmetic.
+    expect(answerCompleteness('The run time is 1.33 h at the stated draw.')).toEqual({ graded: false, gaps: [] });
+    // An inference connective marks a derived claim, so arithmetic is expected.
+    expect(answerCompleteness('The run time is therefore 1.33 h at the stated draw.').gaps).toEqual(['arithmetic']);
+    expect(answerCompleteness('Derived headroom: 12 A above the 300 A rating.').gaps).toEqual(['arithmetic']);
+  });
+
   it('answerCompleteness: names only the MECHANICAL behaviours (arithmetic, comparison) an answer misses', () => {
-    expect(answerCompleteness('The run time is 1.33 h at the stated draw.').gaps).toEqual(['arithmetic']);
     expect(
       answerCompleteness('Particularly the run time is 1.33 h (28.8 kWh / 21.6 kW = 1.33 h); cycle life is not stated.').gaps
     ).toEqual([]);
@@ -746,7 +786,7 @@ describe('research gate wiring', () => {
 
     it('critic prompt carries the mechanical checks line (context for criteria 9 and 10)', async () => {
     await assessResearch(gateDeps, item, {
-      answer: 'The pack should be 24S and the run time is 1.33 h at the stated draw.',
+      answer: 'The pack should be 24S, hence the run time is 1.33 h at the stated draw.',
       sources: [],
       reasoning: ''
     });
@@ -774,7 +814,7 @@ describe('research gate wiring', () => {
       const verification = { ok: true, excerpt: 'ME1115: 24S pack, 76.8 V nominal, 300 A continuous.' };
 
       const incomplete = await assessResearch(gateDeps, item, {
-        answer: 'The pack should be 24S and the run time is 1.33 h at the stated draw.',
+        answer: 'The pack should be 24S, hence the run time is 1.33 h at the stated draw.',
         sources: SOURCES,
         reasoning: ''
       }, verification);

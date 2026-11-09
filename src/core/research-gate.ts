@@ -46,7 +46,7 @@ import { runAgentToolLoop } from './agent-loop.js';
 import { Logger } from '../util/logger.js';
 import {
   PREFLIGHT_ALLOWED_TOOLS,
-  sanitizeResearchLine,
+  sanitizeLines,
   buildSettledDecisionsSection
 } from './research-preflight.js';
 import { PENDING_INCORPORATION_MARKER } from './incorporation-prompt.js';
@@ -369,24 +369,12 @@ export function repairTitle(title: string): string {
 
 /**
  * Sanitizes one model-supplied multi-line field: every line through
- * sanitizeResearchLine (heading forgery / setext underline / fence-marker
+ * sanitizeLines (heading forgery / setext underline / fence-marker
  * neutralization from research-preflight), then char-capped.
  */
 function sanitizeField(text: string, cap: number): string {
   const sanitized = sanitizeLines(text).trim();
   return sanitized.length > cap ? sanitized.slice(0, cap) : sanitized;
-}
-
-/**
- * Runs EVERY line of an untrusted text block through sanitizeResearchLine
- * (the research-preflight neutralizer: heading forgery, setext underline,
- * fence markers). The ONE line sanitizer for model- and tool-supplied text.
- *
- * @param text - untrusted multi-line text
- * @returns the same lines, neutralized
- */
-function sanitizeLines(text: string): string {
-  return (text || '').split('\n').map(sanitizeResearchLine).join('\n');
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -560,8 +548,13 @@ If the question is a judgment call, opinion, or cannot be verified from a source
  *   never cost twice.
  */
 export const COMPLETENESS_PENALTY_PER_GAP = 0.07;
-/** Cues that mark an answer as DERIVING a value (so arithmetic is expected). */
-const CONSEQUENTIAL_CUE_RE = /(therefore|hence|thus|implies|derived|calculated|convert(?:ed|s)?|margin|headroom|runtime|run time|c-rate|per cell)/i;
+/**
+ * Cues that mark an answer as DERIVING a value (so arithmetic is expected).
+ * Inference connectives ONLY: a bare noun ("run time", "margin", "per cell")
+ * quotes nothing and derives nothing, so a datasheet value stated with one is
+ * not graded. Arithmetic is still detected by the equality/operation regexes.
+ */
+const CONSEQUENTIAL_CUE_RE = /(therefore|hence|thus|implies|derived|calculated|convert(?:ed|s)?)/i;
 /** A shown equality yielding a number ("... = 76.8 V"). */
 const EQUALITY_SHOWN_RE = /=\s*\d/;
 /** Two numbers with an operator between them ("24 x 3.2", "300 A / 2 h"). */
@@ -630,7 +623,7 @@ export const RESEARCH_CRITIC_RUBRIC = `RESEARCH ASSESSMENT RUBRIC (grade the can
 8. INTERNAL CONSISTENCY (g): are the numbers mutually consistent — do the stated voltage, current, power and energy agree with each other (P = V x I, Wh = V x Ah, C-rate = A / Ah)? A contradiction between two numbers in the answer caps confidence at 0.30.
 9. ARITHMETIC CHECK (h) — MECHANICAL, NOT YOURS: whether every derived value carries its operands and operation is checked by code (the MECHANICAL CHECKS line) and already deducted from the final confidence. Do NOT deduct for missing arithmetic; mention it in the rationale only when the arithmetic that IS shown looks wrong, and then say so as a CONSISTENCY observation (criterion 8).
 10. OPTION COMPARISON (i) — MECHANICAL, NOT YOURS: whether a decision question compares its options against the stated criteria is checked by code (the MECHANICAL CHECKS line) and already deducted. Do NOT deduct for a bare option list; note it in the rationale only.
-11. GAPS (j): is what is missing stated explicitly — "not stated" for a field no source carries — rather than glossed over or filled in from a similar product? A silent or inferred gap deducts 0.15. This is a JUDGMENT about the missing field's disclosure, not about whether the phrase "not stated" appears: an answer that names every open field in its own words has no gap.
+11. GAPS (j): is what is missing stated explicitly — "not stated" for a field no source carries — rather than glossed over or filled in from a similar product? A silent or inferred gap deducts 0.15. This is a JUDGMENT about the missing field's disclosure, not about whether the phrase "not stated" appears: an answer that names every open field in its own words has no gap. Criterion 11 never deducts a defect the MECHANICAL CHECKS line already reports (unshown arithmetic or an uncompared option list) — grade only the undisclosed gap the mechanical check cannot see.
 
 Respond ONLY with valid JSON in this exact structure:
 {"confidence": <number 0.00-1.00>, "corroborated": <true|false — verified evidence states the candidate answer>, "verdict": "auto" | "propose" | "none", "rationale": "<one short paragraph: which sources drove the confidence and any conflicts found>"}`;
@@ -1245,18 +1238,31 @@ const SECTION_ALTERNATIVES_CAP = 900;
 
 /** Line-anchored `Alternatives:` label the research answer ends with. */
 const ALTERNATIVES_LABEL_RE = /^[ \t]*(?:\*\*)?[ \t]*Alternatives[ \t]*:[ \t]*/im;
+/**
+ * A section that must NOT be part of the decision block: an implications line or
+ * any markdown heading placed after the option list. Implications belong BEFORE
+ * the decision block (the prompt says so); when a model appends one anyway the
+ * block stops there instead of swallowing it. A heading needs a space (or the
+ * line end) after its hashes, so an option line such as `#1 priority: …` stays
+ * inside the block.
+ */
+const TRAILING_SECTION_RE = /^[ \t]*(?:#{1,6}(?:[ \t]+|$)|Implications\b)/im;
 
 /**
- * Extracts the decision block a research answer ends with: everything after
- * the line-anchored `Alternatives:` label through the end of the answer.
+ * THE ONE decision-block extractor: the memo path (buildQuestionSections) and
+ * the delegation `options` field both call it, so the two can never disagree.
+ * The block is everything after the line-anchored `Alternatives:` label, cut at
+ * a trailing `Implications:` line or markdown heading.
  *
  * @param answer - the researched answer text
- * @returns the alternatives block, or undefined when the answer has no label
+ * @returns the block, or undefined when the answer has no label (or an empty one)
  */
-function extractAlternativesBlock(answer: string): string | undefined {
+export function extractDecisionBlock(answer: string): string | undefined {
   const match = answer.match(ALTERNATIVES_LABEL_RE);
   if (!match || match.index === undefined) return undefined;
-  const block = answer.slice(match.index + match[0].length).trim();
+  const tail = answer.slice(match.index + match[0].length);
+  const trailing = tail.search(TRAILING_SECTION_RE);
+  const block = (trailing >= 0 ? tail.slice(0, trailing) : tail).trim();
   return block || undefined;
 }
 
@@ -1268,7 +1274,9 @@ function extractAlternativesBlock(answer: string): string | undefined {
  * the researcher's reasoning) plus the cited source names; the main
  * suggestion is the researched answer in front of its decision block; the
  * decision block (`Alternatives:` + `A) …` lines + `Recommended: <letter>`)
- * becomes `alternatives` and is parsed into `options` + `recommendation`.
+ * becomes `alternatives` and is parsed into `options` + `recommendation` —
+ * through the SAME extractor the delegation path uses (extractDecisionBlock),
+ * so a trailing `Implications:` line or heading is cut here too.
  * Options stay undefined when the answer carries no labelled options (never
  * fabricated). Defer is omitted unless research supplied it.
  */
@@ -1288,7 +1296,7 @@ export function buildQuestionSections(
     sourceNames.length > 0 ? `Sources: ${sourceNames.join('; ')}` : ''
   ].filter(Boolean).join('\n\n');
   if (findings) sections.findings = findings.length > SECTION_FINDINGS_CAP ? findings.slice(0, SECTION_FINDINGS_CAP) : findings;
-  const alternatives = extractAlternativesBlock(answer);
+  const alternatives = extractDecisionBlock(answer);
   // The decision block is its own section — the suggestion keeps only the
   // prose answer in front of it (no A/B/C duplication in the memo).
   const prose = alternatives ? answer.slice(0, answer.search(ALTERNATIVES_LABEL_RE)).trim() : answer;

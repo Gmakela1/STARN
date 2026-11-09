@@ -117,7 +117,9 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
   const convergenceTurn = options.convergenceDirective
     ? Math.ceil(maxTurns * options.convergenceDirective.atTurnFraction)
     : Infinity;
-  // True once the directive has been appended — it is injected ONCE per loop.
+  // True once ONE urgency message (convergence directive OR wall-clock nudge)
+  // has been appended — the loop injects at most one per invocation, because
+  // both say the same thing and two near-identical user turns waste context.
   let convergenceInjected = false;
   // Wall-clock nudge state: the loop's start time and its once-only flag.
   const startedAt = Date.now();
@@ -133,14 +135,16 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
       return { finalResponse: '', messages, aborted: true };
     }
     // Convergence nudge: once the threshold turn is reached, tell the model to
-    // stop searching and write with what it already has.
-    if (convergenceTurn !== Infinity && !convergenceInjected && turn >= convergenceTurn) {
+    // stop searching and write with what it already has. Skipped when the
+    // wall-clock nudge already fired — one urgency message per loop.
+    if (convergenceTurn !== Infinity && !convergenceInjected && !wallClockInjected && turn >= convergenceTurn) {
       messages.push({ role: 'user', content: options.convergenceDirective!.message });
       convergenceInjected = true;
     }
     // Wall-clock nudge: the budget is spent in SECONDS, not turns — tell the
     // model to write now with what it has before the caller abandons the run.
-    if (wallClockDeadline !== Infinity && !wallClockInjected && Date.now() >= wallClockDeadline) {
+    // Skipped when the convergence directive already fired (and vice versa).
+    if (wallClockDeadline !== Infinity && !wallClockInjected && !convergenceInjected && Date.now() >= wallClockDeadline) {
       messages.push({ role: 'user', content: options.wallClockNudge!.message });
       wallClockInjected = true;
     }

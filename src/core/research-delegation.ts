@@ -21,7 +21,7 @@
  */
 import type { PortalItem, PortalThreadMessage } from '../workspace/types.js';
 import type { ResearchGateDeps } from './research-gate.js';
-import { runQuestionResearch, verifyTopSource, assessResearch } from './research-gate.js';
+import { runQuestionResearch, verifyTopSource, assessResearch, extractDecisionBlock } from './research-gate.js';
 
 /** One delegation: the question to research, plus optional project-relative paths to check first. */
 export interface ResearchDelegationRequest {
@@ -80,16 +80,6 @@ export type ResearchDelegationResult =
       findings?: string;
     };
 
-/** Line-anchored `Alternatives:` label a research answer may end with. */
-const ALTERNATIVES_LABEL_RE = /^[ \t]*(?:\*\*)?[ \t]*Alternatives[ \t]*:[ \t]*/im;
-/**
- * A section that must NOT be part of the decision block: an implications line or
- * any markdown heading placed after the option list. Implications belong BEFORE
- * the decision block (the prompt says so); when a model appends one anyway the
- * option parse stops there instead of swallowing it.
- */
-const TRAILING_SECTION_RE = /^[ \t]*(?:#{1,6}[ \t]*|Implications\b)/im;
-
 /**
  * Maps a critic confidence to its band (spec §6).
  *
@@ -103,20 +93,16 @@ export function toBand(confidence: number): ResearchBand {
 }
 
 /**
- * Trailing decision block of an answer: everything after the line-anchored
- * `Alternatives:` label, up to the end of the text — or up to a trailing
- * `Implications:` line / markdown heading when the model put a section after
- * the option list anyway.
+ * Trailing decision block of an answer, or undefined when it has none, it is
+ * empty, or it says `none`. The extraction — including the stop at a trailing
+ * `Implications:` line / markdown heading — is extractDecisionBlock in
+ * research-gate, the ONE extractor this path shares with the memo path.
  *
  * @param answer - the researched answer
  * @returns the block, or undefined when the answer has no block or it says `none`
  */
 function extractOptions(answer: string): string | undefined {
-  const match = answer.match(ALTERNATIVES_LABEL_RE);
-  if (!match || match.index === undefined) return undefined;
-  const tail = answer.slice(match.index + match[0].length);
-  const trailing = tail.search(TRAILING_SECTION_RE);
-  const block = (trailing >= 0 ? tail.slice(0, trailing) : tail).trim();
+  const block = extractDecisionBlock(answer);
   if (!block || /^none\b/i.test(block)) return undefined;
   return block;
 }
