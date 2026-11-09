@@ -23,6 +23,10 @@
  * write its reply now. Turn count and wall-clock time diverge — one slow fetch
  * can eat the budget in two turns — so a pass budgeted by seconds needs this
  * guard even when the turn-based directive never fires.
+ *
+ * Both mechanisms share ONE urgency slot: the clock is checked first (it is the
+ * harder deadline), and when both thresholds are met in the same iteration the
+ * single message states both facts.
  */
 import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { ToolRegistry } from '../tools/registry.js';
@@ -54,14 +58,17 @@ export interface AgentLoopOptions {
   /**
    * Optional mid-loop convergence nudge: at turn `ceil(maxTurns * atTurnFraction)`
    * the loop appends one `role:'user'` message carrying `message`. Injected once
-   * per loop invocation; loops that finish earlier never see it.
+   * per loop invocation; loops that finish earlier never see it. Shares the ONE
+   * urgency slot with `wallClockNudge`.
    */
   convergenceDirective?: { atTurnFraction: number; message: string };
   /**
    * Optional wall-clock convergence nudge: once `budgetMs * atFraction` of the
    * caller's budget has elapsed, ONE `role:'user'` message carrying `message`
    * is appended so the model writes its reply with what it already has.
-   * Injected once per loop invocation, before the next model call.
+   * Injected once per loop invocation, before the next model call. Checked
+   * BEFORE the turn directive; when both thresholds are met the one message
+   * carries both.
    */
   wallClockNudge?: { budgetMs: number; atFraction: number; message: string };
   /**
@@ -117,16 +124,15 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
   const convergenceTurn = options.convergenceDirective
     ? Math.ceil(maxTurns * options.convergenceDirective.atTurnFraction)
     : Infinity;
-  // True once ONE urgency message (convergence directive OR wall-clock nudge)
-  // has been appended — the loop injects at most one per invocation, because
-  // both say the same thing and two near-identical user turns waste context.
-  let convergenceInjected = false;
-  // Wall-clock nudge state: the loop's start time and its once-only flag.
+  // True once the ONE urgency message has been appended — the loop injects at
+  // most one per invocation whether the clock, the turn counter, or both fired,
+  // because two near-identical user turns waste context.
+  let urgencyInjected = false;
+  // Wall-clock nudge state: the loop's start time and the elapsed-time deadline.
   const startedAt = Date.now();
   const wallClockDeadline = options.wallClockNudge
     ? startedAt + options.wallClockNudge.budgetMs * options.wallClockNudge.atFraction
     : Infinity;
-  let wallClockInjected = false;
 
   while (turn < maxTurns) {
     turn++;
@@ -134,19 +140,21 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
     if (signal?.aborted) {
       return { finalResponse: '', messages, aborted: true };
     }
-    // Convergence nudge: once the threshold turn is reached, tell the model to
-    // stop searching and write with what it already has. Skipped when the
-    // wall-clock nudge already fired — one urgency message per loop.
-    if (convergenceTurn !== Infinity && !convergenceInjected && !wallClockInjected && turn >= convergenceTurn) {
-      messages.push({ role: 'user', content: options.convergenceDirective!.message });
-      convergenceInjected = true;
-    }
-    // Wall-clock nudge: the budget is spent in SECONDS, not turns — tell the
-    // model to write now with what it has before the caller abandons the run.
-    // Skipped when the convergence directive already fired (and vice versa).
-    if (wallClockDeadline !== Infinity && !wallClockInjected && !convergenceInjected && Date.now() >= wallClockDeadline) {
-      messages.push({ role: 'user', content: options.wallClockNudge!.message });
-      wallClockInjected = true;
+    // Urgency nudge: ONE user message per loop, telling the model to stop
+    // searching and write with what it already has. The wall-clock deadline is
+    // the HARDER limit — a few slow fetches can spend the whole budget in two
+    // turns — so it is evaluated first, and when the turn threshold is met too
+    // the single message states BOTH facts instead of picking one.
+    if (!urgencyInjected) {
+      const clockSpent = wallClockDeadline !== Infinity && Date.now() >= wallClockDeadline;
+      const turnsSpent = convergenceTurn !== Infinity && turn >= convergenceTurn;
+      if (clockSpent || turnsSpent) {
+        const facts: string[] = [];
+        if (clockSpent) facts.push(options.wallClockNudge!.message);
+        if (turnsSpent) facts.push(options.convergenceDirective!.message);
+        messages.push({ role: 'user', content: facts.join(' ') });
+        urgencyInjected = true;
+      }
     }
     let response;
     try {

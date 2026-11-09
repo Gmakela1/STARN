@@ -216,7 +216,7 @@ describe('runAgentToolLoop wall-clock nudge', () => {
     for (const msgs of seen) expect(msgs.some(m => m.content === NUDGE)).toBe(false);
   });
 
-  it('injects only ONE nudge when the convergence turn and the spent clock both fire', async () => {
+  it('injects ONE message stating BOTH facts when the convergence turn and the spent clock fire together', async () => {
     const ctx = makeCtx(tempDir);
     const seen: Array<Array<{ role: string; content: string }>> = [];
     const mockClient = {
@@ -236,18 +236,56 @@ describe('runAgentToolLoop wall-clock nudge', () => {
       allowedTools: [],
       context: ctx,
       maxTurns: 10,
-      // Convergence at turn 2; the clock fraction is already spent at turn 1.
-      convergenceDirective: { atTurnFraction: 0.2, message: CONVERGENCE_MESSAGE },
+      // Both thresholds are met on turn 1: convergence at ceil(10 * 0.1) = 1,
+      // and atFraction 0 means the clock deadline has already passed.
+      convergenceDirective: { atTurnFraction: 0.1, message: CONVERGENCE_MESSAGE },
       wallClockNudge: { budgetMs: 1000, atFraction: 0, message: NUDGE }
     });
 
-    // Both conditions are met inside one loop, yet the model sees ONE urgency
-    // message — not the clock nudge on turn 1 and its twin on turn 2.
-    const urgencyCount = (msgs: Array<{ role: string; content: string }>) =>
-      msgs.filter(m => m.content === NUDGE || m.content === CONVERGENCE_MESSAGE).length;
+    // ONE urgency message, carrying BOTH facts — the clock (the harder
+    // deadline) first, then the turn budget. Neither fact is dropped.
+    const urgency = (msgs: Array<{ role: string; content: string }>) =>
+      msgs.filter(m => m.content !== 'hi' && m.content.includes('Stop searching'));
     expect(seen).toHaveLength(2);
-    expect(urgencyCount(seen[0])).toBe(1);
-    expect(urgencyCount(seen[1])).toBe(1);
+    expect(urgency(seen[0])).toHaveLength(1);
+    expect(urgency(seen[0])[0].content).toBe(`${NUDGE} ${CONVERGENCE_MESSAGE}`);
+    expect(urgency(seen[0])[0].content).toContain(NUDGE);
+    expect(urgency(seen[0])[0].content).toContain(CONVERGENCE_MESSAGE);
+    expect(urgency(seen[0])[0].role).toBe('user');
+    // Still exactly one: the clock firing again on turn 2 adds nothing.
+    expect(urgency(seen[1])).toHaveLength(1);
+    expect(urgency(seen[1])[0].content).toBe(`${NUDGE} ${CONVERGENCE_MESSAGE}`);
+  });
+
+  it('injects the clock nudge alone when the clock is spent but the turn budget is not', async () => {
+    const ctx = makeCtx(tempDir);
+    const seen: Array<Array<{ role: string; content: string }>> = [];
+    const mockClient = {
+      chatCompletion: vi.fn(async (o: any) => {
+        seen.push(snapshot(o));
+        if (seen.length <= 2) return toolCallTurn('t' + seen.length);
+        return { content: '# Done\n\nReply.', toolCalls: [] };
+      })
+    } as any;
+
+    await runAgentToolLoop({
+      client: mockClient,
+      model: 'test',
+      systemPrompt: 'sys',
+      userMessage: 'hi',
+      toolRegistry: new ToolRegistry(),
+      allowedTools: [],
+      context: ctx,
+      maxTurns: 10,
+      // Convergence only at turn 9; the clock is already spent at turn 1.
+      convergenceDirective: { atTurnFraction: 0.9, message: CONVERGENCE_MESSAGE },
+      wallClockNudge: { budgetMs: 1000, atFraction: 0, message: NUDGE }
+    });
+
+    expect(seen).toHaveLength(3);
+    expect(seen[0].filter(m => m.content === NUDGE)).toHaveLength(1);
+    // The clock message is NOT joined to a turn fact that is not due yet.
+    expect(seen[0].some(m => m.content.includes(CONVERGENCE_MESSAGE))).toBe(false);
   });
 });
 

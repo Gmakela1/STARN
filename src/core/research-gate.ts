@@ -550,11 +550,14 @@ If the question is a judgment call, opinion, or cannot be verified from a source
 export const COMPLETENESS_PENALTY_PER_GAP = 0.07;
 /**
  * Cues that mark an answer as DERIVING a value (so arithmetic is expected).
- * Inference connectives ONLY: a bare noun ("run time", "margin", "per cell")
- * quotes nothing and derives nothing, so a datasheet value stated with one is
- * not graded. Arithmetic is still detected by the equality/operation regexes.
+ * Inference connectives and derivation VERBS only: a bare noun ("run time",
+ * "margin", "per cell") quotes nothing and derives nothing, so a datasheet
+ * value stated with one is not graded. Every alternative is word-bounded
+ * (`enthusiast` holds "thus"), while the `ing`/`ed`/`s` forms of a verb stay
+ * matched. Arithmetic is still detected by the equality/operation regexes.
  */
-const CONSEQUENTIAL_CUE_RE = /(therefore|hence|thus|implies|derived|calculated|convert(?:ed|s)?)/i;
+const CONSEQUENTIAL_CUE_RE =
+  /\b(?:therefore|hence|thus|implies|derived|calculated|convert(?:ed|s|ing)?|equals?|gives?|yields?|results?\s+in|works?\s+out\s+to|amounts?\s+to)\b/i;
 /** A shown equality yielding a number ("... = 76.8 V"). */
 const EQUALITY_SHOWN_RE = /=\s*\d/;
 /** Two numbers with an operator between them ("24 x 3.2", "300 A / 2 h"). */
@@ -623,7 +626,7 @@ export const RESEARCH_CRITIC_RUBRIC = `RESEARCH ASSESSMENT RUBRIC (grade the can
 8. INTERNAL CONSISTENCY (g): are the numbers mutually consistent — do the stated voltage, current, power and energy agree with each other (P = V x I, Wh = V x Ah, C-rate = A / Ah)? A contradiction between two numbers in the answer caps confidence at 0.30.
 9. ARITHMETIC CHECK (h) — MECHANICAL, NOT YOURS: whether every derived value carries its operands and operation is checked by code (the MECHANICAL CHECKS line) and already deducted from the final confidence. Do NOT deduct for missing arithmetic; mention it in the rationale only when the arithmetic that IS shown looks wrong, and then say so as a CONSISTENCY observation (criterion 8).
 10. OPTION COMPARISON (i) — MECHANICAL, NOT YOURS: whether a decision question compares its options against the stated criteria is checked by code (the MECHANICAL CHECKS line) and already deducted. Do NOT deduct for a bare option list; note it in the rationale only.
-11. GAPS (j): is what is missing stated explicitly — "not stated" for a field no source carries — rather than glossed over or filled in from a similar product? A silent or inferred gap deducts 0.15. This is a JUDGMENT about the missing field's disclosure, not about whether the phrase "not stated" appears: an answer that names every open field in its own words has no gap. Criterion 11 never deducts a defect the MECHANICAL CHECKS line already reports (unshown arithmetic or an uncompared option list) — grade only the undisclosed gap the mechanical check cannot see.
+11. GAPS (j): is what is missing stated explicitly — "not stated" for a field no source carries — rather than glossed over or filled in from a similar product? A silent or inferred gap deducts 0.15. This is a JUDGMENT about the missing field's disclosure, not about whether the phrase "not stated" appears: an answer that names every open field in its own words has no gap. Criterion 11 never deducts a defect the MECHANICAL CHECKS line already reports (unshown arithmetic or an uncompared option list) — grade only the undisclosed gap the mechanical check cannot see. That carve-out is narrow: an undisclosed or inferred gap STILL deducts 0.15 — finding gaps is your job, never the code's.
 
 Respond ONLY with valid JSON in this exact structure:
 {"confidence": <number 0.00-1.00>, "corroborated": <true|false — verified evidence states the candidate answer>, "verdict": "auto" | "propose" | "none", "rationale": "<one short paragraph: which sources drove the confidence and any conflicts found>"}`;

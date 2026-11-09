@@ -192,6 +192,14 @@ describe('research rubric (completeness and internal consistency)', () => {
     expect(RESEARCH_CRITIC_RUBRIC).toMatch(/unshown arithmetic or an uncompared option list/);
   });
 
+  it('rubric: criterion 11 still deducts 0.15 for an undisclosed gap', () => {
+    // The carve-out is one notch narrow, not a hand-off: finding gaps stays the
+    // rubric's job, so a gap the code cannot see still costs 0.15.
+    expect(RESEARCH_CRITIC_RUBRIC).toMatch(/undisclosed or inferred gap STILL deducts 0\.15/);
+    expect(RESEARCH_CRITIC_RUBRIC).toMatch(/never the code's/);
+    expect(RESEARCH_CRITIC_RUBRIC).toMatch(/A silent or inferred gap deducts 0\.15/);
+  });
+
   it('keeps source authority but stops it being the dominant factor', () => {
     expect(RESEARCH_CRITIC_RUBRIC).toContain('SOURCE AUTHORITY');
     expect(RESEARCH_CRITIC_RUBRIC).not.toContain('SOURCE AUTHORITY (dominant factor)');
@@ -232,6 +240,15 @@ describe('research rubric (completeness and internal consistency)', () => {
       'Alternatives:\nA) 22S — lighter, 70.4 V.\nB) 24S — matches the 76.8 V baseline.\nRecommended: B';
     expect(answerCompleteness(complete).gaps).toEqual([]);
     expect(answerCompleteness(complete).gaps).not.toContain('gaps');
+  });
+
+  it('answerCompleteness: a derivation verb marks a derived claim, a datasheet quote stays ungraded', () => {
+    // No `=`, no operator, no connective — only the verb: still consequential.
+    expect(answerCompleteness('The pack gives 70 Ah over 0.5 h')).toEqual({ graded: true, gaps: ['arithmetic'] });
+    expect(answerCompleteness('The run yields 1.33 h at the stated draw.').graded).toBe(true);
+    expect(answerCompleteness('That works out to 70 Ah.').graded).toBe(true);
+    // "enthusiast" holds "thus": a word-bounded cue must not fire on it.
+    expect(answerCompleteness('An enthusiast may prefer the lighter pack')).toEqual({ graded: false, gaps: [] });
   });
 
   it('answerCompleteness: shown arithmetic grades an answer even without a cue word', () => {
