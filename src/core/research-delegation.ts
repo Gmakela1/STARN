@@ -54,7 +54,9 @@ export type ResearchBand = 'high' | 'medium' | 'low';
 
 /**
  * Delegation outcome. Failures are VALUES, never exceptions:
- * - `timeout` — the research run was aborted (ESC / 240 s budget).
+ * - `timeout` — the research run was aborted (ESC / 240 s budget). When the
+ *   aborted pass already collected usable tool output, `partial: true` and
+ *   `findings` carry it (unverified leads, not an answer).
  * - `unverified` — the research turn produced no usable answer.
  * - `error` — any other failure; `detail` carries the message.
  */
@@ -68,7 +70,15 @@ export type ResearchDelegationResult =
       reasoning: string;
       options?: string;
     }
-  | { ok: false; reason: 'timeout' | 'unverified' | 'error'; detail: string };
+  | {
+      ok: false;
+      reason: 'timeout' | 'unverified' | 'error';
+      detail: string;
+      /** True when the aborted pass salvaged tool output into `findings`. */
+      partial?: boolean;
+      /** Capped digest of the successful tool rows of an aborted pass. */
+      findings?: string;
+    };
 
 /** Line-anchored `Alternatives:` label a research answer may end with. */
 const ALTERNATIVES_LABEL_RE = /^[ \t]*(?:\*\*)?[ \t]*Alternatives[ \t]*:[ \t]*/im;
@@ -145,6 +155,13 @@ export async function runResearchDelegation(
 
   try {
     const research = await runQuestionResearch(gateDeps, item);
+    // Aborted pass: hand back the tool output it already collected instead of
+    // dropping the transcript on the floor.
+    if (research?.partial) {
+      return research.findings
+        ? { ok: false, reason: 'timeout', detail: 'aborted', partial: true, findings: research.findings }
+        : { ok: false, reason: 'timeout', detail: 'aborted', partial: true };
+    }
     if (!research || !research.answer.trim()) {
       return { ok: false, reason: 'unverified', detail: research?.reasoning || 'No answer returned by the research turn.' };
     }
@@ -173,6 +190,18 @@ export async function runResearchDelegation(
 
 /** Wall-clock budget for ONE delegation (spec §5.2: the gate's own 240 s). */
 export const RESEARCH_DELEGATION_TIMEOUT_MS = 240_000;
+/**
+ * Grace period after the budget fires for the aborted pass to hand back its
+ * salvaged tool output. Abort propagation through a model call or fetch is
+ * immediate; the cap stops a hung promise from holding the caller past the
+ * budget.
+ */
+const ABORT_SETTLE_GRACE_MS = 500;
+
+/** @returns a promise that resolves (undefined) after ABORT_SETTLE_GRACE_MS */
+function settleGrace(): Promise<undefined> {
+  return new Promise(resolve => setTimeout(() => resolve(undefined), ABORT_SETTLE_GRACE_MS));
+}
 
 /**
  * Runs ONE delegation under a wall-clock budget — the ONE caller-side timer
@@ -190,7 +219,8 @@ export const RESEARCH_DELEGATION_TIMEOUT_MS = 240_000;
  * @param req - the question and optional focus paths
  * @param ms - budget in milliseconds (tests inject a short value)
  * @returns the delegation result, or `{ ok: false, reason: 'timeout',
- *   detail: '<ms/1000>s' }` when the budget fires first
+ *   detail: '<ms/1000>s' }` when the budget fires first — with `partial: true`
+ *   and `findings` when the aborted pass salvaged tool output
  */
 export async function runResearchDelegationWithTimeout(
   deps: ResearchDelegationDeps,
@@ -210,20 +240,32 @@ export async function runResearchDelegationWithTimeout(
   // Both the timer and a forwarded caller abort end the run: the controller's
   // abort resolves the race, so an ESC during research does not wait out the
   // budget.
-  const deadline = new Promise<ResearchDelegationResult>(resolve => {
-    controller.signal.addEventListener('abort', () => resolve(timedOut), { once: true });
+  const deadline = new Promise<'aborted'>(resolve => {
+    const onAbort = () => resolve('aborted');
+    controller.signal.addEventListener('abort', onAbort, { once: true });
     if (controller.signal.aborted) {
-      resolve(timedOut);
+      onAbort();
       return;
     }
     timer = setTimeout(() => controller.abort(), ms);
   });
 
+  const run = runResearchDelegation({ ...deps, signal: controller.signal }, req);
   try {
-    return await Promise.race([
-      runResearchDelegation({ ...deps, signal: controller.signal }, req),
-      deadline
-    ]);
+    const first = await Promise.race([run, deadline]);
+    // The run settled on its own: its result stands untouched.
+    if (first !== 'aborted') return first;
+    // Budget fired. The aborted pass reports the tool output it salvaged
+    // (reason 'timeout', findings set) within the grace window; a hung run
+    // yields nothing and the bare timeout value stands.
+    const settled = await Promise.race([run, settleGrace()]);
+    if (settled && settled.ok) return settled;
+    if (settled && settled.ok === false && settled.partial) {
+      return settled.findings
+        ? { ok: false, reason: 'timeout', detail: timedOut.detail, partial: true, findings: settled.findings }
+        : { ok: false, reason: 'timeout', detail: timedOut.detail, partial: true };
+    }
+    return timedOut;
   } finally {
     clearTimeout(timer);
     deps.signal?.removeEventListener('abort', forwardAbort);

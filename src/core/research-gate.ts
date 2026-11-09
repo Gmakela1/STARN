@@ -36,7 +36,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { ChatClient } from '../openrouter/types.js';
+import { ChatClient, ChatMessage } from '../openrouter/types.js';
 import { SearchClient } from '../tools/search/types.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { ToolExecutionContext } from '../tools/types.js';
@@ -126,6 +126,84 @@ export interface QuestionResearch {
   answer: string;
   sources: ResearchSource[];
   reasoning: string;
+  /**
+   * True when the turn was ABORTED (240 s budget / ESC) before it wrote an
+   * answer: `answer` is empty and `findings` carries what the tool calls that
+   * did succeed returned.
+   */
+  partial?: boolean;
+  /** Capped digest of the successful tool rows of an aborted turn. */
+  findings?: string;
+}
+
+/** Total character cap for the salvaged tool-output digest. */
+export const PARTIAL_FINDINGS_CHAR_CAP = 6000;
+/** Per-tool-row character cap inside the salvaged digest. */
+export const PARTIAL_FINDINGS_ROW_CHAR_CAP = 1500;
+/** Rank of the tool rows that carry numbers, lowest first (unranked tools = 2). */
+const PARTIAL_FINDINGS_RANK: Record<string, number> = { read_chart_data: 0, web_fetch: 1 };
+
+/**
+ * True when a tool row carries no usable output: the agent loop writes
+ * `Error: <message>` for a failed call, and a chart read that refused every
+ * series renders `Refusal: ...` with no value table.
+ *
+ * @param text - trimmed tool row content
+ * @returns true when the row must be left out of the digest
+ */
+function isFailedToolRow(text: string): boolean {
+  if (/^error:/i.test(text)) return true;
+  return /^refusal:/i.test(text) && !text.includes('|');
+}
+
+/**
+ * Compact digest of the successful tool rows of an ABORTED research
+ * transcript, so evidence a pass already collected is not thrown away with it
+ * (2026-11-09: an accepted chart read was discarded when the 240 s budget
+ * fired).
+ *
+ * Chart rows come first — they carry sampled values — then fetched pages, then
+ * everything else. Identical repeats of the same tool+text are dropped, and
+ * the digest is capped at PARTIAL_FINDINGS_CHAR_CAP with each row capped at
+ * PARTIAL_FINDINGS_ROW_CHAR_CAP. Never throws on odd message shapes.
+ *
+ * @param messages - the aborted loop transcript
+ * @returns the digest, or '' when no row carries usable output
+ */
+export function buildAbortedFindingsDigest(messages: ChatMessage[]): string {
+  if (!Array.isArray(messages)) return '';
+  const rows: { name: string; text: string; order: number }[] = [];
+  const seen = new Set<string>();
+  messages.forEach((message, order) => {
+    if (!message || message.role !== 'tool') return;
+    const text = typeof message.content === 'string' ? message.content.trim() : '';
+    if (!text || isFailedToolRow(text)) return;
+    const name = typeof message.name === 'string' && message.name ? message.name : 'tool';
+    const key = `${name}\u0000${text}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    rows.push({ name, text, order });
+  });
+  const rank = (name: string): number => PARTIAL_FINDINGS_RANK[name] ?? 2;
+  rows.sort((a, b) => rank(a.name) - rank(b.name) || a.order - b.order);
+
+  const blocks: string[] = [];
+  let used = 0;
+  for (const row of rows) {
+    const capped = row.text.length > PARTIAL_FINDINGS_ROW_CHAR_CAP
+      ? `${row.text.slice(0, PARTIAL_FINDINGS_ROW_CHAR_CAP)}…(row truncated)`
+      : row.text;
+    const block = `[${row.name}]\n${capped}`;
+    const separator = blocks.length > 0 ? 2 : 0;
+    if (used + separator + block.length > PARTIAL_FINDINGS_CHAR_CAP) {
+      const room = PARTIAL_FINDINGS_CHAR_CAP - used - separator - '…(truncated)'.length;
+      if (room > 0) blocks.push(`${block.slice(0, room)}…(truncated)`);
+      break;
+    }
+    blocks.push(block);
+    used += separator + block.length;
+  }
+  return blocks.join('\n\n');
 }
 
 export type ResearchVerdict = 'auto' | 'propose' | 'none';
@@ -403,7 +481,17 @@ If the question is a judgment call, opinion, or cannot be verified from a source
           'reasoning field.'
       }
     });
-    return parseResearchReply(result.finalResponse || '');
+    const reply = parseResearchReply(result.finalResponse || '');
+    if (reply) return reply;
+    // Aborted pass: the tool rows are the only evidence left. Keep them as a
+    // partial result instead of dropping the whole transcript.
+    if (result.aborted) {
+      const findings = buildAbortedFindingsDigest(result.messages);
+      return findings
+        ? { answer: '', sources: [], reasoning: '', partial: true, findings }
+        : { answer: '', sources: [], reasoning: '', partial: true };
+    }
+    return null;
   } catch (err: any) {
     if (err?.name === 'AbortError' || deps.signal?.aborted) {
       throw err; // ESC must abort, not degrade silently.

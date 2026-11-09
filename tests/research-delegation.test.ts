@@ -38,6 +38,39 @@ function criticReply(confidence: number): string {
 }
 
 const PLAIN_ANSWER = 'The main contactor is rated 48V DC.';
+
+/** One model turn that issues the given tool calls. */
+function toolCallTurn(calls: { id: string; name: string; args?: any }[]): ChatCompletionResult {
+  return {
+    content: '',
+    toolCalls: calls.map(call => ({
+      id: call.id,
+      type: 'function' as const,
+      function: { name: call.name, arguments: JSON.stringify(call.args ?? {}) }
+    })),
+    raw: {}
+  } as ChatCompletionResult;
+}
+
+/**
+ * Registry carrying stub tool handlers, so an aborted loop's transcript holds
+ * real tool rows without touching the filesystem or the network.
+ *
+ * @param handlers - tool name plus the stub `execute` to run
+ * @returns the registry the research loop executes against
+ */
+function stubRegistry(handlers: { name: string; execute: (args: any) => Promise<any> }[]): ToolRegistry {
+  const registry = new ToolRegistry();
+  for (const handler of handlers) {
+    registry.register({
+      name: handler.name,
+      definition: { type: 'function', function: { name: handler.name, description: handler.name, parameters: {} } },
+      execute: handler.execute
+    } as any);
+  }
+  return registry;
+}
+
 const ANSWER_WITH_OPTIONS = `${PLAIN_ANSWER}\n\nAlternatives:\nA) 48V — stock item\nB) 24V — cheaper\nRecommended: A`;
 
 describe('research delegation', () => {
@@ -93,6 +126,8 @@ describe('research delegation', () => {
     expect(result.confidence).toBe(0.62);
     expect(result.band).toBe('medium');
     expect(result.reasoning).toContain('Vendor datasheet');
+    // A completed pass is not a salvaged one.
+    expect(result.partial).toBeUndefined();
   });
 
   it('AbortError is mapped to reason timeout, never re-thrown', async () => {
@@ -180,6 +215,146 @@ describe('research delegation', () => {
     const userMessage = String(call.messages.find((m: any) => m.role === 'user').content);
     expect(userMessage).toContain('QUESTION: What is the contactor rating?');
     expect(userMessage).not.toContain('Focus files:');
+  });
+
+  it('an aborted pass returns partial findings with the chart row first', async () => {
+    const registry = stubRegistry([
+      { name: 'web_search', execute: async () => ({ success: true, result: 'Search hits: ME1115 performance curve (vendor).' }) },
+      {
+        name: 'read_chart_data',
+        execute: async () => ({
+          success: true,
+          result: '**Charts — reference/me1115.pdf, page 4**\n\n| x | Eff. | Watts Out |\n|---|---|---|\n| 100 | 0.88 | 7400 |'
+        })
+      }
+    ]);
+    let call = 0;
+    const deps = makeDeps({
+      toolRegistry: registry,
+      client: {
+        chatCompletion: vi.fn(async () => {
+          if (call++ === 0) {
+            return toolCallTurn([
+              { id: 'call-1', name: 'web_search', args: { query: 'ME1115 curve' } },
+              { id: 'call-2', name: 'read_chart_data', args: { path: 'reference/me1115.pdf' } }
+            ]);
+          }
+          throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+        })
+      } as any
+    });
+
+    const result = await runResearchDelegation(deps, { question: 'What is the efficiency at 100 A?' });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('timeout');
+    expect(result.partial).toBe(true);
+    const findings = result.findings ?? '';
+    expect(findings).toContain('[read_chart_data]');
+    expect(findings).toContain('[web_search]');
+    // The chart row carries sampled values, so it leads the digest.
+    expect(findings.indexOf('[read_chart_data]')).toBeLessThan(findings.indexOf('[web_search]'));
+    expect(findings).toContain('| 100 | 0.88 | 7400 |');
+  });
+
+  it('an aborted pass with no successful tool row carries no findings', async () => {
+    const registry = stubRegistry([
+      { name: 'web_fetch', execute: async () => ({ success: false, error: 'socket hang up' }) },
+      { name: 'read_chart_data', execute: async () => ({ success: true, result: 'Refusal: non-monotonic left y axis labels' }) }
+    ]);
+    let call = 0;
+    const deps = makeDeps({
+      toolRegistry: registry,
+      client: {
+        chatCompletion: vi.fn(async () => {
+          if (call++ === 0) {
+            return toolCallTurn([
+              { id: 'call-1', name: 'web_fetch', args: { url: 'https://vendor.example/ds.pdf' } },
+              { id: 'call-2', name: 'read_chart_data', args: { path: 'reference/me1115.pdf' } }
+            ]);
+          }
+          throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+        })
+      } as any
+    });
+
+    const result = await runResearchDelegation(deps, { question: 'What is the rating?' });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('timeout');
+    expect(result.partial).toBe(true);
+    expect(result.findings).toBeUndefined();
+  });
+
+  it('caps salvaged findings at 6000 characters', async () => {
+    const registry = stubRegistry([
+      {
+        name: 'read_chart_data',
+        execute: async (args: any) => ({ success: true, result: `chart ${args.path}\n${'z'.repeat(2000)}` })
+      }
+    ]);
+    const calls = Array.from({ length: 6 }, (_, index) => ({
+      id: `call-${index}`,
+      name: 'read_chart_data',
+      args: { path: `reference/p${index}.pdf` }
+    }));
+    let call = 0;
+    const deps = makeDeps({
+      toolRegistry: registry,
+      client: {
+        chatCompletion: vi.fn(async () => {
+          if (call++ === 0) return toolCallTurn(calls);
+          throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+        })
+      } as any
+    });
+
+    const result = await runResearchDelegation(deps, { question: 'Curve values?' });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const findings = result.findings ?? '';
+    expect(findings.length).toBeGreaterThan(5000);
+    expect(findings.length).toBeLessThanOrEqual(6000);
+  });
+
+  it('runResearchDelegationWithTimeout keeps salvaged findings when the budget fires', async () => {
+    const registry = stubRegistry([
+      {
+        name: 'read_chart_data',
+        execute: async () => ({ success: true, result: '| x | Watts Out |\n|---|---|\n| 100 | 7400 |' })
+      }
+    ]);
+    let call = 0;
+    const deps = makeDeps({
+      toolRegistry: registry,
+      client: {
+        chatCompletion: vi.fn((opts: any) => {
+          if (call++ === 0) {
+            return Promise.resolve(toolCallTurn([{ id: 'call-1', name: 'read_chart_data', args: { path: 'reference/me1115.pdf' } }]));
+          }
+          // Honour the budget signal like a real client: reject on abort.
+          return new Promise((_resolve, reject) => {
+            opts.signal?.addEventListener(
+              'abort',
+              () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+              { once: true }
+            );
+          });
+        })
+      } as any
+    });
+
+    const result = await runResearchDelegationWithTimeout(deps, { question: 'Efficiency at 100 A?' }, 20);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('timeout');
+    expect(result.detail).toBe('0.02s');
+    expect(result.partial).toBe(true);
+    expect(result.findings).toContain('| 100 | 7400 |');
   });
 
   it('runResearchDelegationWithTimeout: a run that never settles hits the budget and aborts the signal', async () => {

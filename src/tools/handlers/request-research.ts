@@ -11,8 +11,10 @@
  * Timeout ownership: `runResearchDelegation` (core/research-delegation.ts)
  * enforces NO wall-clock budget — it is read-only and arms no timer. The
  * capability wrapper injected by the caller owns the 240 s budget and maps its
- * abort to `{ok: false, reason: 'timeout'}`. The handler only maps that reason
- * to the spec string.
+ * abort to `{ok: false, reason: 'timeout'}`. The handler maps that reason to a
+ * message that also carries the tool output the aborted pass salvaged
+ * (`partial`/`findings`), labelled as unverified leads; with nothing salvaged
+ * the message tells the specialist to report the gap.
  */
 import { ToolHandler, ToolExecutionContext, ToolExecutionResponse } from '../types.js';
 import type { ResearchDelegationResult } from '../../core/research-delegation.js';
@@ -28,6 +30,21 @@ const MAX_FOCUS_PATHS = 5;
 const UNAVAILABLE = 'Research unavailable in this context. Report the gap; do not invent values.';
 const TIMEOUT = 'Research timed out after 240 s. Report the gap.';
 const UNVERIFIED = 'No verifiable source found. Report the gap.';
+/** Detail shape the delegation timer writes: `<ms/1000>s` (e.g. `240s`, `0.05s`). */
+const BUDGET_DETAIL_RE = /^(\d+(?:\.\d+)?)s$/;
+/** Budget named when the failure detail carries no duration (ESC abort, error). */
+const DEFAULT_TIMEOUT_SECONDS = '240';
+
+/**
+ * Duration to name in the timeout message.
+ *
+ * @param detail - the failure detail: `240s` from the timer, otherwise free text
+ * @returns the seconds as written, or 240 when the detail carries no duration
+ */
+function timeoutSeconds(detail: string): string {
+  const match = BUDGET_DETAIL_RE.exec((detail || '').trim());
+  return match ? match[1] : DEFAULT_TIMEOUT_SECONDS;
+}
 
 /**
  * Caps the rendered markdown at 8000 characters.
@@ -77,13 +94,22 @@ export function formatResearchFindings(
 }
 
 /**
- * Maps a failed delegation to its spec §5.5 string.
+ * Maps a failed delegation to its message. A timeout that salvaged tool output
+ * returns those findings as UNVERIFIED leads instead of telling the specialist
+ * to give up on evidence it already has.
  *
- * @param res - the failure value: reason plus the error detail
- * @returns the exact report-the-gap string for that reason
+ * @param res - the failure value: reason, detail and any salvaged findings
+ * @returns the message for that reason
  */
 function failureMessage(res: Extract<ResearchDelegationResult, { ok: false }>): string {
-  if (res.reason === 'timeout') return TIMEOUT;
+  if (res.reason === 'timeout') {
+    const findings = res.findings?.trim();
+    if (!findings) return `Research timed out after ${timeoutSeconds(res.detail)} s. Report the gap.`;
+    return (
+      `Research timed out after ${timeoutSeconds(res.detail)} s. Unverified partial findings from ` +
+      `the tool calls that did succeed — treat as leads, not evidence:\n${findings}`
+    );
+  }
   if (res.reason === 'unverified') return UNVERIFIED;
   return `Research failed (${res.detail}). Report the gap.`;
 }

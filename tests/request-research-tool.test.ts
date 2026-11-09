@@ -126,6 +126,35 @@ describe('request_research failure mapping', () => {
     expect(res).toEqual({ success: true, result: 'Research timed out after 240 s. Report the gap.' });
   });
 
+  it('keeps the gap message when a timeout salvaged nothing', async () => {
+    const res = await requestResearchHandler.execute(
+      { question: 'rating?' },
+      ctx(stub({ ok: false, reason: 'timeout', detail: '240s', partial: true }))
+    );
+    expect(res).toEqual({ success: true, result: 'Research timed out after 240 s. Report the gap.' });
+  });
+
+  it('names the elapsed budget from the detail', async () => {
+    const res = await requestResearchHandler.execute(
+      { question: 'rating?' },
+      ctx(stub({ ok: false, reason: 'timeout', detail: '0.05s' }))
+    );
+    expect(res).toEqual({ success: true, result: 'Research timed out after 0.05 s. Report the gap.' });
+  });
+
+  it('returns salvaged tool output as unverified leads on timeout', async () => {
+    const findings = '[read_chart_data]\n| x | Watts Out |\n|---|---|\n| 100 | 7400 |';
+    const res = await requestResearchHandler.execute(
+      { question: 'rating?' },
+      ctx(stub({ ok: false, reason: 'timeout', detail: '240s', partial: true, findings }))
+    );
+    expect(res.success).toBe(true);
+    expect(res.result).toBe(
+      'Research timed out after 240 s. Unverified partial findings from the tool calls that did ' +
+      `succeed — treat as leads, not evidence:\n${findings}`
+    );
+  });
+
   it('maps unverified', async () => {
     const res = await requestResearchHandler.execute(
       { question: 'rating?' },
