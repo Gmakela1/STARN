@@ -8,6 +8,7 @@ import { addPortalItem, answerPortalItem } from '../src/core/question-portal.js'
 import { applyAnswer, AnswerApplierDeps } from '../src/core/answer-applier.js';
 import {
   parseResearchReply,
+  buildQuestionSections,
   runQuestionResearch,
   runResearchGate,
   runGateWithTimeout,
@@ -85,6 +86,50 @@ describe('parseResearchReply', () => {
     expect(lines.some(l => l.startsWith('echoed: ') && l.includes('«'))).toBe(true);
     expect(lines.some(l => l.startsWith('echoed: ') && /settled decisions/i.test(l))).toBe(true);
     expect(research.answer).not.toContain('<<<');
+  });
+
+  it('accepts an 8000-char answer and truncates only beyond it', () => {
+    const reply = (length: number) => JSON.stringify({ answer: 'x'.repeat(length), sources: [], reasoning: '' });
+    expect(parseResearchReply(reply(7999))!.answer).toHaveLength(7999);
+    expect(parseResearchReply(reply(8000))!.answer).toHaveLength(8000);
+    expect(parseResearchReply(reply(8001))!.answer).toHaveLength(8000);
+  });
+
+  it('a structured answer (lead, findings list, arithmetic block, decision table, Alternatives) parses intact', () => {
+    const structured = JSON.stringify({
+      answer: [
+        'The pack should be 24S, not 22S.',
+        'Findings:',
+        '- Nominal voltage: 76.8 V (source: ME1115 performance sheet)',
+        '- Continuous current: 300 A (source: vendor datasheet)',
+        'Arithmetic:',
+        '24S x 3.2 V = 76.8 V nominal',
+        '300 A x 76.8 V = 23.0 kW',
+        '| Option | Voltage | Cost |',
+        '| --- | --- | --- |',
+        '| A) 22S | 70.4 V | cheaper |',
+        '| B) 24S | 76.8 V | $410 |',
+        'Cycle life at 0 C is not stated.',
+        'Alternatives:',
+        'A) 22S — lighter, 70.4 V.',
+        'B) 24S — matches the 76.8 V baseline.',
+        'Recommended: B'
+      ].join('\n'),
+      sources: [{ title: 'ME1115 performance sheet', url: 'https://vendor.example/me1115.pdf' }],
+      reasoning: 'Two focused passes.'
+    });
+
+    const research = parseResearchReply(structured)!;
+    expect(research.answer).toContain('- Nominal voltage: 76.8 V (source: ME1115 performance sheet)');
+    expect(research.answer).toContain('24S x 3.2 V = 76.8 V nominal');
+    expect(research.answer).toContain('| B) 24S | 76.8 V | $410 |');
+    expect(research.answer).toContain('Recommended: B');
+
+    // The decision table supplements the Alternatives block: options still parse.
+    const sections = buildQuestionSections(research);
+    expect(sections.options?.map(o => o.id)).toEqual(['A', 'B']);
+    expect(sections.recommendation).toBe('B');
+    expect(sections.suggestion).toContain('= 76.8 V nominal');
   });
 });
 
@@ -193,6 +238,22 @@ describe('research gate wiring', () => {
     expect(systemPrompt).toContain('write "not stated" for that field');
     expect(systemPrompt).toContain('IMPLICATIONS');
     expect(systemPrompt).toMatch(/name that document/);
+  });
+
+  it('research turn prompt allows a findings list, arithmetic block and decision table in the answer', async () => {
+    await runQuestionResearch(gateDeps, item);
+    const systemPrompt = (researchClient.chatCompletion.mock.calls[0][0] as any).messages[0].content as string;
+    expect(systemPrompt).toContain('FINDINGS LIST');
+    expect(systemPrompt).toContain('ARITHMETIC BLOCK');
+    expect(systemPrompt).toContain('DECISION TABLE');
+    // The table supplements the Alternatives block, never replaces it.
+    expect(systemPrompt).toMatch(/never replaces it/);
+    // The JSON contract is unchanged and the reply is still JSON-only.
+    expect(systemPrompt).toContain('"answer"');
+    expect(systemPrompt).toContain('"sources"');
+    expect(systemPrompt).toContain('"reasoning"');
+    expect(systemPrompt).toContain('Your final reply must contain ONLY a JSON object');
+    expect(systemPrompt).not.toContain('one concise paragraph');
   });
 
   it('research turn prompt tells the gate to read charts with an explicit axes declaration', async () => {

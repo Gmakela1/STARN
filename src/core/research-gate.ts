@@ -104,7 +104,9 @@ export function confidenceFloorForEvidence(
   return datasheetLike ? PLOTTED_EVIDENCE_CONFIDENCE_FLOOR : 0;
 }
 /** Hard character caps for model-supplied fields. */
-const ANSWER_CHAR_CAP = 4000;
+// ANSWER_CHAR_CAP covers a structured answer: a lead sentence, a findings
+// list, an arithmetic block and a decision table (raised from 4000).
+const ANSWER_CHAR_CAP = 8000;
 const REASONING_CHAR_CAP = 1000;
 const SOURCE_CAP = 6;
 /** How many distinct cited URLs verifySources fetches (one at a time). */
@@ -436,7 +438,11 @@ SHOW THE ARITHMETIC: for any derived value (voltage, current, C-rate, margin, ru
 NOT STATED: when a field the question depends on is absent from every source, write "not stated" for that field. Never fill the gap by inference or by a similar product.
 IMPLICATIONS: end by naming what the finding implies for the project baseline, and when it contradicts an approved document, name that document.
 Your final reply must contain ONLY a JSON object (no markdown fence, no commentary) in this exact shape:
-{"answer": "<direct factual answer, one concise paragraph>", "sources": [{"title": "<source name>", "url": "<URL if web, omit if project doc>"}], "reasoning": "<how the sources support the answer; note any assumptions>"}
+{"answer": "<one short lead sentence, then the findings list / arithmetic block / decision table described below>", "sources": [{"title": "<source name>", "url": "<URL if web, omit if project doc>"}], "reasoning": "<how the sources support the answer; note any assumptions>"}
+The "answer" string OPENS with one short lead sentence stating the finding, then carries — in this order — whichever of these the research actually produced (use \n escapes for the line breaks inside the JSON string):
+- FINDINGS LIST: one line per finding, each item carrying its value AND the source it came from.
+- ARITHMETIC BLOCK: one line per derived number, showing the operands and the operation (e.g. "24S x 3.0 V = 72.0 V nominal") — never a bare result.
+- DECISION TABLE (decision questions only): a compact markdown table of the options against the stated criteria, one row per option (e.g. "| Option | Voltage | Weight | Cost |"). The table SUPPLEMENTS the Alternatives block below — it never replaces it.
 The "answer" string must END with a decision block (use \n escapes for the line breaks inside the JSON string):
 - DECISION QUESTION (the user must choose between options): end the answer with
   Alternatives:\nA) <option and its trade-off>\nB) <option and its trade-off>\nC) <option and its trade-off>\nRecommended: <letter>
