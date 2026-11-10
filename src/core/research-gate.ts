@@ -1150,6 +1150,14 @@ export async function undoAutoApplied(deps: UndoAutoDeps, itemId: string): Promi
 export interface ResearchGateOutcome {
   research?: QuestionResearch;
   assessment?: ResearchAssessment;
+  /**
+   * True when the research turn was ABORTED (240 s budget / ESC) before it
+   * wrote an answer — the item stays a plain open question, but the run may
+   * still have evidence to report (see `findings`).
+   */
+  partial?: boolean;
+  /** Capped digest of the successful tool rows an aborted pass salvaged. */
+  findings?: string;
 }
 
 /**
@@ -1172,6 +1180,18 @@ export async function runResearchGate(deps: ResearchGateDeps, item: PortalItem):
     if (!research || !research.answer.trim()) {
       setItemResearching(deps.stateManager, item.id, false);
       deps.emitStatus?.(`Research exhausted for: ${short} — left as open question`);
+      // An ABORTED pass leaves no answer but may have collected real tool
+      // output. Carry that digest out on the outcome (the delegation path
+      // already hands it back) and log it, so a gate timeout never discards
+      // the evidence the pass had already gathered.
+      if (research?.partial) {
+        if (research.findings) {
+          deps.logger?.info(
+            `[research-gate:partial] aborted pass salvaged evidence for item ${item.id} — digest kept on the gate outcome:\n${research.findings}`
+          );
+        }
+        return research.findings ? { partial: true, findings: research.findings } : { partial: true };
+      }
       return {};
     }
 

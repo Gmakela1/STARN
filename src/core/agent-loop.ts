@@ -135,11 +135,13 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
     : Infinity;
 
   while (turn < maxTurns) {
-    turn++;
-    // Pre-flight: if the user aborted (ESC), stop immediately without calling the model.
+    // Pre-flight: if the user aborted (ESC), stop immediately without calling
+    // the model. Checked BEFORE `turn++` so `turnsUsed` counts only turns that
+    // actually ran.
     if (signal?.aborted) {
-      return { finalResponse: '', messages, aborted: true };
+      return { finalResponse: '', messages, aborted: true, toolCallCount, turnsUsed: turn };
     }
+    turn++;
     // Urgency nudge: ONE user message per loop, telling the model to stop
     // searching and write with what it already has. The wall-clock deadline is
     // the HARDER limit — a few slow fetches can spend the whole budget in two
@@ -167,7 +169,7 @@ export async function runAgentToolLoop(options: AgentLoopOptions): Promise<Agent
     } catch (err: any) {
       // AbortError = user pressed ESC; stop the turn gracefully.
       if (err?.name === 'AbortError' || signal?.aborted) {
-        return { finalResponse: '', messages, aborted: true };
+        return { finalResponse: '', messages, aborted: true, toolCallCount, turnsUsed: turn };
       }
       throw err;
     }

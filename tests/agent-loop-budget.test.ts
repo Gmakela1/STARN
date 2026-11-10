@@ -473,3 +473,77 @@ describe('runAgentToolLoop budget and forced final write', () => {
     expect(msg).toContain('1 tool calls');
   });
 });
+
+describe('runAgentToolLoop abort return shape', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = path.join(os.tmpdir(), 'starn-loop-abort-shape-' + Date.now());
+    fs.mkdirSync(tempDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  /** A client whose call rejects with AbortError once the signal fires. */
+  function abortableClient() {
+    return {
+      chatCompletion: vi.fn(async (o: any) => {
+        return new Promise((_resolve, reject) => {
+          if (o.signal?.aborted) {
+            const e = new Error('aborted');
+            e.name = 'AbortError';
+            return reject(e);
+          }
+          o.signal?.addEventListener('abort', () => {
+            const e = new Error('aborted');
+            e.name = 'AbortError';
+            reject(e);
+          });
+        });
+      })
+    } as any;
+  }
+
+  it('pre-abort return carries the same fields as an in-flight abort return', async () => {
+    const ctx = makeCtx(tempDir);
+
+    const preController = new AbortController();
+    preController.abort();
+    const preAbort = await runAgentToolLoop({
+      client: abortableClient(),
+      model: 'test',
+      systemPrompt: 'sys',
+      userMessage: 'hi',
+      toolRegistry: new ToolRegistry(),
+      allowedTools: [],
+      context: ctx,
+      signal: preController.signal
+    });
+
+    const midController = new AbortController();
+    const midFlight = runAgentToolLoop({
+      client: abortableClient(),
+      model: 'test',
+      systemPrompt: 'sys',
+      userMessage: 'hi',
+      toolRegistry: new ToolRegistry(),
+      allowedTools: [],
+      context: ctx,
+      signal: midController.signal
+    });
+    midController.abort();
+    const midAbort = await midFlight;
+
+    expect(preAbort).toEqual({
+      finalResponse: '',
+      messages: expect.any(Array),
+      aborted: true,
+      toolCallCount: 0,
+      turnsUsed: 0
+    });
+    expect(midAbort.aborted).toBe(true);
+    expect(Object.keys(preAbort).sort()).toEqual(Object.keys(midAbort).sort());
+  });
+});

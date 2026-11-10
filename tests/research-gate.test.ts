@@ -711,6 +711,53 @@ describe('research gate wiring', () => {
     expect(emitStatus.mock.calls.some(c => String(c[0]).includes('Research exhausted for:'))).toBe(true);
   });
 
+  it('aborted pass: the salvaged chart digest leaves on the gate outcome (not discarded)', async () => {
+    // The autopilot/intake path runs the GATE, not the delegation: an aborted
+    // pass must hand back the evidence it already collected here too.
+    const chartRow =
+      '| # | Series | Axis | Points | Reliability |\n|---|---|---|---|---|\n| 1 | Watts Out | left (0–9000) | 40 | declared axes |';
+    vi.spyOn(agentLoopModule, 'runAgentToolLoop').mockResolvedValue({
+      finalResponse: '',
+      messages: [toolRow('read_chart_data', chartRow)],
+      aborted: true,
+      toolCallCount: 1,
+      turnsUsed: 4
+    });
+    const info = vi.fn();
+    const outcome = await runResearchGate({ ...gateDeps, logger: { info, warn: vi.fn(), error: vi.fn() } as any }, item);
+
+    expect(outcome.research).toBeUndefined();
+    expect(outcome.assessment).toBeUndefined();
+    expect(outcome.partial).toBe(true);
+    expect(outcome.findings).toContain('[read_chart_data]');
+    expect(outcome.findings).toContain('| 1 | Watts Out |');
+    // Not lost silently: logged at INFO with the short marker.
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(String(info.mock.calls[0][0])).toContain('[research-gate:partial]');
+    expect(String(info.mock.calls[0][0])).toContain('| 1 | Watts Out |');
+    // The item stays a plain open question — no fabricated answer.
+    const stored = (stateMgr.getState().portalItems || []).find(i => i.id === item.id)!;
+    expect(stored.status).toBe('open');
+    expect(stored.meta?.researching).toBe(false);
+    expect(stored.meta?.proposedAnswer).toBeUndefined();
+  });
+
+  it('aborted pass with no usable rows carries no digest', async () => {
+    vi.spyOn(agentLoopModule, 'runAgentToolLoop').mockResolvedValue({
+      finalResponse: '',
+      messages: [toolRow('web_fetch', 'Error: socket hang up')],
+      aborted: true,
+      toolCallCount: 1,
+      turnsUsed: 2
+    });
+    const info = vi.fn();
+    const outcome = await runResearchGate({ ...gateDeps, logger: { info, warn: vi.fn(), error: vi.fn() } as any }, item);
+
+    expect(outcome).toEqual({ partial: true });
+    expect(outcome.findings).toBeUndefined();
+    expect(info).not.toHaveBeenCalled();
+  });
+
   it('failure discipline: escaped error in the auto-apply path → "Research failed" event, never throws', async () => {
     // Critic says auto, but the answer-applier wiring throws — the gate must
     // swallow it and leave the item as a plain open question.
