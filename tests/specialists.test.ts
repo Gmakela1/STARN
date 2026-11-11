@@ -218,6 +218,9 @@ describe('Specialist Packages & RTM', () => {
       const prompt = registry.get(id)!.systemPrompt;
       expect(prompt).toContain('INFORMATION PLAN (MANDATORY, part of the running plan):');
       expect(prompt).toContain('request_research once per UNKNOWN');
+      // The chart fast path is named on the drafting delegation line.
+      expect(prompt).toContain('call request_research with the `chart` form');
+      expect(prompt).toContain('source-graded and marked unverified');
       // The existing workflow step is appended to, never rewritten.
       expect(prompt).toContain('DISCOVERY, PLANNING & EXECUTION WORKFLOW');
     }
@@ -226,6 +229,7 @@ describe('Specialist Packages & RTM', () => {
       const prompt = registry.get(id)!.systemPrompt;
       expect(prompt).toContain('INFORMATION NEEDED (MANDATORY):');
       expect(prompt).toContain('request_research once per UNKNOWN');
+      expect(prompt).toContain('call request_research with the `chart` form');
       expect(prompt).not.toContain('DISCOVERY, PLANNING & EXECUTION WORKFLOW');
       expect(prompt).not.toContain('part of the running plan');
     }

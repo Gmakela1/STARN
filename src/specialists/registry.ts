@@ -56,7 +56,7 @@ export class SpecialistRegistry {
     const BODY = `Before the first write, extend your plan with the information it depends on:
   - <claim> — KNOWN: <doc> §<section>
   - <claim> — UNKNOWN: <the exact question> → likely in <file path | vendor page | standard>
-Every UNKNOWN line must be resolved before you draft: call request_research once per UNKNOWN, in the order written, up to three calls. Batch related gaps into ONE question rather than spending a call each. A claim you cannot verify and did not research must be written as provisional, not stated as fact.`;
+Every UNKNOWN line must be resolved before you draft: call request_research once per UNKNOWN, in the order written, up to three calls. Batch related gaps into ONE question rather than spending a call each. When the fact is a value plotted on a curve in a project PDF (typically a manufacturer sheet under reference/), call request_research with the \`chart\` form (file plus the x and y axis labels and ranges) instead of a plain question: about a second, source-graded and marked unverified. Declare ONE axis at a time and correct the declaration when the tool names the axes the page actually has. A claim you cannot verify and did not research must be written as provisional, not stated as fact.`;
     const PLAN_HEADING = 'INFORMATION PLAN (MANDATORY, part of the running plan):';
     const NEEDED_HEADING = 'INFORMATION NEEDED (MANDATORY):';
     for (const pkg of this.specialists.values()) {
