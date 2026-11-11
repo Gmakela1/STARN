@@ -12,17 +12,19 @@
  * better confidence wins (a tie goes to the retry), and the source lists are
  * merged so the answer keeps every citation either pass found.
  *
- * Budget (RESEARCH_GATE_MAX_TURNS / RESEARCH_GATE_ITEM_TIMEOUT_MS) belongs to
- * the caller: `runResearchDelegation` itself arms no wall-clock timer, because
- * the gate's own `runGateWithTimeout` runs `runResearchGate`, which MUTATES
- * portal state (meta.researching, auto-apply, proposals). Delegation must stay
- * read-only, so the caller passes `deps.signal` (240 s budget) and the abort
- * surfaces here as `reason: 'timeout'`. The one caller-side budget
- * implementation is `runResearchDelegationWithTimeout` below: it owns the
- * timer, the AbortController and the timeout value, so runner and session
- * share it instead of each arming their own. The timer is the TOTAL budget
- * (RESEARCH_DELEGATION_TOTAL_BUDGET_MS = two 240 s passes); the retry is spent
- * only when the remaining budget can still cover it.
+ * Budget: EACH pass is bounded on its own. `runBoundedPass` races a pass
+ * against RESEARCH_DELEGATION_TIMEOUT_MS (240 s) with a per-pass
+ * AbortController derived from `deps.signal`, so a slow FIRST pass can never
+ * spend the retry's share. `runResearchDelegation` itself arms no TOTAL
+ * timer, because the gate's own `runGateWithTimeout` runs `runResearchGate`,
+ * which MUTATES portal state (meta.researching, auto-apply, proposals).
+ * Delegation must stay read-only, so the caller passes `deps.signal` and the
+ * abort surfaces here as `reason: 'timeout'`. The one caller-side TOTAL budget
+ * implementation is `runResearchDelegationWithTimeout` below: it owns the hard
+ * ceiling (RESEARCH_DELEGATION_TOTAL_BUDGET_MS = two 240 s passes), its timer
+ * and its AbortController, so runner and session share it instead of each
+ * arming their own. The retry is spent only when the remaining total budget
+ * can still cover it.
  *
  * Core-safe: no UI/CLI imports, no imports from ../tools/, ../server/,
  * ../cli/ or ../specialists/.
@@ -62,9 +64,10 @@ export type ResearchBand = 'high' | 'medium' | 'low';
 
 /**
  * Delegation outcome. Failures are VALUES, never exceptions:
- * - `timeout` — the research run was aborted (ESC / 240 s budget). When the
- *   aborted pass already collected usable tool output, `partial: true` and
- *   `findings` carry it (unverified leads, not an answer).
+ * - `timeout` — a pass was aborted (ESC, that pass's own 240 s cap, or the
+ *   total budget). `detail` is the elapsed time of the clock that ended it.
+ *   When the aborted pass already collected usable tool output, `partial: true`
+ *   and `findings` carry it (unverified leads, not an answer).
  * - `unverified` — the research turn produced no usable answer.
  * - `error` — any other failure; `detail` carries the message.
  */
@@ -193,9 +196,12 @@ function mergeSources(
 
 /**
  * ONE pass of the delegation pipeline: research → verify top source → assess.
- * Never throws; failures are values, aborts keep whatever the pass salvaged.
+ * Arms no timer of its own — the signal it receives is already the pass signal
+ * (see `runBoundedPass`). Never throws; failures are values, aborts keep
+ * whatever the pass salvaged.
  *
- * @param gateDeps - gate deps with the read-only applyAnswer placeholder
+ * @param gateDeps - gate deps with the read-only applyAnswer placeholder; its
+ *   `signal` is THIS pass's signal
  * @param question - the question text (focus line already prefixed)
  * @returns the pass outcome: a mapped result plus, on success, the assessment
  */
@@ -251,16 +257,113 @@ async function runPass(gateDeps: ResearchGateDeps, question: string): Promise<Pa
 }
 
 /**
+ * A failure stamped with the clock that ended it (`ms` seconds), keeping any
+ * salvaged digest. A failure with its OWN reason is returned untouched — that
+ * reason is the real outcome.
+ *
+ * @param failure - the failure arm of a pass outcome
+ * @param ms - the budget, in milliseconds, of the clock that ended the run
+ * @returns the same failure with `detail: '<ms/1000>s'` when it was a timeout
+ */
+function withTimeoutDetail(failure: ResearchDelegationFailure, ms: number): ResearchDelegationFailure {
+  if (failure.reason !== 'timeout') return failure;
+  return { ...failure, detail: `${ms / 1000}s` };
+}
+
+/** Outcome of ONE pass plus the wall clock it used. */
+interface PassRun {
+  outcome: PassOutcome;
+  /** Wall clock of this pass in ms, salvage tail included. */
+  elapsedMs: number;
+  /** True when the per-pass cap or the outer signal ended the pass. */
+  timedOut: boolean;
+}
+
+/**
+ * ONE pass bounded by its OWN wall-clock cap: races `runPass` against
+ * `budgetMs` through a per-pass AbortController that aborts when EITHER the cap
+ * or the outer `gateDeps.signal` fires, then gives the aborted pass the salvage
+ * grace window so it can hand back the tool output it already collected.
+ *
+ * @param gateDeps - gate deps; its `signal` is the OUTER deadline (total budget
+ *   / ESC) and is forwarded into the per-pass controller
+ * @param question - the question text (focus line already prefixed)
+ * @param budgetMs - wall-clock cap for THIS pass
+ * @returns the pass outcome, this pass's own elapsed time, and whether a clock
+ *   ended it. A pass the CAP ended reports `detail: '<budgetMs/1000>s'` (its own
+ *   elapsed time, never the total budget) and keeps any salvaged digest; a pass
+ *   the outer signal ended keeps its own detail, because the owner of the outer
+ *   clock reports that clock.
+ */
+async function runBoundedPass(
+  gateDeps: ResearchGateDeps,
+  question: string,
+  budgetMs: number
+): Promise<PassRun> {
+  const outerSignal = gateDeps.signal;
+  const controller = new AbortController();
+  const forwardAbort = () => controller.abort();
+  if (outerSignal?.aborted) {
+    controller.abort();
+  } else {
+    outerSignal?.addEventListener('abort', forwardAbort, { once: true });
+  }
+
+  let capFired = false;
+  const timer = setTimeout(() => {
+    capFired = true;
+    controller.abort();
+  }, budgetMs);
+  const deadline = new Promise<typeof ABORTED>(resolve => {
+    if (controller.signal.aborted) {
+      resolve(ABORTED);
+      return;
+    }
+    controller.signal.addEventListener('abort', () => resolve(ABORTED), { once: true });
+  });
+
+  const startedAt = Date.now();
+  try {
+    const settled = await settleWithGrace(runPass({ ...gateDeps, signal: controller.signal }, question), deadline);
+    const elapsedMs = Date.now() - startedAt;
+    if (!settled.value) {
+      return {
+        outcome: {
+          ok: false,
+          result: { ok: false, reason: 'timeout', detail: capFired ? `${budgetMs / 1000}s` : 'aborted' }
+        },
+        elapsedMs,
+        timedOut: true
+      };
+    }
+    if (!settled.timedOut) return { outcome: settled.value, elapsedMs, timedOut: false };
+    // Only the per-pass clock is reported here: an outer abort belongs to the
+    // caller that armed it, which stamps its own detail on top.
+    const outcome: PassOutcome =
+      capFired && !settled.value.ok
+        ? { ok: false, result: withTimeoutDetail(settled.value.result, budgetMs) }
+        : settled.value;
+    return { outcome, elapsedMs, timedOut: true };
+  } finally {
+    clearTimeout(timer);
+    outerSignal?.removeEventListener('abort', forwardAbort);
+  }
+}
+
+/**
  * Runs ONE delegated research request through the portal gate's own research
  * path and maps the outcome — plus AT MOST ONE focused retry when the critic
  * lands below the confidence cap and names a gap. Never throws.
  *
  * @param deps - the session-assembled research gate deps (client, critic,
  *   registry, state, optional search/verifySource/logger/signal). Used
- *   unchanged — no extra plumbing.
+ *   unchanged — no extra plumbing. `signal` is the OUTER deadline: it aborts
+ *   both passes, but never bounds one pass on its own.
  * @param req - the question and optional focus paths
  * @param budgetMs - TOTAL wall-clock budget this delegation may use; the retry
- *   is skipped unless the remaining budget still covers RESEARCH_RETRY_BUDGET_MS
+ *   is skipped unless the remaining budget still covers one more pass
+ * @param passBudgetMs - wall-clock cap for EACH pass (tests inject a short
+ *   value); default RESEARCH_DELEGATION_TIMEOUT_MS (240 s)
  * @returns `ok: true` with answer, sources, critic confidence, band, reasoning
  *   and (when present) the decision block; `ok: false` with a reason on
  *   timeout, no usable answer, or any other failure
@@ -268,51 +371,59 @@ async function runPass(gateDeps: ResearchGateDeps, question: string): Promise<Pa
 export async function runResearchDelegation(
   deps: ResearchDelegationDeps,
   req: ResearchDelegationRequest,
-  budgetMs: number = RESEARCH_DELEGATION_TOTAL_BUDGET_MS
+  budgetMs: number = RESEARCH_DELEGATION_TOTAL_BUDGET_MS,
+  passBudgetMs: number = RESEARCH_DELEGATION_TIMEOUT_MS
 ): Promise<ResearchDelegationResult> {
   const gateDeps: ResearchGateDeps = { ...deps, applyAnswer: READ_ONLY_APPLY_ANSWER };
   const question = req.focus && req.focus.length > 0
     ? `Focus files: ${req.focus.join(', ')}\n${req.question}`
     : req.question;
-  const startedAt = Date.now();
-  const first = await runPass(gateDeps, question);
+  const first = await runBoundedPass(gateDeps, question, passBudgetMs);
+  const firstOutcome = first.outcome;
 
   // The gap a retry would focus on. A below-cap critic rationale that names a
   // gap, or — with no critic at all — the digest a timed-out pass salvaged.
   let gap = '';
-  if (first.ok) {
-    if (first.assessment.confidence < UNVERIFIED_CONFIDENCE_CAP && hasNamedGap(first.assessment.rationale)) {
-      gap = first.assessment.rationale.trim();
+  if (firstOutcome.ok) {
+    if (firstOutcome.assessment.confidence < UNVERIFIED_CONFIDENCE_CAP && hasNamedGap(firstOutcome.assessment.rationale)) {
+      gap = firstOutcome.assessment.rationale.trim();
     }
-  } else if (first.result.partial && first.result.findings) {
-    gap = first.result.findings.trim();
+  } else if (firstOutcome.result.partial && firstOutcome.result.findings) {
+    gap = firstOutcome.result.findings.trim();
   }
-  if (!gap) return first.result;
+  if (!gap) return firstOutcome.result;
 
-  const confidence = first.ok ? first.assessment.confidence.toFixed(2) : 'none';
-  const gapKind = first.ok ? 'named' : 'salvaged-digest';
-  const remainingMs = budgetMs - (Date.now() - startedAt);
-  if (remainingMs < RESEARCH_RETRY_BUDGET_MS) {
+  const confidence = firstOutcome.ok ? firstOutcome.assessment.confidence.toFixed(2) : 'none';
+  const gapKind = firstOutcome.ok ? 'named' : 'salvaged-digest';
+  // A timed-out pass is charged its own cap, not the salvage tail: the tail is
+  // the abort's settle window, not research time. A retry is one more pass, so
+  // it needs one more pass budget out of what the total has left.
+  const chargedMs = first.timedOut ? Math.min(first.elapsedMs, passBudgetMs) : first.elapsedMs;
+  const remainingMs = budgetMs - chargedMs;
+  const retryNeededMs = Math.min(RESEARCH_RETRY_BUDGET_MS, passBudgetMs);
+  if (remainingMs < retryNeededMs) {
     deps.logger?.info(
       `Research retry skipped (budget): confidence=${confidence} gap=${gapKind} ` +
         `remainingMs=${Math.max(0, remainingMs)} outcome=kept-first`
     );
-    return first.result;
+    return firstOutcome.result;
   }
 
   // ONE focused retry: the same question plus the named gap as its focus,
   // through the same loop (the question carries the focus line — no new
   // parameter on the research loop).
-  const retry = await runPass(gateDeps, `${question}\nFocus: ${gap.slice(0, RETRY_FOCUS_CHAR_CAP)}`);
+  const retry = await runBoundedPass(gateDeps, `${question}\nFocus: ${gap.slice(0, RETRY_FOCUS_CHAR_CAP)}`, passBudgetMs);
+  const retryOutcome = retry.outcome;
   // Higher confidence wins; a tie goes to the retry (it had the gap pointed
   // out). A retry that produced any answer beats a pass that produced none.
-  const keepRetry = retry.ok && (!first.ok || retry.assessment.confidence >= first.assessment.confidence);
-  const kept = keepRetry ? retry.result : first.result;
+  const keepRetry =
+    retryOutcome.ok && (!firstOutcome.ok || retryOutcome.assessment.confidence >= firstOutcome.assessment.confidence);
+  const kept = keepRetry ? retryOutcome.result : firstOutcome.result;
   if (kept.ok) {
-    const other = keepRetry ? first.result : retry.result;
+    const other = keepRetry ? firstOutcome.result : retryOutcome.result;
     kept.sources = mergeSources(kept.sources, other.ok ? other.sources : []);
   }
-  const retryConfidence = retry.ok ? retry.assessment.confidence.toFixed(2) : 'none';
+  const retryConfidence = retryOutcome.ok ? retryOutcome.assessment.confidence.toFixed(2) : 'none';
   deps.logger?.info(
     `Research retry: confidence=${confidence} gap=${gapKind} retryConfidence=${retryConfidence} ` +
       `outcome=kept-${keepRetry ? 'retry' : 'first'}`
@@ -324,13 +435,15 @@ export async function runResearchDelegation(
 export const RESEARCH_DELEGATION_TIMEOUT_MS = 240_000;
 /**
  * Wall-clock budget for the ONE focused retry: the same 240 s as the first
- * pass. It is spent only when the remaining total budget still covers it.
+ * pass, because a retry is one more pass and `runBoundedPass` gives it that
+ * same cap. It is spent only when the remaining total budget still covers it.
  */
 export const RESEARCH_RETRY_BUDGET_MS = RESEARCH_DELEGATION_TIMEOUT_MS;
 /**
- * Worst-case wall clock for ONE delegation: 240 s first pass + 240 s retry =
- * 480 s. The retry is skipped for cost when the first pass already used more
- * than its own 240 s share of this total.
+ * Worst-case wall clock for ONE delegation, and the hard ceiling the wrapper
+ * arms: 240 s first pass + 240 s retry = 480 s. Each pass is capped on its own,
+ * so the first pass can never spend the retry's share; the retry is still
+ * skipped when the remaining total budget cannot cover it.
  */
 export const RESEARCH_DELEGATION_TOTAL_BUDGET_MS =
   RESEARCH_DELEGATION_TIMEOUT_MS + RESEARCH_RETRY_BUDGET_MS;
@@ -347,10 +460,36 @@ function settleGrace(): Promise<undefined> {
   return new Promise(resolve => setTimeout(() => resolve(undefined), ABORT_SETTLE_GRACE_MS));
 }
 
+/** Sentinel a deadline promise resolves with when a clock fired. */
+const ABORTED = 'aborted';
+
 /**
- * Runs ONE delegation under a wall-clock budget — the ONE caller-side timer
- * implementation, shared by the drafting runner and the advisory/conclude
- * thread turns.
+ * Awaits a run but never waits out a hung promise: when `deadline` fires first,
+ * the run gets ONE ABORT_SETTLE_GRACE_MS window to settle, so an aborted pass
+ * can still hand back the tool output it salvaged. The ONE grace-window
+ * implementation — the per-pass race and the total ceiling below share it.
+ *
+ * @param run - the promise that settles with the run's own outcome
+ * @param deadline - resolves ABORTED when a clock (pass cap, total budget, ESC) fired
+ * @returns `timedOut: false` plus the value when the run settled on its own;
+ *   `timedOut: true` plus the value when it settled inside the grace window;
+ *   `timedOut: true` with no value when it never settled
+ */
+async function settleWithGrace<T>(
+  run: Promise<T>,
+  deadline: Promise<typeof ABORTED>
+): Promise<{ timedOut: boolean; value?: T }> {
+  const raced = await Promise.race([run, deadline]);
+  if (raced !== ABORTED) return { timedOut: false, value: raced as T };
+  const salvaged = await Promise.race([run, settleGrace()]);
+  return salvaged === undefined ? { timedOut: true } : { timedOut: true, value: salvaged as T };
+}
+
+/**
+ * Runs ONE delegation under a wall-clock budget — the ONE caller-side TOTAL
+ * timer implementation, shared by the drafting runner and the advisory/conclude
+ * thread turns. Each pass still enforces its OWN cap inside
+ * `runResearchDelegation`; this timer is the hard ceiling over both passes.
  *
  * The timer aborts an AbortController that is passed to the delegation as
  * `deps.signal`, so an in-flight research loop stops instead of running on.
@@ -364,14 +503,17 @@ function settleGrace(): Promise<undefined> {
  * @param ms - TOTAL budget in milliseconds, first pass plus retry (tests inject
  *   a short value); default RESEARCH_DELEGATION_TOTAL_BUDGET_MS (480 s worst
  *   case: 240 s pass + 240 s retry)
+ * @param passMs - cap for EACH pass in milliseconds (tests inject a short
+ *   value); default RESEARCH_DELEGATION_TIMEOUT_MS (240 s)
  * @returns the delegation result, or `{ ok: false, reason: 'timeout',
- *   detail: '<ms/1000>s' }` when the budget fires first — with `partial: true`
+ *   detail: '<ms/1000>s' }` when this ceiling fires first — with `partial: true`
  *   and `findings` when the aborted pass salvaged tool output
  */
 export async function runResearchDelegationWithTimeout(
   deps: ResearchDelegationDeps,
   req: ResearchDelegationRequest,
-  ms: number = RESEARCH_DELEGATION_TOTAL_BUDGET_MS
+  ms: number = RESEARCH_DELEGATION_TOTAL_BUDGET_MS,
+  passMs: number = RESEARCH_DELEGATION_TIMEOUT_MS
 ): Promise<ResearchDelegationResult> {
   const controller = new AbortController();
   const forwardAbort = () => controller.abort();
@@ -382,12 +524,11 @@ export async function runResearchDelegationWithTimeout(
   }
 
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timedOut: ResearchDelegationResult = { ok: false, reason: 'timeout', detail: `${ms / 1000}s` };
   // Both the timer and a forwarded caller abort end the run: the controller's
-  // abort resolves the race, so an ESC during research does not wait out the
-  // budget.
-  const deadline = new Promise<'aborted'>(resolve => {
-    const onAbort = () => resolve('aborted');
+  // abort resolves the deadline, so an ESC during research does not wait out
+  // the budget.
+  const deadline = new Promise<typeof ABORTED>(resolve => {
+    const onAbort = () => resolve(ABORTED);
     controller.signal.addEventListener('abort', onAbort, { once: true });
     if (controller.signal.aborted) {
       onAbort();
@@ -396,32 +537,19 @@ export async function runResearchDelegationWithTimeout(
     timer = setTimeout(() => controller.abort(), ms);
   });
 
-  const run = runResearchDelegation({ ...deps, signal: controller.signal }, req, ms);
+  const run = runResearchDelegation({ ...deps, signal: controller.signal }, req, ms, passMs);
   try {
-    const first = await Promise.race([run, deadline]);
+    const settled = await settleWithGrace(run, deadline);
+    const timedOut: ResearchDelegationResult = { ok: false, reason: 'timeout', detail: `${ms / 1000}s` };
+    // A run that never settled inside the grace window keeps nothing. One that
+    // did keeps its salvaged digest, stamped with the ceiling that ended it.
+    if (!settled.value) return timedOut;
     // The run settled on its own: its result stands untouched.
-    if (first !== 'aborted') return first;
-    // Budget fired. The aborted pass reports the tool output it salvaged
-    // (reason 'timeout', findings set) within the grace window; a hung run
-    // yields nothing and the bare timeout value stands.
-    const settled = await Promise.race([run, settleGrace()]);
-    if (settled && settled.ok) return settled;
-    if (settled && settled.ok === false) {
-      if (settled.reason === 'timeout') {
-        // The budget is what ended the run: report the budget, keeping any
-        // salvaged tool output.
-        return settled.partial
-          ? settled.findings
-            ? { ok: false, reason: 'timeout', detail: timedOut.detail, partial: true, findings: settled.findings }
-            : { ok: false, reason: 'timeout', detail: timedOut.detail, partial: true }
-          : timedOut;
-      }
-      // The run settled inside the grace window with its OWN reason (e.g.
-      // 'unverified'): that is the real outcome and must not be overwritten by
-      // a bare timeout value.
-      return settled;
-    }
-    return timedOut;
+    if (!settled.timedOut) return settled.value;
+    if (settled.value.ok) return settled.value;
+    // A run that settled inside the grace window with its OWN reason (e.g.
+    // 'unverified') keeps that reason; a timeout one reports the ceiling.
+    return withTimeoutDetail(settled.value, ms);
   } finally {
     clearTimeout(timer);
     deps.signal?.removeEventListener('abort', forwardAbort);

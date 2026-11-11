@@ -719,4 +719,132 @@ describe('research delegation', () => {
     expect(skipLines[0]).toContain('confidence=0.70 gap=named');
     expect(skipLines[0]).toContain('outcome=kept-first');
   });
+
+  /**
+   * Research client whose FIRST pass issues one tool call and then hangs until
+   * the pass signal aborts (salvaging the tool row), and whose RETRY answers.
+   *
+   * @param answer - the JSON answer the retry pass returns
+   * @returns the stubbed client plus a counter of the model calls it saw
+   */
+  function hangingFirstPassClient(answer: string): { client: any; calls: () => number } {
+    let researchCall = 0;
+    const client = {
+      chatCompletion: vi.fn((opts: any) => {
+        const call = researchCall++;
+        if (call === 0) {
+          return Promise.resolve(toolCallTurn([{ id: 'call-1', name: 'web_search', args: { query: 'ME1115 curve' } }]));
+        }
+        if (call === 1) {
+          return new Promise((_resolve, reject) => {
+            opts.signal?.addEventListener(
+              'abort',
+              () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+              { once: true }
+            );
+          });
+        }
+        return Promise.resolve(chat(answer));
+      })
+    };
+    return { client, calls: () => researchCall };
+  }
+
+  it('a first pass that hangs past its own cap times out and still earns the retry when the outer budget has room', async () => {
+    const registry = stubRegistry([
+      { name: 'web_search', execute: async () => ({ success: true, result: 'Search hits: ME1115 performance curve (vendor).' }) }
+    ]);
+    const { client, calls } = hangingFirstPassClient(researchReply(PLAIN_ANSWER));
+    const deps = makeDeps({
+      toolRegistry: registry,
+      client,
+      criticClient: { chatCompletion: vi.fn(async () => chat(criticReplyWith('Two independent sources agree.', 0.8))) } as any
+    });
+
+    // 400 ms total, 20 ms per pass: the first pass may spend only its own cap.
+    const result = await runResearchDelegation(deps, { question: 'What is the efficiency at 100 A?' }, 400, 20);
+
+    expect(calls()).toBe(3);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.answer).toContain('48V');
+    // The salvaged digest survived the per-pass race and focuses the retry.
+    const retryPrompt = String(client.chatCompletion.mock.calls[2][0].messages.find((m: any) => m.role === 'user').content);
+    expect(retryPrompt).toContain('Focus:');
+    expect(retryPrompt).toContain('ME1115 performance curve');
+  });
+
+  it('a per-pass timeout reports that pass\'s own elapsed time, not the total budget', async () => {
+    const registry = stubRegistry([
+      { name: 'web_search', execute: async () => ({ success: true, result: 'Search hits: ME1115 performance curve (vendor).' }) }
+    ]);
+    const { client, calls } = hangingFirstPassClient(researchReply(PLAIN_ANSWER));
+    const deps = makeDeps({ toolRegistry: registry, client });
+
+    // 25 ms total leaves 5 ms after the 20 ms pass: the retry cannot be paid for.
+    const result = await runResearchDelegation(deps, { question: 'What is the efficiency at 100 A?' }, 25, 20);
+
+    expect(calls()).toBe(2);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('timeout');
+    // 0.02 s is the PASS cap that ended it; the 0.025 s total is not.
+    expect(result.detail).toBe('0.02s');
+    expect(result.partial).toBe(true);
+    expect(result.findings).toContain('ME1115 performance curve');
+  });
+
+  it('a fast first pass plus a slow retry is capped at the per-pass budget, not the outer one', async () => {
+    let researchCall = 0;
+    const deps = makeDeps({
+      client: {
+        chatCompletion: vi.fn((opts: any) => {
+          if (researchCall++ === 0) return Promise.resolve(chat(researchReply(PLAIN_ANSWER)));
+          return new Promise((_resolve, reject) => {
+            opts.signal?.addEventListener(
+              'abort',
+              () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+              { once: true }
+            );
+          });
+        })
+      } as any,
+      criticClient: {
+        chatCompletion: vi.fn(async () => chat(criticReplyWith('A second independent source is missing.', 0.7)))
+      } as any
+    });
+    const startedAt = Date.now();
+
+    // A 5 s outer ceiling would hold the caller for 5 s; the 20 ms pass cap
+    // ends the hanging retry instead, so the first answer is kept.
+    const result = await runResearchDelegationWithTimeout(deps, { question: 'What is the contactor rating?' }, 5000, 20);
+
+    expect(Date.now() - startedAt).toBeLessThan(1000);
+    expect(researchCall).toBe(2);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.confidence).toBe(0.7);
+    expect(result.answer).toBe(PLAIN_ANSWER);
+  });
+
+  it('the outer ceiling still ends the whole delegation, and reports its own elapsed time', async () => {
+    let seenSignal: AbortSignal | undefined;
+    const deps = makeDeps({
+      client: {
+        chatCompletion: vi.fn((opts: any) => {
+          seenSignal = opts?.signal;
+          return new Promise(() => { /* never settles */ });
+        })
+      } as any
+    });
+
+    // The pass cap (5 s) is far larger than the ceiling (20 ms): the ceiling wins.
+    const result = await runResearchDelegationWithTimeout(deps, { question: 'What is the contactor rating?' }, 20, 5000);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('timeout');
+    expect(result.detail).toBe('0.02s');
+    expect(seenSignal?.aborted).toBe(true);
+  });
 });
