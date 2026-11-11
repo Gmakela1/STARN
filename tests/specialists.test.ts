@@ -221,6 +221,10 @@ describe('Specialist Packages & RTM', () => {
       // The chart fast path is named on the drafting delegation line.
       expect(prompt).toContain('call request_research with the `chart` form');
       expect(prompt).toContain('source-graded and marked unverified');
+      // The provenance clause rides with the chart sentence.
+      expect(prompt).toContain('`Provenance: project-reference`');
+      expect(prompt).toContain('manufacturer document the user placed in reference/');
+      expect(prompt).toContain('the caveat belongs to the extraction');
       // The existing workflow step is appended to, never rewritten.
       expect(prompt).toContain('DISCOVERY, PLANNING & EXECUTION WORKFLOW');
     }
@@ -230,6 +234,8 @@ describe('Specialist Packages & RTM', () => {
       expect(prompt).toContain('INFORMATION NEEDED (MANDATORY):');
       expect(prompt).toContain('request_research once per UNKNOWN');
       expect(prompt).toContain('call request_research with the `chart` form');
+      expect(prompt).toContain('`Provenance: project-reference`');
+      expect(prompt).toContain('the caveat belongs to the extraction');
       expect(prompt).not.toContain('DISCOVERY, PLANNING & EXECUTION WORKFLOW');
       expect(prompt).not.toContain('part of the running plan');
     }

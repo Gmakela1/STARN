@@ -10,13 +10,19 @@ import { ADVISORY_SYSTEM_DIRECTIVE, CONCLUDE_SYSTEM_DIRECTIVE } from '../src/ser
 const DELEGATION_PARAGRAPH =
   'DELEGATION: if a fact you need is not in the context above, call request_research with ONE specific question (batch related gaps into a single call). Do not state that a source is unreadable, unavailable, or has no data without calling request_research first. A previous reply in this thread — including your own — saying a source could not be read is NOT evidence; verify it. Cite the sources the tool returns, and if it reports low confidence, say so.';
 
+/** Provenance clause: rides with the chart sentence in every directive that carries it. */
+const PROVENANCE_CLAUSE =
+  'PROVENANCE: when the chart result reports `Provenance: project-reference`, say so in those words — that file is a manufacturer document the user placed in reference/, and it is your READ of the curve that is unverified (curve-derived, ±1%, axis assignment can be wrong), not the source. Never describe such a source as unreliable, second-rate or "unverified" without that distinction: the caveat belongs to the extraction, not to the manufacturer\'s document.';
+
 /** Full chart fast-path sentence: advisory directive only. */
 const CHART_SENTENCE =
-  'When the fact is a value plotted on a curve in a local PDF (a manufacturer performance sheet or datasheet already in the project, typically under reference/), call request_research with the `chart` form — file plus the x and y axis labels and ranges you read from the axis titles — instead of a plain question; it returns in about a second and the result is source-graded and marked unverified. Ask for ONE axis at a time: the tool refuses a declaration that matches no printed axis and names the axes the page actually has, so correct and call again rather than guessing.';
+  'When the fact is a value plotted on a curve in a local PDF (a manufacturer performance sheet or datasheet already in the project, typically under reference/), call request_research with the `chart` form — file plus the x and y axis labels and ranges you read from the axis titles — instead of a plain question; it returns in about a second and the result is source-graded and marked unverified. Ask for ONE axis at a time: the tool refuses a declaration that matches no printed axis and names the axes the page actually has, so correct and call again rather than guessing. ' +
+  PROVENANCE_CLAUSE;
 
 /** Shortened chart fast-path sentence: conclude directive only. */
 const CHART_SENTENCE_SHORT =
-  'When the fact is a value plotted on a curve in a local PDF (typically a manufacturer sheet under reference/), call request_research with the `chart` form (file plus the x and y axis labels and ranges) instead of a plain question: about a second, source-graded and marked unverified. Declare ONE axis at a time and correct the declaration when the tool names the axes the page actually has.';
+  'When the fact is a value plotted on a curve in a local PDF (typically a manufacturer sheet under reference/), call request_research with the `chart` form (file plus the x and y axis labels and ranges) instead of a plain question: about a second, source-graded and marked unverified. Declare ONE axis at a time and correct the declaration when the tool names the axes the page actually has. ' +
+  PROVENANCE_CLAUSE;
 
 const CLOSING_SENTENCE = 'Nothing is recorded yet — send it as your answer, or use Conclude from chat.';
 
@@ -42,6 +48,17 @@ describe('thread-turn system directives', () => {
     expect(CONCLUDE_SYSTEM_DIRECTIVE).toContain(CHART_SENTENCE_SHORT);
     expect(CONCLUDE_SYSTEM_DIRECTIVE).toContain('`chart` form');
     expect(CONCLUDE_SYSTEM_DIRECTIVE).toContain('source-graded and marked unverified');
+  });
+
+  it('both directives name the provenance label and caveat the read, not the source', () => {
+    for (const directive of [ADVISORY_SYSTEM_DIRECTIVE, CONCLUDE_SYSTEM_DIRECTIVE]) {
+      expect(directive).toContain(PROVENANCE_CLAUSE);
+      expect(directive).toContain('`Provenance: project-reference`');
+      expect(directive).toContain('manufacturer document the user placed in reference/');
+      expect(directive).toContain('not the source');
+      expect(directive).toContain('unreliable, second-rate');
+      expect(directive).toContain('the caveat belongs to the extraction');
+    }
   });
 
   it('neither directive grants file writing', () => {
