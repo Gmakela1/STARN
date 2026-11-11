@@ -37,6 +37,9 @@ export interface ChartReadArgs {
   maxSamples?: number;
 }
 
+/** Arguments as they actually arrive: `path` may be missing or of the wrong type. */
+type ChartReadInput = { [K in keyof ChartReadArgs]?: unknown };
+
 /** Rendering options for {@link renderChartMarkdown}. */
 export interface RenderChartOptions {
   /** Series names to tabulate; omitted means list only, no sample table. */
@@ -94,12 +97,16 @@ export function gradeChartEvidence(filePath: string): ChartEvidenceGrade {
   };
 }
 
+/** Refusal for a `path` argument that is absent, empty or not a string. */
+export const CHART_PATH_REQUIRED = 'read_chart_data requires a path to a PDF within the project';
+
 /** Result of {@link resolveChartPdf}: the absolute PDF path, or the refusal message. */
 export type ChartPdfResolution = { ok: true; target: string } | { ok: false; error: string };
 
 /**
- * Resolves a project-relative PDF path for a chart read: traps path traversal
- * outside the project root (same guard as fs_read: sibling-prefix check, made
+ * Resolves a project-relative PDF path for a chart read: rejects a missing or
+ * non-string path (a tool handler never throws), traps path traversal outside
+ * the project root (same guard as fs_read: sibling-prefix check, made
  * case-insensitive on win32) and rejects a non-PDF target. Shared by
  * `read_chart_data` and the `request_research` chart fast path so both refuse
  * identically.
@@ -109,6 +116,9 @@ export type ChartPdfResolution = { ok: true; target: string } | { ok: false; err
  * @returns the absolute target, or the refusal message
  */
 export function resolveChartPdf(projectPath: string, relPath: string): ChartPdfResolution {
+  if (typeof relPath !== 'string' || relPath.trim() === '') {
+    return { ok: false, error: CHART_PATH_REQUIRED };
+  }
   const safeBase = path.resolve(projectPath);
   const target = path.resolve(safeBase, relPath);
   const ci = process.platform === 'win32';
@@ -307,13 +317,15 @@ export const chartReadHandler: ToolHandler = {
     }
   },
   async execute(args: ChartReadArgs, context: ToolExecutionContext): Promise<ToolExecutionResponse> {
-    const resolved = resolveChartPdf(context.projectPath, args.path);
+    // Unvalidated tool input: every field may be absent or of the wrong type.
+    const input = (args ?? {}) as ChartReadInput;
+    const resolved = resolveChartPdf(context.projectPath, input.path as string);
     if (!resolved.ok) return { success: false, error: resolved.error };
     const target = resolved.target;
 
-    const maxSamples = clamp(args.maxSamples ?? 40, 1, MAX_SAMPLES_CAP);
+    const maxSamples = clamp(Number(input.maxSamples ?? 40), 1, MAX_SAMPLES_CAP);
     const extraction = await extractChartData(target, {
-      page: clamp(args.page ?? 1, 1, Number.MAX_SAFE_INTEGER),
+      page: clamp(Number(input.page ?? 1), 1, Number.MAX_SAFE_INTEGER),
       axes: args.axes,
       seriesAxes: args.seriesAxes,
       maxSamples

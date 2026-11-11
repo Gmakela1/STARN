@@ -11,7 +11,10 @@
  * Chart fast path: when the caller passes `chart`, the handler reads ONE plotted
  * curve from a local PDF directly (chart-vector-extractor via chart-read.ts) and
  * never delegates — no model loop, no web, no critic, so a chart read costs
- * ~1 s instead of a 240 s research pass. The read stays graded: its provenance
+ * ~1 s instead of a 240 s research pass. Only the series drawn on the DECLARED y
+ * axis are tabulated: one y scale calibrates every sampled series, so a series
+ * belonging to another scale is omitted by name rather than printed with a value
+ * read off the wrong scale. The read stays graded: its provenance
  * comes from WHERE the file lives (gradeChartEvidence: `reference/` =
  * project-reference 0.75, any other project PDF = project-document 0.60, both
  * capped at UNVERIFIED_CONFIDENCE_CAP) and the result states the caveat, so a
@@ -46,6 +49,12 @@ const CHART_MAX_SAMPLES = 40;
 const CHART_MAX_SERIES = 8;
 /** Character headroom kept free for the newlines between report sections. */
 const CHART_TABLE_MIN_CHARS = 8;
+/**
+ * Headroom kept inside the table budget for the newlines between its lines and
+ * the `(N of M sampled rows shown: result size limit)` note. A table sized on
+ * character counts alone overflows the cap by exactly those characters.
+ */
+const CHART_ROW_NOTE_RESERVE = 60;
 /** Message for a malformed `chart` argument. */
 const CHART_ARG_ERROR =
   'request_research chart requires file, xAxis{label,min,max} and yAxis{label,min,max}';
@@ -235,27 +244,102 @@ function axisLine(axis: 'x' | 'y', decl: ChartAxisArg, map: AxisMap | undefined)
 }
 
 /**
+ * Fast-path series selection: only the series drawn on the DECLARED y scale are
+ * tabulated. Every series is sampled against one y axis, so a series on another
+ * scale would be printed with a number calibrated elsewhere (`Eff.` 0.903 shown
+ * as 9030) — a mis-scaled fact. Those series are omitted by name instead.
+ */
+interface DeclaredSeriesSelection {
+  /** Series sampled on the declared y scale, in page order. */
+  columns: ChartSeries[];
+  /** Names of the series left out, because they belong to another scale. */
+  omitted: string[];
+}
+
+/**
+ * @param label - an axis or series label as printed
+ * @returns lowercase, whitespace-collapsed, trailing-punctuation-free form
+ */
+function normalizeLabel(label: string): string {
+  return String(label ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[.:;,\s]+$/, '');
+}
+
+/**
+ * Prefix-tolerant label test, the same tolerance `declaredAxisMismatch` applies
+ * to axis titles: two labels agree when equal, or when one is a prefix of the
+ * other (`Watts` ≈ `Watts Out`). An empty label names nothing and matches
+ * nothing — guessing there is what produced the mis-scaled table.
+ *
+ * @param declaredLabel - the axis title the caller declared
+ * @param seriesName - the legend name of one recovered series
+ * @returns true when the series is plotted on that declared axis
+ */
+function labelsAgree(declaredLabel: string, seriesName: string): boolean {
+  const declared = normalizeLabel(declaredLabel);
+  const name = normalizeLabel(seriesName);
+  if (!declared || !name) return false;
+  return declared === name || name.startsWith(declared) || declared.startsWith(name);
+}
+
+/**
+ * @param series - every series the page yielded
+ * @param declaredYLabel - the y axis title the caller declared
+ * @returns the series on that scale, plus the names of the omitted ones
+ */
+function selectDeclaredSeries(series: ChartSeries[], declaredYLabel: string): DeclaredSeriesSelection {
+  const columns: ChartSeries[] = [];
+  const omitted: string[] = [];
+  for (const entry of series) {
+    if (labelsAgree(declaredYLabel, entry.name)) columns.push(entry);
+    else omitted.push(entry.name);
+  }
+  return { columns, omitted };
+}
+
+/**
  * @param columns - series to tabulate, one column each
+ * @param yMap - the y scale every rendered column was sampled against
+ * @returns one header per column, each naming that column's own calibration
+ */
+function calibratedHeaders(columns: ChartSeries[], yMap: AxisMap | undefined): string[] {
+  const range = yMap
+    ? `${Math.min(yMap.valueMin, yMap.valueMax)}–${Math.max(yMap.valueMin, yMap.valueMax)}`
+    : 'uncalibrated';
+  return columns.map((entry) => `${entry.name} (${entry.axis === 'right' ? 'right' : 'left'} ${range})`);
+}
+
+/**
+ * @param columns - series to tabulate, one column each
+ * @param headers - header cells, the x column first (length = columns.length + 1)
  * @param maxSamples - row cap
  * @param charBudget - characters available for the whole table
  * @returns markdown table lines, cut to the budget with an explicit row count;
  *   a single notice line when there is no column
  */
-function sampleTableLines(columns: ChartSeries[], maxSamples: number, charBudget: number): string[] {
+function sampleTableLines(
+  columns: ChartSeries[],
+  headers: string[],
+  maxSamples: number,
+  charBudget: number
+): string[] {
   if (columns.length === 0) return ['- (no series recovered)'];
   const rows = Math.min(maxSamples, ...columns.map((entry) => entry.samples.length));
-  const lines = [
-    `| x | ${columns.map((entry) => entry.name).join(' | ')} |`,
-    `|---|${columns.map(() => '---').join('|')}|`,
-  ];
-  let used = lines[0].length + lines[1].length;
+  const header = `| ${headers[0]} | ${headers.slice(1).join(' | ')} |`;
+  const separator = `|---|${columns.map(() => '---').join('|')}|`;
+  const usable = charBudget - CHART_ROW_NOTE_RESERVE;
+  const lines = [header, separator];
+  let used = header.length + separator.length + 2;
   let shown = 0;
   for (let i = 0; i < rows; i++) {
     const values = columns.map((entry) => (entry.samples[i] ? String(entry.samples[i].y) : ''));
     const row = `| ${columns[0].samples[i].x} | ${values.join(' | ')} |`;
-    if (used + row.length > charBudget) break;
+    if (used + row.length + 1 > usable) break;
     lines.push(row);
-    used += row.length;
+    used += row.length + 1;
     shown += 1;
   }
   if (shown < rows) lines.push(`- (${shown} of ${rows} sampled rows shown: result size limit)`);
@@ -274,11 +358,13 @@ function provenanceLabel(grade: ChartEvidenceGrade): string {
 }
 
 /**
- * Renders one fast-path chart read. Order is fixed: sampled table, axes as
- * DECLARED and as matched, source file with its provenance label, evidence
- * class, then confidence with the unverified caveat. A refusal renders the
- * refusal text (which names the axes the page actually offers) and the
- * declaration to correct, so the caller never has to re-delegate.
+ * Renders one fast-path chart read. Order is fixed: sampled table (declared-y
+ * series only, each column headed with its calibration), the omission line for
+ * series on other scales, axes as DECLARED and as matched, source file with its
+ * provenance label, evidence class, then confidence with the unverified caveat.
+ * A refusal renders the refusal text (which names the axes the page actually
+ * offers) and the declaration to correct, so the caller never has to
+ * re-delegate.
  *
  * @param args - the declared chart request
  * @param extraction - output of `extractChartData`
@@ -311,12 +397,27 @@ function renderChartFastPath(
   }
 
   lines.push('### Sampled values', '');
+  // Only the series on the DECLARED y scale are tabulated: one y axis calibrates
+  // every sampled series, so a series belonging to another scale would be
+  // printed as a number read off the declared one (Eff. 0.903 as 9030).
+  const yMap = extraction.calibration.yAxes?.[0];
+  const selection = selectDeclaredSeries(extraction.series, args.yAxis.label);
+  const columns = selection.columns.slice(0, CHART_MAX_SERIES);
+  const afterTable: string[] = [];
+  if (selection.omitted.length > 0) {
+    afterTable.push(
+      '',
+      `Omitted ${selection.omitted.length} series plotted on other scales: ${selection.omitted.join(', ')} — ` +
+        'read them with their own axis declaration.'
+    );
+  }
+  const xHeader = `${args.xAxis.label || 'x'} (x ${args.xAxis.min}–${args.xAxis.max})`;
   // The table is sized against the budget the rest of the report leaves free,
   // so the provenance and the unverified caveat are NEVER truncated away.
   const tail: string[] = ['', '### Axes', ''];
   tail.push(
     axisLine('x', args.xAxis, extraction.calibration.xAxis),
-    axisLine('y', args.yAxis, extraction.calibration.yAxes?.[0]),
+    axisLine('y', args.yAxis, yMap),
     ''
   );
   tail.push('### Source', '', `- File: ${relative}`, `- Provenance: ${provenanceLabel(grade)}`, '');
@@ -331,9 +432,17 @@ function renderChartFastPath(
     tail.push('', '### Notes', '');
     for (const note of extraction.notes) tail.push(`- ${note}`);
   }
-  const reserved = lines.join('\n').length + tail.join('\n').length;
+  const reserved = lines.join('\n').length + tail.join('\n').length + afterTable.join('\n').length;
   const budget = Math.max(0, MAX_RESULT_CHARS - reserved - CHART_TABLE_MIN_CHARS);
-  lines.push(...sampleTableLines(extraction.series.slice(0, CHART_MAX_SERIES), CHART_MAX_SAMPLES, budget));
+  if (columns.length === 0) {
+    lines.push(
+      `- (no series on this page is plotted on the declared y axis "${args.yAxis.label || '(no label)'}"; ` +
+        'declare the y label exactly as printed)'
+    );
+  } else {
+    lines.push(...sampleTableLines(columns, [xHeader, ...calibratedHeaders(columns, yMap)], CHART_MAX_SAMPLES, budget));
+  }
+  lines.push(...afterTable);
   lines.push(...tail);
   return lines.join('\n');
 }

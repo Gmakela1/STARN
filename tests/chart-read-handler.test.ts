@@ -100,6 +100,21 @@ describe('read_chart_data handler', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('reports a missing, empty or non-string path as an error and never throws', async () => {
+    const dir = tempProject();
+    const bad: unknown[] = [undefined, null, '', '   ', 42, { path: 'x.pdf' }];
+    for (const path of bad) {
+      const res = await chartReadHandler.execute({ path } as any, { projectPath: dir, stateManager: {} as any });
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('read_chart_data requires a path to a PDF within the project');
+    }
+    // No argument object at all is the same answer, not a TypeError.
+    const res = await chartReadHandler.execute(undefined as any, { projectPath: dir, stateManager: {} as any });
+    expect(res.success).toBe(false);
+    expect(res.error).toBe('read_chart_data requires a path to a PDF within the project');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('reports a missing file', async () => {
     const dir = tempProject();
     const res = await chartReadHandler.execute({ path: 'missing.pdf' }, { projectPath: dir, stateManager: {} as any });

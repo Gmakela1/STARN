@@ -323,8 +323,14 @@ describe('request_research chart fast path', () => {
       expect(order.every((position) => position >= 0)).toBe(true);
       expect([...order].sort((a, b) => a - b)).toEqual(order);
 
-      expect(text).toContain('| x | Watts Out | Eff. |');
-      expect(text).toContain('| 100 | 7400 | 0.88 |');
+      // Every column carries the calibration it was sampled against.
+      expect(text).toContain('| Amps (x 0–200) | Watts Out (left 0–10000) |');
+      expect(text).toContain('| 100 | 7400 |');
+      // `Eff.` is not on the declared y scale, so it is never tabulated.
+      expect(text).not.toContain('0.88');
+      expect(text).toContain(
+        'Omitted 1 series plotted on other scales: Eff. — read them with their own axis declaration.'
+      );
       expect(text).toContain('- x declared: Amps 0–200 — matched: 0–200 (2 anchors)');
       expect(text).toContain('- y declared: Watts Out 0–10000 — matched: 0–10000 (3 anchors)');
       expect(text).toContain(`- File: ${SPEC_SHEET}`);
@@ -433,11 +439,66 @@ describe('request_research chart fast path', () => {
     }
   });
 
+  it('renders only the series on the declared y axis and names the rest once', async () => {
+    const dir = chartProject();
+    // The live ME1115 page: five curves, ONE declared y scale.
+    const live = ['Eff.', 'Watts Out', 'Volts', 'Amps', 'RPM'].map((name, index) => ({
+      name,
+      axis: 'left' as const,
+      pathIds: [index + 3],
+      style: { stroke: '#123456', dash: [], lineWidth: 1 },
+      samples: [{ x: 2.5, y: 100 * (index + 1) }, { x: 7.5, y: 110 * (index + 1) }],
+    }));
+    extractChartDataMock.mockResolvedValue(chartExtraction({ series: live }));
+    try {
+      const res = await requestResearchHandler.execute(chartArgs(), {
+        projectPath: dir, stateManager: {} as any, requestResearch: vi.fn(),
+      } as ToolExecutionContext);
+      const text = res.result as string;
+      const header = text.split('\n').find((line) => line.startsWith('| Amps')) as string;
+      expect(header).toBe('| Amps (x 0–200) | Watts Out (left 0–10000) |');
+      expect(text).toContain('| 2.5 | 200 |');
+      expect(text).toContain('| 7.5 | 220 |');
+      expect(text).toContain(
+        'Omitted 4 series plotted on other scales: Eff., Volts, Amps, RPM — read them with their own axis declaration.'
+      );
+      // No mis-scaled column is ever presented under its own name.
+      expect(header).not.toContain('Eff.');
+      expect(header).not.toContain('Volts');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('matches the declared y label by prefix (Watts → Watts Out)', async () => {
+    const dir = chartProject();
+    extractChartDataMock.mockResolvedValue(chartExtraction());
+    try {
+      const res = await requestResearchHandler.execute(
+        {
+          question: 'power at 150 A',
+          chart: {
+            file: SPEC_SHEET,
+            xAxis: { label: 'Amps', min: 0, max: 200 },
+            yAxis: { label: 'Watts', min: 0, max: 10000 },
+          },
+        },
+        { projectPath: dir, stateManager: {} as any, requestResearch: vi.fn() } as ToolExecutionContext
+      );
+      const text = res.result as string;
+      expect(text).toContain('| Watts Out (left 0–10000) |');
+      expect(text).toContain('| 100 | 7400 |');
+      expect(text).not.toContain('0.88');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('keeps the provenance and the caveat inside the 8000-char cap on a worst-case table', async () => {
     const dir = chartProject();
-    // Worst case for the size guard: 8 curves x 40 rows of 21-digit values.
+    // Worst case for the size guard: 8 curves on the declared scale x 40 rows of 21-digit values.
     const wide = Array.from({ length: 8 }, (_, index) => ({
-      name: `Curve number ${index + 1}`,
+      name: `Watts Out ${index + 1}`,
       axis: 'left' as const,
       pathIds: [index + 10],
       style: { stroke: '#123456', dash: [], lineWidth: 1 },
