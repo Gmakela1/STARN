@@ -164,20 +164,26 @@ export class AutopilotDriver {
   }
 
   /**
-   * Fire-and-forget async run. Sets running=true, emits {kind:'start'},
-   * then drives the chain. Idempotent when already running.
+   * Async run. Sets running=true, emits {kind:'start'}, then drives the chain.
+   * Idempotent when already running.
+   *
+   * @returns A promise that resolves once this run has settled (chain finished,
+   *   parked, aborted, or no-op because a run was already in flight). Callers may
+   *   ignore it to keep the fire-and-forget behaviour; awaiting it is the only
+   *   deterministic way to know the run is over.
    */
-  start(): void {
+  start(): Promise<void> {
     const state = this.deps.stateManager.getState();
     if (state.autopilot?.running) {
       // No-op when already running. Still settle: the caller may have acquired
       // a turn guard for this start; release it now that nothing will run.
       this.deps.onSettled?.();
-      return;
+      return Promise.resolve();
     }
 
     this.abortController = new AbortController();
     this.runningPromise = this.runChain();
+    return this.runningPromise;
   }
 
   /**
@@ -204,8 +210,10 @@ export class AutopilotDriver {
    * Resumes a parked phase (re-runs it), or continues from the first
    * unapproved phase when no docId given. When the resumed phase passes,
    * its parked portal item is marked resolved and the chain continues.
+   *
+   * @returns A promise that resolves once the resumed run has settled.
    */
-  resume(docId?: string): void {
+  resume(docId?: string): Promise<void> {
     const state = this.deps.stateManager.getState();
     if (!state.autopilot) {
       state.autopilot = defaultAutopilotState();
@@ -225,6 +233,7 @@ export class AutopilotDriver {
     // Start the chain from the specified phase or first unapproved
     this.abortController = new AbortController();
     this.runningPromise = this.runChain(docId);
+    return this.runningPromise;
   }
 
   /**

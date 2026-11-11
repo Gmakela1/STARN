@@ -91,12 +91,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    // Wait for the async run to complete
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     // Events in order
     const startEv = capturedEvents.find(e => e.kind === 'start')!;
@@ -153,11 +148,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     const calls = executeTurnMock.mock.calls;
     for (const call of calls) {
@@ -182,11 +173,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     // Portal items persisted
     const items = listPortalItems(stateMgr);
@@ -213,11 +200,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     // Parked event emitted
     const parkedEv = capturedEvents.find(e => e.kind === 'parked')!;
@@ -253,26 +236,11 @@ describe('AutopilotDriver', () => {
       return makeTurnResult(opts.forceSpecialistId);
     });
 
-    // Settlement gate: runChain()'s finally always calls deps.onSettled, which
-    // is the real "this run is over" signal. A 'complete' event alone is not:
-    // it is emitted before the finally settles the run, and polling for it
-    // makes the test depend on timer granularity.
-    let releaseSettlement: (() => void) | null = null;
-    /** Resolves the next time the driver reports settlement. Arm before start/resume. */
-    const nextSettlement = (): Promise<void> =>
-      new Promise<void>((resolve) => { releaseSettlement = resolve; });
-    /** AutopilotDeps.onSettled: releases the currently armed settlement gate. */
-    const onSettled = (): void => {
-      const release = releaseSettlement;
-      releaseSettlement = null;
-      release?.();
-    };
+    // start()/resume() return the run promise, so completion is awaited here
+    // instead of polled. No driver outlives this test.
+    const driver = createDriver();
 
-    const driver = createDriver({ onSettled });
-
-    const firstRunSettled = nextSettlement();
-    driver.start();
-    await firstRunSettled;
+    await driver.start();
 
     // First run: conops passed, architecture parked
     expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
@@ -281,9 +249,7 @@ describe('AutopilotDriver', () => {
 
     // Resume architecture (previous run has fully settled, so no overlap)
     capturedEvents = []; // clear events for resume
-    const resumeSettled = nextSettlement();
-    driver.resume('architecture');
-    await resumeSettled;
+    await driver.resume('architecture');
 
     expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
 
@@ -322,7 +288,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
+    const run = driver.start();
 
     // Wait for conops to start (phase event)
     await vi.waitFor(() => {
@@ -353,6 +319,9 @@ describe('AutopilotDriver', () => {
     expect(phaseIdsRun).toContain('conops');
     // Architecture may or may not have been called depending on timing; at minimum
     // the run stopped before completing all phases
+
+    // Let the aborted run settle inside this test so it cannot outlive afterEach.
+    await run;
   });
 
   // ── Test 7: already-approved skip + prereq order ───────────────────────
@@ -367,11 +336,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     // CONOPS was NOT re-run (already approved)
     const turnCalls = executeTurnMock.mock.calls;
@@ -399,11 +364,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     const state = stateMgr.getState();
 
@@ -423,7 +384,7 @@ describe('AutopilotDriver', () => {
     executeTurnMock.mockImplementation(() => new Promise(resolve => { resolveTurn = resolve; }));
 
     const driver = createDriver();
-    driver.start();
+    const run = driver.start();
 
     // Give start() a chance to set running=true
     await vi.waitFor(() => {
@@ -439,10 +400,14 @@ describe('AutopilotDriver', () => {
     // executeTurn should not have been called again
     expect(executeTurnMock.mock.calls.length).toBe(callCountBefore);
 
-    // Clean up: resolve the hanging turn
+    // Clean up: stop the run, then let the hanging turn resolve as aborted so
+    // the chain settles inside this test (a live driver must not leak into the
+    // next test's capturedEvents).
+    driver.stop();
     if (resolveTurn) {
-      resolveTurn(makeTurnResult('conops'));
+      resolveTurn(makeTurnResult('conops', { aborted: true }));
     }
+    await run;
   });
 
   // ── Test 10: getState() returns live autopilot state ──────────────────
@@ -456,11 +421,7 @@ describe('AutopilotDriver', () => {
     const driver = createDriver();
     expect(driver.getState().running).toBe(false);
 
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     const state = driver.getState();
     expect(state.running).toBe(false);
@@ -484,11 +445,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     expect(executeTurnMock.mock.calls.length).toBeGreaterThan(1);
     // conops is the first phase; its second executeTurn call is the retry.
@@ -529,11 +486,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     expect(bomCalls).toBeGreaterThanOrEqual(2);
     // Find the bom retry call: the second executeTurn call for bom.
@@ -574,11 +527,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver({ logger: loggerStub as any });
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     // First specialist call is the requirements incorporation turn, not bom.
     const firstCall = executeTurnMock.mock.calls[0][0];
@@ -614,11 +563,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     const firstCall = executeTurnMock.mock.calls[0][0] as any;
     expect(firstCall.forceSpecialistId).toBe('requirements');
@@ -649,11 +594,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     // Block NOT stripped: the pending answers survive on disk.
     const reqDoc = fs.readFileSync(path.join(tmpDir, 'docs', 'REQUIREMENTS.md'), 'utf-8');
@@ -688,11 +629,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     // Block NOT stripped despite the failed incorporation turn.
     const reqDoc = fs.readFileSync(path.join(tmpDir, 'docs', 'REQUIREMENTS.md'), 'utf-8');
@@ -731,11 +668,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     // Block restored from the pre-turn snapshot: marker + answers back in
     // the doc, retryable on the next chain start.
@@ -765,11 +698,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     // Containment guard: the first answer line is already in the doc — do
     // not duplicate the block.
@@ -798,11 +727,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver({ logger: loggerStub as any });
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     expect(loggerStub.warn).toHaveBeenCalledWith(expect.stringContaining('Restored unincorporated answers block for requirements'));
   });
@@ -844,11 +769,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     const calls: any[] = executeTurnMock.mock.calls.map(c => c[0]);
 
@@ -902,11 +823,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver({ logger: loggerStub as any });
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     // Failed fix is non-fatal: warned, status event, portal question added for
     // the user, and the NEXT flagged doc still gets its fix turn; the chain
@@ -942,11 +859,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     const calls: any[] = executeTurnMock.mock.calls.map(c => c[0]);
     expect(calls.filter(c => c.forceSpecialistId === 'change-impact')).toHaveLength(1);
@@ -974,11 +887,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     const calls: any[] = executeTurnMock.mock.calls.map(c => c[0]);
     // No ripple on no-op incorporations.
@@ -1025,11 +934,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     const calls: any[] = executeTurnMock.mock.calls.map(c => c[0]);
     // Exactly one scan, carrying the neutral intent note for the external edit.
@@ -1061,11 +966,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver = createDriver();
-    driver.start();
-
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver.start();
 
     const calls: any[] = executeTurnMock.mock.calls.map(c => c[0]);
     expect(calls.some(c => c.forceSpecialistId === 'change-impact')).toBe(false);
@@ -1094,10 +995,7 @@ describe('AutopilotDriver', () => {
     });
 
     const driver1 = createDriver();
-    driver1.start();
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver1.start();
     expect((capturedEvents.find(e => e.kind === 'complete') as any).reason).toBe('stopped');
 
     // The ripple fix edited docs/ICD.md but approvedContentHash is untouched:
@@ -1110,10 +1008,7 @@ describe('AutopilotDriver', () => {
     executeTurnMock.mockClear();
     capturedEvents = [];
     const driver2 = createDriver();
-    driver2.start();
-    await vi.waitFor(() => {
-      expect(capturedEvents.some(e => e.kind === 'complete')).toBe(true);
-    }, { timeout: 5000, interval: 50 });
+    await driver2.start();
 
     const calls2: any[] = executeTurnMock.mock.calls.map(c => c[0]);
     const scan2 = calls2.filter(c => c.forceSpecialistId === 'change-impact');
@@ -1123,4 +1018,6 @@ describe('AutopilotDriver', () => {
     // The source docs get no fix turns on re-detection.
     expect(calls2.some(c => (c.userPrompt as string).includes('CHANGE-IMPACT RIPPLE'))).toBe(false);
   });
-});
+  // 30s: these tests drive the real 13-phase chain over the filesystem. Under
+  // full-suite parallelism one chain can take >5s, which is the default timeout.
+}, 30_000);
