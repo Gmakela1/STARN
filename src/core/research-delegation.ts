@@ -6,6 +6,12 @@
  *
  *   runQuestionResearch → verifyTopSource → assessResearch → result mapping
  *
+ * When the critic lands below UNVERIFIED_CONFIDENCE_CAP AND names a specific
+ * gap, ONE focused retry runs the SAME pipeline again with that gap as the
+ * focus of the question. Exactly one retry per request — never a loop. The
+ * better confidence wins (a tie goes to the retry), and the source lists are
+ * merged so the answer keeps every citation either pass found.
+ *
  * Budget (RESEARCH_GATE_MAX_TURNS / RESEARCH_GATE_ITEM_TIMEOUT_MS) belongs to
  * the caller: `runResearchDelegation` itself arms no wall-clock timer, because
  * the gate's own `runGateWithTimeout` runs `runResearchGate`, which MUTATES
@@ -14,14 +20,16 @@
  * surfaces here as `reason: 'timeout'`. The one caller-side budget
  * implementation is `runResearchDelegationWithTimeout` below: it owns the
  * timer, the AbortController and the timeout value, so runner and session
- * share it instead of each arming their own.
+ * share it instead of each arming their own. The timer is the TOTAL budget
+ * (RESEARCH_DELEGATION_TOTAL_BUDGET_MS = two 240 s passes); the retry is spent
+ * only when the remaining budget can still cover it.
  *
  * Core-safe: no UI/CLI imports, no imports from ../tools/, ../server/,
  * ../cli/ or ../specialists/.
  */
 import type { PortalItem, PortalThreadMessage } from '../workspace/types.js';
 import type { ResearchGateDeps } from './research-gate.js';
-import { runQuestionResearch, verifyTopSource, assessResearch, extractDecisionBlock } from './research-gate.js';
+import { runQuestionResearch, verifyTopSource, assessResearch, extractDecisionBlock, UNVERIFIED_CONFIDENCE_CAP } from './research-gate.js';
 
 /** One delegation: the question to research, plus optional project-relative paths to check first. */
 export interface ResearchDelegationRequest {
@@ -128,39 +136,92 @@ function syntheticItem(question: string): PortalItem {
   };
 }
 
-/**
- * Runs ONE delegated research request through the portal gate's own research
- * path and maps the outcome. Never throws.
- *
- * @param deps - the session-assembled research gate deps (client, critic,
- *   registry, state, optional search/verifySource/logger/signal). Used
- *   unchanged — no extra plumbing.
- * @param req - the question and optional focus paths
- * @returns `ok: true` with answer, sources, critic confidence, band, reasoning
- *   and (when present) the decision block; `ok: false` with a reason on
- *   timeout, no usable answer, or any other failure
- */
-export async function runResearchDelegation(
-  deps: ResearchDelegationDeps,
-  req: ResearchDelegationRequest
-): Promise<ResearchDelegationResult> {
-  const gateDeps: ResearchGateDeps = { ...deps, applyAnswer: READ_ONLY_APPLY_ANSWER };
-  const question = req.focus && req.focus.length > 0
-    ? `Focus files: ${req.focus.join(', ')}\n${req.question}`
-    : req.question;
-  const item = syntheticItem(question);
+/** A successful delegation result (the `ok: true` arm of the outcome union). */
+type ResearchDelegationSuccess = Extract<ResearchDelegationResult, { ok: true }>;
+/** A failed delegation result (the `ok: false` arm of the outcome union). */
+type ResearchDelegationFailure = Extract<ResearchDelegationResult, { ok: false }>;
 
+/** Outcome of ONE pipeline pass, before the retry decision. */
+type PassOutcome =
+  | { ok: true; result: ResearchDelegationSuccess; assessment: { confidence: number; rationale: string } }
+  | { ok: false; result: ResearchDelegationFailure };
+
+/**
+ * Gap markers a critic rationale must carry to earn a retry. Deliberately
+ * conservative: a rationale that only says the sources agree ("stated
+ * verbatim", "no conflicts found") names no gap, so the retry stays a targeted
+ * second look instead of a blind re-roll.
+ */
+const NAMED_GAP_PATTERN =
+  /\b(gaps?|missing|absent|not stated|unverified|insufficient|unsupported|incomplete|lacks?|lacking|only one source|no second source|could not (?:be )?(?:verify|verified|find|confirm)|cannot (?:be )?(?:verify|verified|confirm)|unclear)\b/i;
+
+/** Cap on the gap text folded into a retry question (a salvaged digest is 6 kB). */
+const RETRY_FOCUS_CHAR_CAP = 2000;
+
+/**
+ * True when a critic rationale names a specific gap worth one focused retry.
+ *
+ * @param rationale - the assessment rationale (may be empty)
+ * @returns true only when the text carries a gap marker (see NAMED_GAP_PATTERN)
+ */
+function hasNamedGap(rationale: string): boolean {
+  return NAMED_GAP_PATTERN.test(rationale || '');
+}
+
+/**
+ * Concatenates two source lists and drops later duplicates by url (or title
+ * when a source has no url). The kept answer's sources come first.
+ *
+ * @param kept - sources of the answer being returned
+ * @param other - sources of the discarded answer
+ * @returns the merged, order-preserving, deduped list
+ */
+function mergeSources(
+  kept: { title: string; url?: string }[],
+  other: { title: string; url?: string }[]
+): { title: string; url?: string }[] {
+  const seen = new Set<string>();
+  const merged: { title: string; url?: string }[] = [];
+  for (const source of [...kept, ...other]) {
+    const key = source.url || source.title;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(source);
+  }
+  return merged;
+}
+
+/**
+ * ONE pass of the delegation pipeline: research → verify top source → assess.
+ * Never throws; failures are values, aborts keep whatever the pass salvaged.
+ *
+ * @param gateDeps - gate deps with the read-only applyAnswer placeholder
+ * @param question - the question text (focus line already prefixed)
+ * @returns the pass outcome: a mapped result plus, on success, the assessment
+ */
+async function runPass(gateDeps: ResearchGateDeps, question: string): Promise<PassOutcome> {
+  const item = syntheticItem(question);
   try {
     const research = await runQuestionResearch(gateDeps, item);
     // Aborted pass: hand back the tool output it already collected instead of
     // dropping the transcript on the floor.
     if (research?.partial) {
-      return research.findings
-        ? { ok: false, reason: 'timeout', detail: 'aborted', partial: true, findings: research.findings }
-        : { ok: false, reason: 'timeout', detail: 'aborted', partial: true };
+      return {
+        ok: false,
+        result: research.findings
+          ? { ok: false, reason: 'timeout', detail: 'aborted', partial: true, findings: research.findings }
+          : { ok: false, reason: 'timeout', detail: 'aborted', partial: true }
+      };
     }
     if (!research || !research.answer.trim()) {
-      return { ok: false, reason: 'unverified', detail: research?.reasoning || 'No answer returned by the research turn.' };
+      return {
+        ok: false,
+        result: {
+          ok: false,
+          reason: 'unverified',
+          detail: research?.reasoning || 'No answer returned by the research turn.'
+        }
+      };
     }
 
     // Same pre-critic step as the gate: fetch the top cited URL so the critic
@@ -170,23 +231,109 @@ export async function runResearchDelegation(
 
     return {
       ok: true,
-      answer: research.answer,
-      sources: research.sources.map(s => ({ title: s.title, url: s.url })),
-      confidence: assessment.confidence,
-      band: toBand(assessment.confidence),
-      reasoning: assessment.rationale || research.reasoning,
-      options: extractOptions(research.answer)
+      assessment: { confidence: assessment.confidence, rationale: assessment.rationale },
+      result: {
+        ok: true,
+        answer: research.answer,
+        sources: research.sources.map(s => ({ title: s.title, url: s.url })),
+        confidence: assessment.confidence,
+        band: toBand(assessment.confidence),
+        reasoning: assessment.rationale || research.reasoning,
+        options: extractOptions(research.answer)
+      }
     };
   } catch (err: any) {
     if (err?.name === 'AbortError') {
-      return { ok: false, reason: 'timeout', detail: err?.message || 'Research run aborted.' };
+      return { ok: false, result: { ok: false, reason: 'timeout', detail: err?.message || 'Research run aborted.' } };
     }
-    return { ok: false, reason: 'error', detail: err?.message || String(err) };
+    return { ok: false, result: { ok: false, reason: 'error', detail: err?.message || String(err) } };
   }
 }
 
-/** Wall-clock budget for ONE delegation (spec §5.2: the gate's own 240 s). */
+/**
+ * Runs ONE delegated research request through the portal gate's own research
+ * path and maps the outcome — plus AT MOST ONE focused retry when the critic
+ * lands below the confidence cap and names a gap. Never throws.
+ *
+ * @param deps - the session-assembled research gate deps (client, critic,
+ *   registry, state, optional search/verifySource/logger/signal). Used
+ *   unchanged — no extra plumbing.
+ * @param req - the question and optional focus paths
+ * @param budgetMs - TOTAL wall-clock budget this delegation may use; the retry
+ *   is skipped unless the remaining budget still covers RESEARCH_RETRY_BUDGET_MS
+ * @returns `ok: true` with answer, sources, critic confidence, band, reasoning
+ *   and (when present) the decision block; `ok: false` with a reason on
+ *   timeout, no usable answer, or any other failure
+ */
+export async function runResearchDelegation(
+  deps: ResearchDelegationDeps,
+  req: ResearchDelegationRequest,
+  budgetMs: number = RESEARCH_DELEGATION_TOTAL_BUDGET_MS
+): Promise<ResearchDelegationResult> {
+  const gateDeps: ResearchGateDeps = { ...deps, applyAnswer: READ_ONLY_APPLY_ANSWER };
+  const question = req.focus && req.focus.length > 0
+    ? `Focus files: ${req.focus.join(', ')}\n${req.question}`
+    : req.question;
+  const startedAt = Date.now();
+  const first = await runPass(gateDeps, question);
+
+  // The gap a retry would focus on. A below-cap critic rationale that names a
+  // gap, or — with no critic at all — the digest a timed-out pass salvaged.
+  let gap = '';
+  if (first.ok) {
+    if (first.assessment.confidence < UNVERIFIED_CONFIDENCE_CAP && hasNamedGap(first.assessment.rationale)) {
+      gap = first.assessment.rationale.trim();
+    }
+  } else if (first.result.partial && first.result.findings) {
+    gap = first.result.findings.trim();
+  }
+  if (!gap) return first.result;
+
+  const confidence = first.ok ? first.assessment.confidence.toFixed(2) : 'none';
+  const gapKind = first.ok ? 'named' : 'salvaged-digest';
+  const remainingMs = budgetMs - (Date.now() - startedAt);
+  if (remainingMs < RESEARCH_RETRY_BUDGET_MS) {
+    deps.logger?.info(
+      `Research retry skipped (budget): confidence=${confidence} gap=${gapKind} ` +
+        `remainingMs=${Math.max(0, remainingMs)} outcome=kept-first`
+    );
+    return first.result;
+  }
+
+  // ONE focused retry: the same question plus the named gap as its focus,
+  // through the same loop (the question carries the focus line — no new
+  // parameter on the research loop).
+  const retry = await runPass(gateDeps, `${question}\nFocus: ${gap.slice(0, RETRY_FOCUS_CHAR_CAP)}`);
+  // Higher confidence wins; a tie goes to the retry (it had the gap pointed
+  // out). A retry that produced any answer beats a pass that produced none.
+  const keepRetry = retry.ok && (!first.ok || retry.assessment.confidence >= first.assessment.confidence);
+  const kept = keepRetry ? retry.result : first.result;
+  if (kept.ok) {
+    const other = keepRetry ? first.result : retry.result;
+    kept.sources = mergeSources(kept.sources, other.ok ? other.sources : []);
+  }
+  const retryConfidence = retry.ok ? retry.assessment.confidence.toFixed(2) : 'none';
+  deps.logger?.info(
+    `Research retry: confidence=${confidence} gap=${gapKind} retryConfidence=${retryConfidence} ` +
+      `outcome=kept-${keepRetry ? 'retry' : 'first'}`
+  );
+  return kept;
+}
+
+/** Wall-clock budget for ONE research pass (spec §5.2: the gate's own 240 s). */
 export const RESEARCH_DELEGATION_TIMEOUT_MS = 240_000;
+/**
+ * Wall-clock budget for the ONE focused retry: the same 240 s as the first
+ * pass. It is spent only when the remaining total budget still covers it.
+ */
+export const RESEARCH_RETRY_BUDGET_MS = RESEARCH_DELEGATION_TIMEOUT_MS;
+/**
+ * Worst-case wall clock for ONE delegation: 240 s first pass + 240 s retry =
+ * 480 s. The retry is skipped for cost when the first pass already used more
+ * than its own 240 s share of this total.
+ */
+export const RESEARCH_DELEGATION_TOTAL_BUDGET_MS =
+  RESEARCH_DELEGATION_TIMEOUT_MS + RESEARCH_RETRY_BUDGET_MS;
 /**
  * Grace period after the budget fires for the aborted pass to hand back its
  * salvaged tool output. Abort propagation through a model call or fetch is
@@ -214,7 +361,9 @@ function settleGrace(): Promise<undefined> {
  * @param deps - read-only gate deps; an existing `signal` is honoured and
  *   shadowed by the timeout controller
  * @param req - the question and optional focus paths
- * @param ms - budget in milliseconds (tests inject a short value)
+ * @param ms - TOTAL budget in milliseconds, first pass plus retry (tests inject
+ *   a short value); default RESEARCH_DELEGATION_TOTAL_BUDGET_MS (480 s worst
+ *   case: 240 s pass + 240 s retry)
  * @returns the delegation result, or `{ ok: false, reason: 'timeout',
  *   detail: '<ms/1000>s' }` when the budget fires first — with `partial: true`
  *   and `findings` when the aborted pass salvaged tool output
@@ -222,7 +371,7 @@ function settleGrace(): Promise<undefined> {
 export async function runResearchDelegationWithTimeout(
   deps: ResearchDelegationDeps,
   req: ResearchDelegationRequest,
-  ms: number = RESEARCH_DELEGATION_TIMEOUT_MS
+  ms: number = RESEARCH_DELEGATION_TOTAL_BUDGET_MS
 ): Promise<ResearchDelegationResult> {
   const controller = new AbortController();
   const forwardAbort = () => controller.abort();
@@ -247,7 +396,7 @@ export async function runResearchDelegationWithTimeout(
     timer = setTimeout(() => controller.abort(), ms);
   });
 
-  const run = runResearchDelegation({ ...deps, signal: controller.signal }, req);
+  const run = runResearchDelegation({ ...deps, signal: controller.signal }, req, ms);
   try {
     const first = await Promise.race([run, deadline]);
     // The run settled on its own: its result stands untouched.

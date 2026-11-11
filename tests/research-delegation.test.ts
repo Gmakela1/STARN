@@ -1,8 +1,9 @@
 /**
  * Unit tests for the research delegation runner (src/core/research-delegation.ts):
  * band mapping, the successful result shape, the three failure mappings, the
- * optional decision-block extraction, and the focus-line prefix. Stub clients
- * only — no network, no state writes.
+ * optional decision-block extraction, the focus-line prefix, and the ONE
+ * focused retry when the critic names a gap. Stub clients only — no network,
+ * no state writes.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
@@ -12,7 +13,7 @@ import { ProjectStateManager } from '../src/workspace/state.js';
 import { ToolRegistry } from '../src/tools/registry.js';
 import { ChatCompletionResult } from '../src/openrouter/types.js';
 import { ResearchGateDeps } from '../src/core/research-gate.js';
-import { runResearchDelegation, runResearchDelegationWithTimeout, toBand } from '../src/core/research-delegation.js';
+import { runResearchDelegation, runResearchDelegationWithTimeout, toBand, RESEARCH_RETRY_BUDGET_MS } from '../src/core/research-delegation.js';
 
 function chat(content: string): ChatCompletionResult {
   return { content, raw: {} } as ChatCompletionResult;
@@ -35,6 +36,26 @@ function criticReply(confidence: number): string {
     verdict: 'propose',
     rationale: 'Vendor datasheet, stated verbatim.'
   });
+}
+
+/** Critic reply with an explicit rationale (the gap text a retry focuses on). */
+function criticReplyWith(rationale: string, confidence: number): string {
+  return JSON.stringify({ confidence, corroborated: true, verdict: 'propose', rationale });
+}
+
+/** Research reply with an explicit source list, for merged-source assertions. */
+function researchReplyWith(answer: string, sources: { title: string; url?: string }[]): string {
+  return JSON.stringify({ answer, sources, reasoning: 'Stated verbatim in the datasheet.' });
+}
+
+/** Captured INFO lines, so the retry/skip audit lines can be asserted exactly. */
+function capturingLogger(): { info: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> } {
+  return { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+}
+
+/** INFO lines whose message starts with `prefix`. */
+function lines(logger: { info: ReturnType<typeof vi.fn> }, prefix: string): string[] {
+  return logger.info.mock.calls.map(([message]) => String(message)).filter(message => message.startsWith(prefix));
 }
 
 const PLAIN_ANSWER = 'The main contactor is rated 48V DC.';
@@ -477,5 +498,225 @@ describe('research delegation', () => {
     if (result.ok) return;
     expect(result.reason).toBe('timeout');
     expect(Date.now() - startedAt).toBeLessThan(2000);
+  });
+
+  it('a named gap below the confidence cap runs ONE focused retry that keeps the better answer and merges sources', async () => {
+    const logger = capturingLogger();
+    let researchCall = 0;
+    let criticCall = 0;
+    const deps = makeDeps({
+      logger: logger as any,
+      client: {
+        chatCompletion: vi.fn(async () =>
+          chat(
+            researchCall++ === 0
+              ? researchReplyWith(PLAIN_ANSWER, [{ title: 'Vendor datasheet', url: 'https://vendor.example/ds.pdf' }])
+              : researchReplyWith(`${PLAIN_ANSWER} Independently confirmed by the second datasheet.`, [
+                  { title: 'Vendor datasheet', url: 'https://vendor.example/ds.pdf' },
+                  { title: 'Agency listing', url: 'https://agency.example/listing' }
+                ])
+          )
+        )
+      } as any,
+      criticClient: {
+        chatCompletion: vi.fn(async () =>
+          chat(
+            criticCall++ === 0
+              ? criticReplyWith('Only one source states the rating; a second independent source is missing.', 0.7)
+              : criticReplyWith('Two independent sources agree on the rating.', 0.88)
+          )
+        )
+      } as any
+    });
+
+    const result = await runResearchDelegation(deps, { question: 'What is the contactor rating?' });
+
+    expect(researchCall).toBe(2);
+    expect(criticCall).toBe(2);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.confidence).toBe(0.88);
+    expect(result.band).toBe('high');
+    expect(result.answer).toContain('Independently confirmed');
+    expect(result.sources).toEqual([
+      { title: 'Vendor datasheet', url: 'https://vendor.example/ds.pdf' },
+      { title: 'Agency listing', url: 'https://agency.example/listing' }
+    ]);
+    const retryLines = lines(logger, 'Research retry:');
+    expect(retryLines).toHaveLength(1);
+    expect(retryLines[0]).toBe(
+      'Research retry: confidence=0.70 gap=named retryConfidence=0.88 outcome=kept-retry'
+    );
+  });
+
+  it('an empty or generic rationale runs no retry', async () => {
+    const emptyClient = { chatCompletion: vi.fn(async () => chat(researchReply(PLAIN_ANSWER))) } as any;
+    const empty = await runResearchDelegation(
+      makeDeps({ client: emptyClient, criticClient: { chatCompletion: vi.fn(async () => chat(criticReplyWith('', 0.7))) } as any }),
+      { question: 'What is the contactor rating?' }
+    );
+    expect(emptyClient.chatCompletion).toHaveBeenCalledTimes(1);
+    expect(empty.ok).toBe(true);
+    if (!empty.ok) return;
+    expect(empty.confidence).toBe(0.7);
+
+    const genericClient = { chatCompletion: vi.fn(async () => chat(researchReply(PLAIN_ANSWER))) } as any;
+    const generic = await runResearchDelegation(
+      makeDeps({
+        client: genericClient,
+        criticClient: {
+          chatCompletion: vi.fn(async () => chat(criticReplyWith('Vendor datasheet, stated verbatim; no conflicts found.', 0.7)))
+        } as any
+      }),
+      { question: 'What is the contactor rating?' }
+    );
+    expect(genericClient.chatCompletion).toHaveBeenCalledTimes(1);
+    expect(generic.ok).toBe(true);
+  });
+
+  it('never retries at or above the 0.85 confidence cap, even when a gap is named', async () => {
+    const client = { chatCompletion: vi.fn(async () => chat(researchReply(PLAIN_ANSWER))) } as any;
+    const result = await runResearchDelegation(
+      makeDeps({
+        client,
+        criticClient: {
+          chatCompletion: vi.fn(async () => chat(criticReplyWith('A second source is missing.', 0.95)))
+        } as any
+      }),
+      { question: 'What is the contactor rating?' }
+    );
+
+    expect(client.chatCompletion).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.confidence).toBe(0.95);
+  });
+
+  it('a timed-out first pass with a salvaged digest earns the retry, and the better retry answer wins', async () => {
+    const registry = stubRegistry([
+      { name: 'web_search', execute: async () => ({ success: true, result: 'Search hits: ME1115 performance curve (vendor).' }) }
+    ]);
+    let researchCall = 0;
+    const deps = makeDeps({
+      toolRegistry: registry,
+      client: {
+        chatCompletion: vi.fn(async () => {
+          const call = researchCall++;
+          if (call === 0) return toolCallTurn([{ id: 'call-1', name: 'web_search', args: { query: 'ME1115 curve' } }]);
+          if (call === 1) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+          return chat(researchReply(PLAIN_ANSWER));
+        })
+      } as any,
+      criticClient: { chatCompletion: vi.fn(async () => chat(criticReplyWith('Two independent sources agree.', 0.8))) } as any
+    });
+
+    const result = await runResearchDelegation(deps, { question: 'What is the efficiency at 100 A?' });
+
+    expect(researchCall).toBe(3);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.confidence).toBe(0.8);
+    expect(result.answer).toContain('48V');
+    // The retry question carries the salvaged tool output as its focus.
+    const retryCall = (deps.client.chatCompletion as any).mock.calls[2][0];
+    const retryPrompt = String(retryCall.messages.find((m: any) => m.role === 'user').content);
+    expect(retryPrompt).toContain('Focus:');
+    expect(retryPrompt).toContain('ME1115 performance curve');
+  });
+
+  it('a worse retry is discarded: the first answer is kept, sources merged, and no second retry runs', async () => {
+    const logger = capturingLogger();
+    let researchCall = 0;
+    let criticCall = 0;
+    const deps = makeDeps({
+      logger: logger as any,
+      client: {
+        chatCompletion: vi.fn(async () =>
+          chat(
+            researchCall++ === 0
+              ? researchReplyWith(PLAIN_ANSWER, [{ title: 'Vendor datasheet', url: 'https://vendor.example/ds.pdf' }])
+              : researchReplyWith('A weaker, unsourced restatement.', [
+                  { title: 'Vendor datasheet', url: 'https://vendor.example/ds.pdf' },
+                  { title: 'Blog post', url: 'https://blog.example/ratings' }
+                ])
+          )
+        )
+      } as any,
+      criticClient: {
+        chatCompletion: vi.fn(async () =>
+          chat(criticCall++ === 0 ? criticReplyWith('A second independent source is missing.', 0.7) : criticReplyWith('Still missing a second source.', 0.6))
+        )
+      } as any
+    });
+
+    const result = await runResearchDelegation(deps, { question: 'What is the contactor rating?' });
+
+    // Exactly one retry, even though the retry is itself below the cap.
+    expect(researchCall).toBe(2);
+    expect(criticCall).toBe(2);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.confidence).toBe(0.7);
+    expect(result.answer).toBe(PLAIN_ANSWER);
+    expect(result.sources.map(s => s.url)).toEqual(['https://vendor.example/ds.pdf', 'https://blog.example/ratings']);
+    expect(lines(logger, 'Research retry:')).toEqual([
+      'Research retry: confidence=0.70 gap=named retryConfidence=0.60 outcome=kept-first'
+    ]);
+  });
+
+  it('a better retry below the cap still gets no third pass', async () => {
+    let researchCall = 0;
+    let criticCall = 0;
+    const deps = makeDeps({
+      client: {
+        chatCompletion: vi.fn(async () =>
+          chat(researchCall++ === 0 ? researchReply(PLAIN_ANSWER) : researchReply(`${PLAIN_ANSWER} Second source agrees.`))
+        )
+      } as any,
+      criticClient: {
+        chatCompletion: vi.fn(async () =>
+          chat(criticCall++ === 0 ? criticReplyWith('A second independent source is missing.', 0.5) : criticReplyWith('A conflict remains in the voltage rating.', 0.8))
+        )
+      } as any
+    });
+
+    const result = await runResearchDelegation(deps, { question: 'What is the contactor rating?' });
+
+    expect(researchCall).toBe(2);
+    expect(criticCall).toBe(2);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.confidence).toBe(0.8);
+    expect(result.answer).toContain('Second source agrees.');
+  });
+
+  it('skips the retry for cost when the remaining budget cannot cover it', async () => {
+    const logger = capturingLogger();
+    const client = {
+      chatCompletion: vi.fn(async () => {
+        await new Promise(resolve => setTimeout(resolve, 5));
+        return chat(researchReply(PLAIN_ANSWER));
+      })
+    } as any;
+    const deps = makeDeps({
+      client,
+      logger: logger as any,
+      criticClient: { chatCompletion: vi.fn(async () => chat(criticReplyWith('A second independent source is missing.', 0.7))) } as any
+    });
+
+    const result = await runResearchDelegation(
+      deps,
+      { question: 'What is the contactor rating?' },
+      RESEARCH_RETRY_BUDGET_MS + 1
+    );
+
+    expect(client.chatCompletion).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.confidence).toBe(0.7);
+    const skipLines = lines(logger, 'Research retry skipped');
+    expect(skipLines).toHaveLength(1);
+    expect(skipLines[0]).toContain('confidence=0.70 gap=named');
+    expect(skipLines[0]).toContain('outcome=kept-first');
   });
 });
