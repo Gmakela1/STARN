@@ -9,11 +9,23 @@ import path from 'node:path';
 import { ToolHandler, ToolExecutionContext, ToolExecutionResponse } from '../types.js';
 import { extractChartData } from '../document-extractors/chart-vector-extractor.js';
 import type { AxisDecl, AxisMap, ChartExtraction, ChartSeries } from '../document-extractors/chart-types.js';
+import { UNVERIFIED_CONFIDENCE_CAP } from '../../core/research-gate.js';
+import { toBand } from '../../core/research-delegation.js';
+import type { ResearchBand } from '../../core/research-delegation.js';
 
 /** Hard caps from spec §7. */
 const MAX_OUTPUT_CHARS = 12000;
 const MAX_SERIES_PER_CALL = 8;
 const MAX_SAMPLES_CAP = 200;
+
+/**
+ * Confidence floor for a curve read from a PDF under `reference/` — the user
+ * curated that file into the project as a manufacturer document, so the
+ * drawing is a primary source for its own values.
+ */
+export const PROJECT_REFERENCE_CONFIDENCE_FLOOR = 0.75;
+/** Confidence floor for a curve read from any other project PDF. */
+export const PROJECT_DOCUMENT_CONFIDENCE_FLOOR = 0.6;
 
 /** Arguments accepted by the `read_chart_data` tool. */
 export interface ChartReadArgs {
@@ -35,6 +47,83 @@ export interface RenderChartOptions {
 
 function clamp(value: number, low: number, high: number): number {
   return Math.min(high, Math.max(low, Math.round(value)));
+}
+
+/**
+ * Source grade for one chart read, from where the file lives in the project.
+ * `confidence` is a floor, and never above UNVERIFIED_CONFIDENCE_CAP: a curve
+ * read on its own can never auto-apply.
+ */
+export interface ChartEvidenceGrade {
+  /** Provenance label shown to the specialist. */
+  provenance: 'project-reference' | 'project-document';
+  /** Confidence floor for this source class, capped at UNVERIFIED_CONFIDENCE_CAP. */
+  confidence: number;
+  /** Band of `confidence` via the shared toBand mapping. */
+  band: ResearchBand;
+}
+
+/**
+ * Grades a chart read by the SOURCE the file comes from, not by how sure the
+ * extractor is: a `reference/` PDF was placed in the project by the user as a
+ * manufacturer document (floor PROJECT_REFERENCE_CONFIDENCE_FLOOR), any other
+ * project PDF is a project document (floor PROJECT_DOCUMENT_CONFIDENCE_FLOOR).
+ * Both are clamped to UNVERIFIED_CONFIDENCE_CAP, so a chart read stays in the
+ * propose tier and can never auto-apply.
+ *
+ * Pure: no I/O.
+ *
+ * @param filePath - the PDF path, project-relative or absolute; separators and
+ *   a leading `./` are ignored, and the `reference/` test is case-insensitive
+ *   (win32 project trees)
+ * @returns the provenance label, the capped confidence floor and its band
+ */
+export function gradeChartEvidence(filePath: string): ChartEvidenceGrade {
+  const normalized = String(filePath ?? '')
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '')
+    .replace(/^\/+/, '')
+    .toLowerCase();
+  const inReference = normalized === 'reference' || normalized.startsWith('reference/');
+  const floor = inReference ? PROJECT_REFERENCE_CONFIDENCE_FLOOR : PROJECT_DOCUMENT_CONFIDENCE_FLOOR;
+  const confidence = Math.min(floor, UNVERIFIED_CONFIDENCE_CAP);
+  return {
+    provenance: inReference ? 'project-reference' : 'project-document',
+    confidence,
+    band: toBand(confidence),
+  };
+}
+
+/** Result of {@link resolveChartPdf}: the absolute PDF path, or the refusal message. */
+export type ChartPdfResolution = { ok: true; target: string } | { ok: false; error: string };
+
+/**
+ * Resolves a project-relative PDF path for a chart read: traps path traversal
+ * outside the project root (same guard as fs_read: sibling-prefix check, made
+ * case-insensitive on win32) and rejects a non-PDF target. Shared by
+ * `read_chart_data` and the `request_research` chart fast path so both refuse
+ * identically.
+ *
+ * @param projectPath - absolute project root
+ * @param relPath - project-relative path from the tool arguments
+ * @returns the absolute target, or the refusal message
+ */
+export function resolveChartPdf(projectPath: string, relPath: string): ChartPdfResolution {
+  const safeBase = path.resolve(projectPath);
+  const target = path.resolve(safeBase, relPath);
+  const ci = process.platform === 'win32';
+  const base = ci ? safeBase.toLowerCase() : safeBase;
+  const resolved = ci ? target.toLowerCase() : target;
+  if (resolved !== base && !resolved.startsWith(base + path.sep)) {
+    return { ok: false, error: 'Path traversal is not permitted.' };
+  }
+  if (!fs.existsSync(target)) {
+    return { ok: false, error: `File not found: ${relPath}` };
+  }
+  if (path.extname(target).toLowerCase() !== '.pdf') {
+    return { ok: false, error: `Expected a PDF: ${relPath}` };
+  }
+  return { ok: true, target };
 }
 
 /** @returns The reliability cell for one series row. */
@@ -218,21 +307,9 @@ export const chartReadHandler: ToolHandler = {
     }
   },
   async execute(args: ChartReadArgs, context: ToolExecutionContext): Promise<ToolExecutionResponse> {
-    const safeBase = path.resolve(context.projectPath);
-    const target = path.resolve(safeBase, args.path);
-    // Same guard as fs_read: sibling-prefix + case-insensitive on win32.
-    const ci = process.platform === 'win32';
-    const base = ci ? safeBase.toLowerCase() : safeBase;
-    const resolved = ci ? target.toLowerCase() : target;
-    if (resolved !== base && !resolved.startsWith(base + path.sep)) {
-      return { success: false, error: 'Path traversal is not permitted.' };
-    }
-    if (!fs.existsSync(target)) {
-      return { success: false, error: `File not found: ${args.path}` };
-    }
-    if (path.extname(target).toLowerCase() !== '.pdf') {
-      return { success: false, error: `read_chart_data expects a PDF: ${args.path}` };
-    }
+    const resolved = resolveChartPdf(context.projectPath, args.path);
+    if (!resolved.ok) return { success: false, error: resolved.error };
+    const target = resolved.target;
 
     const maxSamples = clamp(args.maxSamples ?? 40, 1, MAX_SAMPLES_CAP);
     const extraction = await extractChartData(target, {
